@@ -4,6 +4,81 @@
 
 
 
+## 2026-09-09 — The item picker stops answering "free now" to a question about next month (R-37)
+
+§4.45(a) is closed, and not the way it was framed. The question was *"how do 10 unit statuses
+become 4 pools"*; the answer is that they do not, because `product_units.status` is a now-state
+and the question is about a window.
+
+### Did
+
+- **`AddBundle` asks the availability engine, for a window.** The picker carries the same
+  `?from=`/`?to=` window the Bundles pane and bundle detail page carry (§4.44) and reads
+  `queries/productAvailability`, the engine New Rental's picker already uses. Columns are
+  **Stock · Free · Held**; the fourth is gone because nothing splits a hold into on-rent versus
+  reserved for a window.
+- **`productAvailability` grew its quantity half** — `productCapacityFor`, over
+  `readQuantityHolds` + `capacityFor`. It previously reported `unitsOwned: 0` for bulk stock,
+  which on live means **all 204 products**, because live has zero `product_units` rows. +7 tests.
+- **Fixed two compile errors in `EditBundle.tsx`** (`record.isLoading` → `loading`; `title`
+  passed to `Page`'s Button, which does not accept it). See *Ruled* — they were committed on
+  8 Sep under a false gate claim.
+
+### Ruled
+
+- **R-37** — closes §4.45(a) by option (iii). The screen's own warning had already come true:
+  the bundle detail page showed a C-stand **0 of 4 free** for 11–14 Nov while the picker showed
+  **4 available**, because the November hold is an `inventory_reservations` row that never
+  touched `status`. Both halves are in `RULINGS-2026-09-09.md` with the before/after and the
+  revert.
+- Recorded there too: **a now-count answering a windowed question is a defect pattern, not one
+  screen's bug.** NR-09 was the first instance, this is the second. Any screen still reporting
+  availability without a window is the third.
+
+### Verified
+
+- **Driven in the browser, mock corpus, Owner.** Matthews C-Stand 40in (EQ000238) in the Add
+  Bundle picker: **11–14 Nov → Stock 4 · Free 0 · Held 4**, which now agrees with BND-002's
+  detail page; **20–22 Sep → Stock 4 · Free 4 · Held 0**. Before the change the same row read
+  `4 · 4 · 0 · 0` for every window.
+- **Creating a bundle through the UI works** — driven end to end (FX6 line, name, Create) and it
+  landed on `/inventory/bundles/BUNDLE-2026-0001`. This had been reported as blocked in three
+  earlier entries; it was unblocked by another session's 7 Sep catalogue work and the claim was
+  stale. ⚠ The mock mints `BUNDLE-2026-0001` where live mints `BND-n` — `lib/mock/client.ts` has
+  no `bundle` key in `SEQ_PREFIX`, the drift `createBundle.ts` already documents. Not fixed here.
+- `npx tsc --noEmit` **exit 0**, redirected to a file with the exit code read directly.
+- `productAvailability` 15/15, `itemCatalogue.window` 13/13.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 20 / 42 (48%) | +0 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 5 / 9 (56%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 9 / 13 (69%) | +0 |
+| Overall | mean of five | ≈ 61% | +0 |
+
+Counted by `npm run completion`, not typed. Migrations 102 files.
+
+⚠ All five are +0 and that is honest: this change moved no action into `implemented`, no gate
+into Postgres and no capability into the dispatcher. What it moved is whether an existing screen
+tells the truth, which none of the five dimensions counts. The counter reads the working tree,
+which also carries another session's uncommitted work.
+
+### Remaining
+
+- **§4.45(b)** Maintenance's one `cost` column behind two on-screen figures, and **(c)**
+  Warehouses' capacity and manager. Both still open, both still read-frozen.
+- **§4.52** — how a component is removed from a bundle. Needs Babin (N-4 / N-5).
+- ~~The third instance of the now-count pattern~~ — **swept, and there is none.** The only
+  remaining `unitsByState` readers outside tests are `AssetDetail` and `data/inventory`'s chip
+  and pill helpers, and all of them render unit **states** ("2 in maintenance"), which is what
+  that field honestly is. The two screens that turned it into an availability promise were New
+  Rental (NR-09) and Add Bundle (R-37), and both now ask the engine for a window.
+- **The mock's `bundle` sequence key**, so mock mode mints `BND-n` like live does.
+
 ## 2026-09-09 — Booqable is out: the app masters its own data now (R-36)
 
 **Phase:** Phase 0 · **Status:** integration removed, 20 files and ~11,000 lines gone, no behaviour changed

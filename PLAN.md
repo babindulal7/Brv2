@@ -718,37 +718,41 @@ are **not** touched here.
 
 ---
 
-## 4.45 ⬅ OPEN ×3 — the rulings the remaining read-frozen screens need
+## 4.45 ⬅ OPEN ×2 — the rulings the remaining read-frozen screens need
+
+> **(a) is CLOSED, 9 Sep 2026 — R-37.** Kept below, struck through, because the reasoning it
+> rejected is the reasoning someone will propose again.
 
 **Raised 4 Sep 2026 after §4.44 closed the Bundles list.** Filed together because ruling
 them in one sitting unblocks four screens; taken one at a time they cost a round trip each.
 
-### (a) Add Bundle's item picker — how do 10 unit statuses become 4 pools?
+### (a) ~~Add Bundle's item picker — how do 10 unit statuses become 4 pools?~~ ✅ RULED (R-37)
 
-Creating a bundle through the UI **fails today**: `createBundle.ts:284` refuses with *"Sony
-FX3 Camera Body (M-FX3-BODY) is not a product in the products table"*. It is right to. The
-picker tree is `INVENTORY_MODELS` — 20 hand-written models, `data/addBundle.ts:125-404` — and
-`bundle_items.product_id` is a uuid FK to `products` (`0004:411`). `docs/pages/22_add_bundle.md`
-§7 lists **twelve** separate SEED sources on that one screen, not just the tree.
+**They do not.** The question had a false premise: `product_units.status` is where a unit is at
+*this instant*, and no arrangement of a now-count answers "free between two dates". Options (i)
+and (ii) both collapse the ten into four and both would have been wrong for the same reason.
 
-Sourcing the tree from live `products` is straightforward for id, sku, name, brand, category
-and rate. The blocker is the four count columns the render draws — **Stock · Avail · Res ·
-Rent** — under §5.1's invariant `stock = available + reserved + onRent + maintenance`.
-`product_units.status` has **ten** members (`In Stock · Reserved · Packed · On Rent ·
-Returning · Inspection · Cleaning · Maintenance · Missing · Retired`), and no mapping from
-those ten to these four exists anywhere in the repo — I checked. `Packed`, `Returning`,
-`Inspection`, `Cleaning` and `Missing` have no obvious home, and where they land changes what
-an operator is told is free.
+Closed by **(iii)**: the picker carries the operator's `?from=`/`?to=` window (§4.44) and asks
+`queries/productAvailability`, the same engine the Bundles pane and New Rental ask. Columns are
+**Stock · Free · Held**; there is no fourth, because the engine does not split a hold into
+on-rent versus reserved and nothing else can.
 
-Options: **(i)** collapse by rule — e.g. Reserved+Packed → Res, On Rent+Returning → Rent,
-Maintenance+Inspection+Cleaning → maintenance, Missing/Retired out of stock. **(ii)** name the
-four columns after the four identically-named statuses and let the invariant break where
-units sit in the other six, surfaced by the reconcile banner the screen already has.
-**(iii)** drop the pools from the picker and show availability the way §4.44 ruled — against a
-window — which makes this screen consistent with the Bundles list but is a bigger change.
+The warning above — *"a wrong pool tells an operator gear is free while they are building the
+kit they will promise to a client"* — had already come true and was measured, not predicted:
+the bundle detail page showed a C-stand **0 of 4 free** for 11–14 Nov while the picker showed
+**4 available**, because the November hold is an `inventory_reservations` row and never touched
+`status`. R-37 carries the before/after.
 
-⚠ Do NOT wire the picker before this is ruled. A wrong pool here tells an operator gear is
-free while they are building the kit they will promise to a client.
+Two consequences worth carrying forward:
+
+  - **The quantity half is the important half.** `productAvailability` answered only for
+    products with unit rows. Live has **204 quantity-tracked products and zero
+    `product_units`**, so it answered for nothing real, and callers filled the silence with raw
+    stock. `productCapacityFor` now answers bulk stock through `readQuantityHolds` +
+    `capacityFor`.
+  - **A now-count is a defect pattern, not one screen's bug.** This is the second instance
+    (NR-09 was the first, on New Rental). Any screen reporting availability without a window
+    is the third.
 
 ### (b) Maintenance — one `cost` column, two figures on screen
 

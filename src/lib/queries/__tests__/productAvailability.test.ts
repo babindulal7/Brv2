@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { productAvailabilityFor } from '../productAvailability'
+import { productAvailabilityFor, productCapacityFor } from '../productAvailability'
 import { DISQUALIFYING_UNIT_STATES, RENTAL_WINDOW_BOUNDS } from '../../availability'
-import type { UnitCandidate, UnitHold } from '../../availability'
+import type { QuantityHold, UnitCandidate, UnitHold } from '../../availability'
 
 /**
  * # NR-09 — availability is answered for a WINDOW, not for "now"
@@ -161,5 +161,83 @@ describe('productAvailabilityFor', () => {
       { unitId: 'u-OTHER', bookingId: 'x', bookingNo: 'B-799', window: IN_THREE_WEEKS },
     ]
     expect(productAvailabilityFor(PRODUCT, pool, elsewhere, IN_THREE_WEEKS, RULES).unitsFree).toBe(1)
+  })
+})
+
+/**
+ * # The quantity half — bulk stock, added 9 Sep 2026
+ *
+ * These matter more than the serial cases above, and the reason is not
+ * theoretical: **live has 204 quantity-tracked products and zero
+ * `product_units` rows**, so on production every catalogue row goes down this
+ * path and none goes down the other one. Until this branch existed the module
+ * answered `unitsOwned: 0` for all of them, and the screens above it filled the
+ * silence by reporting the raw stock as free.
+ */
+describe('productCapacityFor — bulk stock', () => {
+  const BULK = 'p-cstand'
+
+  function qHold(qty: number, fromAd: string, toAd: string, bookingNo = 'B-701'): QuantityHold {
+    return { bookingId: `id-${bookingNo}`, bookingNo, qty, window: { fromAd, toAd } }
+  }
+
+  it('reports the whole stock free when nothing is held', () => {
+    const answer = productCapacityFor(BULK, 4, [], IN_THREE_WEEKS, RULES)
+    expect(answer).toMatchObject({ mode: 'quantity', unitsOwned: 4, unitsFree: 4, unitsHeld: 0 })
+    expect(answer.heldBy).toEqual([])
+  })
+
+  it('subtracts a hold that overlaps the window, and names the booking', () => {
+    const answer = productCapacityFor(BULK, 4, [qHold(4, IN_THREE_WEEKS.fromAd, IN_THREE_WEEKS.toAd)], IN_THREE_WEEKS, RULES)
+    expect(answer.unitsFree).toBe(0)
+    expect(answer.unitsHeld).toBe(4)
+    expect(answer.heldBy).toEqual(['B-701'])
+  })
+
+  /* NR-09 for bulk stock: the same product, the same holds, two windows. A
+     count of what is out TODAY cannot answer for three weeks away, and this is
+     the case that proves the window is actually consulted. */
+  it('is free for a window the hold does not touch', () => {
+    const holds = [qHold(4, TODAY.fromAd, TODAY.toAd)]
+    expect(productCapacityFor(BULK, 4, holds, TODAY, RULES).unitsFree).toBe(0)
+    expect(productCapacityFor(BULK, 4, holds, IN_THREE_WEEKS, RULES).unitsFree).toBe(4)
+  })
+
+  /* Two holds of 2 that do not overlap EACH OTHER claim 2 at once, never 4 —
+     `capacityFor`'s peak, which is the figure the database's own capacity
+     trigger compares against. Summing them would refuse bookings Postgres
+     would allow. */
+  it('counts the peak of overlapping holds, not their sum', () => {
+    const holds = [
+      qHold(2, '2026-09-26T04:00:00+00:00', '2026-09-27T04:00:00+00:00', 'B-701'),
+      qHold(2, '2026-09-27T04:00:00+00:00', '2026-09-28T04:00:00+00:00', 'B-702'),
+    ]
+    const answer = productCapacityFor(BULK, 4, holds, IN_THREE_WEEKS, RULES)
+    expect(answer.unitsHeld).toBe(2)
+    expect(answer.unitsFree).toBe(2)
+    expect(answer.heldBy).toEqual(['B-701', 'B-702'])
+  })
+
+  it('names only the bookings whose hold actually touches the window', () => {
+    const holds = [
+      qHold(1, TODAY.fromAd, TODAY.toAd, 'B-OLD'),
+      qHold(1, IN_THREE_WEEKS.fromAd, IN_THREE_WEEKS.toAd, 'B-NOW'),
+    ]
+    expect(productCapacityFor(BULK, 4, holds, IN_THREE_WEEKS, RULES).heldBy).toEqual(['B-NOW'])
+  })
+
+  /* `total_quantity` is `integer not null` with a CHECK at or above 0, so a
+     negative or fractional figure is a failed read. Answering it would invent
+     capacity, and `capacityFor` refuses rather than guessing. */
+  it('refuses a stock figure the database could not have produced', () => {
+    expect(() => productCapacityFor(BULK, -1, [], IN_THREE_WEEKS, RULES)).toThrow(/whole number/i)
+  })
+
+  /* `readQuantityHolds` passes a null `qty` through as NaN deliberately, because
+     defaulting it to 1 would UNDER-count stock that is already promised. The
+     refusal has to survive this far. */
+  it('refuses a hold whose quantity could not be read', () => {
+    const holds = [qHold(Number.NaN, IN_THREE_WEEKS.fromAd, IN_THREE_WEEKS.toAd)]
+    expect(() => productCapacityFor(BULK, 4, holds, IN_THREE_WEEKS, RULES)).toThrow()
   })
 })

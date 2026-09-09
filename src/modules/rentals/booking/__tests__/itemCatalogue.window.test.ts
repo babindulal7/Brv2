@@ -35,7 +35,10 @@ function answer(
   unitsFree: number,
   heldBy: readonly string[] = [],
 ): ProductWindowAvailability {
-  return { productId, unitsOwned, unitsFree, unitsHeld: unitsOwned - unitsFree, heldBy }
+  /* `mode: 'unit'` because these fixtures are serial pools. The quantity half
+     (`productCapacityFor`) answers the same shape for bulk stock, and the
+     catalogue renders both — see productAvailability.ts. */
+  return { productId, mode: 'unit', unitsOwned, unitsFree, unitsHeld: unitsOwned - unitsFree, heldBy }
 }
 
 function ready(...answers: ProductWindowAvailability[]): EquipmentAvailabilitySource {

@@ -368,7 +368,7 @@ export default function EditBundle() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
         <PageHeader icon="queues" title="Edit bundle" description={bundleRef ?? ''} />
         <PageBody
-          loading={record.isLoading}
+          loading={record.loading}
           error={record.error}
           onRetry={record.refetch}
           empty={record.isEmpty}
@@ -432,10 +432,13 @@ export default function EditBundle() {
       ...e,
       clientUuid: keyFor(e.itemId),
     }))
+    /* Spread rather than assigned: `exactOptionalPropertyTypes` treats an
+       explicit `undefined` as a different thing from an absent key, and
+       `UpdateBundleLineAdd.days` is optional-absent, not optional-undefined. */
     const lineAdds: UpdateBundleLineAdd[] = diff.lineAdds.map((a) => ({
-      productId: a.productId,
+      ...(a.productId !== undefined ? { productId: a.productId } : {}),
       qty: a.qty,
-      days: a.days,
+      ...(a.days !== undefined ? { days: a.days } : {}),
       clientUuid: keyFor(a.key),
     }))
 
@@ -499,7 +502,6 @@ export default function EditBundle() {
               icon="check"
               onClick={save}
               disabled={saving || blockingReason !== null}
-              title={blockingReason ?? 'Save this bundle'}
             >
               {saving ? 'Saving…' : 'Save changes'}
             </Button>
@@ -764,7 +766,6 @@ export default function EditBundle() {
                           variant="secondary"
                           onClick={() => addComponent(r)}
                           disabled={already}
-                          title={already ? 'This bundle already carries that product.' : 'Add to this bundle'}
                         >
                           Add
                         </Button>

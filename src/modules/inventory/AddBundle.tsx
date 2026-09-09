@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { newClientUuid } from '../../lib/supabase'
 import { useInventoryCategories, listInventory } from '../../lib/queries/inventory'
+import { readProductAvailability } from '../../lib/queries/productAvailability'
+import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
+import { DateField } from '../../components/ui/DateField'
 import type { CSSProperties, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -470,12 +473,27 @@ export function AddBundle() {
    * reservation. `children` has no schema behind it at all, so a live model
    * carries none and the child affordances simply have nothing to show.
    */
+  /*
+   * §4.44 — availability is the answer to "free *when*", so the operator picks
+   * the window and it lives in the URL, exactly as the Bundles pane and the
+   * bundle detail page do. A create form having one is not odd: the kit is a
+   * template, but the question the picker used to answer badly — "can I field
+   * this" — only has an answer against dates.
+   */
+  const { window: availabilityWindow, setWindow } = useRentalWindowParams()
+  const { fromAd: winFromAd, toAd: winToAd } = availabilityWindow
+
   const [catalogue, setCatalogue] = useState<InventoryModel[]>([])
   const [catalogueError, setCatalogueError] = useState<string | null>(null)
   const [catalogueLoading, setCatalogueLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
+    /* Rebuilt from the two primitives, not captured from the object: the hook
+       returns a fresh `window` every render, and depending on it would refetch
+       the whole catalogue forever. */
+    const win = { fromAd: winFromAd, toAd: winToAd }
+    setCatalogueLoading(true)
     void (async () => {
       try {
         /* The same read New Rental's equipment picker uses
@@ -484,13 +502,26 @@ export function AddBundle() {
            above for anyone else — and a bundle line stores the unit rate. */
         const inv = await listInventory({ page: { index: 0, size: 500 }, withMoney: true })
         if (cancelled) return
+        const rows = inv.rows.filter((r) => r.isActive)
+        /* §4.44 — the same engine the Bundles pane and New Rental ask, for the
+           window the operator picked above.
+           RULING 2026-09-09 (R-37): §4.45(a) is closed by asking the engine for a
+           window, not by collapsing ten unit statuses into four pools. Revert =
+           restore the `unitsByState` mapping in git and drop the window control. */
+        const byProduct = await readProductAvailability(win, rows.map((r) => r.id))
+        if (cancelled) return
         setCatalogue(
-          inv.rows
-            .filter((r) => r.isActive)
-            .map((r): InventoryModel => {
-              const serialised = r.trackingMode === 'Serialised'
-              const byState = r.unitsByState
-              const stock = serialised ? r.unitCountExcludingRetired : r.totalQuantity
+          rows.map((r): InventoryModel => {
+              const answer = byProduct.get(r.id)
+              /* The engine's own count of stock, whichever half answered:
+                 non-retired unit rows, or `total_quantity` for bulk. Falling
+                 back to the list read only if the product is missing from the
+                 map, which `readProductAvailability` does not do. */
+              const stock =
+                answer?.unitsOwned ??
+                (r.trackingMode === 'Serialised' ? r.unitCountExcludingRetired : r.totalQuantity)
+              const free = answer?.unitsFree ?? 0
+              const held = answer?.unitsHeld ?? 0
               return {
                 id: r.id,
                 sku: r.assetCode,
@@ -498,13 +529,21 @@ export function AddBundle() {
                 brand: r.brand,
                 category: (r.category ?? 'Other') as InventoryCategory,
                 stock,
-                /* Serialised: the real per-unit split. Quantity-tracked: this
-                   build commits no units, so the whole quantity is free and the
-                   other three pools are genuinely zero, not unknown-shown-as-0. */
-                available: serialised ? (byState['In Stock'] ?? 0) : stock,
-                reserved: serialised ? (byState['Reserved'] ?? 0) : 0,
-                onRent: serialised ? (byState['On Rent'] ?? 0) : 0,
-                maintenance: serialised ? (byState['Maintenance'] ?? 0) : 0,
+                available: free,
+                /* `reserved` is renamed **Held** in the render, and it is the
+                   engine's one figure for "another booking has this across the
+                   window". It is not split into reserved-versus-on-rent because
+                   nothing answers that for a window: `product_units.status` is
+                   a now-state, and reading it here is exactly the defect this
+                   replaced — a hold three weeks out left `status` at In Stock,
+                   so the picker called four held C-stands free. */
+                reserved: held,
+                onRent: 0,
+                /* The remainder, so §5.1's invariant holds by construction:
+                   owned, but neither free nor claimed by a booking — a unit in
+                   maintenance, cleaning, inspection, or missing. Named for the
+                   largest of those rather than measured, and never rendered. */
+                maintenance: Math.max(0, stock - free - held),
                 unitRatePaisa: r.dailyRate ?? (0 as Paisa),
               }
             }),
@@ -519,7 +558,7 @@ export function AddBundle() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [winFromAd, winToAd])
 
   const liveById: ReadonlyMap<string, InventoryModel> = useMemo(
     () => new Map(catalogue.map((m) => [m.id, m])),
@@ -1423,6 +1462,40 @@ export function AddBundle() {
                 </p>
               </div>
 
+              {/*
+                §4.44 — the window Free and Held below are measured against. It is
+                not a filter: it does not decide which models are listed, it decides
+                what "free" means for all of them.
+              */}
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 'var(--sp-md)',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  paddingBottom: 'var(--sp-sm)',
+                }}
+              >
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                  Free from
+                  <DateField
+                    ariaLabel="Availability window from"
+                    value={dayValue(winFromAd)}
+                    onChange={(v) => setWindow('from', v)}
+                    showBs={false}
+                  />
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                  to
+                  <DateField
+                    ariaLabel="Availability window to"
+                    value={dayValue(winToAd)}
+                    onChange={(v) => setWindow('to', v)}
+                    showBs={false}
+                    align="right"
+                  />
+                </label>
+              </div>
               <div style={{ maxHeight: 460, overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
@@ -1430,7 +1503,11 @@ export function AddBundle() {
                       <th style={{ ...th, position: 'sticky', top: 0, background: 'var(--th-bg)' }} scope="col">
                         Model
                       </th>
-                      {(['Stock', 'Avail', 'Res', 'Rent'] as const).map((h) => (
+                      {/* §4.44 — `Free` and `Held` are answers for the window above, not
+                         for "now". `Rent` is gone: the engine reports what a booking holds
+                         across the window, and does not split that into on-rent versus
+                         reserved, so a fourth column could only be filled by guessing. */}
+                      {(['Stock', 'Free', 'Held'] as const).map((h) => (
                         <th key={h} style={{ ...th, textAlign: 'right', position: 'sticky', top: 0, background: 'var(--th-bg)' }} scope="col">
                           {h}
                         </th>
@@ -1440,26 +1517,26 @@ export function AddBundle() {
                   <tbody>
                     {catalogueError !== null ? (
                       <tr>
-                        <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--danger)', padding: '22px 12px' }}>
+                        <td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--danger)', padding: '22px 12px' }}>
                           The catalogue could not be read, so there is nothing to build a bundle from:{' '}
                           {catalogueError}
                         </td>
                       </tr>
                     ) : catalogueLoading ? (
                       <tr>
-                        <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
+                        <td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
                           Reading the equipment catalogue…
                         </td>
                       </tr>
                     ) : catalogue.length === 0 ? (
                       <tr>
-                        <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
+                        <td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
                           No active equipment exists yet, so a bundle has nothing to contain.
                         </td>
                       </tr>
                     ) : treeRows.length === 0 ? (
                       <tr>
-                        <td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
+                        <td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--text2)', padding: '22px 12px' }}>
                           No product matches this search.
                           <span style={{ display: 'block', marginTop: 'var(--sp-sm)' }}>
                             <Button icon="refresh" onClick={clearFilters}>
@@ -2427,9 +2504,6 @@ function TreeRow({
         <td className="figure" style={num}>
           {model.reserved}
         </td>
-        <td className="figure" style={num}>
-          {model.onRent}
-        </td>
       </tr>
       {open &&
         childRows.map(({ child, required }) => (
@@ -2471,9 +2545,6 @@ function TreeRow({
             </td>
             <td className="figure" style={num}>
               {child.reserved}
-            </td>
-            <td className="figure" style={num}>
-              {child.onRent}
             </td>
           </tr>
         ))}
