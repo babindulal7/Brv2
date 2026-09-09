@@ -4,6 +4,52 @@
 
 
 
+## 2026-09-09 — Stage 1: bookCrew action (Backend 76%, Overall 81%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `bookCrew` action live (+1); Backend 32/42 (76%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 81%.
+
+### Did
+
+- **Implemented `bookCrew` action (`src/actions/crew/bookCrew.ts`):**
+  - Marked `implemented: true` with `crew.assign` capability (`canWriteSharedTriage(role)`: Owner, Admin, Manager, Coordinator, Accounts).
+  - Resolves target booking (by UUID or `booking_no`) and crew member (by UUID or `crew_code` in `crew_profiles_v2`).
+  - Computes `days`, `daily_rate`, and `line_total` (`daily_rate * days`).
+  - Writes assignment row(s) to `crew_assignments` with `client_uuid` (Law 8) and explicit `{ returnRow: false }` to comply with Law 6 column revocation on `daily_rate` and `line_total`.
+  - Emits domain event `EVENT_TYPES.CREW_ASSIGNED`.
+- **Created Comprehensive Unit Tests (`src/actions/crew/__tests__/bookCrew.test.ts`):**
+  - 8/8 tests covering validation (non-empty crewIds, days >= 1, dailyRate >= 0), single and batch assignments, profile fallback rates, and error cases.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/crew/__tests__/bookCrew.test.ts` **8/8 passed**.
+- `node scripts/completion.mjs` verified: Backend 32/42 (76%), Overall ≈ 81%.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 32 / 42 (76%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 81% | +0 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 10 actions remaining to reach 100% backend completion (`createSubRental`, `reserveEquipment`, `packEquipment`, `readyForPickup`, `completePickup`, `startReturn`, etc.).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+
 ## 2026-09-09 — Stage 1: reconcileStockCheck action (Backend 74%, Overall 81%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `reconcileStockCheck` action live (+1); Backend 31/42 (74%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 81%.
