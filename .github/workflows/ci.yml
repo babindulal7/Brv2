@@ -50,6 +50,29 @@ jobs:
       - name: Test
         run: npm run test
 
+      # The migration chain, applied from scratch into an in-process Postgres 18
+      # (PGlite). No Docker, no Supabase stack, no network. It proves every
+      # CREATE, ALTER, trigger body and post-condition block in
+      # `supabase/migrations` still applies in filename order.
+      - name: Migrations build from scratch
+        run: npm run check:pglite
+
+      # R-27 (RULINGS-2026-09-08): one booking's whole life — create, confirm,
+      # the floor, invoice, payment, close — driven through that same Postgres
+      # with an assertion at every step, as a real role under real RLS.
+      #
+      # This is the gate the unit suite cannot be: 2,834 green tests sat over a
+      # database that accepted a double booking and refused every discounted
+      # booking, because both failures live on the far side of the mock seam.
+      # A red step blocks merge.
+      - name: Lifecycle
+        run: npm run check:lifecycle
+
+      # R-29: an entry that logs Did / Ruled / Verified and no Completion /
+      # Remaining is logged as unfinished, and this is what says so. One grep.
+      - name: PROGRESS.md carries its Completion and Remaining blocks
+        run: npm run lint:progress
+
       # `npm run build` is `tsc --noEmit && vite build`, so this re-runs the
       # typecheck. Kept separate anyway: a type error should fail in seconds
       # under its own name rather than inside a two-minute bundle step.
@@ -63,6 +86,18 @@ jobs:
 
       - name: Coverage
         run: npm run test:coverage
+
+      # `npm run completion` (R-29) reads this to fill the Lifecycle row of the
+      # Completion block, so a session that cannot run PGlite locally can still
+      # cite a counted figure rather than typing one.
+      - name: Upload lifecycle result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lifecycle
+          path: .lifecycle-result.json
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload coverage
         if: always()
