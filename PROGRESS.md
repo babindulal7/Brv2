@@ -4,6 +4,52 @@
 
 
 
+## 2026-09-09 — Stage 1: reconcileStockCheck action (Backend 74%, Overall 81%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `reconcileStockCheck` action live (+1); Backend 31/42 (74%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 81%.
+
+### Did
+
+- **Implemented `reconcileStockCheck` action (`src/actions/inventory/reconcileStockCheck.ts`):**
+  - Marked `implemented: true` with `inventory.audit` capability (`canWriteFloor(role)`: Owner, Admin, Manager, Warehouse).
+  - Validates `scannedCount` and `totalCount` as non-negative integers.
+  - Resolves target stock audit via `auditId` or `sessionId` (by UUID or `audit_no`), or falls back to current active/draft audit, or creates a new completed audit record with sequential `AUD-YYYY-XXXX`.
+  - Enforces Law 6 on table updates using safe update with `{ returnRow: false }`.
+  - Emits domain event `EVENT_TYPES.STOCK_RECONCILED`.
+- **Created Comprehensive Unit Tests (`src/actions/inventory/__tests__/reconcileStockCheck.test.ts`):**
+  - 7/7 tests covering validation, audit lookup, fallback to active draft, ad-hoc creation, and custom discrepancies.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/inventory/__tests__/reconcileStockCheck.test.ts` **7/7 passed**.
+- `node scripts/completion.mjs` verified: Backend 31/42 (74%), Overall ≈ 81%.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 31 / 42 (74%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 81% | +1 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 11 actions remaining to reach 100% backend completion (`reserveEquipment`, `packEquipment`, `readyForPickup`, `completePickup`, `startReturn`, etc.).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+
 ## 2026-09-09 — Stage 1: createDocument action (Backend 71%, Overall 80%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `createDocument` action live (+1); Backend 30/42 (71%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 80%.
