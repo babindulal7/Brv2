@@ -646,7 +646,7 @@ const STEPS = [
 
   {
     id: 'L8',
-    title: 'Accounts raises the invoice: 7,000 − 700 = 6,300 + 819 VAT = 7,119',
+    title: 'Accounts raises and issues the invoice: figures snapshot and become immutable (R-15, Law 4)',
     expect: 'green',
     async run() {
       await as('Accounts', async () => {
@@ -684,6 +684,34 @@ const STEPS = [
         assertEq(Number(row.vat_amount), vat, 'invoice VAT')
         assertEq(Number(row.total_amount), taxable + vat, 'invoice total')
         assertEq(row.status, 'Draft', 'a new invoice is a Draft')
+      })
+
+      /* Issue the invoice: mints invoice_no (R-15), sets issue_date, and advances status to Sent */
+      await as('Accounts', async () => {
+        const issued = await one('select issue_invoice($1::jsonb)', [
+          JSON.stringify({
+            invoice_id: invoiceId,
+            issued_by: U.Accounts,
+          }),
+        ])
+        assert(issued.invoice_no !== null && typeof issued.invoice_no === 'string', 'issued invoice has no number')
+        assert(issued.invoice_no.startsWith('INV-'), `issued invoice number is unexpected: ${issued.invoice_no}`)
+        assertEq(issued.status, 'Sent', 'newly issued invoice without payments has status Sent')
+      })
+
+      /* Law 4 / reject_invoice_edit_after_issue: once issued, figures are immutable */
+      await as('Accounts', async () => {
+        let editFailed = false
+        try {
+          await q('update invoices set subtotal = 9999 where id = $1', [invoiceId])
+        } catch (err) {
+          editFailed = true
+          assert(
+            String(err).includes('figures are immutable'),
+            `expected immutability rejection, got: ${String(err)}`,
+          )
+        }
+        assert(editFailed, 'direct update to issued invoice subtotal was unexpectedly accepted')
       })
     },
   },
@@ -744,15 +772,6 @@ const STEPS = [
     id: 'L10',
     title: 'Two payments settle the invoice: 3,000 then 4,119',
     expect: 'green',
-    /* R-27's L10 also names `status Paid`, and that is NOT asserted here — it
-       cannot be reached. `issue_invoice` (SPEC-P0-1 §3.3) is not written, so an
-       invoice never leaves Draft: it can be fully paid and still be a Draft with
-       no number, forever. Asserting it would make this step permanently red and
-       hide the two figures that ARE right; leaving it unmentioned would be
-       worse. It is stated as a shortfall, printed on every run, and carried into
-       the R-29 Remaining list. */
-    shortfall:
-      'a fully paid invoice stays Draft — `issue_invoice` is not written, so nothing ever sets Sent/Paid on the status column.',
     async run() {
       await as('Accounts', async () => {
         for (const amount of [3000, 4119]) {
@@ -771,12 +790,7 @@ const STEPS = [
         ).rows[0]
         assertEq(Number(row.paid_amount), 7119, 'paid_amount')
         assertEq(Number(row.outstanding_amount), 0, 'outstanding_amount')
-        /* Not `assertEq(row.status, 'Paid')` — see this step's `shortfall`. What
-           IS asserted is that the status has not gone somewhere unexpected. */
-        assert(
-          row.status === 'Paid' || row.status === 'Draft',
-          `invoice status is ${String(row.status)}, which is neither the Paid it should be nor the Draft it is stuck at`,
-        )
+        assertEq(row.status, 'Paid', 'invoice status is Paid')
       })
     },
   },

@@ -208,7 +208,7 @@ const GATES = {
   'money write': 'L12',
   'stage rows': 'L6',
   'close gate': 'L11',
-  'invoice immutable': null,
+  'invoice immutable': 'L8',
   'payments immutable': 'L13',
   'audit immutable': 'L13',
   'client own rows': null,
