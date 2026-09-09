@@ -563,23 +563,55 @@ const STEPS = [
   {
     id: 'L6',
     title: 'Booked → Packed → On Rent as Warehouse requires the session rows each stage needs',
-    expect: 'red',
-    red: 'The stage-gate trigger is not built. `validate_booking_gates` guards only On Rent and Closed and checks money, not floor rows, so a Warehouse session walks Booked → Packed → On Rent with no packing session, no handover, and nothing packed. P1, unruled as a migration.',
+    expect: 'green',
     async run() {
       await as('Warehouse', async () => {
+        // 1. Moving to Packed without a Packing session is refused
+        await refuses(
+          'moving to Packed with no Packing session',
+          `insert into booking_stage_transitions
+             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+           values (gen_random_uuid(), $1, $2, 'Booked', 'Packed', $3, 'Warehouse', now())`,
+          [bookingIds.a, BRANCH, U.Warehouse],
+          /cannot reach Packed without a Packing session/i,
+        )
+
+        // 2. Open a Packing session, then transition to Packed succeeds
+        const packingSessionId = crypto.randomUUID()
+        await q(
+          `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
+           values ($1, gen_random_uuid(), $2, 'Packing', 1, 'In Progress', $3, $3)`,
+          [packingSessionId, bookingIds.a, U.Warehouse],
+        )
         await transition('a', 'Booked', 'Packed', 'Warehouse')
+        assertEq(await stageOf('a'), 'Packed', 'the booking moved to Packed once Packing session exists')
+
+        // 3. Moving to On Rent without a Handover session is refused
+        await refuses(
+          'moving to On Rent with no Handover session',
+          `insert into booking_stage_transitions
+             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+           values (gen_random_uuid(), $1, $2, 'Packed', 'On Rent', $3, 'Warehouse', now())`,
+          [bookingIds.a, BRANCH, U.Warehouse],
+          /cannot reach On Rent without a Handover session/i,
+        )
+
+        // 4. Open a Handover session, then transition to On Rent succeeds
+        const handoverSessionId = crypto.randomUUID()
+        await q(
+          `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
+           values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', 'Customer Pickup', $3, $3)`,
+          [handoverSessionId, bookingIds.a, U.Warehouse],
+        )
         await transition('a', 'Packed', 'On Rent', 'Warehouse')
       })
-      assertEq(await stageOf('a'), 'On Rent', 'the walk happened')
+
+      assertEq(await stageOf('a'), 'On Rent', 'the walk to On Rent completed')
 
       const sessions = Number(
         await one('select count(*) from operation_sessions where booking_id = $1', [bookingIds.a]),
       )
-      assert(
-        sessions > 0,
-        'a booking reached On Rent with NO operation_sessions row: no packing session, no handover, nothing packed. ' +
-          'The stage gate that would refuse this does not exist.',
-      )
+      assertEq(sessions, 2, 'both Packing and Handover sessions exist for the booking')
     },
   },
 
