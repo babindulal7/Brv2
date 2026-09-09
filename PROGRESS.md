@@ -4,6 +4,53 @@
 
 
 
+## 2026-09-09 — Stage 1: readyForPickup action (Backend 90%, Overall 84%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** `readyForPickup` action live (+1); Backend 38/42 (90%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 84%.
+
+### Did
+
+- **Implemented `readyForPickup` action (`src/actions/inventory/readyForPickup.ts`):**
+  - Marked `implemented: true` with `inventory.ready` capability (`canWriteFloor(role)`: Owner, Admin, Manager, Warehouse).
+  - Validates `id` non-empty string.
+  - Resolves target booking (by UUID or `booking_no`) or product unit (by UUID, serial number, or unit code).
+  - If booking is `Booked`, runs floor verb `'Pack'` to advance to `Packed` (the staged/ready for pickup stage).
+  - If target is a unit, records staging location and readiness.
+  - Emits domain event `EVENT_TYPES.INVENTORY_AVAILABLE`.
+- **Created Comprehensive Unit Tests (`src/actions/inventory/__tests__/readyForPickup.test.ts`):**
+  - 5/5 tests covering validation, booking staging with stagingLocation, standalone product unit staging, and non-existent target rejection.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/actions/inventory/__tests__/readyForPickup.test.ts` **5/5 passed**.
+- `node scripts/completion.mjs` verified: Backend 38/42 (90%), Overall ≈ 84%.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 38 / 42 (90%) | +1 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 84% | +0 |
+
+Migrations 110 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-09T14:50:11.244Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 4 actions remaining (`reserveEquipment`, `startInspection`, `passInspection`, `failInspection`).
+- 3 inspection capabilities deliberately omitted until inspection table schema is confirmed.
+
 ## 2026-09-09 — Stage 1: packEquipment action (Backend 88%, Overall 84%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `packEquipment` action live (+1); Backend 37/42 (88%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 84%.
