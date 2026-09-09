@@ -53,6 +53,17 @@ Where any spec disagrees with `PERMISSIONS.md` about who may do what, that file 
 
 **Ruled 7 Sep 2026.** While building the app, Claude (Claude Code or a chat session working on the repo) **may make any change needed to resolve a conflict, gap or ambiguity without stopping to ask** — in this document, in any spec, in code, in a migration file. The build does not wait for a ruling round. Babin reviews by flipping logged rows, not by being asked mid-task.
 
+**End every session with the R-29 blocks.** A session ends with `## Completion` and
+`## Remaining`. Run `npm run completion`; **never type a percentage by hand.** Overall is the mean
+of the same five dimensions every time — Backend, Real data, DB enforcement, Permissions,
+Lifecycle — so two sessions can be compared. A dimension that cannot be counted this run is
+written `not measured`, never guessed. `npm run lint:progress` fails an entry missing either
+heading.
+
+**A migration is `Verified` only when `check:pglite` AND `check:lifecycle` are both green in the
+same run** (R-35, issued as R-27). Unit tests cannot see across the RPC boundary: 2,834 of them
+were green over a database that accepted a double booking and refused every discounted booking.
+
 #### 15.1 Always
 
 | # | Rule |

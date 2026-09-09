@@ -199,12 +199,12 @@ Ladder shorthand: `M+` = Owner · Admin · Manager. `C+` = M+ · Coordinator. `F
 |---|---|---|---|
 | `rental.draft` | C+ · Warehouse | `bookings_insert` | ✓ |
 | `rental.create` | C+ · Warehouse | `bookings_insert`, `booking_lines_all`, `booking_line_units_all`, `create_booking()` security INVOKER | ✓ |
-| `rental.confirm` | C+ · Warehouse | `booking_stage_transitions_insert` | ✓ |
+| `rental.confirm` | C+ · Warehouse | `booking_stage_transitions_insert` — and, since R-26, that same INSERT writes the booking's `inventory_reservations` rows (`0100`, trigger, SECURITY INVOKER). The five roles this policy admits are exactly the five `inventory_reservations_all` admits, so confirming and holding are one permission and one transaction. | ✓ |
 | `rental.discount` | C+ (Coordinator included) | `booking_discounts_money_blind` refuses Floor. **Ungated in amount** (31 Aug): no cap, no reason, no approver. | ○ split from `rental.create` |
 | `rental.extend` | C+ | invoice update in place; blocked on collision with next booking (system, not role) | ✓ |
 | `rental.cancel` (before Packed) | C+ | stage-transition policy; cancellation fee tiers from Settings | ✓ |
 | `rental.cancel` (Packed or later) | M+ | reason ≥10 chars, audited | ✓ (same string; stage checked in engine) |
-| `rental.override_overbooking` | M+ | deactivates losing reservation + audit row; GiST constraint never disabled | ○ |
+| `rental.override_overbooking` | M+ | releases the **losing** reservation (`released_at` + `override_records` row + reason ≥10 chars) and re-runs the transition; the GiST constraint is never disabled and never `deferrable` (R-26, 8 Sep) | ○ |
 | `rental.reopen` (stage-only, invoice untouched) | M+ | `apply_booking_stage_transition` fix per SPEC-P0-2 | ○ |
 | `rental.close` (auto-suggest, manual confirm) | C+ · Accounts | close gates: outstanding 0 + deposit resolved + no open case + no pending damage | ○ |
 | `subrental.create` | C+ | — | ✓ |
@@ -227,10 +227,23 @@ Ladder shorthand: `M+` = Owner · Admin · Manager. `C+` = M+ · Coordinator. `F
 
 ### 4.3 Cases, Maintenance, Purchase
 
+**Preventive maintenance — R-28 (8 Sep 2026).** A unit is due for service when
+either its elapsed-time interval or its usage interval since the last completed
+`Preventive Service` job is reached, whichever comes first. Due-ness **warns
+only** — the unit stays bookable — and the intervals live on the **product
+model**. Nothing is stored: `product_units_service_v` derives it at read time.
+
+| Capability | Roles | DB enforcement | Code |
+|---|---|---|---|
+| `inventory.edit_service_plan` | Owner · Admin · Manager | the three intervals + grace on `products`; `products_update` policy | ○ |
+| `inventory.record_meter` | M+ · Warehouse · Technician | `product_units.meter_hours` / `meter_hours_recorded_at`, written at intake and at Return only | ○ |
+| view `product_units_service_v` | all staff | carries no money column, so no Law 6 mask is needed — the view is money-free by construction | ○ |
+
+
 | Capability | Roles | Notes | Code |
 |---|---|---|---|
 | `case.create` | C+ · Floor | Damage needs 1 photo; Missing needs a note | ○ |
-| `case.resolve` (disposition, cost) | ⛔ **CORRECTED — Owner · Manager under Rs 25,000; Owner at or above.** Admin is refused by `auth_can_approve_damage()` on live and by 0057 in the repo. **And the capability itself is a live defect:** it resolves to `canWriteSharedTriage` = `isStaff()`, so every staff role including Warehouse/Technician/Driver can set a disposition and cost today; `canApproveDamage` exists in `rbac.ts` and is never called from `core.ts`. Fix before use — see §16 V-2. | `auth_can_approve_damage(charge)` | ⛔ was ✓ — the string exists, the roles do not |
+| `case.resolve` (disposition, cost) | ✅ **FIXED 8 Sep (R-25) — Owner · Manager under Rs 25,000; Owner at or above.** Admin is refused by `auth_can_approve_damage()` on live and by 0057 in the repo. `core.ts` now returns `canApproveDamage(role, 'Manager')` — its first caller. The role band is the widest legal set; the Rs 25,000 threshold stays in `lib/damage`'s `approverFor()` and in the DB function, so UI ⊆ DB (P3) holds. Eight tests lock the roles; 6 of them fail if the old mapping returns. | `auth_can_approve_damage(charge)` | ✅ string and roles both correct |
 | `case.record_recovery` | Money | recovered / absorbed / insurance | ○ |
 | `writeoff.approve` | M+ under threshold · Owner above | ⭐ threshold §13 | ○ |
 | `maintenance.create` | C+ · Floor | item → Maintenance, blocks availability | ✓ (`maintenance.*`) |
@@ -592,6 +605,17 @@ Doing this section is what makes the document "bug-free". None of it is optional
 
 **Ruled 7 Sep 2026.** While building the app, Claude (Claude Code or a chat session working on the repo) **may make any change needed to resolve a conflict, gap or ambiguity without stopping to ask** — in this document, in any spec, in code, in a migration file. The build does not wait for a ruling round. Babin reviews by flipping logged rows, not by being asked mid-task.
 
+**End every session with the R-29 blocks.** A session ends with `## Completion` and
+`## Remaining`. Run `npm run completion`; **never type a percentage by hand.** Overall is the mean
+of the same five dimensions every time — Backend, Real data, DB enforcement, Permissions,
+Lifecycle — so two sessions can be compared. A dimension that cannot be counted this run is
+written `not measured`, never guessed. `npm run lint:progress` fails an entry missing either
+heading.
+
+**A migration is `Verified` only when `check:pglite` AND `check:lifecycle` are both green in the
+same run** (R-35, issued as R-27). Unit tests cannot see across the RPC boundary: 2,834 of them
+were green over a database that accepted a double booking and refused every discounted booking.
+
 ### 15.1 Always
 
 | # | Rule |
@@ -644,6 +668,11 @@ Each build session ends with one table Babin can scan on a phone:
 
 A row Babin disagrees with is flipped by replying with the row number. That reply becomes the next `RULINGS-<date>.md` entry.
 
+**The table is followed by the two R-29 blocks** — `## Completion` (five counted dimensions, the
+mean of them the Overall) and `## Remaining` (features to build · bugs to fix · rulings open, each
+with a count in its heading, plus one line naming what the next session starts with). A session
+that logs Did / Ruled / Verified and no Completion / Remaining is logged as unfinished.
+
 ### 15.5 Where this clause lives
 
 Copy §15 verbatim into `CLAUDE.md` under a heading **"Authority to resolve conflicts"**, so every Claude Code session reads it at start. `CLAUDE.md` points back here for the full matrix; it does not restate §3–§6.
@@ -672,7 +701,7 @@ same instance) is real but is not this application's.
 | # | § | Claim as written | Verified reality | Severity |
 |---|---|---|---|---|
 | **V-1** | §4 preamble | "✓ = string already declared in the repo" | 31 ✓ rows: **7 name a string that exists nowhere**, 16 name a real string with a different role set, 8 are accurate on both. Actions declare `permissions: ['x']`, **not** `capability:` — the field name in the preamble and in R-1/R-2 is wrong. | blocker |
-| **V-2** | §4.3 `case.resolve` | M+ under Rs 25,000, Owner above | Resolves to `canWriteSharedTriage` → `isStaff()`. **Every staff role can set a damage disposition and cost today**, including the three money-blind ones. `canApproveDamage` is defined in `rbac.ts` and called from nowhere. A live P4/N-1 violation, not a gap. | blocker |
+| **V-2** | §4.3 `case.resolve` | M+ under Rs 25,000, Owner above | Resolved to `canWriteSharedTriage` → `isStaff()`, admitting the three money-blind roles. **✅ FIXED 8 Sep — R-25.** ⛔ **Severity corrected: LATENT, not live.** `resolveCase.ts:19` is `implemented: false` and `core.ts:281` throws `ActionNotImplementedError` **before** the permission loop at `:294`, so the check was never reached and nothing could write; the only caller is archived (`src/archive/operations/CasesQueue.tsx`). Real, worth fixing, but not exploitable — so §16.3's ordering, which ranks it first *because* it is live, is wrong. **V-5 and V-14 are live; this was not.** | ~~blocker~~ → latent, fixed |
 | **V-3** | §4.3, §6.1, T-9 | Damage approval is `M+` (includes Admin) | `auth_can_approve_damage(charge)`: `>= 25000` → Owner; else **Owner · Manager**. Admin is refused at every amount, identically in 0057 and on live. The Rs 25,000 boundary itself is correct. | major |
 | **V-4** | §4.3, §6.1 | `purchase.approve` — Manager < Rs 50,000 · Admin · Owner | `canApprovePurchase` and live `auth_can_approve_purchase()` are both **Owner · Manager**. Admin refused; no Rs 50,000 branch exists. | major |
 | **V-5** | §5 items 2–3 | Present-tense enforcement | Live ledger: …0077, 0078, **0089**. 0079–0088 and 0090–0096 unapplied — including **0092** (the write trigger item 3 cites). All **26 of 26** `_v` views are INSERT-able by `anon`, so item 2's masking is writable-through. | major |
@@ -703,14 +732,17 @@ Technician, Driver and Client; and the Rs 25,000 damage boundary.
 
 ### 16.3 Order of work
 
-The three that are live defects rather than documentation errors, and so outrank the rest:
-**V-2** (money-blind roles can price damage), **V-5** (Law 6's write trigger and view masking are
-not on production), **V-14** (no role can be assigned at all). Everything else is a correction to
-this document, and §16.1 is the list.
+⛔ **Re-ordered 8 Sep (R-25).** V-2 was listed here as live; it is not — its action is
+`implemented: false` and the dispatcher refuses before the permission check, so nothing could reach
+the write. It is **fixed anyway** (one line, R-25), which leaves:
 
-⛔ **Updated 8 Sep (R-27) — V-14 is written.** `0101_staff_roles_are_assignable.sql` gives
-`users.primary_role` and `users.is_active` an Owner-only write path through two SECURITY DEFINER
-RPCs, proven on the full chain under PGlite with a 12-check behavioural probe. It is **N-5: written,
-tested locally, unapplied** — the same state as V-5. Neither is closed until Babin runs the backup
-step and applies them, so the gap between the repo and production is the risk now, not the absence
-of a fix.
+**V-5** (Law 6's write trigger and the view masking are not on production) and **V-14** (no role can
+be assigned at all — `public.users` has one SELECT policy and no INSERT/UPDATE path). Those two are
+the live defects, and both need a migration, so both are **N-5: written, not applied**. Everything
+else in §16.1 is a correction to this document.
+
+⛔ **Updated 8 Sep (R-27).** V-14 is now written too — `0101_staff_roles_are_assignable.sql`, proven
+on the full chain under PGlite with a 12-check behavioural probe. So both remaining live defects are
+in the same state: **written, tested locally, unapplied.** Neither is closed until Babin runs the
+backup step and applies them; the gap between the repo and production is the risk now, not the
+absence of a fix. `0101` is the sixteenth unapplied migration.

@@ -620,6 +620,50 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.53 ✅ RULED 8 Sep 2026 (R-26) — reservations are a database fact, written by the Booked transition
+
+`inventory_reservations` is written by `0100`'s trigger on `booking_stage_transitions`, not by the
+app. `confirmRental.ts` keeps a read-only pre-check that names the booking already holding a unit;
+`reserveAssignedUnits` and `releaseReservations` are deleted. The backfill covers every booking at
+Booked · Packed · On Rent and **named 19 pre-existing double bookings in the corpus** it could not
+cover. The GiST constraint is never disabled and never `deferrable`; the override
+(`rental.override_overbooking`, M+) releases the losing reservation and re-runs the transition.
+Bounds stay half-open on both sides of the seam — `RENTAL_WINDOW_BOUNDS` and the trigger's `'[)'`
+move together or not at all.
+
+## 4.54 ✅ RULED 8 Sep 2026 (R-35, issued as “R-27”) — `check:lifecycle` is a merge gate
+
+`npm run check:lifecycle` drives one booking's whole life through a real Postgres and asserts at
+every step. It runs in CI beside `check:pglite`, and a red step blocks merge. **"Verified" in
+PROGRESS.md now requires both green in the same run.** Known-red steps are recorded, never
+skipped: a red step that starts passing fails the run, because the marker has become a lie.
+
+⚠ The number: Babin issued this as R-27, which a concurrent session had already used the same day
+for the staff-role ruling. Filed as R-35 with the collision noted in both places.
+
+## 4.55 ✅ RULED 8 Sep 2026 (R-28) — preventive maintenance is derived, warns only, and lives on the model
+
+Due when **either** the time interval **or** a usage interval since the last completed `Preventive
+Service` job is reached, whichever first. A due unit **stays bookable** — badge and an amber
+packing line, never a gate. No `is_due` column: `product_units_service_v` (`0103`) derives it.
+Intervals sit on `products`, all nullable, and null means that trigger is off — so nothing badges
+until a model is given a plan. ⭐ defaults taken: grace 7 days, the meter reading optional at
+Return, the notification addressed to the Technician role rather than a person.
+
+## 4.56 ✅ RULED 8 Sep 2026 (R-29) — every session ends with Completion and Remaining
+
+Five fixed dimensions, the mean of them is Overall, counted by `npm run completion` and never
+typed. A dimension that cannot be counted reads `not measured`. Built by a concurrent session
+(`bfe5355`, `6e6d4b5`, its own corrections at R-32); `scripts/lint-progress.mjs` fails an entry
+missing either heading.
+
+> **§4.51 is answered from the other side by this work.** That entry records `closeRental`
+> refusing to close an un-invoiced rental *in the app*. `check:lifecycle` L11 shows the database
+> does not: a booking with no invoice and nothing paid walks to Closed, and `closed_at` is set. The
+> product question in §4.51 stays open; the enforcement gap under it is now measured every run and
+> is one of the four gates §4.56's counter reports as not in Postgres.
+
+
 ## 4.48 ✅ CLOSED — (a) ruled 9 Sep 2026 by R-36; (b) was already closed
 
 > **CLOSED 9 Sep 2026 — R-36.** Babin: *"now dont sync with booquable make it complete app in its
@@ -845,8 +889,8 @@ finding strands that booking at `Returned`** until MONEY-10 (the deposit lifecyc
 damage-approval writer exist. That is the correct failure direction — blocking beats losing the
 client's money quietly — but it is a dependency, not a detail. Both refusal strings say so in as
 many words, and both carry a `TODO` naming the issue that should delete the clause.
-
 ---
+
 ## 4.52 ⬅ OPEN ×1 — how is a component removed from a bundle?
 
 **Raised 8 Sep 2026** while building `updateBundle` and `/inventory/bundles/:bundleRef/edit`.
@@ -897,9 +941,7 @@ report the component gone and the next load would show it still there.
 
 
 
-
 ---
-
 ## 4.49 ⬅ OPEN ×2 — two questions the quantity-hold work (INV-02) could not answer for itself
 
 **Raised 7 Sep 2026** while building product-level holds so `Confirm` can succeed on the live
