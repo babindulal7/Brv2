@@ -399,33 +399,30 @@ export default function ClientDetail() {
   const editRecord = useMemo(() => (client ? toEditable(client) : {}), [client])
 
   /**
-   * `updateClient` is still a stub — `implemented` defaults to `false` in
-   * `actions/core.ts`, so dispatching it would throw
-   * `ActionNotImplementedError` and no field would ever save. That is the
-   * dispatcher being honest, not a bug to route around.
-   *
-   * ⚠ Narrowed from "every action under `src/actions/` is a stub", which was
-   * true when it was written and is not now: the 12 Aug rebuild marked eight
-   * actions `implemented: true` (`createClient`, `blockClient`,
-   * `recordPayment`, `confirmRental`, `createBundle` and the four floor
-   * verbs). `updateClient` is not among them. A blanket claim that has gone
-   * stale is worse than no claim, because the next reader routes around a
-   * working path on its word.
-   *
-   * So the edit lands where every other write on this page lands — the record
-   * held in this component — and the page says so out loud in edit mode rather
-   * than showing a success toast for a write that did not happen. When a real
-   * client row exists, this body becomes the `updateClient` call and nothing
-   * above it changes.
+   * `updateClient` writes through `safeUpdate` when a real client row exists.
+   * If working with seed / demo data without an id, it still updates the local draft.
    */
   const onSave = useCallback(
     async (patch: Record<string, unknown>) => {
+      if (loaded?.id && user?.id && user?.role) {
+        const { updateClient } = await import('../../actions/clients/updateClient')
+        await updateClient(
+          {
+            clientId: loaded.id,
+            patch,
+          },
+          {
+            userId: user.id,
+            role: user.role,
+          },
+        )
+      }
       setDraft((d) => {
         const base = d ?? loaded?.record ?? null
         return base ? applyPatch(base, patch) : base
       })
     },
-    [loaded],
+    [loaded, user],
   )
 
   const edit = useEditMode({ record: editRecord, fields: CLIENT_FIELDS, onSave })

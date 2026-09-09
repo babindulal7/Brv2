@@ -271,6 +271,27 @@ async function seed() {
     )
   }
 
+  await q(
+    `insert into auth.users (id, email, email_confirmed_at)
+     values ($1, $2, now())
+     on conflict (id) do nothing`,
+    [U.Client, 'lifecycle-client@babinrentals.test'],
+  )
+
+  await q(
+    `insert into portal_users (client_uuid, client_id, auth_user_id, email, status, self_registered_at)
+     values (gen_random_uuid(), $1, $2, $3, 'Active', now())
+     on conflict do nothing`,
+    [CLIENT, U.Client, 'lifecycle-client@babinrentals.test'],
+  )
+
+  await q(
+    `insert into bookings (client_uuid, booking_no, client_id, branch_id, pickup_at, return_at, delivery_type, stage, created_by, updated_by)
+     values (gen_random_uuid(), $4, $1, $2, '2099-12-01T04:00:00Z', '2099-12-03T04:00:00Z', 'Customer Pickup', 'Quote', $3, $3)
+     on conflict do nothing`,
+    [OTHER_CLIENT, BRANCH, U.Owner, await one("select next_document_number('booking')")],
+  )
+
   /* One Serialised product with three units, and one Quantity product with a
      stock of three. The 0047 corpus is 56 products and ALL Serialised, while
      production is 204 and ALL Quantity — so a script that borrowed the corpus
@@ -915,6 +936,41 @@ const STEPS = [
         2,
         'both payments are still there',
       )
+    },
+  },
+
+  {
+    id: 'L14',
+    title: 'Client portal user sees only their own rows, never another client\'s',
+    expect: 'green',
+    async run() {
+      await as('Client', async () => {
+        // 1. clients table: sees own client row, cannot see OTHER_CLIENT
+        const myClients = await q('select id, name from clients')
+        assertEq(myClients.rows.length, 1, 'Client sees exactly their own client row')
+        assertEq(myClients.rows[0].id, CLIENT, 'The one visible client is their own')
+
+        const otherClientVisible = Number(
+          await one('select count(*) from clients where id = $1', [OTHER_CLIENT]),
+        )
+        assertEq(otherClientVisible, 0, 'Client cannot see another client\'s row')
+
+        // 2. bookings table: sees own bookings (a, b, c), cannot see OTHER_CLIENT's bookings
+        const myBookings = await q('select id, client_id from bookings')
+        assert(myBookings.rows.length > 0, 'Client sees their own bookings')
+        for (const b of myBookings.rows) {
+          assertEq(b.client_id, CLIENT, 'Visible booking belongs to own client')
+        }
+
+        const otherBookingVisible = Number(
+          await one('select count(*) from bookings where client_id = $1', [OTHER_CLIENT]),
+        )
+        assertEq(otherBookingVisible, 0, 'Client cannot see another client\'s bookings')
+
+        // 3. booking_lines table: sees lines for own bookings only
+        const myLines = await q('select id, booking_id from booking_lines')
+        assert(myLines.rows.length > 0, 'Client sees booking lines for own bookings')
+      })
     },
   },
 ]

@@ -211,7 +211,7 @@ const GATES = {
   'invoice immutable': 'L8',
   'payments immutable': 'L13',
   'audit immutable': 'L13',
-  'client own rows': null,
+  'client own rows': 'L14',
 }
 
 let lifecycle = null

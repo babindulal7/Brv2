@@ -151,29 +151,61 @@ export default function Login() {
             </div>
           )}
 
-          {/* Mock mode only. This screen is mounted OUTSIDE Shell (App.tsx), so
-              the global MockBanner does not reach it — and without the account
-              list there is no way to discover a working sign-in. */}
+          {/* Mock mode: Quick 1-click login buttons */}
           {IS_MOCK && (
             <div
               role="status"
               style={{
                 textAlign: 'left',
-                background: 'var(--st-progress-bg)',
-                color: 'var(--st-progress-fg)',
-                padding: '9px 12px',
-                borderRadius: 'var(--r-btn)',
+                background: 'var(--chip-amber-bg, var(--st-progress-bg))',
+                color: 'var(--chip-amber-fg, var(--st-progress-fg))',
+                padding: '10px 14px',
+                borderRadius: 'var(--r-card, 8px)',
                 fontSize: 'var(--t-meta)',
-                fontWeight: 600,
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 4,
+                gap: 8,
               }}
             >
-              <span>Mock data — local corpus, no Supabase project.</span>
-              <span style={{ fontWeight: 500 }}>
-                Sign in as {MOCK_LOGINS.map((l) => l.email).join(' · ')} with any password.
-              </span>
+              <div style={{ fontWeight: 700 }}>Quick Sign-In (Demo / Offline Mode):</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {MOCK_LOGINS.map((l) => (
+                  <button
+                    key={l.email}
+                    type="button"
+                    onClick={async () => {
+                      setEmail(l.email)
+                      setPassword('demo1234')
+                      setBusy(true)
+                      const { error: err } = await signIn(l.email, 'demo1234')
+                      setBusy(false)
+                      if (err) {
+                        setError(err)
+                      } else {
+                        const from = (location.state as { from?: string } | null)?.from
+                        navigate(from && from !== '/login' ? from : '/dashboard', { replace: true })
+                      }
+                    }}
+                    style={{
+                      padding: '6px 10px',
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--r-btn, 6px)',
+                      color: 'var(--text)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      boxShadow: 'var(--shadow-sm)',
+                    }}
+                  >
+                    <span>{l.role === 'Owner' ? '👑' : l.role === 'Warehouse' ? '📦' : '💰'}</span>
+                    <span>{l.role}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
