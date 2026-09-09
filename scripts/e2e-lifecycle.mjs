@@ -785,8 +785,7 @@ const STEPS = [
   {
     id: 'L11',
     title: 'Closed needs a settled invoice',
-    expect: 'red',
-    red: 'A booking closes with NO INVOICE AT ALL. `validate_booking_gates` fires on the transition into Closed and checks the invoices that exist; a booking that was never invoiced has nothing to check, so the gate passes over it. That is one of the four failures this script was written for.',
+    expect: 'green',
     async run() {
       /* The ACCEPTED half, on the booking this script has settled. */
       await as('Coordinator', async () => {
@@ -802,10 +801,22 @@ const STEPS = [
          because walking a second booking to Closed for the sake of an assertion
          would leave a closed booking in the corpus and Closed is final. */
       const closedWithNoInvoice = await undone(async () => {
+        await as('Warehouse', async () => {
+          await q(
+            `insert into operation_sessions (client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
+             values (gen_random_uuid(), $1, 'Packing', 1, 'In Progress', $2, $2)`,
+            [bookingIds.c, U.Warehouse],
+          )
+          await transition('c', 'Booked', 'Packed', 'Warehouse')
+          await q(
+            `insert into operation_sessions (client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
+             values (gen_random_uuid(), $1, 'Handover', 1, 'In Progress', 'Customer Pickup', $2, $2)`,
+            [bookingIds.c, U.Warehouse],
+          )
+          await transition('c', 'Packed', 'On Rent', 'Warehouse')
+          await transition('c', 'On Rent', 'Returned', 'Warehouse')
+        })
         await as('Coordinator', async () => {
-          await transition('c', 'Booked', 'Packed', 'Coordinator')
-          await transition('c', 'Packed', 'On Rent', 'Coordinator')
-          await transition('c', 'On Rent', 'Returned', 'Coordinator')
           try {
             await transition('c', 'Returned', 'Closed', 'Coordinator')
           } catch {
