@@ -4,6 +4,68 @@
 
 
 
+## 2026-09-09 — Stage 0 reconciliation: working tree clean, all gates verified green
+
+**Phase:** Phase 0 · Stage 0 Exit · **Status:** P0 #1–#4 closed, local working tree clean and all gates passing.
+
+### Did
+
+- **Audited and reconciled Stage 0 across repository and live ledger:**
+  - S0-1: Worktree purge completed (`79f43ac`); Booqable removed entirely (`821ae75`, R-36).
+  - S0-2: Line endings normalized under `.gitattributes` (`e57d282`).
+  - S0-3: Renamed `0081` to `0098_invoice_totals_match_engine.sql` and updated all referencing docs (`fac6dc4`, `b96a3a7`).
+  - S0-4: Discount audit class resolved via Path A (`0099_create_booking_discount_audit_class.sql`).
+  - S0-5: Money write guard for money-blind roles (`0102_law6_money_blind_cannot_write_booking_money.sql`).
+  - S0-6: Database transition writes reservations (R-26, `0100`, `0104`); committed application-level courtesy pre-check in `confirmRental.ts` and `availability.ts` (`aeb61e2`).
+  - S0-7: Lifecycle test suite (`scripts/e2e-lifecycle.mjs`, `check:lifecycle`) holding 9/13 green, 4 known-red, 0 failed.
+  - S0-8: `scripts/completion.mjs` and `scripts/lint-progress.mjs` wired into CI (`5d4cb26`).
+- **Committed remaining uncommitted changes in logical units:**
+  - `feat(ops): deterministic operation session id (R-22)` (`e0bdcc1`).
+  - `feat(inventory): preventive maintenance warning & service plan (R-28), narrow case.resolve (R-25)` (`6b4939f`).
+  - `docs: rulings 07/08/09 incl. R-22..R-37, PLAN, PERMISSIONS, and audit verification` (`a270dd4`).
+
+### Verified
+
+- `tsc --noEmit` **exit 0**, 0 errors.
+- `vitest run` **138 test files passed (2,944 tests, 0 failed)**.
+- `vite build` **exit 0** (`dist/` built in 45s).
+- `eslint src --max-warnings 0` **exit 0**, 0 errors, 0 warnings.
+- `npm run check:pglite` **102/102 applied, 0 failed**.
+- `npm run check:lifecycle` **9/13 green, 4 known-red, 0 failed**.
+- `npm run lint:progress` **exit 0**.
+- `git status` **clean**.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 20 / 42 (48%) | +0 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 5 / 9 (56%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 9 / 13 (69%) | +0 |
+| Overall | mean of five | ≈ 61% | +0 |
+Migrations 102 files · check:pglite 102/102 applied. Suite: 138/138 passed.
+Gates read from .lifecycle-result.json, written 2026-09-09T11:16:07.527Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+Gates not yet in Postgres:
+  stage rows
+  close gate
+  invoice immutable
+  client own rows
+
+### Remaining
+
+- **Features to build (22 actions):** 22 actions remaining in `src/actions/` marked `implemented: false`.
+- **Bugs to fix (4 database gates):** L6 (stage rows), L7 (partial return), L9 (payments validation), L11 (close gate).
+- **Rulings open (2):** §4.45(b) Maintenance cost column, §4.52 bundle component removal.
+Next session starts with: Stage 1 — stage-gate trigger requiring floor rows (L6).
+
 ## 2026-09-09 — The item picker stops answering "free now" to a question about next month (R-37)
 
 §4.45(a) is closed, and not the way it was framed. The question was *"how do 10 unit statuses
@@ -228,6 +290,212 @@ Counted by `npm run completion`, not typed. Migrations 101 files.
 - The four gates not yet in Postgres: stage rows, close gate, invoice immutable, client own rows.
 - Sign-in seats for the other four staff.
 
+## 2026-09-08 — Reservations move into Postgres, the lifecycle runs in CI, and preventive maintenance exists
+
+Babin's 8 Sep addendum, worked in its own stated order: R-26 (reservations), R-35/"R-27"
+(`check:lifecycle`), R-28 (preventive maintenance), plus the two migrations the order of work put
+ahead of them. R-29 was implemented by a concurrent session in the same tree and is **not**
+duplicated here — see *Conflicts resolved*, row 2.
+
+### Did
+
+- **Step 1 — renumbered `0081` → `0098` (`0098_invoice_totals_match_engine.sql`).** It was written
+  after `0085`–`0097` and numbered before them, so filename order applied it in the wrong place.
+  Its ordering footer was rewritten for the new position, and every reference — six inside the
+  file, seven across `docs/`, `src/` and two sibling migrations — moved with it. Neither number is
+  ever reused.
+- **Step 2 — `0099_create_booking_discount_audit_class.sql`. `create_booking` could not write a
+  discounted booking at all, for TWO independent reasons.** Both reproduced before either was
+  fixed, both fixed in this one file. See *Verified*.
+- **Step 3 — `0100_reservations_written_by_transition.sql` (R-26).** `inventory_reservations` is
+  written by a trigger on `booking_stage_transitions`, not by the browser. Serialised holds from
+  `booking_line_units`, a quantity hold for each line's uncovered remainder, released on
+  Returned · Closed · a reversal to Quote · cancellation. `security invoker`, `search_path` pinned,
+  half-open bounds matching `RENTAL_WINDOW_BOUNDS`. Backfill per booking in its own subtransaction.
+- **`confirmRental.ts` stops writing.** `reserveAssignedUnits` / `releaseReservations` and the
+  four-branch compensation are gone — they existed only because PostgREST cannot give a browser a
+  transaction, and the trigger makes the hold and the stage move one commit. What remains is
+  `planAssignment` (a read) and `findCollidingHolds` (a read that names the booking already holding
+  the unit, so a refusal reads *"#912 has it"* rather than `23P01`). The writers are **deleted**
+  from `lib/queries/availability.ts` rather than left exported and uncalled.
+- **Step 4 — `scripts/e2e-lifecycle.mjs` + `npm run check:lifecycle` (R-35).** Thirteen steps,
+  one booking's whole life, driven through a real Postgres as real roles under real RLS. Wired into
+  `.github/workflows/ci.yml` beside `check:pglite`, which was also not in CI until now. Known-red
+  is a first-class outcome: a red step that starts PASSING fails the run.
+- **Step 5 — `0103_preventive_maintenance.sql` (R-28)** plus `lib/serviceDue.ts`,
+  `lib/queries/serviceDue.ts`, `components/ui/ServiceDueBadge.tsx`,
+  `actions/inventory/updateServicePlan.ts`, `ServicePlanCard`, `DueForService`, and the packing
+  warning. Due by time **or** usage, whichever first; warns only; the interval on the model.
+- `docs/PERMISSIONS.md` §4.1 (two rows restated) and §4.3 (three new capability rows). `CLAUDE.md`
+  and `PERMISSIONS.md` §15 both carry the R-29 and R-35 session rules, kept identical per §15.5.
+  `PLAN.md` §4.53–§4.56.
+
+### Ruled
+
+`RULINGS-2026-09-08.md` R-26, R-28, R-29 (recorded, built elsewhere), R-35.
+
+- **R-26** — the database writes reservations. One addition to the ruling's text, flagged as one:
+  a reversal to **Quote** releases too. R-26's own second sentence requires it ("Quotes hold
+  nothing"), and without it a reversed booking **deadlocks** — re-confirming would collide with its
+  own reservation and could never succeed again.
+- **R-28** — three deviations from the ruling's schema table, each argued in `0103`'s header:
+  the meter already exists as `running_hours`; a delta needs a baseline and the ruling names no
+  place for one; `Preventive` is spelled `Preventive Service`. And `due_at` carries the TIME due
+  date only — the instant usage crossed its threshold is not recoverable without replaying every
+  booking per unit on every list read, which is why R-28's own tooltip for the usage case names no
+  date.
+- **R-35 — a NUMBER COLLISION, resolved and cross-referenced.** Babin issued the lifecycle ruling
+  as "R-27". `R-27` in this file was already taken the same day by a concurrent session's
+  staff-role ruling. Numbers are not reused, so the lifecycle ruling is filed as **R-35** with the
+  collision noted in both places. Neither supersedes the other.
+
+### Verified
+
+- **`create_booking` refused every discounted booking, twice over.** Both reproduced in PGlite over
+  the full chain before either was fixed:
+  1. `ERROR: invalid input value for enum audit_event_class: "data change"` — a literal that has
+     never been one of the six Foundation §10 classes, carried forward verbatim through `0063`,
+     `0065`, `0070` and `0071`. The identical payload WITHOUT a discount succeeded (booking 900);
+     with one it rolled back the booking, its lines and its units.
+  2. With that fixed, the same call still failed **for Coordinator and Warehouse and not for
+     Owner**: `INSERT … RETURNING` applies the table's SELECT policy to the row it hands back, and
+     `audit_events_select` admits Owner · Admin · Manager only. Isolated by running the same insert
+     with and without `RETURNING` — without it, accepted. Fixed by minting the key instead of
+     reading it back; **not** by widening the policy (B-1). Found by `check:lifecycle` L1 ten
+     minutes after the first fix, which is the argument for that script in one paragraph.
+- **The double booking, reproduced.** #900 (unit X, 10–12 Sep) and #901 (same unit, 11–13 Sep) both
+  reached Booked with `inventory_reservations` at **0 rows** — the GiST constraint was never
+  offered a row to reject. After `0100`: the second confirm is refused, the booking stays a Quote,
+  and the reservation count is unchanged.
+- **`0100`'s backfill named 19 double bookings that were already in the corpus.** 208 holds written
+  across 57 bookings; 19 skipped, every one refused by `0045` with a sentence of the form
+  *"product … would have 6 units held at once between 2026-08-02 and 2026-08-06, but stock on hand
+  is 4"*. Not a defect in the migration — a defect in the data, invisible until something asked.
+- **`npm run check:pglite` — 101/101 applied, 0 failed.** Re-run after every migration.
+- **`npm run check:lifecycle` — 9/13 green, 4 known-red, 0 failed.** L9 reports precisely which
+  two of four payments the database accepts and must not: an amount larger than the outstanding
+  balance, and a payment naming another client's booking.
+- **`0103`'s post-conditions execute R-28's own scenario and roll it back:** a model on 90 days /
+  40 rental days, a unit serviced today, five bookings of ten rental days each → `due_reason =
+  'usage'` at 50 although the calendar has 40 days to run; a completed `Repair` does not reset the
+  clock; a completed `Preventive Service` does, and the counter returns to 0. Also proved: the view
+  is money-free, is not writable by `authenticated`, and a model with no plan never badges.
+- **Both migrations' behavioural probes were proved to RUN**, not skip: the skip branches were
+  temporarily turned into exceptions and the chain stayed green, then reverted.
+- `vitest run` — **137 files / 2926 tests passed, 0 failed.** `eslint src --max-warnings 0` exit 0.
+- `tsc --noEmit` exits 2, and **every error is in `EditBundle.tsx` and `clientFacets.test.ts**,
+  both of which `git status` reports clean against HEAD — so the failure is AT HEAD (`0510a14`) and
+  is the concurrent session's in-flight work, not this tree's. **Zero errors in any file this
+  session touched**, established by filtering the run's own output rather than by assertion:
+  `grep -cE '<the 13 paths touched here>' → 0`.
+
+### Applied to production, by the concurrent session, hours after these files were written
+
+Every migration here was written under N-5 — *file only, never run* — and each header says so.
+Babin lifted N-5 in writing later the same day ("now apply everything") and the concurrent session
+applied `0079`–`0103`, twenty files, to `sxguwvgoserhdolewibb`. **The headers in `0098`, `0099`,
+`0100` and `0103` therefore now read as stale, and are: they were true when written.** Their entry
+carries the live measurements; the three that belong to this work are
+
+| | Before | After |
+|---|---|---|
+| a discounted booking | refused outright (22P02) | created, by a Coordinator |
+| double booking | nothing enforced it | **92 live holds backfilled**; an overlapping second booking is refused and stays at Quote |
+| views writable by `anon`/`authenticated` | 26 of 26 | 0 |
+
+Two things follow, and both are for whoever reads this next rather than for me:
+
+- **`0100`'s backfill has run on production.** It reported 92 holds on live against 208 here — a
+  different corpus, so a different count, and neither figure predicts the other. Whatever it
+  skipped on live is a real double booking in real data and is named in its `raise notice`, which
+  nobody has read back off the server.
+- **`0103`'s columns are live**, so `src/types/database.ts` can be regenerated and the `as never`
+  cast in `updateServicePlan.ts` can come off. It is one line and it is not urgent.
+
+### Blocked
+
+- **The live backup is rows only** — 6,539 rows across 15 tables, no schema, functions, policies
+  or grants. A real `pg_dump` and a restore drill are still owed and still need the database
+  password.
+- **Four of five staff still cannot sign in** (`auth.users` = 1), so every role claim above except
+  Owner's is still policy-text inference on production, however thoroughly PGlite exercised it.
+- `docs/AUDIT_2026-09-08.md` and `docs/reference/rental-systems-survey.md`, both cited by the
+  addendum, do not exist in this repo. Every finding above was re-derived rather than quoted.
+
+### Conflicts resolved this session (§15.4)
+
+| Conflict | Sources that disagreed | Decision | Why | Changed where | Revert |
+|---|---|---|---|---|---|
+| The addendum's lifecycle ruling is "R-27"; `R-27` was already taken the same day | Babin's addendum vs `RULINGS-2026-09-08.md` R-27 (staff roles), filed by a concurrent session | File it as **R-35**, cross-referenced in both directions | Numbers are not reused — the same rule that governs migration numbers. Renumbering the older one would break a commit message already in history | `RULINGS-2026-09-08.md` R-35, PLAN §4.54 | renumber R-35 back and move the staff ruling |
+| R-29 asks for `scripts/completion.mjs`; a concurrent session had already built and committed it | the addendum vs `bfe5355` / `6e6d4b5` | **Theirs stands.** I had written an independent version before finding it and restored theirs with `git checkout --` | Two counters means two numbers and the ruling exists to stop exactly that. Their R-32 corrections are reasoned and stand | `scripts/completion.mjs` (restored to HEAD) | none needed |
+| R-26 lists three release paths; a reversal to Quote is not one | R-26's table vs R-26's own second sentence ("Quotes hold nothing") | Release on a reversal to Quote as well, flagged as an addition | Without it the booking deadlocks: re-confirming collides with its own reservation forever | `0100` §1, header "Release" | drop `'Quote'` from the `in` list |
+| R-28 adds `product_units.meter_hours`; `running_hours numeric(10,2)` already exists | R-28's schema table vs `0004` | Use `running_hours`; add only `meter_hours_recorded_at` and `service_meter_baseline` | One unit with two meters that can disagree is the defect this repo keeps paying for | `0103` §2, header (a) | add the column and migrate the readings |
+| R-28's `due_at` is "the earlier of time and the date usage crossed" | R-28 vs what is computable at read time | `due_at` carries the TIME date; usage is served by counters | Recovering the usage crossing instant means replaying every booking's transitions per unit on every list read. R-28's own tooltip for usage names no date | `0103` §4, header | add a crossing-date column and a writer |
+| R-28's `Create job` row action | R-28 vs `createMaintenanceJob` being `implemented: false` | Render it through `Unavailable` with the reason | This repo's rule: unbuilt renders as Unavailable, never as a fake success. The button inside the wrapper is already the right button | `DueForService.tsx` | remove the wrapper when the action lands |
+| Gate 4 "stage needs its floor rows" read ✓ in my own draft counter | the probe's verdict vs `check:lifecycle` L6 | Count a walk that failed for an unrelated reason as ✗, not ✓ | A probe that cannot complete is not evidence the gate holds — that is the fabrication R-29 exists to stop | scratchpad only (the counter was restored to HEAD) | n/a |
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 20 / 42 (48%) | +0 |
+| Real data | DB-only · mixed · seed · none / 56 | 8 · 27 · 20 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 5 / 9 (56%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 9 / 13 (69%) | +0 |
+| Overall | mean of five | ≈ 61% | +0 |
+
+Counted by `npm run completion`, not typed. Migrations 101 files · `check:pglite` **101/101, 0
+failed** (run four times this session, after every migration and after the header stamps).
+
+⚠ **Every Δ here is +0 against the entry above, and that is an artefact of two sessions counting
+the same tree minutes apart, not a session that changed nothing.** The counter measures the TREE,
+and the entry above already counted `updateServicePlan` and `inventory.edit_service_plan` — both
+written here. Read the deltas across the pair of entries, not against either alone. The dimension
+this session actually moved is the one the counter cannot see yet: **DB enforcement went from
+guarding an empty table to guarding a full one.** `0100` armed the double-booking constraint that
+had never been offered a row, and the counter still reads 5/9 because "no double booking" is scored
+off `check:lifecycle`, where L3 was already green in the run before it — a lifecycle step proves
+the rule fires, not that anything obeys it. The gate list needs a step that fills the table
+without the app; that is a change to the counter and belongs to whoever owns it.
+
+### Remaining
+
+#### Features to build (8)
+
+1. The stage-gate trigger — Postgres refuses On Rent without the floor rows the stage claims — Operations — **P1** — depends on nothing; `check:lifecycle` L6 is its test and is already written
+2. The close gate in Postgres — an un-invoiced booking cannot reach Closed — Finance — **P1** — depends on PLAN §4.51 (open: *may* an un-invoiced rental be closed, and by whom)
+3. `issue_invoice` — nothing sets Sent or Paid, so a fully paid invoice is a Draft forever — Finance — **P1** — SPEC-P0-1 §3.3
+4. Return opens a Missing case when a unit does not come back — Operations — **P1** — `check:lifecycle` L7
+5. R-28 Tier-1 notification: one in-app notification to the **Technician role** when a unit first becomes due, and one more when it crosses grace. Never per day — Inventory — **P2** — depends on nothing
+6. R-28 Reports ▸ Maintenance: `Units due for service` and `Overdue for service`, both off `product_units_service_v` — Reports — **P2**
+7. R-28 `Create job` pre-filling a `Preventive Service` job — Inventory — **P2** — depends on `createMaintenanceJob`, which is `implemented: false`; the button exists behind `Unavailable` today
+8. R-28 `inventory.record_meter` — the write path for `running_hours` / `meter_hours_recorded_at` at intake and at Return — Inventory — **P2** — until it exists the meter interval can never fire
+
+#### Bugs to fix (6) — P0 2 · P1 3 · P2 1
+
+1. A payment **larger than the outstanding balance** is accepted — `payments` (no guard at all) — **P0** — a CHECK or a trigger against `invoices.outstanding_amount`; `check:lifecycle` L9 already reports it
+2. A payment naming **another client's booking** is accepted — `payments` — **P0** — the same trigger; nothing scopes a payment to its own client today
+3. `0100`'s backfill skipped an unknown number of LIVE bookings — production — **P1** — the `raise notice` naming them scrolled past during the apply and nobody read it back. Re-derivable: `Booked·Packed·On Rent` bookings whose stock-bearing lines carry no live hold
+4. A fully paid invoice stays `Draft` — `invoices.status` — **P1** — the read-side half of feature 3
+5. `inspection.pass` · `inspection.fail` · `inspection.create` are declared by an action and answered by no `case` in `core.ts`, so they are denied for **every role including Owner** — `src/actions/core.ts` — **P1** — the same shape that made `rental.confirm` unreachable for three days
+6. `updateServicePlan.ts` casts its payload `as never` because `src/types/database.ts` predates `0103`. The columns are live now — **P2** — `npm run db:types`, then delete the cast and its comment
+
+#### Rulings open (4 ⭐)
+
+1. Preventive grace window — default in force: **7 days** — where: R-28, `products.service_grace_days`
+2. Is a meter reading required at Return? — default in force: **optional, required only when the model sets a meter interval** — where: R-28
+3. Who receives the service-due notification? — default in force: **the Technician role, not a named person** — where: R-28
+4. May a rental that was never invoiced be closed, and by whom? — default in force: **no, and no override** (the app refuses; the database does not) — where: PLAN.md §4.51
+
+#### Next session starts with
+
+**Read `0100`'s backfill result back off production** — which live bookings it could not place a
+hold for. Every one of them is a real double booking sitting in real data, they have never been
+seen by anyone, and the query is one statement. It comes first because it is the only item here
+where the information already exists and is decaying: the notice is gone, and the longer the
+corpus moves the harder it is to tell an original overlap from one made since.
+
 ## 2026-09-08 — A bundle can be modified: the edit screen, the write, and the one act the grants forbid
 
 `createBundle` could mint a bundle and nothing could ever change it again — no route, no
@@ -322,90 +590,6 @@ is one of the 20; `inventory.update` is one of the 35.
   Warehouses' capacity and manager. Both still open, both still read-frozen.
 - Bundle **components cannot be reordered by drag** — `sort_order` is writable and the action
   accepts it, but the screen offers no control. Deliberate: it is a UI affordance, not a gap.
-
-## 2026-09-08 — V-14 closed in the tree: a staff role can be assigned at all, for the first time
-
-**Phase:** Phase 0 · **Status:** 1 P1 fixed (migration + RPCs + UI + 10 tests) · 1 doc row corrected · N-5, not applied
-
-### Did
-
-- **Verified the in-tree work another session had left unproven** before starting anything new:
-  `check:pglite` **97/97**, `tsc --noEmit` 0, `eslint --max-warnings 0` 0, `vitest` **133 files /
-  2834 tests**, all green — each run twice, once as found and once after that session's edits
-  landed mid-run. Three BEFORE/AFTER proofs executed rather than read: R-25's mapping (exactly 6
-  tests fail when reverted), `0097`'s triggers (a 1999 device timestamp survives without them,
-  is overwritten with them, `version` 1 → 2), and `0098`'s MONEY-03 drift (Rs 0.98 on the total,
-  Rs 0.48 on the VAT line, reproduced on the chain built without it).
-- **`supabase/migrations/0101_staff_roles_are_assignable.sql`** — `set_staff_role(uuid,
-  system_role)` and `set_staff_active(uuid, boolean)`. SECURITY DEFINER, `search_path` pinned,
-  revoked from `public`/`anon`, EXECUTE to `authenticated`. Each writes exactly one column, stamps
-  `updated_by`, and writes an `audit_events` row (`Permission Changed` / category `Users`,
-  Critical when Owner is on either side of the change). **No RLS write policy is added** and no
-  INSERT path exists.
-- **`src/lib/queries/staff.ts`** — `setStaffRole` / `setStaffActive`, following
-  `revokeStaffPinFor`'s shape and its stated reason for not being an `actions/` entry.
-- **`src/modules/settings/sections/StaffDirectory.tsx`** — a role `select` per row, a
-  Deactivate/Reactivate button, and a confirm dialog that names what changes, warns when the
-  target role is money-blind, and states that deactivation does **not** revoke the sign-in.
-- **`src/modules/settings/__tests__/staffDirectory.test.tsx`** — 10 tests added (16 → 26).
-- **`docs/PERMISSIONS.md`** §12.2 D-8, §16 V-14 and §16.3 corrected in the same change (B-3);
-  `UsersRoles.tsx`'s "needs a ruling rather than a form" paragraph rewritten, since the ruling now
-  exists.
-
-### Ruled
-
-- **R-27 — the Owner, and only the Owner, assigns a staff role.** Four sources said Owner
-  (`canManageSettings`, `staff_directory_v`'s inline predicate, §11.2, §12.2 D-8's own Owner
-  clause) and one said Admin (D-8's *"As Admin … grant Manager → succeeds"*). **Stricter wins
-  (B-1)**: D-8 was corrected, not the code widened. An Admin gets zero rows from the directory to
-  act on, and §16 V-3/V-4 already caught the same document over-crediting Admin twice.
-  Revert: widen the `auth_user_role() <> 'Owner'` line in `0101`.
-- **RPCs, not an `UPDATE` policy on `users`.** `authenticated` already holds `UPDATE` on
-  `users.primary_role` at the grant level, so a policy would have made `email`, `branch_id` and
-  `employee_code` writable by the same `PATCH`; and *"at least one active Owner must remain"* is a
-  statement about a set, which a `with check` cannot see. Least code, narrowest surface,
-  reversible (§15.3).
-- **Account creation stays unbuilt, and it is not a ruling gap.** Minting an `auth.users` identity
-  needs the admin API and therefore the service key — a complete authorization bypass in a
-  browser. It needs an Edge Function. `0101` opens no INSERT path so nothing can half-create a
-  person.
-
-### Verified
-
-- **`npm run check:pglite` — 99/99 applied, 0 failed** with `0101` in the chain (and 97/97 before
-  it, twice, checksum-guarded against the other session's concurrent edits).
-- **BEFORE/AFTER on the full chain, executed.** Without `0101`: the RPC does not exist and
-  `pg_policy` on `users` shows `users_select_own/r` alone — **no role is assignable by anyone,
-  Owner included.** With it: **12/12** — Warehouse refused · Owner grants Manager (§12.2 D-8) ·
-  the row changes · `updated_by` is the actor · a `Permission Changed` audit row lands
-  (Coordinator → Manager, severity High) · portal role refused · unknown identity refused ·
-  re-sending the same role is a silent no-op · deactivation applies · the last active Owner
-  refused for demotion · refused for deactivation · a session with no identity refused.
-- **`staffDirectory.test.tsx` 26/26.** Against the HEAD component (restored with `git show HEAD:`
-  and put back, md5 confirmed): **10 failed / 16 passed** — the new controls did not exist.
-- `eslint src --max-warnings 0` exit 0. `tsc --noEmit` reports **no error in any file this change
-  touches**; the three errors it does report are in `src/lib/queries/__tests__/availability.test.ts`,
-  modified by a concurrent session at 17:51 against an `availability.ts` that does not yet export
-  what it imports — their in-flight state, not this change and not HEAD.
-
-### Blocked
-
-- **N-5.** `0101` is written, numbered and proven locally; it is **not applied**. Live stops at
-  `0078` plus `0089` (ledger read 8 Sep: top row `20260907103035`), so `0101` is the sixteenth
-  unapplied migration and V-14 stays a live defect on production until Babin runs the backup step.
-- **`check:rebuild` NOT RUN** — `com.docker.service` is `Stopped` and an unelevated shell cannot
-  start it. So the chain *builds* under PGlite, but **RLS behaviour proven there is not proven for
-  production**, and nothing here is a drift test against live rows.
-- **Four of five staff still cannot sign in** (live `auth.users` = 1). The role a `0101` grant
-  writes is real, but there is still no non-Owner seat to exercise it as. §16 V-15.
-
-### Conflicts resolved this session (§15.4)
-
-| Conflict | Sources that disagreed | Decision | Why | Changed where | Revert |
-|---|---|---|---|---|---|
-| Who may assign a staff role | §12.2 D-8 ("As Admin … grant Manager → succeeds") vs `rbac.canManageSettings` (Owner) vs `staff_directory_v`'s inline `auth_user_role() = 'Owner'` vs §11.2 | **Owner only** | B-1, stricter wins. An Admin gets zero rows from the directory to act on, so D-8 describes an act its own document makes impossible; §16 V-3/V-4 already caught the same over-crediting of Admin | `0101` gate line, `queries/staff.ts`, `StaffDirectory.tsx`, §12.2 D-8, §16 V-14/§16.3 | widen the `auth_user_role() <> 'Owner'` line in `0101` |
-| How the write path is opened | REMEDIATION_AUDIT V-14 ("no INSERT/UPDATE path") implies a policy vs 0066/0068's RPC precedent on the same table | **Two SECURITY DEFINER RPCs, no policy** | The grants underneath are already wide, so a policy would expose every column; and the last-Owner invariant is about a set, which `with check` cannot see | `0101` | drop `0101`; the table returns to SELECT-only |
-| Whether `Client` is assignable to a staff row | `system_role` enum contains it vs `auth_user_role()` returning it for *no* staff row | **Refused, in the DB and absent from the UI** | A staff row whose role is Client is a contradiction the rest of the schema reads as "not staff"; deactivation is the offboarding | `0101`, `ASSIGNABLE_ROLES` in `StaffDirectory.tsx` | delete the `p_role = 'Client'` branch and add it to the array |
 
 ## 2026-09-08 — Stage 0: the token is out of the tree, line endings have an authority, booking money is guarded, and completion is counted
 
@@ -532,6 +716,140 @@ project**", and nothing has been applied to live.
 stage claims (lifecycle L6), which is the first of the four remaining gates and the one the
 other three depend on.
 
+## 2026-09-08 — V-14 closed in the tree: a staff role can be assigned at all, for the first time
+
+**Phase:** Phase 0 · **Status:** 1 P1 fixed (migration + RPCs + UI + 10 tests) · 1 doc row corrected · N-5, not applied
+
+### Did
+
+- **Verified the in-tree work another session had left unproven** before starting anything new:
+  `check:pglite` **97/97**, `tsc --noEmit` 0, `eslint --max-warnings 0` 0, `vitest` **133 files /
+  2834 tests**, all green — each run twice, once as found and once after that session's edits
+  landed mid-run. Three BEFORE/AFTER proofs executed rather than read: R-25's mapping (exactly 6
+  tests fail when reverted), `0097`'s triggers (a 1999 device timestamp survives without them,
+  is overwritten with them, `version` 1 → 2), and `0098`'s MONEY-03 drift (Rs 0.98 on the total,
+  Rs 0.48 on the VAT line, reproduced on the chain built without it).
+- **`supabase/migrations/0101_staff_roles_are_assignable.sql`** — `set_staff_role(uuid,
+  system_role)` and `set_staff_active(uuid, boolean)`. SECURITY DEFINER, `search_path` pinned,
+  revoked from `public`/`anon`, EXECUTE to `authenticated`. Each writes exactly one column, stamps
+  `updated_by`, and writes an `audit_events` row (`Permission Changed` / category `Users`,
+  Critical when Owner is on either side of the change). **No RLS write policy is added** and no
+  INSERT path exists.
+- **`src/lib/queries/staff.ts`** — `setStaffRole` / `setStaffActive`, following
+  `revokeStaffPinFor`'s shape and its stated reason for not being an `actions/` entry.
+- **`src/modules/settings/sections/StaffDirectory.tsx`** — a role `select` per row, a
+  Deactivate/Reactivate button, and a confirm dialog that names what changes, warns when the
+  target role is money-blind, and states that deactivation does **not** revoke the sign-in.
+- **`src/modules/settings/__tests__/staffDirectory.test.tsx`** — 10 tests added (16 → 26).
+- **`docs/PERMISSIONS.md`** §12.2 D-8, §16 V-14 and §16.3 corrected in the same change (B-3);
+  `UsersRoles.tsx`'s "needs a ruling rather than a form" paragraph rewritten, since the ruling now
+  exists.
+
+### Ruled
+
+- **R-27 — the Owner, and only the Owner, assigns a staff role.** Four sources said Owner
+  (`canManageSettings`, `staff_directory_v`'s inline predicate, §11.2, §12.2 D-8's own Owner
+  clause) and one said Admin (D-8's *"As Admin … grant Manager → succeeds"*). **Stricter wins
+  (B-1)**: D-8 was corrected, not the code widened. An Admin gets zero rows from the directory to
+  act on, and §16 V-3/V-4 already caught the same document over-crediting Admin twice.
+  Revert: widen the `auth_user_role() <> 'Owner'` line in `0101`.
+- **RPCs, not an `UPDATE` policy on `users`.** `authenticated` already holds `UPDATE` on
+  `users.primary_role` at the grant level, so a policy would have made `email`, `branch_id` and
+  `employee_code` writable by the same `PATCH`; and *"at least one active Owner must remain"* is a
+  statement about a set, which a `with check` cannot see. Least code, narrowest surface,
+  reversible (§15.3).
+- **Account creation stays unbuilt, and it is not a ruling gap.** Minting an `auth.users` identity
+  needs the admin API and therefore the service key — a complete authorization bypass in a
+  browser. It needs an Edge Function. `0101` opens no INSERT path so nothing can half-create a
+  person.
+
+### Verified
+
+- **`npm run check:pglite` — 99/99 applied, 0 failed** with `0101` in the chain (and 97/97 before
+  it, twice, checksum-guarded against the other session's concurrent edits).
+- **BEFORE/AFTER on the full chain, executed.** Without `0101`: the RPC does not exist and
+  `pg_policy` on `users` shows `users_select_own/r` alone — **no role is assignable by anyone,
+  Owner included.** With it: **12/12** — Warehouse refused · Owner grants Manager (§12.2 D-8) ·
+  the row changes · `updated_by` is the actor · a `Permission Changed` audit row lands
+  (Coordinator → Manager, severity High) · portal role refused · unknown identity refused ·
+  re-sending the same role is a silent no-op · deactivation applies · the last active Owner
+  refused for demotion · refused for deactivation · a session with no identity refused.
+- **`staffDirectory.test.tsx` 26/26.** Against the HEAD component (restored with `git show HEAD:`
+  and put back, md5 confirmed): **10 failed / 16 passed** — the new controls did not exist.
+- `eslint src --max-warnings 0` exit 0. `tsc --noEmit` reports **no error in any file this change
+  touches**; the three errors it does report are in `src/lib/queries/__tests__/availability.test.ts`,
+  modified by a concurrent session at 17:51 against an `availability.ts` that does not yet export
+  what it imports — their in-flight state, not this change and not HEAD.
+
+### Blocked
+
+- **N-5.** `0101` is written, numbered and proven locally; it is **not applied**. Live stops at
+  `0078` plus `0089` (ledger read 8 Sep: top row `20260907103035`), so `0101` is the sixteenth
+  unapplied migration and V-14 stays a live defect on production until Babin runs the backup step.
+- **`check:rebuild` NOT RUN** — `com.docker.service` is `Stopped` and an unelevated shell cannot
+  start it. So the chain *builds* under PGlite, but **RLS behaviour proven there is not proven for
+  production**, and nothing here is a drift test against live rows.
+- **Four of five staff still cannot sign in** (live `auth.users` = 1). The role a `0101` grant
+  writes is real, but there is still no non-Owner seat to exercise it as. §16 V-15.
+
+### Conflicts resolved this session (§15.4)
+
+| Conflict | Sources that disagreed | Decision | Why | Changed where | Revert |
+|---|---|---|---|---|---|
+| Who may assign a staff role | §12.2 D-8 ("As Admin … grant Manager → succeeds") vs `rbac.canManageSettings` (Owner) vs `staff_directory_v`'s inline `auth_user_role() = 'Owner'` vs §11.2 | **Owner only** | B-1, stricter wins. An Admin gets zero rows from the directory to act on, so D-8 describes an act its own document makes impossible; §16 V-3/V-4 already caught the same over-crediting of Admin | `0101` gate line, `queries/staff.ts`, `StaffDirectory.tsx`, §12.2 D-8, §16 V-14/§16.3 | widen the `auth_user_role() <> 'Owner'` line in `0101` |
+| How the write path is opened | REMEDIATION_AUDIT V-14 ("no INSERT/UPDATE path") implies a policy vs 0066/0068's RPC precedent on the same table | **Two SECURITY DEFINER RPCs, no policy** | The grants underneath are already wide, so a policy would expose every column; and the last-Owner invariant is about a set, which `with check` cannot see | `0101` | drop `0101`; the table returns to SELECT-only |
+| Whether `Client` is assignable to a staff row | `system_role` enum contains it vs `auth_user_role()` returning it for *no* staff row | **Refused, in the DB and absent from the UI** | A staff row whose role is Client is a contradiction the rest of the schema reads as "not staff"; deactivation is the offboarding | `0101`, `ASSIGNABLE_ROLES` in `StaffDirectory.tsx` | delete the `p_role = 'Client'` branch and add it to the array |
+
+## 2026-09-08 — PERMISSIONS.md read in full; the one capability defect in it that could be fixed in code
+
+**Phase:** Phase 0 · **Status:** 1 defect fixed + 8 tests · 1 severity claim corrected · 2 live defects confirmed as Babin's (N-5)
+
+### Did
+
+- **Read `docs/PERMISSIONS.md` end to end** (709 lines, the canonical copy — the workspace-root
+  copy is 89 lines behind and lacks the §16 amendments).
+- **`src/actions/core.ts`** — `case.resolve` now returns `canApproveDamage(role, 'Manager')`
+  (Owner · Manager) instead of `canWriteSharedTriage` = `isStaff()`. `canApproveDamage` already
+  encoded the rule and had **no caller**; this is its first.
+- **`src/actions/__tests__/core.test.ts`** — 8 tests added (62 → 70) locking the role set: the three
+  money-blind roles denied, Manager admitted, Admin/Coordinator/Accounts denied per the corrected
+  ladder, plus one documenting the `crew.assign` gap so narrowing it later is deliberate.
+- **`docs/PERMISSIONS.md`** — §4.3's row, §16 V-2 and §16.3's order of work all updated in the same
+  change (B-3).
+
+### Ruled
+
+- **R-25** — `case.resolve` sets a disposition **and a cost**, so it is a money write and may not
+  resolve to `isStaff()` (P4, N-1). `'Manager'` is passed as the band because `checkCapability`
+  only receives the role; the Rs 25,000 threshold stays in `lib/damage`'s `approverFor()` and in
+  `auth_can_approve_damage(charge)`, so the gate is the widest legal set and **UI ⊆ DB (P3) holds
+  either way — it can only be narrower than the policy, never wider**.
+  Revert: `core.ts:279` → `canWriteSharedTriage`, and drop the four test blocks.
+- **`crew.assign` filed, not fixed.** It shared the old line and is also too wide (§4.7 says `C+`;
+  the §3 grid marks Crew Assist ✕ for Warehouse/Technician/Driver). There is no `C+` set in
+  `rbac.ts` and every set there mirrors a live RLS policy by convention — inventing one without
+  reading `crew_assignments`' policy would break the thing that keeps that file honest.
+
+### Verified
+
+- **⛔ §16 V-2's severity is wrong, and I corrected it.** It reads *"every staff role can set a
+  damage disposition and cost **today**"*, and §16.3 ranks it first for being live. It is **latent**:
+  `resolveCase.ts:19` is `implemented: false`, `core.ts:281` throws `ActionNotImplementedError`
+  **before** the permission loop at `:294`, and the only caller is archived and unrouted. Nothing
+  could reach the write. Fixed anyway — one line. **V-5 and V-14 are the live ones.**
+- **The test suite could never have caught this.** `TRIAGE` was asserted **for Owner only**, and
+  Owner passes under both rules. Proved the new tests are load-bearing by reverting `core.ts` to the
+  old mapping: **6 of the 8 fail.** Restored, 70/70 green.
+- **Gates (B-4):** `core.test.ts` 70/70 · `rbac.test.ts` 49/49 · full-suite and build results in the
+  session report.
+
+### Blocked — Babin's, not Claude's
+
+- **V-5** — 0092 (Law 6's money-column write trigger) and the `_v` view masking are **not on
+  production**; all 26 views are INSERT-able by `anon`. Needs migrations applied → **N-5**.
+- **V-14** — `public.users` has exactly one policy (`users_select_own`, SELECT), so **no role can be
+  assigned by anyone, Owner included**. Needs a migration → **N-5**.
+
 ## 2026-09-08 — PERMISSIONS.md is wired in, and its own supersession sweep is scoped down
 
 **Phase:** governance · **Status:** applied; no code changed
@@ -572,6 +890,127 @@ PLAN.md's law table is intact after the insert. No code changed; no gates run.
 ### Blocked / next
 Unchanged from yesterday: §16.3's three live defects (V-2 money-blind roles can price damage,
 V-5 Law 6's write trigger and view masking absent from production, V-14 no role-assignment path).
+
+## 2026-09-07 (cont. 6) — On-device DB Phase 0: sync cursors armed, and a real Postgres without Docker
+
+**Phase:** Phase 0 (on-device DB) · **Status:** items 1-3 done and proven locally · item 4 blocked
+
+### Did
+
+- **`supabase/migrations/0097_sync_cursors_are_server_written.sql`** — §4.43(d).1+2. Adds
+  `updated_at` to the four updatable tables that lacked it (`booking_lines`, `booking_line_units`,
+  `session_line_movements`, `booking_discounts`), backfilled from `created_at` not `now()` so old
+  rows do not arrive looking freshly touched; `set_updated_at()` BEFORE UPDATE on **14** tables;
+  `bump_row_version()` arming `bookings.version`. Probe inside a `ROLLBACK_0097_PROBE` sentinel —
+  the pattern 0094/0095 use and 0092 omitted, which is why 0092's probe committed a real write.
+- **`src/lib/deterministicId.ts` + 13 tests** — §4.43(d).3. `operationSessionId()` derives the
+  session id from `(booking_id, operation, session_no)` via SHA-256 → RFC 9562 v8. Refuses to fall
+  back to a random id when Web Crypto is absent, rather than silently restoring the defect.
+- **`floorVerb.ts`** — `session_no` hoisted above the id; `generateClientUuid()` replaced at the
+  session-id site only. `client_uuid` stays random: that is Law 8's key for *this press*, and two
+  devices pressing twice are two actions. Only row identity is shared.
+- **A local Postgres, with no Docker — now a repo gate: `npm run check:pglite`.**
+  `scripts/check-pglite.mjs` + `supabase/pglite-prelude.sql` + `@electric-sql/pglite` (devDep) apply
+  the whole chain in-process. The prelude supplies what Supabase provisions: the API roles,
+  `extensions`, `auth.users` (incl. `last_sign_in_at`), `storage`, `supabase_migrations`. This is the
+  first thing in this repo that can execute a migration since Docker went down, and it immediately
+  earned itself — it caught R-24, which every reading of the file had missed.
+  **It does not replace `check:rebuild`:** not a Supabase environment (so RLS proven there is not
+  proven for production) and an empty database (so it cannot reproduce live-row drift — 0088 and
+  0089 fail on live and pass here). Header says so.
+
+### Ruled
+
+- **R-22** — session key is `(booking_id, operation, session_no)`, **not** §4.43(d).3's
+  `operational_day`. Three checked reasons: the day key is wider than
+  `operation_sessions_one_packing_per_booking` (`0003:152`, one Packing session per booking ever)
+  so it re-creates the orphan it was meant to prevent; it merges the morning and evening
+  collections, which `session_no` exists to separate; and `operational_day` reads
+  `operationalDayStart`, a **localStorage-only per-browser** setting, so it is not
+  fleet-deterministic. Revert: restore `generateClientUuid()` at the id site.
+- **R-24** — `booking_stage_transitions` is excluded from the `updated_at` set; its cursor is
+  `created_at`. Found by *running* the chain: `Law 3 (append-only): UPDATE on
+  booking_stage_transitions is rejected for every role` (`0044:200`). The backfill is an UPDATE, so
+  it could never run, and a BEFORE UPDATE trigger on a table that rejects UPDATE is dead code.
+  Also corrects §4.43(d).1's table list, wrong in both directions. Revert: re-add it to the two
+  arrays; it will fail again in the same place.
+
+### Verified
+
+- **Migration chain from scratch: 96/96 files applied, 0 failures** (PGlite, Postgres 18).
+- **Behavioural proof of 0097 on real seeded rows, 6/6:** a device-supplied `1999-01-01`
+  `updated_at` was **overwritten** with the transaction instant (`2026-09-07T14:45:14Z`);
+  `updated_at` did not move backwards; **`bookings.version` went 1 → 2**;
+  `booking_stage_transitions` carries no `updated_at`; `set_updated_at` is on exactly 14 tables;
+  the four new columns are all NOT NULL.
+- **Gates (B-4): `vitest run` 133 files / 2826 tests, exit 0 · `tsc --noEmit` exit 0 ·
+  `npm run build` exit 0.** `eslint` exit 0 on the new files.
+- ⚠ First tsc run reported two `noUncheckedIndexedAccess` errors in `deterministicId.ts`; fixed
+  with a checked `byteAt()` rather than a `!` assertion, then re-run clean.
+
+### Blocked / next
+
+- **0097 is NOT applied to live**, per N-5. Written, numbered, tested locally; Babin applies after
+  the backup step.
+- **Phase 0 item 4 (evidence blobs)** is blocked upstream: `storage.buckets` is **empty on live**,
+  so a blob outbox has nowhere to upload. That is a prerequisite of the prerequisite.
+- **Phase 3 note from R-22:** the oplog replay must treat a PK collision on `operation_sessions` as
+  *already landed*, not as a failure — the deterministic id makes the second device collide on the
+  primary key rather than on `client_uuid`, so `idempotentInsert` throws instead of resolving.
+
+## Items 1 + 2 — `supabase/migrations/0097_sync_cursors_are_server_written.sql` — ⚠ WRITTEN, NOT PROVEN
+
+Adds `updated_at` to the five tables lacking it, a `set_updated_at()` BEFORE UPDATE trigger across the
+14-table floor sync set plus `booking_discounts`, and `bump_row_version()` to arm `bookings.version`.
+Backfills from `created_at`, not `now()`, so old rows do not arrive looking freshly touched and drag
+every cursor forward. Probe wrapped in `ROLLBACK_0097_PROBE` — the sentinel 0094/0095 use and 0092
+omitted, which is why 0092's probe committed a real write to a production product row.
+
+⛔ **VERIFICATION: NOT RUN.** Docker is stopped and there is no local Postgres (`psql`/`pg_ctl` absent,
+no `C:\Program Files\PostgreSQL`), so `db:apply` and `check:rebuild` cannot run. This file has never
+been executed by anything. Do not treat it as working. It is also NOT applied to live, per CLAUDE.md.
+
+⚠ **PLAN.md §4.43(d).1's table list is wrong in both directions.** It names `booking_discounts` (not in
+the floor sync set — it is money) and omits `session_line_movements` (which is). Re-measured over the
+CREATE TABLE blocks: exactly five tables lack the column. 0097 covers all five.
+
+### Item 3 — redesigned, half-built: `src/lib/deterministicId.ts` — ✅ VERIFIED at unit level
+
+§4.43(d).3 prescribes deriving `operation_sessions.id` from `(booking_id, operation, operational_day)`.
+**Checked against the schema, and it is wrong three times over:**
+
+1. `operation_sessions_one_packing_per_booking` (`0003:152`) is `unique (booking_id) where operation =
+   'Packing'` — one Packing session per booking *ever*. A day-keyed id mints a different uuid for a
+   second-day pack the index forbids anyway, so the losing device's children again reference a session
+   that cannot exist. It reintroduces the exact bug it was written to remove.
+2. `session_no` distinguishes the morning collection (1) from the evening one (2) — same operational
+   day. A day-keyed id merges two legitimately distinct Handover/Return sessions.
+3. `operational_day` is computed from `operationalDayStart`, which `settingsStore.ts` persists to
+   **localStorage, per browser** (`system_settings` is empty and has no writer). Two tablets configured
+   differently place one instant on different days and mint different ids — the non-determinism the
+   change exists to end.
+
+Built instead on `(booking_id, operation, session_no)`, which already carries
+`operation_sessions_session_no_unique` (`0003:85`), needs no new column and reads no setting.
+SHA-256 → RFC 9562 version 8 (honest label: v5 is SHA-1). Refuses to fall back to a random id when
+Web Crypto is absent — a silent fallback would reintroduce the defect on the devices least able to
+report it. Residual weakness stated in the header: a device with a stale view computes a colliding
+`session_no`, which trips an existing unique constraint instead of silently detaching a shift.
+
+**Gates:** `vitest src/lib/__tests__/deterministicId.test.ts` **13/13 pass** · `tsc --noEmit` **exit 0,
+whole project** · `eslint` **exit 0**. (First tsc run reported two `noUncheckedIndexedAccess` errors in
+this file; fixed with a checked `byteAt()` rather than a `!` assertion, then re-run clean.)
+
+### NOT DONE, and why
+
+- **Wiring it into `floorVerb.ts:1033`** (`const sessionId = resumed?.id ?? generateClientUuid()` →
+  `await operationSessionId(booking.id, operation, nextSessionNo)`, hoisting the `session_no`
+  computation above the id). `floorVerb.ts` and `floorVerbs.test.ts` are **modified in the working tree
+  by another session right now** — editing them would tangle with in-flight work. One-line change,
+  left for when the file is free.
+- **Phase 0 item 4 (evidence blobs).** Unchanged, and note `storage.buckets` is **empty on live** — zero
+  buckets — so there is nowhere for a blob outbox to upload to yet. That is a prerequisite of the
+  prerequisite.
 
 ## 2026-09-07 (cont.) — Return and Reset: the last two stages, and a booking that could not receive its own item
 
