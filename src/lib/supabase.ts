@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { mockSupabase } from './mock/client'
+import { mockStorage } from './mock/storage'
 
 /**
  * Supabase client.
@@ -63,8 +64,16 @@ function createLiveClient() {
   })
 }
 
+/*
+ * `storage` is composed in HERE rather than inside `mock/client.ts`, and the
+ * separation is deliberate. `client.ts` is the PostgREST mimic — tables, rows,
+ * an overlay in localStorage, all of it synchronous by design. Files are a
+ * different service with a different lifetime and an async API, so they live in
+ * `mock/storage.ts` behind IndexedDB and are joined to the client at the one
+ * place that already decides mock-versus-live.
+ */
 export const supabase: ReturnType<typeof createLiveClient> = IS_MOCK
-  ? (mockSupabase as unknown as ReturnType<typeof createLiveClient>)
+  ? ({ ...mockSupabase, storage: mockStorage } as unknown as ReturnType<typeof createLiveClient>)
   : createLiveClient()
 
 /**
