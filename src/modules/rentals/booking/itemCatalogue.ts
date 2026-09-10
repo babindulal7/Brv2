@@ -51,13 +51,10 @@
  * only place a booking total is computed.
  */
 
-import { BOX_CATEGORIES, INVENTORY_MODELS } from '../../../data/addBundle'
-import type { InventoryModel } from '../../../data/addBundle'
-import { ACTIVE_BUNDLES, ALL_CATEGORIES, factsOf, isPriced } from '../../../data/bundles'
-import type { BundleFacts, BundleLine, BundleRecord } from '../../../data/bundles'
-import { bundlesUsing } from '../../../data/addEquipment'
-import { CATEGORY_OPTIONS, PARENTS } from '../../../data/inventory'
-import type { InvStatus, ParentRow } from '../../../data/inventory'
+import { BOX_CATEGORIES, INVENTORY_MODELS, type InventoryModel } from '../../../lib/queries/addBundle'
+import { ACTIVE_BUNDLES, ALL_CATEGORIES, factsOf, isPriced, type BundleFacts, type BundleLine, type BundleRecord } from '../../../lib/queries/bundles'
+import { bundlesUsing } from '../../../lib/queries/addEquipment'
+import { CATEGORY_OPTIONS, PARENTS, type InvStatus, type ParentRow } from '../../../lib/queries/inventory'
 import type { Paisa } from '../../../lib/money'
 /* Type-only, so this module keeps importing nothing that touches IO. */
 import type { ProductWindowAvailability } from '../../../lib/queries/productAvailability'

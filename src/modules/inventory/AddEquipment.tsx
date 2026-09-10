@@ -22,7 +22,7 @@ import { useToast } from '../../components/ui/Toast'
 import { newClientUuid } from '../../lib/supabase'
 import { parseMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
-import { SEED_ERRORS, PREVIEW_UNAVAILABLE_REASON } from '../../data/addEquipment'
+import { SEED_ERRORS, PREVIEW_UNAVAILABLE_REASON } from '../../lib/queries/addEquipment'
 import type { CreateEquipmentInput } from '../../actions/inventory/createEquipment'
 
 

@@ -4,10 +4,9 @@ import type { IconName } from '../../../components/ui/Icon';
 import { cardStyle } from '../../../components/ui/Page';
 import { Badge } from '../../../components/ui/Badge';
 import type { StatusKey } from '../../../lib/status';
-import { CONDITION_TONE } from '../../../data/inventory';
+import { CONDITION_TONE } from '../../../lib/queries/inventory';
 import { toBs, formatBs, formatAd } from '../../../lib/bs';
-import { NEXT_ASSET_CODE } from '../../../data/addEquipment';
-import type { IntakeCondition } from '../../../data/addEquipment';
+import { NEXT_ASSET_CODE, type IntakeCondition } from '../../../lib/queries/addEquipment';
 
 export const inputStyle = (hasError?: boolean): CSSProperties => ({
   width: '100%',

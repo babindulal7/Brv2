@@ -1966,6 +1966,14 @@ export default function BookingDetail() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', position: 'relative' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        <Link to="/rentals" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Icon name="chevron_left" size={14} />
+          Rentals
+        </Link>
+        <span>›</span>
+        <span style={{ color: 'var(--text)', fontWeight: 600 }}>{booking.bookingNo}</span>
+      </div>
       <PageHeader
         title={booking.bookingNo}
         description={`${booking.clientName}${booking.project ? ` · ${booking.project}` : ''}${

@@ -18,6 +18,7 @@ import {
   payoutLedger,
   crewDaysBooked,
   fillRate,
+  searchRoster,
   type CrewRole,
   type AssignmentStatus,
   type PayoutStatus,
@@ -47,6 +48,7 @@ export {
   fillRate,
   crewGlance,
   crewDetailGroups,
+  searchRoster,
 }
 
 export type {

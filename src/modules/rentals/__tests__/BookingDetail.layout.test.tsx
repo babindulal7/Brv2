@@ -126,6 +126,12 @@ vi.mock('../../../lib/queries/bookings', () => {
             ],
           }
         : null,
+    isSubRentalBooking: (lines: readonly { lineType?: string; subRental?: boolean }[] = []) =>
+      lines.some((l) => l.lineType === 'Sub-Rented' || l.lineType === 'Sub-rental' || Boolean(l.subRental)),
+    isSubRentedLine: (line: { lineType?: string; subRental?: boolean }) =>
+      line.lineType === 'Sub-Rented' || line.lineType === 'Sub-rental' || Boolean(line.subRental),
+    paymentGlance: () => [],
+    paymentDetailGroups: () => [],
   }
 })
 

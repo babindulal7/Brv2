@@ -20,13 +20,15 @@ import {
   MAINTENANCE_CONDITION_META,
   REGISTRY_FLAG_TITLE,
   registryFlagTone,
-} from '../../data/maintenance'
-import type { MaintenanceRegistryFlag, MaintenanceCondition } from '../../data/maintenance'
+  maintenanceGlance,
+  maintenanceDetailGroups,
+  type MaintenanceRegistryFlag,
+  type MaintenanceCondition,
+} from '../../lib/queries/maintenance'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
-import { maintenanceGlance, maintenanceDetailGroups } from '../../data/maintenanceIntel'
 import { LogMaintenanceModal, type MaintenanceJobPayload } from './modals/LogMaintenanceModal'
 import { DueForService } from './components/DueForService'
 

@@ -320,7 +320,13 @@ export function FilterDrawer({
         </div>
 
         {apply ? (
-          <footer style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+          <footer
+            style={{
+              padding: phone ? '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))' : '12px 16px',
+              borderTop: '1px solid var(--border)',
+              flexShrink: 0,
+            }}
+          >
             <button
               type="button"
               onClick={apply.onApply}
@@ -343,7 +349,13 @@ export function FilterDrawer({
         ) : (
           activeCount > 0 &&
           onClearAll && (
-            <footer style={{ padding: '12px 16px', borderTop: '1px solid var(--border)', flexShrink: 0 }}>
+            <footer
+              style={{
+                padding: phone ? '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))' : '12px 16px',
+                borderTop: '1px solid var(--border)',
+                flexShrink: 0,
+              }}
+            >
               <button
                 type="button"
                 onClick={onClearAll}

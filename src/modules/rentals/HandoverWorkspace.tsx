@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside } from '../operations/FloorAside'
+import { StickyFloorBar } from '../operations/StickyFloorBar'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -1238,8 +1239,8 @@ export default function HandoverWorkspace() {
                              The header bar counts units; neither figure is now unlabelled. */
                           aria-label={`${f} — ${count} row${count === 1 ? '' : 's'}`}
                           style={{
-                            height: 26,
-                            padding: '0 9px',
+                            minHeight: phone ? 36 : 26,
+                            padding: phone ? '0 12px' : '0 9px',
                             borderRadius: 7,
                             border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                             background: on ? 'var(--nav-active-bg)' : 'transparent',
@@ -1861,6 +1862,25 @@ export default function HandoverWorkspace() {
               cancelLabel="Stay on this session"
               variant="danger"
             />
+
+            {phone && !stageHeld && (
+              <StickyFloorBar
+                progress={{
+                  current: outUnits,
+                  total: totalUnits,
+                  label: readyUnits ? `${readyUnits} remaining` : 'All items picked up',
+                  complete: canComplete,
+                }}
+                onScan={() => setShowScanner(true)}
+                primaryAction={{
+                  label: dispatching ? 'Recording…' : primaryLabel,
+                  onClick: completeSession,
+                  disabled: !canComplete,
+                  loading: dispatching,
+                  icon: 'checklist',
+                }}
+              />
+            )}
           </div>
         )}
       </PageBody>

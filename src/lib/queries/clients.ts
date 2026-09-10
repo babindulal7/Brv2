@@ -863,3 +863,43 @@ export async function createClient(input: NewClientInput, clientUuid?: string): 
   if (!created) throw new Error('createClient: row vanished immediately after insert')
   return created
 }
+
+export {
+  MEMBERSHIP_TIERS,
+  TIER_TONE,
+  CLIENTS_DATA,
+  findClientIdByBooking,
+  clientMetrics,
+  evaluateCreditStop,
+  creditStopFactsOf,
+  daysPastDue,
+  readOverdueStopDays,
+  CLIENT_FILTER_GROUPS,
+  clientFilterGroupsFor,
+  CLIENT_ROWS_PER_PAGE,
+  NEPAL_DISTRICTS,
+  CLIENT_SOURCES,
+  PAYMENT_TERMS_OPTIONS,
+  PREFERRED_CONTACT_METHODS,
+  normalizedPhone,
+  findDuplicateGroups,
+} from '../../data/clients'
+
+export type {
+  ClientType,
+  OrganisationType,
+  Profession,
+  Segment,
+  MembershipTier,
+  KycStatus,
+  ClientRecord,
+  CreditStopLimb,
+  CreditStopFacts,
+  CreditStopLimbVerdict,
+  CreditStopVerdict,
+  CreditStopOptions,
+  ClientFilterGroup,
+  DuplicateMatchReason,
+  DuplicateGroup,
+} from '../../data/clients'
+

@@ -4,7 +4,6 @@ import { BrowserCodeReader, BrowserMultiFormatReader } from '@zxing/browser'
 import type { IScannerControls } from '@zxing/browser'
 import { audioContextClass } from '../../lib/audioContext'
 import { useViewport } from '../../lib/device'
-import { BAR_BOX } from './BottomBar'
 
 /**
  * **Scanner — Foundation v2.0 §5.5.**
@@ -237,29 +236,65 @@ export default function ScannerFab() {
     <div
       data-scanner
       data-floor="true"
-      style={{
-        position: 'fixed',
-        right: 20,
-        bottom: phone ? `calc(16px + ${BAR_BOX})` : 20,
-        zIndex: 60,
-      }}
+      style={
+        phone
+          ? {
+              position: 'fixed',
+              inset: open ? 0 : 'auto',
+              pointerEvents: open ? 'auto' : 'none',
+              zIndex: 60,
+            }
+          : {
+              position: 'fixed',
+              right: 20,
+              bottom: 20,
+              zIndex: 60,
+            }
+      }
     >
+      {phone && open && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 0 }}
+          onClick={() => setOpen(false)}
+          aria-hidden="true"
+        />
+      )}
       {open && (
         <div
           ref={panel}
           role="dialog"
           aria-label="Scanner"
-          style={{
-            position: 'absolute',
-            right: 0,
-            bottom: 62,
-            width: 292,
-            padding: 14,
-            borderRadius: 'var(--r-card)',
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            boxShadow: 'var(--shadow-modal)',
-          }}
+          style={
+            phone
+              ? {
+                  position: 'fixed',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  zIndex: 1,
+                  width: '100%',
+                  maxWidth: '100%',
+                  maxHeight: '85vh',
+                  overflowY: 'auto',
+                  padding: '14px 16px',
+                  paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))',
+                  borderRadius: '16px 16px 0 0',
+                  background: 'var(--card)',
+                  borderTop: '1px solid var(--border)',
+                  boxShadow: 'var(--shadow-modal)',
+                }
+              : {
+                  position: 'absolute',
+                  right: 0,
+                  bottom: 62,
+                  width: 292,
+                  padding: 14,
+                  borderRadius: 'var(--r-card)',
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--shadow-modal)',
+                }
+          }
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
             <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Scanner</div>
@@ -400,26 +435,28 @@ export default function ScannerFab() {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label="Scanner"
-        aria-expanded={open}
-        style={{
-          width: 52,
-          height: 52,
-          borderRadius: 'var(--r-badge)',
-          border: 'none',
-          background: 'var(--btn-primary-bg)',
-          color: 'var(--btn-primary-fg)',
-          boxShadow: 'var(--shadow-modal)',
-          cursor: 'pointer',
-          display: 'grid',
-          placeItems: 'center',
-        }}
-      >
-        <Icon name="search" size={22} />
-      </button>
+      {!phone && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label="Scanner"
+          aria-expanded={open}
+          style={{
+            width: 52,
+            height: 52,
+            borderRadius: 'var(--r-badge)',
+            border: 'none',
+            background: 'var(--btn-primary-bg)',
+            color: 'var(--btn-primary-fg)',
+            boxShadow: 'var(--shadow-modal)',
+            cursor: 'pointer',
+            display: 'grid',
+            placeItems: 'center',
+          }}
+        >
+          <Icon name="search" size={22} />
+        </button>
+      )}
     </div>
   )
 }

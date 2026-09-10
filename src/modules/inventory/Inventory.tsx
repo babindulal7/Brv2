@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui'
@@ -497,9 +497,13 @@ function ChildRowView({
                 without carrying a manufacturer serial, and inventing one from
                 the tag would print a serial that does not exist.
               */}
-              <span className="identifier" style={{ fontSize: 'var(--t-meta)' }}>
+              <Link
+                to={`/inventory/${encodeURIComponent(unit.assetTag)}`}
+                className="identifier"
+                style={{ fontSize: 'var(--t-meta)', color: 'var(--link)', textDecoration: 'none', fontWeight: 600 }}
+              >
                 {unit.assetTag}
-              </span>
+              </Link>
             </span>
             <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
               {unit.serialNo === null ? 'No serial on file' : `Serial ${unit.serialNo}`} · Unit {index + 1} of {count}
@@ -902,9 +906,13 @@ function ChildCardView({
     >
       <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <Icon name="queues" size={12} style={{ color: 'var(--muted)' }} />
-        <span className="identifier" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+        <Link
+          to={`/inventory/${encodeURIComponent(unit.assetTag)}`}
+          className="identifier"
+          style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
+        >
           {unit.assetTag}
-        </span>
+        </Link>
         <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
           {unit.serialNo === null ? 'No serial on file' : `Serial ${unit.serialNo}`} · Unit {index + 1} of {count}
         </span>

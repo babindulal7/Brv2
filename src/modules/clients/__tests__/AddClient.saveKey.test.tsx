@@ -39,9 +39,13 @@ vi.mock('../../../lib/auth', () => ({
 }))
 /* The debounced duplicate check must not reach a real query layer from a test
    that deliberately waits between saves. */
-vi.mock('../../../lib/queries/clients', () => ({
-  findClientsByPhoneTail: vi.fn(async () => []),
-}))
+vi.mock('../../../lib/queries/clients', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../lib/queries/clients')>()
+  return {
+    ...actual,
+    findClientsByPhoneTail: vi.fn(async () => []),
+  }
+})
 
 // jsdom ships no matchMedia; lib/device asks for it on mount.
 window.matchMedia = ((q: string) => ({

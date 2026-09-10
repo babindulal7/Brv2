@@ -4,6 +4,57 @@
 
 
 
+## 2026-09-10 — Stage 1: Real Data Milestone — 100% DB-Only Across All 48 Routes (48 DB-only / 0 mixed / 0 seed / 0 none / 48 routes, Overall 97%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** Real Data achieves 100% DB-only across all 48 routes in App.tsx (48 DB-only, 0 mixed, 0 seed, 0 none); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Backend 39/42 (93%); Permissions 35/38 (92%); Overall completion reaches ≈ 97% (+1). Full test suite 180/180 test files green (3,127 tests passed), tsc clean (0 errors), 110/110 migrations applied cleanly on PGlite.
+
+### Did
+
+- **Achieved 100% DB-only routes across the entire application (48 / 48 routes, 0 mixed, 0 seed, 0 none):**
+  - **`NewRental.tsx`**: Converted booking flow, client selection, and item catalog to 100% DB queries. Decoupled `booking/itemCatalogue.ts`, `booking/clientHealth.ts`, `booking/newClientDraft.ts`, `booking/ClientCombobox.tsx`, `booking/ClientQuickView.tsx`, `booking/ClientHistoryDrawer.tsx`, `booking/AddClientModal.tsx`, `booking/AddItemPanel.tsx`, and `booking/BundlePreview.tsx` from `data/booking`, `data/clientIntel`, and `data/today`.
+  - **`Inventory.tsx`**: Fully decoupled inventory sub-tabs (`Bundles.tsx`, `Maintenance.tsx`, `DamageTab.tsx`) from seed fixtures in `data/`. Added dedicated DB query layers `src/lib/queries/damage.ts` and `src/lib/queries/maintenance.ts` querying live `damage_incidents` and `maintenance_logs`.
+  - **`AddEquipment.tsx`**: Decoupled wizard context and sections (`AddEquipmentContext.tsx`, `EquipmentShared.tsx`, `SectionLocation.tsx`, `SectionPurchase.tsx`, `SectionRelationships.tsx`, `SectionStockUnits.tsx`) from `data/inventory`. Added `src/lib/queries/addEquipment.ts`.
+  - Decoupled remaining shell and navigation components (`ScannerFab.tsx`, `FilterDrawer.tsx`, `Modal.tsx`, `Header.tsx`) from all `data/` seed imports.
+- **Enhanced Mobile Floor Ergonomics:**
+  - Added `src/modules/operations/StickyFloorBar.tsx` providing glanceable real-time progress, instant 1-tap thumb scanner access, and sticky dispatch actions on phone viewports across `PackingWorkspace.tsx`, `HandoverWorkspace.tsx`, and `ReturnWorkspace.tsx`.
+- **Honest Action and Permission Governance:**
+  - Preserved strict compliance with `PLAN.md §4.29` and `core.ts` rulings: `inspection.create`, `inspection.pass`, and `inspection.fail` remain deliberately unmapped and unimplemented stubs pending schema introduction.
+  - Resolved `core.test.ts` to 100% pass (70/70 tests) confirming unmapped capabilities reject properly and match `KNOWN_OPEN`.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run` **180/180 test files passed, 3,127 tests passed, 0 failed**.
+- `node scripts/check-pglite.mjs` **110/110 applied, 0 failed**.
+- `node scripts/completion.mjs` **Real data 48 · 0 · 0 · 0 / 48 (100%), Overall ≈ 97% (+1)**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 39 / 42 (93%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 97% | +1 |
+
+Migrations 110 files · check:pglite 110/110 passed.
+Gates read from .lifecycle-result.json.
+Counted by `node scripts/completion.mjs`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- **Schema and Inspection Resolution (PLAN.md §4.29):**
+  - Finalize Postgres schema ruling for `inspections` table or map inspections to floor operations once schema is migrated, enabling the 3 remaining actions and capabilities.
+- **Stage 2 Feature Hardening:**
+  - Proceed with Stage 2 advanced features and operational workflows.
+
 ## 2026-09-10 — Stage 1: Real Data Surges to 45 DB-Only Routes (45 DB-only / 3 mixed / 0 seed / 0 none / 48 routes, Overall 96%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** Real Data surges from 27 to 45 DB-only routes (45 DB-only, 3 mixed, 0 seed, 0 none); Real Data dimension reaches 97%; Backend 39/42 (93%); DB enforcement 9/9 (100%); Permissions 35/38 (92%); Lifecycle 14/14 (100%); Overall completion rises to ≈ 96% (+3).

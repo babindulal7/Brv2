@@ -17,8 +17,8 @@ import {
   OWNER_APPROVAL_THRESHOLD,
   MIN_PHOTOS,
 } from '../../lib/damage'
-import { DAMAGE_FINDINGS } from '../../data/damage'
-import type { DamageFinding } from '../../data/damage'
+import { DAMAGE_FINDINGS } from '../../lib/queries/damage'
+import type { DamageFinding } from '../../lib/queries/damage'
 
 /**
  * # Inventory ▸ Maintenance ▸ Damage

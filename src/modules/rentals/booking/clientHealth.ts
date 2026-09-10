@@ -43,7 +43,7 @@
 import { formatMoney, rupees } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import type { StatusKey } from '../../../lib/status'
-import type { ClientRecord } from '../../../data/clients'
+import type { ClientRecord } from '../../../lib/queries/clients'
 import type { IconName } from '../../../components/ui/Icon'
 
 /* ════════════════════════════════════════════════════════════════════════

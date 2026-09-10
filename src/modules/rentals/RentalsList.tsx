@@ -1292,6 +1292,7 @@ export default function RentalsList() {
       <div
         role="group"
         aria-label="Filter by stage"
+        className={viewport !== 'desktop' ? 'rsp-chip-scroll' : undefined}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1334,6 +1335,7 @@ export default function RentalsList() {
       </div>
 
       <div
+        className={viewport !== 'desktop' ? 'rsp-chip-scroll' : undefined}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1436,57 +1438,59 @@ export default function RentalsList() {
           )
         })}
 
-        <span
-          role="group"
-          aria-label="List view"
-          style={{
-            marginLeft: 'auto',
-            display: 'flex',
-            gap: 'var(--sp-xs)',
-            padding: 3,
-            borderRadius: 10,
-            background: 'var(--card2)',
-            border: '1px solid var(--border)',
-            flexShrink: 0,
-          }}
-        >
-          {VIEWS.map((v) => {
-            const on = view === v
-            const unbuilt = v === 'Timeline'
-            const btnStyle = {
-              display: 'inline-flex' as const,
-              alignItems: 'center' as const,
-              gap: 5,
-              height: 28,
-              padding: '0 11px',
-              borderRadius: 7,
-              border: 'none',
-              background: on ? 'var(--card)' : 'transparent',
-              color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: on ? 600 : 500,
-              cursor: unbuilt ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit',
-              boxShadow: on ? 'var(--shadow-card)' : 'none',
-            }
-            if (unbuilt) {
+        {tabular && (
+          <span
+            role="group"
+            aria-label="List view"
+            style={{
+              marginLeft: 'auto',
+              display: 'flex',
+              gap: 'var(--sp-xs)',
+              padding: 3,
+              borderRadius: 10,
+              background: 'var(--card2)',
+              border: '1px solid var(--border)',
+              flexShrink: 0,
+            }}
+          >
+            {VIEWS.map((v) => {
+              const on = view === v
+              const unbuilt = v === 'Timeline'
+              const btnStyle = {
+                display: 'inline-flex' as const,
+                alignItems: 'center' as const,
+                gap: 5,
+                height: 28,
+                padding: '0 11px',
+                borderRadius: 7,
+                border: 'none',
+                background: on ? 'var(--card)' : 'transparent',
+                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: on ? 600 : 500,
+                cursor: unbuilt ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+                boxShadow: on ? 'var(--shadow-card)' : 'none',
+              }
+              if (unbuilt) {
+                return (
+                  <Unavailable key={v} reason="Timeline view is not built yet — the render only specifies the Table view in detail.">
+                    <button type="button" disabled aria-pressed={on} style={btnStyle}>
+                      <Icon name="timer" size={14} />
+                      {v}
+                    </button>
+                  </Unavailable>
+                )
+              }
               return (
-                <Unavailable key={v} reason="Timeline view is not built yet — the render only specifies the Table view in detail.">
-                  <button type="button" disabled aria-pressed={on} style={btnStyle}>
-                    <Icon name="timer" size={14} />
-                    {v}
-                  </button>
-                </Unavailable>
+                <button key={v} type="button" onClick={() => setView(v)} aria-pressed={on} style={btnStyle}>
+                  <Icon name={v === 'Table' ? 'checklist' : 'queues'} size={14} />
+                  {v}
+                </button>
               )
-            }
-            return (
-              <button key={v} type="button" onClick={() => setView(v)} aria-pressed={on} style={btnStyle}>
-                <Icon name={v === 'Table' ? 'checklist' : 'queues'} size={14} />
-                {v}
-              </button>
-            )
-          })}
-        </span>
+            })}
+          </span>
+        )}
       </div>
 
       {/* The render draws `Custom` as a bare chip. A chip that selects a

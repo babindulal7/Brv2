@@ -18,12 +18,11 @@ import { validateDiscount } from '../../lib/discount'
 import { getSetting } from '../../lib/settingsStore'
 import { price, formatMoney, rupees, roundHalfUp, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
-import { CLIENTS_DATA } from '../../data/clients'
-import { listClientRecords } from '../../lib/queries/clients'
+import { listClientRecords, CLIENTS_DATA, type ClientRecord } from '../../lib/queries/clients'
 import { CREW_ROLES, createRental, deliveryTypeFromLabel, CreateRentalPartialError } from '../../actions/rentals/createRental'
 import type { CrewRoleDb } from '../../types/database'
 import { supabase, newClientUuid } from '../../lib/supabase'
-import { listInventory } from '../../lib/queries/inventory'
+import { listInventory, INV_STYLE, type InvStatus } from '../../lib/queries/inventory'
 import { readProductAvailability } from '../../lib/queries/productAvailability'
 import type { RentalWindow } from '../../lib/availability'
 import { equipmentConflicts, equipmentResultsFrom } from './booking/itemCatalogue'
@@ -32,11 +31,7 @@ import type {
   EquipmentAvailabilitySource,
   LiveEquipmentRow,
 } from './booking/itemCatalogue'
-import type { ClientRecord } from '../../data/clients'
-import { INV_STYLE } from '../../data/inventory'
-import type { InvStatus } from '../../data/inventory'
-import { CREW_ROSTER, searchRoster } from '../../data/crew'
-import type { CrewMember, CrewRole } from '../../data/crew'
+import { CREW_ROSTER, searchRoster, type CrewMember, type CrewRole } from '../../lib/queries/crew'
 import { useAuth } from '../../lib/auth'
 import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
@@ -1352,7 +1347,9 @@ function CrewSearch({
    * otherwise the first arrow key would arm it for every mouse move after,
    * and the list would scroll itself out from under the pointer.
    */
+  const [open, setOpen] = useState(false)
   const [cursorMoved, setCursorMoved] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const excludeIds = useMemo(() => onBooking.map((c) => c.crewId), [onBooking])
@@ -1372,17 +1369,31 @@ function CrewSearch({
     setActiveIndex((i) => (i >= options.length ? 0 : i))
   }, [options.length])
 
-  const activeId = options[activeIndex] ? `${listboxId}-opt-${activeIndex}` : undefined
+  const activeId = open && options[activeIndex] ? `${listboxId}-opt-${activeIndex}` : undefined
 
   useEffect(() => {
-    if (!cursorMoved || !activeId) return
+    if (!open || !cursorMoved || !activeId) return
     document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' })
-  }, [cursorMoved, activeId])
+  }, [open, cursorMoved, activeId])
+
+  /** Close on outside pointer interaction */
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null
+      if (rootRef.current && !rootRef.current.contains(target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [open])
 
   const commit = (m: CrewMember) => {
     onAdd(m.id)
     setQuery('')
     setActiveIndex(0)
+    setOpen(false)
     inputRef.current?.focus()
   }
 
@@ -1390,25 +1401,15 @@ function CrewSearch({
     const count = options.length
     switch (e.key) {
       case 'ArrowDown':
-        e.preventDefault()
-        setCursorMoved(true)
-        setActiveIndex((i) => (count === 0 ? 0 : (i + 1) % count))
-        return
       case 'ArrowUp':
         e.preventDefault()
+        if (!open) {
+          setOpen(true)
+          return
+        }
         setCursorMoved(true)
-        setActiveIndex((i) => (count === 0 ? 0 : (i - 1 + count) % count))
+        setActiveIndex((i) => (count === 0 ? 0 : e.key === 'ArrowDown' ? (i + 1) % count : (i - 1 + count) % count))
         return
-      /*
-       * `ClientCombobox` guards these two with `if (!open) return`, so its
-       * input always has a state in which Home and End reach the ends of the
-       * typed text. This listbox has no closed state — it is rendered
-       * throughout — so an unconditional `preventDefault` here meant the caret
-       * could never get to either end of what the operator had typed. The
-       * equivalent guard is the caret's own: the moment there is text to move
-       * through, these keys belong to the input, not to the list. The hint
-       * below never offered them for the list in the first place.
-       */
       case 'Home':
       case 'End': {
         if (query !== '') return
@@ -1420,164 +1421,235 @@ function CrewSearch({
       case 'Enter': {
         const m = options[activeIndex]
         if (!m) return
-        // Never let the keystroke that picks a person submit the booking form.
         e.preventDefault()
         commit(m)
         return
       }
       case 'Escape':
-        /* Only swallow it when there is something to clear. This listbox has no
-           closed state, so an unguarded stopPropagation() would eat Escape for
-           the whole document whenever the crew field held focus — the drawers
-           and modals above this page listen for it. ClientCombobox guards the
-           same keys the same way. */
-        if (query === '') return
         e.preventDefault()
         e.stopPropagation()
-        setQuery('')
-        setActiveIndex(0)
+        setOpen(false)
+        if (query !== '') {
+          setQuery('')
+          setActiveIndex(0)
+        }
         setCursorMoved(false)
+        inputRef.current?.blur()
         return
       default:
     }
   }
 
   return (
-    <div style={{ marginBottom: 'var(--sp-md)' }}>
+    <div ref={rootRef} style={{ position: 'relative', marginBottom: 'var(--sp-md)' }}>
       <Field label="Add crew" labelId={labelId}>
-        <div style={{ position: 'relative' }}>
-          <input
-            ref={inputRef}
-            type="text"
-            role="combobox"
-            autoComplete="off"
-            spellCheck={false}
-            aria-expanded
-            aria-controls={listboxId}
-            aria-autocomplete="list"
-            aria-haspopup="listbox"
-            aria-labelledby={labelId}
-            aria-describedby={hintId}
-            {...(activeId ? { 'aria-activedescendant': activeId } : {})}
-            placeholder="Search the roster by name or role…"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              setActiveIndex(0)
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <input
+              ref={inputRef}
+              type="text"
+              role="combobox"
+              autoComplete="off"
+              spellCheck={false}
+              aria-expanded={open}
+              aria-controls={listboxId}
+              aria-autocomplete="list"
+              aria-haspopup="listbox"
+              aria-labelledby={labelId}
+              aria-describedby={hintId}
+              {...(activeId ? { 'aria-activedescendant': activeId } : {})}
+              placeholder="Search the roster by name or role…"
+              value={query}
+              onFocus={() => setOpen(true)}
+              onClick={() => setOpen(true)}
+              onChange={(e) => {
+                setQuery(e.target.value)
+                setActiveIndex(0)
+                if (!open) setOpen(true)
+              }}
+              onKeyDown={onKeyDown}
+              style={{ ...inputStyle, paddingLeft: 32, paddingRight: query ? 32 : 10 }}
+            />
+            <span
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                left: 10,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                display: 'inline-flex',
+                color: 'var(--muted)',
+                pointerEvents: 'none',
+              }}
+            >
+              <Icon name="search" size={15} />
+            </span>
+            {query && (
+              <button
+                type="button"
+                className="press"
+                aria-label="Clear search query"
+                onClick={() => {
+                  setQuery('')
+                  setActiveIndex(0)
+                  inputRef.current?.focus()
+                }}
+                style={{
+                  position: 'absolute',
+                  right: 8,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 4,
+                }}
+              >
+                <Icon name="close" size={14} />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="press"
+            onClick={() => {
+              setOpen((o) => {
+                const next = !o
+                if (next) globalThis.requestAnimationFrame(() => inputRef.current?.focus())
+                return next
+              })
             }}
-            onKeyDown={onKeyDown}
-            style={{ ...inputStyle, paddingLeft: 32, paddingRight: 10 }}
-          />
-          <span
-            aria-hidden="true"
+            aria-expanded={open}
+            aria-label={open ? 'Hide crew roster' : 'Browse crew roster'}
             style={{
-              position: 'absolute',
-              left: 10,
-              top: '50%',
-              transform: 'translateY(-50%)',
               display: 'inline-flex',
-              color: 'var(--muted)',
-              pointerEvents: 'none',
+              alignItems: 'center',
+              gap: 6,
+              height: 38,
+              padding: '0 14px',
+              borderRadius: 'var(--r-btn)',
+              background: open ? 'var(--st-primary-bg)' : 'var(--btn-secondary-bg)',
+              color: open ? 'var(--st-primary-fg)' : 'var(--text)',
+              border: `1px solid ${open ? 'var(--primary)' : 'var(--btn-secondary-border)'}`,
+              fontFamily: 'inherit',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
-            <Icon name="search" size={15} />
-          </span>
+            <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
+            <span>{open ? 'Hide' : 'Browse'}</span>
+          </button>
         </div>
       </Field>
 
-      <p id={hintId} style={{ margin: '4px 0 6px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-        Up and Down to move, Enter to add, Escape to clear. Anyone already on this booking is left out of the list.
-      </p>
+      {open && (
+        <div
+          role="dialog"
+          aria-label="Crew roster search results"
+          style={{
+            position: 'absolute',
+            zIndex: 35,
+            top: 'calc(100% + 4px)',
+            left: 0,
+            width: '100%',
+            maxHeight: 260,
+            overflowY: 'auto',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-card)',
+            background: 'var(--dropdown)',
+            boxShadow: 'var(--shadow-modal)',
+          }}
+        >
+          <p id={hintId} style={{ margin: '8px 10px 4px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+            Up and Down to move, Enter to add, Escape to close. Anyone already on this booking is left out of the list.
+          </p>
 
-      <div style={{ maxHeight: 244, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-btn)' }}>
-        <ul id={listboxId} role="listbox" aria-labelledby={labelId} style={{ listStyle: 'none', margin: 0, padding: 4 }}>
-          {options.map((m, i) => {
-            const active = i === activeIndex
-            const rejected = dbRejectsRole(m.role)
-            const note = rejected ? rejectionNote(m.role) : ''
-            return (
-              <li
-                key={m.id}
-                id={`${listboxId}-opt-${i}`}
-                role="option"
-                aria-selected={active}
-                /* `m.state` — 'Available' / 'Booked' / 'On Leave' / 'Off Duty'
-                   — used to be read out here and printed on the row. It is a
-                   static seed property of the person, not an answer about
-                   THIS booking's dates, and next to a date-bound picker it
-                   reads as exactly the answer it is not. There is no crew
-                   availability engine to replace it with, so the row simply
-                   does not say it. */
-                aria-label={`${m.name}, ${m.role}.${
-                  showRates ? ` ${formatMoney(m.dayRatePaisa)} per day.` : ''
-                }${note ? ` ${note}` : ''} Press Enter to add to this booking.`}
-                /* Disarms the scroll effect as well as moving the active row:
-                   the pointer is already on the row it is pointing at, so
-                   scrolling to it would only drag the list out from under the
-                   mouse. The next arrow key arms it again. */
-                onMouseMove={() => {
-                  setCursorMoved(false)
-                  setActiveIndex(i)
-                }}
-                onClick={() => commit(m)}
-                style={{
-                  display: 'grid',
-                  gap: 2,
-                  minHeight: 'var(--tap)',
-                  alignContent: 'center',
-                  padding: '7px 9px',
-                  borderRadius: 'var(--r-btn)',
-                  cursor: 'pointer',
-                  background: active ? 'var(--hover-row)' : 'transparent',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}>
-                  <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--text2)' }}>
-                    <Icon name="crew" size={15} />
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 'var(--t-ui)',
-                      fontWeight: 600,
-                      color: 'var(--text)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {m.name}
-                  </span>
-                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{m.role}</span>
-                  {showRates && (
+          <ul id={listboxId} role="listbox" aria-labelledby={labelId} style={{ listStyle: 'none', margin: 0, padding: 4 }}>
+            {options.map((m, i) => {
+              const active = i === activeIndex
+              const rejected = dbRejectsRole(m.role)
+              const note = rejected ? rejectionNote(m.role) : ''
+              return (
+                <li
+                  key={m.id}
+                  id={`${listboxId}-opt-${i}`}
+                  role="option"
+                  aria-selected={active}
+                  aria-label={`${m.name}, ${m.role}.${
+                    showRates ? ` ${formatMoney(m.dayRatePaisa)} per day.` : ''
+                  }${note ? ` ${note}` : ''} Press Enter to add to this booking.`}
+                  onMouseMove={() => {
+                    setCursorMoved(false)
+                    setActiveIndex(i)
+                  }}
+                  onClick={() => commit(m)}
+                  style={{
+                    display: 'grid',
+                    gap: 2,
+                    minHeight: 'var(--tap)',
+                    alignContent: 'center',
+                    padding: '7px 9px',
+                    borderRadius: 'var(--r-btn)',
+                    cursor: 'pointer',
+                    background: active ? 'var(--hover-row)' : 'transparent',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}>
+                    <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--text2)' }}>
+                      <Icon name="crew" size={15} />
+                    </span>
                     <span
-                      className="figure"
-                      style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}
+                      style={{
+                        fontSize: 'var(--t-ui)',
+                        fontWeight: 600,
+                        color: 'var(--text)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
                     >
-                      {formatMoney(m.dayRatePaisa)}/day
+                      {m.name}
                     </span>
-                  )}
-                </div>
-                {note && (
-                  /* Law 11 — the glyph and the sentence carry it, never the colour alone. */
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--warn-text)' }}>
-                    <span style={{ display: 'inline-flex', paddingTop: 1, flexShrink: 0 }}>
-                      <Icon name="alert_triangle" size={13} />
-                    </span>
-                    <span style={{ minWidth: 0 }}>{note}</span>
+                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{m.role}</span>
+                    {showRates && (
+                      <span
+                        className="figure"
+                        style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}
+                      >
+                        {formatMoney(m.dayRatePaisa)}/day
+                      </span>
+                    )}
                   </div>
-                )}
+                  {note && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--warn-text)' }}>
+                      <span style={{ display: 'inline-flex', paddingTop: 1, flexShrink: 0 }}>
+                        <Icon name="alert_triangle" size={13} />
+                      </span>
+                      <span style={{ minWidth: 0 }}>{note}</span>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+            {options.length === 0 && (
+              <li role="presentation" style={{ padding: '10px 9px', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                {rosterExhausted
+                  ? 'Everyone on the roster is already on this booking.'
+                  : `No one on the roster matches “${query.trim()}”. Names and roles are searched.`}
               </li>
-            )
-          })}
-          {options.length === 0 && (
-            <li role="presentation" style={{ padding: '10px 9px', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              {rosterExhausted
-                ? 'Everyone on the roster is already on this booking.'
-                : `No one on the roster matches “${query.trim()}”. Names and roles are searched.`}
-            </li>
-          )}
-        </ul>
-      </div>
+            )}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

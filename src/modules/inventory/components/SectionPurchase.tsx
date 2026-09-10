@@ -1,7 +1,7 @@
 import { Field, SectionCard, inputStyle, fieldRow, BsAbove } from './EquipmentShared'
 import { useEquipmentContext } from './AddEquipmentContext'
 import { Unavailable } from '../../../components/ui/Unavailable'
-import { DEPRECIATION_UNAVAILABLE_REASON } from '../../../data/addEquipment'
+import { DEPRECIATION_UNAVAILABLE_REASON } from '../../../lib/queries/addEquipment'
 import { formatMoney, parseMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { DateField } from '../../../components/ui/DateField'

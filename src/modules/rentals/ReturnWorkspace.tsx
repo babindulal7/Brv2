@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside } from '../operations/FloorAside'
+import { StickyFloorBar } from '../operations/StickyFloorBar'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
 import { STATUS, jobStateChip } from '../../lib/status'
@@ -1073,8 +1074,8 @@ export default function ReturnWorkspace() {
                           onClick={() => setFilter(f)}
                           aria-pressed={on}
                           style={{
-                            height: 26,
-                            padding: '0 9px',
+                            minHeight: phone ? 36 : 26,
+                            padding: phone ? '0 12px' : '0 9px',
                             borderRadius: 7,
                             border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                             background: on ? 'var(--nav-active-bg)' : 'transparent',
@@ -1598,6 +1599,25 @@ export default function ReturnWorkspace() {
                 receive(item.id)
               }}
             />
+
+            {phone && (
+              <StickyFloorBar
+                progress={{
+                  current: backUnits,
+                  total: totalUnits,
+                  label: outstandingUnits ? `${outstandingUnits} remaining` : 'All items returned',
+                  complete: allResolved,
+                }}
+                onScan={() => setShowScanner(true)}
+                primaryAction={{
+                  label: dispatching ? 'Recording…' : allResolved ? 'Complete Return' : 'Complete Session',
+                  onClick: completeSession,
+                  disabled: !canComplete,
+                  loading: dispatching,
+                  icon: 'checklist',
+                }}
+              />
+            )}
           </div>
         )}
       </PageBody>

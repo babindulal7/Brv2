@@ -47,6 +47,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
   const navigate = useNavigate()
   const vp = useViewport()
   const isPhone = vp === 'phone'
+  const [profileOpen, setProfileOpen] = useState(false)
   const [showHandover, setShowHandover] = useState(false)
   const [now, setNow] = useState(new Date())
 
@@ -363,98 +364,192 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
           about hiding money from money-blind roles. These are unbuilt for
           everyone, which is a different fact and is worth saying out loud.
         */}
-        <Unavailable reason="Notifications are not built yet — nothing writes one, so there is nothing to open.">
-          <button type="button" aria-label="Notifications" style={iconBtn} disabled>
-            <Icon name="bell" size={17} />
-          </button>
-        </Unavailable>
+        {/* Notifications and Help — unbuilt; hidden on phone to save 88px of horizontal width */}
+        {!isPhone && (
+          <>
+            <Unavailable reason="Notifications are not built yet — nothing writes one, so there is nothing to open.">
+              <button type="button" aria-label="Notifications" style={iconBtn} disabled>
+                <Icon name="bell" size={17} />
+              </button>
+            </Unavailable>
 
-        <Unavailable reason="Help is not built yet — no destination is settled: in-app guide, docs site, or a support contact.">
-          <button type="button" aria-label="Help" style={iconBtn} disabled>
-            <Icon name="info" size={17} />
-          </button>
-        </Unavailable>
+            <Unavailable reason="Help is not built yet — no destination is settled: in-app guide, docs site, or a support contact.">
+              <button type="button" aria-label="Help" style={iconBtn} disabled>
+                <Icon name="info" size={17} />
+              </button>
+            </Unavailable>
+          </>
+        )}
 
-        {/*
-          Not a <button>: this wrapper carries no click handler of its own —
-          it is a static grouping of the avatar/name display plus the real
-          "Log Out" button below. It used to be a <button>, which put a
-          <button> inside a <button> (invalid DOM nesting) and gave the page
-          a focusable control that did nothing when activated. A plain <div>
-          fixes both: no nesting violation, and no phantom tab stop.
-        */}
-        <div
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 'var(--sp-sm)',
-            height: 38,
-            padding: '0 6px 0 3px',
-            fontFamily: 'inherit',
-          }}
-        >
-          <span
-            style={{
-              width: 30,
-              height: 30,
-              borderRadius: 'var(--r-badge)',
-              background: 'var(--card2)',
-              border: '1px solid var(--border)',
-              display: 'grid',
-              placeItems: 'center',
-              color: 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 700,
-              flexShrink: 0,
-            }}
-          >
-            {initials}
-          </span>
-          {/*
-            Name and role fold away on a tablet. Measured at 831px: the strip
-            between breadcrumb and chrome had 324px for a search bar plus the
-            sync/clock/branch group that needs 363, so the group slid under the
-            bell. This block is the ~90px that decides it, and the avatar keeps
-            the identity on its tooltip. Phone and desktop are unchanged (A6).
-          */}
-          {vp !== 'tablet' && (
-            <span style={{ textAlign: 'left', lineHeight: 1.25 }}>
-              <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
-                {user?.name || 'Guest'}
-              </span>
-              <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{user?.role || ''}</span>
-            </span>
-          )}
-          {/*
-            Lock — shown only when this session actually holds a PIN.
-
-            Offering it without one would draw a curtain whose only exit is the
-            sign-out the operator was avoiding by locking. `hasPin` comes from
-            `AuthProvider`, which resolves it once per identity precisely so this
-            decision is synchronous.
-
-            Deliberately NOT styled as danger: locking is the safe, routine
-            action on a shared tablet — it is the one we want reached for on the
-            way to the tea room, and colouring it like Log Out invites the
-            heavier action by mistake.
-          */}
-          {hasPin && (
+        {isPhone ? (
+          <div style={{ position: 'relative' }}>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); lockNow() }}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)', minHeight: 44 }}
+              onClick={() => setProfileOpen((v) => !v)}
+              aria-label="User profile"
+              aria-expanded={profileOpen}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 'var(--r-badge)',
+                background: 'var(--card2)',
+                border: '1px solid var(--border)',
+                display: 'grid',
+                placeItems: 'center',
+                color: 'var(--text)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                padding: 0,
+              }}
             >
-              Lock
+              {initials}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); handleLogoutRequest() }}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)' }}
+
+            {profileOpen && (
+              <>
+                <div
+                  style={{ position: 'fixed', inset: 0, zIndex: 90 }}
+                  onClick={() => setProfileOpen(false)}
+                  aria-hidden="true"
+                />
+                <div
+                  role="dialog"
+                  aria-label="User profile"
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    right: 0,
+                    zIndex: 91,
+                    width: 230,
+                    background: 'var(--card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--r-card)',
+                    boxShadow: 'var(--shadow-modal)',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                    <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                      {user?.name || 'Guest'}
+                    </div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
+                      {user?.role || ''} · Kathmandu HQ
+                    </div>
+                  </div>
+                  {hasPin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileOpen(false)
+                        lockNow()
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        minHeight: 44,
+                        padding: '0 10px',
+                        borderRadius: 'var(--r-sm)',
+                        border: '1px solid var(--border)',
+                        background: 'var(--card2)',
+                        color: 'var(--text)',
+                        fontSize: 'var(--t-ui)',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <Icon name="lock" size={16} />
+                      Lock Session
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setProfileOpen(false)
+                      handleLogoutRequest()
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      minHeight: 44,
+                      padding: '0 10px',
+                      borderRadius: 'var(--r-sm)',
+                      border: '1px solid transparent',
+                      background: 'var(--btn-danger-bg)',
+                      color: 'var(--btn-danger-fg)',
+                      fontSize: 'var(--t-ui)',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    Log Out
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 'var(--sp-sm)',
+              height: 38,
+              padding: '0 6px 0 3px',
+              fontFamily: 'inherit',
+            }}
           >
-            Log Out
-          </button>
-        </div>
+            <span
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 'var(--r-badge)',
+                background: 'var(--card2)',
+                border: '1px solid var(--border)',
+                display: 'grid',
+                placeItems: 'center',
+                color: 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 700,
+                flexShrink: 0,
+              }}
+            >
+              {initials}
+            </span>
+            {vp === 'desktop' && (
+              <span style={{ textAlign: 'left', lineHeight: 1.25 }}>
+                <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+                  {user?.name || 'Guest'}
+                </span>
+                <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{user?.role || ''}</span>
+              </span>
+            )}
+            {hasPin && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); lockNow() }}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)', minHeight: 44 }}
+              >
+                Lock
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); handleLogoutRequest() }}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)' }}
+            >
+              Log Out
+            </button>
+          </div>
+        )}
       </div>
 
     </header>

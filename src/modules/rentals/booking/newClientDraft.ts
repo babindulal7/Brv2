@@ -1,6 +1,6 @@
 import { rupees } from '../../../lib/money'
-import { normalizedPhone } from '../../../data/clients'
-import type { ClientRecord, ClientType, MembershipTier, OrganisationType } from '../../../data/clients'
+import { normalizedPhone } from '../../../lib/queries/clients'
+import type { ClientRecord, ClientType, MembershipTier, OrganisationType } from '../../../lib/queries/clients'
 import type { CreateClientInput, CreateClientResult } from '../../../actions/clients/createClient'
 
 /**

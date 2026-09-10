@@ -88,6 +88,24 @@
     width: 100%;
     max-width: none;
   }
+
+  /* Prevent iOS WebKit involuntary viewport zoom on input focus.
+     Inputs with font-size < 16px cause iOS Safari to zoom the whole layout. */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Smooth touch horizontal chip bar scrolling without desktop scrollbar clutter */
+  .rsp-chip-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .rsp-chip-scroll::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* ══ TABLET — 768 to 1279 ══════════════════════════════════════════════════

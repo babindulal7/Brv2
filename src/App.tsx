@@ -1038,9 +1038,11 @@ function Shell({
             flex: 1,
             /* `BAR_BOX`, not `BOTTOM_BAR_HEIGHT`: the bar occupies its 58px plus
                the home-indicator inset, so reserving only the 58 leaves the last
-               row of content under the bar on a notched phone. One expression,
-               owned by `BottomBar.tsx`, so the two cannot drift. */
-            padding: phone ? `16px 20px calc(24px + ${BAR_BOX})` : '16px 20px 24px',
+               row of content under the bar on a notched phone. Floor routes add
+               another 64px on phone for StickyFloorBar. */
+            padding: phone
+              ? `16px 20px calc(${isFloor ? '88px' : '24px'} + ${BAR_BOX})`
+              : '16px 20px 24px',
           }}
         >
           {isForbidden ? (

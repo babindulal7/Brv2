@@ -2,8 +2,8 @@ import Icon from '../../../components/ui/Icon'
 import { Button } from '../../../components/ui/Page'
 import { Field, SectionCard, inputStyle, fieldRow, ConditionBadge, DraftStatusBadge, BsAbove, th, td, barcodePayload } from './EquipmentShared'
 import { useEquipmentContext } from './AddEquipmentContext'
-import { TRACKING_MODES, QUANTITY_UNITS, INTAKE_CONDITIONS } from '../../../data/addEquipment'
-import type { IntakeCondition } from '../../../data/addEquipment'
+import { TRACKING_MODES, QUANTITY_UNITS, INTAKE_CONDITIONS } from '../../../lib/queries/addEquipment'
+import type { IntakeCondition } from '../../../lib/queries/addEquipment'
 import { DateField } from '../../../components/ui/DateField'
 
 export function SectionStockUnits() {

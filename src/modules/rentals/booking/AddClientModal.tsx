@@ -14,7 +14,7 @@ import {
   type ClientRecord,
   type ClientType,
   type OrganisationType,
-} from '../../../data/clients'
+} from '../../../lib/queries/clients'
 import { PHONE_LOCAL_RE, PHONE_REJECTION, canonicalPhone, phoneLocalDigits } from '../../../lib/phone'
 import {
   DEFAULT_CLIENT_TYPE,

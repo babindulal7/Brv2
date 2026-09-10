@@ -27,7 +27,7 @@
 import { formatMoney } from '../../../lib/money'
 import Icon from '../../../components/ui/Icon'
 import { Button } from '../../../components/ui/Page'
-import type { ClientRecord } from '../../../data/clients'
+import type { ClientRecord } from '../../../lib/queries/clients'
 import { CLIENT_HEALTH_THRESHOLDS, clientHealth, creditCheck } from './clientHealth'
 import type { ClientHealthSignals } from './clientHealth'
 import { ClientHealthChip, ClientHealthReasons } from './ClientHealthChip'

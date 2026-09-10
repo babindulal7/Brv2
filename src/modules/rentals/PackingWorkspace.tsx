@@ -5,6 +5,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { FloorAside, floorPlacements } from '../operations/FloorAside'
+import { StickyFloorBar } from '../operations/StickyFloorBar'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
 import { STATUS, jobStateChip } from '../../lib/status'
@@ -1182,20 +1183,24 @@ export default function PackingWorkspace() {
                   title="2 · Packing Checklist"
                   bodyStyle={{ padding: 0 }}
                   action={
-                    <>
-                      {/*
-                        PK-07 — was `Bulk Scan`, wearing the search glyph and
-                        running `packAll`. It scanned nothing, read no serial
-                        and checked nothing: one press took 0/3 to 3/3. The
-                        name now matches the act, and the act is narrower —
-                        only Pending rows move, so a scan is never overwritten
-                        by a hand mark. What it does is counted under Packing
-                        Summary, where the split is visible before dispatch.
-                      */}
-                      <Button icon="checklist" onClick={markPendingPacked}>Mark Pending Packed</Button>
-                      <Button icon="queues" onClick={() => setShowScanner(true)}>Scan Barcode</Button>
-                      <Button icon="queues" onClick={() => setShowScanner(true)}>Scan QR</Button>
-                    </>
+                    phone ? (
+                      <Button icon="checklist" onClick={markPendingPacked}>Mark Pending</Button>
+                    ) : (
+                      <>
+                        {/*
+                          PK-07 — was `Bulk Scan`, wearing the search glyph and
+                          running `packAll`. It scanned nothing, read no serial
+                          and checked nothing: one press took 0/3 to 3/3. The
+                          name now matches the act, and the act is narrower —
+                          only Pending rows move, so a scan is never overwritten
+                          by a hand mark. What it does is counted under Packing
+                          Summary, where the split is visible before dispatch.
+                        */}
+                        <Button icon="checklist" onClick={markPendingPacked}>Mark Pending Packed</Button>
+                        <Button icon="queues" onClick={() => setShowScanner(true)}>Scan Barcode</Button>
+                        <Button icon="queues" onClick={() => setShowScanner(true)}>Scan QR</Button>
+                      </>
+                    )
                   }
                 >
                   <div style={{ display: 'flex', gap: 7, padding: '9px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1215,8 +1220,8 @@ export default function PackingWorkspace() {
                           onClick={() => setFilter(f)}
                           aria-pressed={on}
                           style={{
-                            height: 26,
-                            padding: '0 9px',
+                            minHeight: phone ? 36 : 26,
+                            padding: phone ? '0 12px' : '0 9px',
                             borderRadius: 7,
                             border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                             background: on ? 'var(--nav-active-bg)' : 'transparent',
@@ -1736,6 +1741,25 @@ export default function PackingWorkspace() {
                  rail behind it recorded. */
               onItemScanned={(item) => pack(item.id, 'scan')}
             />
+
+            {phone && !stageHeld && (
+              <StickyFloorBar
+                progress={{
+                  current: packedUnits,
+                  total: totalUnits,
+                  label: pendingUnits ? `${pendingUnits} pending` : 'All items packed',
+                  complete: canComplete,
+                }}
+                onScan={() => setShowScanner(true)}
+                primaryAction={{
+                  label: dispatching ? 'Recording…' : 'Complete Packing',
+                  onClick: completePacking,
+                  disabled: !canComplete,
+                  loading: dispatching,
+                  icon: 'checklist',
+                }}
+              />
+            )}
           </div>
         )}
       </PageBody>

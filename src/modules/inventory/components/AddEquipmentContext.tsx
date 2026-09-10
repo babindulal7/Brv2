@@ -21,8 +21,8 @@ import {
   LABEL_PRINT_UNAVAILABLE_REASON,
   PACKING_PREVIEW_UNAVAILABLE_REASON,
   LOCATIONS as ALL_LOCATIONS,
-} from '../../../data/addEquipment'
-import type { TrackingMode, LocationChoice } from '../../../data/addEquipment'
+} from '../../../lib/queries/addEquipment'
+import type { TrackingMode, LocationChoice } from '../../../lib/queries/addEquipment'
 import { Chip, DraftStatusBadge, countOf, formatBytes } from './EquipmentShared'
 import type { UnitDraft, ContainedDraft, FileDraft } from './EquipmentShared'
 

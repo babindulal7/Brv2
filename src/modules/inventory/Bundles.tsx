@@ -22,17 +22,21 @@ import { gateContext } from '../../lib/fieldGating'
 import { useMenuFlip } from '../../lib/menuFlip'
 import { useViewport } from '../../lib/device'
 import { IntelCard } from '../../components/ui/IntelCard'
-import { bundleGlance, bundleDetailGroups } from '../../data/bundleIntel'
 import {
+  bundleGlance,
+  bundleDetailGroups,
   BUNDLE_STATES,
   factsOf,
   ratioLabelOf,
   iconFor,
   isPriced,
-} from '../../data/bundles'
+  type BundleRecord,
+  type BundleState,
+  type BundleLine,
+  type BundleFacts,
+} from '../../lib/queries/bundles'
 import { useBundleRecords } from '../../lib/queries/useBundles'
 import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
-import type { BundleRecord, BundleState, BundleLine, BundleFacts } from '../../data/bundles'
 import { DateField } from '../../components/ui/DateField'
 
 /**

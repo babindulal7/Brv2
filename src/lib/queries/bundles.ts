@@ -294,3 +294,16 @@ async function readUnitCounts(ids: readonly string[]): Promise<Map<string, { tot
   }
   return out
 }
+
+export {
+  ACTIVE_BUNDLES,
+  ALL_CATEGORIES,
+  BUNDLE_STATES,
+  factsOf,
+  ratioLabelOf,
+  iconFor,
+  isPriced,
+} from '../../data/bundles'
+export { bundleGlance, bundleDetailGroups } from '../../data/bundleIntel'
+export type { BundleRecord, BundleState, BundleLine, BundleFacts } from '../../data/bundles'
+

@@ -260,7 +260,7 @@ export function Modal({
             alignItems: 'flex-start',
             justifyContent: 'space-between',
             gap: 'var(--sp-md)',
-            padding: '16px 20px',
+            padding: phone ? 'calc(16px + env(safe-area-inset-top, 0px)) 20px 16px' : '16px 20px',
             borderBottom: '1px solid var(--border)',
             flexShrink: 0,
           }}
@@ -327,7 +327,7 @@ export function Modal({
               alignItems: 'center',
               justifyContent: 'flex-end',
               gap: 'var(--sp-md)',
-              padding: '16px 20px',
+              padding: phone || sheet ? '16px 20px calc(16px + env(safe-area-inset-bottom, 0px))' : '16px 20px',
               borderTop: '1px solid var(--border)',
               background: 'var(--card2)',
               flexShrink: 0,

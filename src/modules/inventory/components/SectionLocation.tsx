@@ -1,7 +1,7 @@
 import Icon from '../../../components/ui/Icon'
 import { Field, SectionCard, inputStyle, fieldRow } from './EquipmentShared'
 import { useEquipmentContext } from './AddEquipmentContext'
-import { locationLabel } from '../../../data/addEquipment'
+import { locationLabel } from '../../../lib/queries/addEquipment'
 import { useWarehouses } from '../../../lib/queries/warehouses'
 
 export function SectionLocation() {

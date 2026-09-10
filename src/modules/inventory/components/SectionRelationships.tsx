@@ -2,7 +2,7 @@ import Icon from '../../../components/ui/Icon'
 import { Button } from '../../../components/ui/Page'
 import { Field, SectionCard, inputStyle, fieldRow, Chip } from './EquipmentShared'
 import { useEquipmentContext } from './AddEquipmentContext'
-import { CONTAINER_MODELS, ATTACHABLE_MODELS, modelName, CONTAINER_CAPACITY_REASON } from '../../../data/addEquipment'
+import { CONTAINER_MODELS, ATTACHABLE_MODELS, modelName, CONTAINER_CAPACITY_REASON } from '../../../lib/queries/addEquipment'
 
 export function SectionRelationships() {
   const {
