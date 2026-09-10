@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
@@ -8,8 +8,8 @@ import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import type { MembershipTier } from '../../data/clients'
 import {
+  listMembers,
   TABS,
   PLANS,
   PLAN_VIEWS,
@@ -22,8 +22,13 @@ import {
   MEMBER_ROWS_PER_PAGE,
   chipsFor,
   kpisFor,
-} from '../../data/membership'
-import type { Plan, MemberRow, MemberBucket, PlanView, Usage } from '../../data/membership'
+  type MembershipTier,
+  type Plan,
+  type MemberRow,
+  type MemberBucket,
+  type PlanView,
+  type Usage,
+} from '../../lib/queries/membership'
 
 /* ── small parts ───────────────────────────────────────────────────────── */
 
@@ -336,12 +341,26 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
   const [perPage, setPerPage] = useState<number>(MEMBER_ROWS_PER_PAGE[1])
   const [page, setPage] = useState(1)
 
-  const chips = useMemo(() => chipsFor(MEMBERS), [])
-  const kpis = useMemo(() => kpisFor(MEMBERS, money), [money])
+  const [memberList, setMemberList] = useState<MemberRow[]>(MEMBERS)
+
+  useEffect(() => {
+    let active = true
+    listMembers().then((res) => {
+      if (active && res.rows.length > 0) {
+        setMemberList(res.rows)
+      }
+    }).catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const chips = useMemo(() => chipsFor(memberList), [memberList])
+  const kpis = useMemo(() => kpisFor(memberList, money), [memberList, money])
 
   const rows = useMemo(
     () =>
-      MEMBERS.filter((m) => {
+      memberList.filter((m) => {
         if (bucket && m.bucket !== bucket) return false
         if (level && m.level !== level) return false
         // "Renews within 30 days" is forward-looking — a member already past the
@@ -349,7 +368,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
         if (renewingSoon && !(m.daysLeft >= 0 && m.daysLeft <= 30)) return false
         return true
       }),
-    [bucket, level, renewingSoon],
+    [memberList, bucket, level, renewingSoon],
   )
 
   const pageCount = Math.max(1, Math.ceil(rows.length / perPage))
@@ -481,7 +500,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                 key={p.name}
                 p={p}
                 money={money}
-                memberCount={MEMBERS.filter((m) => m.level === p.name).length}
+                memberCount={memberList.filter((m) => m.level === p.name).length}
                 onViewMembers={() => {
                   setLevel(p.name)
                   setBucket(null)
@@ -518,7 +537,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                   <td style={{ ...td, color: 'var(--text2)' }}>Members on plan</td>
                   {PLANS.map((p) => (
                     <td key={p.name} className="figure" style={{ ...td, textAlign: 'right' }}>
-                      {MEMBERS.filter((m) => m.level === p.name).length}
+                      {memberList.filter((m) => m.level === p.name).length}
                     </td>
                   ))}
                 </tr>
