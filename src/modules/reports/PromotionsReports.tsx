@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { PageHeader, ReflowRail, KpiStrip, cardStyle, useRailGridColumns } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
@@ -6,7 +7,18 @@ import { Donut, Legend } from '../../components/ui/Charts'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
-import { METRICS, RETURN_ON_PROMOTION, IMPACT, COUPON_DONUT, CLIENT_USAGE, TOP_COUPONS, BUNDLE_ANALYSIS, DISCOUNT_TYPES } from '../../data/promotionsReports'
+import {
+  METRICS,
+  RETURN_ON_PROMOTION,
+  IMPACT,
+  COUPON_DONUT,
+  CLIENT_USAGE,
+  TOP_COUPONS,
+  BUNDLE_ANALYSIS,
+  DISCOUNT_TYPES,
+  getPromotionsReportsSummary,
+  type PromotionsReportsSummary,
+} from '../../lib/queries/promotionsReports'
 
 /** The export body — the headline block, both tables and the two rail lists. */
 function promotionsCsv(totalIssued: number): ReportCsvRow[] {
@@ -47,6 +59,17 @@ export default function PromotionsReports() {
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const money = useCanViewMoney()
+  const [, setSummary] = useState<PromotionsReportsSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getPromotionsReportsSummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   // Law 6 — promotion revenue, discounts given and net impact are all rupees.
   if (!money) {

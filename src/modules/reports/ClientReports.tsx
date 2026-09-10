@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, cardStyle, useRailGridColumns } from '../../components/ui/Page'
@@ -24,7 +25,9 @@ import {
   HIGH_RISK,
   INSIGHTS,
   BS_NOTE,
-} from '../../data/clientReports'
+  getClientReportsSummary,
+  type ClientReportsSummary,
+} from '../../lib/queries/clientReports'
 
 const th = {
   textAlign: 'left' as const,
@@ -191,6 +194,17 @@ export default function ClientReports() {
   const railGridColumns = useRailGridColumns()
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const [, setSummary] = useState<ClientReportsSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getClientReportsSummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
   const kpis = money ? KPIS : KPIS.filter((k) => k.label !== 'Outstanding Receivables')
   const summary = money ? SUMMARY : SUMMARY.filter((s) => s.label !== 'Outstanding Receivables' && s.label !== 'Average Lifetime Value')
   const membershipStats = money ? MEMBERSHIP.stats : MEMBERSHIP.stats.filter((s) => s.label === 'Renewal Rate')

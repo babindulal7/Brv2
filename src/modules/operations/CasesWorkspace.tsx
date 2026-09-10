@@ -115,7 +115,7 @@ function statusFromParam(value: string | null): FilterKey {
   return 'All'
 }
 
-export function CasesWorkspace() {
+export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
 
@@ -271,10 +271,12 @@ export function CasesWorkspace() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* The one `<h1>` on the route — this screen opened straight on the KPI
           strip, the only queue in the app without a title landmark (A7). */}
-      <PageHeader
-        title="Cases"
-        description="Damage, loss and discrepancy cases across bookings — the queue, its exposure, and what has been recovered."
-      />
+      {!embedded && (
+        <PageHeader
+          title="Cases"
+          description="Damage, loss and discrepancy cases across bookings — the queue, its exposure, and what has been recovered."
+        />
+      )}
 
       {routeCaseId && (
         <Card padding="md">

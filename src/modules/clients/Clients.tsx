@@ -1,5 +1,5 @@
-import { useMemo } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
@@ -8,6 +8,10 @@ import { useClients, useMembershipPlans } from '../../lib/queries/useClients'
 import { EmptyState } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
 import Membership from './Membership'
+import AddClient from './AddClient'
+import ImportCenter from './ImportCenter'
+import DuplicateCenter from './DuplicateCenter'
+import GenerateReferralCode from './GenerateReferralCode'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
@@ -17,29 +21,28 @@ import { STACK_NOTE } from '../../data/membership'
 import { STATUS } from '../../lib/status'
 
 /**
- * Clients — directory, memberships, referrals and credit.
- *
- * Foundation §5.1 merges Memberships into this screen as a **tab**, so the page
- * title and the tab strip live here and `Membership` renders `embedded`.
- *
- * The render heads the first tab "Customers". CLAUDE.md: that word appears
- * nowhere in the UI — they are **clients**.
+ * Clients — directory, memberships, referrals, credit, imports, and duplicates.
+ * All workflows integrated directly in this module with tabs and in-page views.
  */
 
-type TabKey = 'clients' | 'membership' | 'referral' | 'credit'
+type TabKey = 'clients' | 'new' | 'membership' | 'referral' | 'credit' | 'import' | 'duplicates'
 
 interface TabDef {
   key: TabKey
   label: string
   /** A money-only surface is absent for Warehouse, not disabled (§8.3). */
   money?: boolean
+  hideInBar?: boolean
 }
 
 const TAB_DEFS: TabDef[] = [
-  { key: 'clients', label: 'Clients' },
+  { key: 'clients', label: 'Directory' },
+  { key: 'new', label: 'New Client', hideInBar: true },
   { key: 'membership', label: 'Membership' },
   { key: 'referral', label: 'Referral' },
   { key: 'credit', label: 'Credit', money: true },
+  { key: 'import', label: 'Import' },
+  { key: 'duplicates', label: 'Duplicates' },
 ]
 
 /** Escapes a value for a CSV cell — the export is real, so quoting has to be. */
@@ -49,7 +52,6 @@ function csvCell(v: string | number): string {
 }
 
 export default function Clients() {
-  const navigate = useNavigate()
   const money = useCanViewMoney()
   const { showSuccessToast } = useToast()
   const [params, setParams] = useSearchParams()
@@ -78,10 +80,13 @@ export default function Clients() {
    * local override map: painting `isBlocked` over a fetched row is what made the
    * old version unable to tell a real block from an imagined one.
    */
-  const tabs = useMemo(() => TAB_DEFS.filter((t) => money || !t.money), [money])
-
   const requested = (params.get('tab') ?? 'clients') as TabKey
-  const activeTab: TabKey = tabs.some((t) => t.key === requested) ? requested : 'clients'
+  const allAllowedTabs = useMemo(() => TAB_DEFS.filter((t) => money || !t.money), [money])
+  const activeTab: TabKey = allAllowedTabs.some((t) => t.key === requested) ? requested : 'clients'
+  const visibleTabs = useMemo(
+    () => allAllowedTabs.filter((t) => !t.hideInBar || activeTab === t.key),
+    [allAllowedTabs, activeTab],
+  )
 
   const setTab = (key: TabKey) => {
     const next = new URLSearchParams(params)
@@ -96,9 +101,6 @@ export default function Clients() {
    * file exactly as it applies to the table.
    */
   const exportCsv = () => {
-    // No 'Company' column. `ClientRecord.company` has no source in
-    // `client_directory_v` — the mapper never sets it — so every cell was blank
-    // on every row. A header over nothing is a column the file cannot fill.
     const headers = [
       'Client ID',
       'Name',
@@ -107,13 +109,8 @@ export default function Clients() {
       'Phone',
       'Email',
       'PAN',
-      // `active_bookings_count`: every booking that is neither Closed nor
-      // cancelled, not the ones currently out — see the KPI note in
-      // ClientsDirectory.tsx.
       'Active Rentals',
       ...(money ? ['Outstanding (Rs)', 'Deposit Held (Rs)'] : []),
-      // Not "(BS)": the value is the BS date where the engine can name one and
-      // the AD date otherwise, so the header cannot promise either calendar.
       'Last Rental',
       'Status',
     ]
@@ -129,10 +126,6 @@ export default function Clients() {
         c.currentRentalsCount,
         ...(money ? [formatMoney(c.outstandingPaisa), formatMoney(c.depositHeldPaisa)] : []),
         c.lastRentalBs,
-        /* NOT "Active": since CL-04 that word means "has a booking that is
-           neither Closed nor cancelled", and this column is about the block
-           flag — a different fact about a different thing. Two senses of one
-           word in one export is a spreadsheet nobody can filter. */
         c.isBlocked ? 'Blocked' : 'Not blocked',
       ]
         .map(csvCell)
@@ -152,27 +145,27 @@ export default function Clients() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
         title="Clients"
-        description="Manage your clients, memberships, referrals and credit"
+        description="Manage your clients, memberships, referrals, imports, duplicates and credit"
         actions={
           <>
-            <Button variant="primary" icon="plus" onClick={() => navigate('/clients/new')}>
+            <Button variant="primary" icon="plus" onClick={() => setTab('new')}>
               New Client
             </Button>
-            <Button icon="upload" onClick={() => navigate('/clients/import')}>
+            <Button icon="upload" onClick={() => setTab('import')}>
               Import
             </Button>
             <Button icon="download" onClick={exportCsv}>
               Export
             </Button>
-            <Button icon="users" onClick={() => navigate('/clients/duplicates')}>
+            <Button icon="users" onClick={() => setTab('duplicates')}>
               Find Duplicates
             </Button>
           </>
         }
       />
 
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)' }}>
-        {tabs.map((t) => {
+      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
+        {visibleTabs.map((t) => {
           const on = activeTab === t.key
           return (
             <button
@@ -191,6 +184,7 @@ export default function Clients() {
                 fontWeight: on ? 700 : 500,
                 cursor: 'pointer',
                 fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
                 marginBottom: -1,
               }}
             >
@@ -202,25 +196,6 @@ export default function Clients() {
 
       {activeTab === 'clients' && (
         <>
-          {/*
-            `PageBody` owns error → loading → children here, in that fixed order,
-            and replaces the ladder this screen used to hand-roll (an ErrorBanner,
-            a Card reading "Loading clients…", and a bare boolean for the happy
-            path). Three deliberate choices:
-
-            - `empty` is NOT passed. `ClientsDirectory` renders its own empty
-              state one level down and it is the better one: it keeps the search
-              box and the filter chips on screen, and it already distinguishes
-              "the directory is empty" from "nothing matches this filter" — a
-              distinction only it can make, because it owns the filter state.
-              Intercepting at zero rows here would replace both with one message
-              and take the filters away with them.
-            - `hasRows` IS passed, so a failed refresh renders the banner ABOVE
-              the table someone is reading instead of replacing it.
-            - `restricted` is not set: clients are not a money surface. A
-              money-blind session reads the directory with the money columns
-              absent, which `client_directory_v` does by returning them null.
-          */}
           <PageBody
             loading={clientsLoading}
             error={clientsError}
@@ -229,10 +204,13 @@ export default function Clients() {
             noun="clients"
             skeleton="table"
           >
-            <ClientsDirectory clients={clients} onRequestAdd={() => navigate('/clients/new')} onBlockChanged={refresh} />
+            <ClientsDirectory clients={clients} onRequestAdd={() => setTab('new')} onBlockChanged={refresh} />
           </PageBody>
         </>
       )}
+      {activeTab === 'new' && <AddClient />}
+      {activeTab === 'import' && <ImportCenter />}
+      {activeTab === 'duplicates' && <DuplicateCenter />}
       {activeTab === 'membership' && <Membership embedded />}
       {activeTab === 'referral' && <ReferralView />}
       {activeTab === 'credit' && money && (
@@ -339,13 +317,26 @@ const td = { height: 'var(--row-min-h)', padding: '11px 12px', fontSize: 'var(--
  * not a source for this one.
  */
 function ReferralView() {
-  const navigate = useNavigate()
+  const [composing, setComposing] = useState(false)
+
+  if (composing) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <div>
+          <Button icon="chevron_left" onClick={() => setComposing(false)}>
+            Back to Referrals
+          </Button>
+        </div>
+        <GenerateReferralCode />
+      </div>
+    )
+  }
 
   return (
     <Card
       title="Referral conversions and affiliate rewards"
       action={
-        <Button icon="plus" onClick={() => navigate('/clients/referral/new')}>
+        <Button icon="plus" onClick={() => setComposing(true)}>
           Generate Referral Code
         </Button>
       }

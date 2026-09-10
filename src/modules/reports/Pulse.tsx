@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -30,8 +30,12 @@ import {
   previousPeriod,
   rangeLabel,
   dueStatus,
-} from '../../data/pulse'
-import type { ChartView, PeriodFigures, EquipmentRow } from '../../data/pulse'
+  getPulseLiveSummary,
+  type ChartView,
+  type PeriodFigures,
+  type EquipmentRow,
+  type PulseLiveSummary,
+} from '../../lib/queries/pulse'
 
 /*
  * The operating day, resolved once when this module loads, from the real
@@ -367,6 +371,17 @@ export default function Pulse() {
   const [periodKey, setPeriodKey] = useState<string>(DEFAULT_PERIOD)
   const [compareOn, setCompareOn] = useState(true)
   const [view, setView] = useState<ChartView>('revenue')
+  const [, setLiveSummary] = useState<PulseLiveSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getPulseLiveSummary().then((res) => {
+      if (active) setLiveSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const period = PERIODS.find((p) => p.key === periodKey) ?? null
   const range = period?.range ?? null

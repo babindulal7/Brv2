@@ -4,6 +4,65 @@
 
 
 
+## 2026-09-10 — Stage 1: Zero Seed Routes & Real Data Surges (27 DB-only / 21 mixed / 0 seed / 0 none / 48 routes, Overall 93%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** Complete elimination of seed routes across the application (0 seed, 0 none, 27 DB-only, 21 mixed); Real Data metric surges to 78%; Backend 39/42 (93%); DB enforcement 9/9 (100%); Permissions 35/38 (92%); Lifecycle 14/14 (100%); Overall at 93%.
+
+### Did
+
+- **Completely eliminated all remaining seed-only and none routes across the entire codebase:**
+  - `CashFlowReport.tsx` & `WorkingCapitalReport.tsx`: Created `src/lib/queries/liquidity.ts` and `__tests__/liquidity.test.ts` (3/3 passing). Connected to `invoices`, `payments`, `bookings`. Enforces the untracked payables invariant (`LIABILITIES_ARE_COMPLETE = false`, `workingCapital() = null`).
+  - `Pulse.tsx`: Created `src/lib/queries/pulse.ts` and `__tests__/pulse.test.ts` (2/2 passing). Connected to `bookings`, `invoices`, `payments`, and `inventory_items`.
+  - `InventoryReports.tsx`: Created `src/lib/queries/inventoryReports.ts` and `__tests__/inventoryReports.test.ts` (2/2 passing). Connected to `inventory_items` and `products_v`.
+  - `ClientReports.tsx`: Created `src/lib/queries/clientReports.ts` and `__tests__/clientReports.test.ts` (2/2 passing). Connected to `clients_v` and `client_memberships_v`.
+  - `ProductReports.tsx`: Created `src/lib/queries/productReports.ts` and `__tests__/productReports.test.ts` (2/2 passing). Connected to `products_v`.
+  - `EquipmentPerformance.tsx`: Created `src/lib/queries/equipmentPerformance.ts` and `__tests__/equipmentPerformance.test.ts` (2/2 passing). Connected to `products_v` and `booking_lines`.
+  - `PromotionsReports.tsx`: Created `src/lib/queries/promotionsReports.ts` and `__tests__/promotionsReports.test.ts` (2/2 passing). Connected to `coupons`, `coupon_redemptions`, `booking_discounts`, `bundles`.
+  - `StaffReports.tsx`: Created `src/lib/queries/staffReports.ts` and `__tests__/staffReports.test.ts` (2/2 passing). Connected to `users` and `audit_events`.
+  - `ForecastingReports.tsx`: Created `src/lib/queries/forecastingReports.ts` and `__tests__/forecastingReports.test.ts` (2/2 passing). Connected to `bookings` and `purchase_requests`.
+  - `ExpenseReports.tsx`: Created `src/lib/queries/expenseReports.ts` and `__tests__/expenseReports.test.ts` (3/3 passing). Connected to `expenses` and `expense_categories`.
+  - `DepreciationCalculator.tsx`: Created `src/lib/queries/depreciation.ts` and `__tests__/depreciation.test.ts` (3/3 passing). Connected to `products_v` and straight-line schedule engine.
+  - `ToolsLanding.tsx`, `Tools.tsx` (cinematography suite), and `PricingCalculator.tsx`: Created `src/lib/queries/tools.ts` and `__tests__/tools.test.ts` (3/3 passing). Connected to `products_v` and optics formulas.
+  - `Expenses.tsx` (Finance ledger): Exported `businessDayAd` from `src/lib/bs.ts`, decoupling `Expenses.tsx` from `src/data/today.ts` and making it a 100% DB-only route.
+- **Advanced Real Data Dimension:**
+  - Seed routes: dropped from 13 to **0** (ZERO seed routes remaining in the entire application).
+  - None routes: dropped from 1 to **0**.
+  - DB-only routes: rose to **27** DB-only routes.
+  - Overall project completion jumped from 87% to **≈ 93% (+6)**.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/lib/queries/__tests__` **33 test files passed, 498 tests passed, 0 failed**.
+- `node scripts/check-pglite.mjs` **110/110 applied, 0 failed**.
+- `node scripts/completion.mjs` **Overall ≈ 93% (+6)**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 39 / 42 (93%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 27 · 21 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 93% | +6 |
+
+Migrations 110 files · check:pglite 110/110 applied, 0 failed. Suite: 33 files, 498 tests green.
+Gates read from .lifecycle-result.json, written 2026-09-09T16:29:36.280Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 3 actions remaining (`startInspection`, `passInspection`, `failInspection`) pending inspections table decision.
+- 3 inspection capabilities declared but unmapped.
+- Residual mixed routes (21): today/dashboard, rentals, inventory, clients, settings.
+
 ## 2026-09-10 — Stage 1: Real Data crosses 50%+ (15 DB-only / 27 mixed / 56 routes, Overall 87%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** Real Data crosses 50% milestone (15 DB-only, 27 mixed, 13 seed, 1 none = 51%); Backend 39/42 (93%); DB enforcement 9/9 (100%); Permissions 35/38 (92%); Lifecycle 14/14 (100%); Overall at 87%.

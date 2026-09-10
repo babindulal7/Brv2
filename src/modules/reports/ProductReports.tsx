@@ -19,6 +19,7 @@
  * by rulings §11.3 and asserted in `catalog.test.ts` — adding a 44th row is a
  * register change only a ruling can make. See PLAN.md §4.41(a).
  */
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
@@ -45,7 +46,9 @@ import {
   TOP_SELLING,
   LOW_STOCK,
   SUPPLIERS,
-} from '../../data/productReports'
+  getProductReportsSummary,
+  type ProductReportsSummary,
+} from '../../lib/queries/productReports'
 
 const th = {
   textAlign: 'left' as const,
@@ -204,6 +207,17 @@ function productsCsv(money: boolean): ReportCsvRow[] {
 export default function ProductReports() {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const [, setSummary] = useState<ProductReportsSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getProductReportsSummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
   const kpis = money ? KPIS : KPIS.filter((k) => k.label !== 'Total Product Revenue' && k.label !== 'Gross Profit')
   const summary = money ? SUMMARY : SUMMARY.filter((s) => s.label !== 'Product Revenue' && s.label !== 'Gross Profit' && s.label !== 'Average Margin')
   return (

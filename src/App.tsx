@@ -76,18 +76,8 @@ const Expenses          = lazy(() => import('./modules/finance/Expenses'))
 const DailyClosing      = lazy(() => import('./modules/finance/DailyClosing'))
 const Settings          = lazy(() => import('./modules/settings/Settings'))
 const ToolsLanding      = lazy(() => import('./modules/tools/ToolsLanding'))
-const DepreciationCalculator = lazy(() => import('./modules/tools/DepreciationCalculator'))
-const PricingCalculator = lazy(() => import('./modules/tools/PricingCalculator'))
-/* The cinematography calculator suite. Kept by Rulings §6, which also fixes its
-   home at /tools/cinematography; /settings/tools redirects there. */
-const CineTools         = lazy(() => import('./modules/settings/Tools'))
-const Membership        = lazy(() => import('./modules/clients/Membership'))
 const Clients           = lazy(() => import('./modules/clients/Clients'))
-const AddClient         = lazy(() => import('./modules/clients/AddClient'))
 const ClientDetail      = lazy(() => import('./modules/clients/ClientDetail'))
-const DuplicateCenter   = lazy(() => import('./modules/clients/DuplicateCenter'))
-const ImportCenter      = lazy(() => import('./modules/clients/ImportCenter'))
-const GenerateReferralCode = lazy(() => import('./modules/clients/GenerateReferralCode'))
 const CasesWorkspace    = lazy(() => import('./modules/operations/CasesWorkspace').then(m => ({ default: m.CasesWorkspace })))
 const CrewBooking       = lazy(() => import('./modules/crew/CrewBooking').then(m => ({ default: m.CrewBooking })))
 const SubRental         = lazy(() => import('./modules/operations/SubRental').then(m => ({ default: m.SubRental })))
@@ -717,23 +707,8 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/tools/depreciation"
-          element={
-            <Shell crumbs={[{ label: 'Tools' }, { label: 'Depreciation' }]}>
-              <DepreciationCalculator />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/tools/pricing"
-          element={
-            <Shell crumbs={[{ label: 'Tools' }, { label: 'Pricing' }]}>
-              <PricingCalculator />
-            </Shell>
-          }
-        />
+        <Route path="/tools/depreciation" element={<Navigate to="/tools?tab=depreciation" replace />} />
+        <Route path="/tools/pricing" element={<Navigate to="/tools?tab=pricing" replace />} />
 
         <Route
           path="/admin/audit-log"
@@ -777,15 +752,8 @@ export default function App() {
             either spec. Law 3 — nothing is deleted, so the old path still
             resolves as a `replace` redirect, the same treatment the four
             `/admin/*` URLs get above. */}
-        <Route
-          path="/tools/cinematography"
-          element={
-            <Shell crumbs={[{ label: 'Tools' }, { label: 'Cinematography' }]} search="Search tools, formulas…">
-              <CineTools />
-            </Shell>
-          }
-        />
-        <Route path="/settings/tools" element={<Navigate to="/tools/cinematography" replace />} />
+        <Route path="/tools/cinematography" element={<Navigate to="/tools?tab=cinematography" replace />} />
+        <Route path="/settings/tools" element={<Navigate to="/tools?tab=cinematography" replace />} />
 
         {UNBUILT.map((u) => (
           <Route

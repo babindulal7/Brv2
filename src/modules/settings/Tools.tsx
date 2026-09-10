@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import Icon from '../../components/ui/Icon'
@@ -40,8 +40,9 @@ import {
   USABLE_CAPACITY,
   readFavourites,
   writeFavourites,
-} from '../../data/tools'
-import type { Tool, GroupKey, CalcKey } from '../../data/tools'
+  getToolsStatus,
+} from '../../lib/queries/tools'
+import type { Tool, GroupKey, CalcKey } from '../../lib/queries/tools'
 
 /**
  * **Settings ▸ Tools** — built against `03 Core Modules/Tools.PNG` and its spec
@@ -1120,6 +1121,10 @@ const OPEN_DECISIONS: ReadonlyArray<{ q: string; why: string }> = [
 
 export default function Tools() {
   const money = useCanViewMoney()
+
+  useEffect(() => {
+    void getToolsStatus()
+  }, [])
 
   /* Locked rule (e) — money tools are removed from the array before anything
      renders. Nothing is masked, dashed or greyed; a money-blind session simply

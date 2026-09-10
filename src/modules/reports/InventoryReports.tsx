@@ -1,8 +1,15 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
-import { INVENTORY_METRICS, ASSET_HEALTH, TOP_CATEGORIES } from '../../data/inventoryReports'
+import {
+  INVENTORY_METRICS,
+  ASSET_HEALTH,
+  TOP_CATEGORIES,
+  getInventoryReportSummary,
+  type InventoryReportSummary,
+} from '../../lib/queries/inventoryReports'
 import { formatMoney, rupees } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 
@@ -44,6 +51,18 @@ function inventoryCsv(money: boolean): ReportCsvRow[] {
 
 export default function InventoryReports() {
   const money = useCanViewMoney()
+  const [, setSummary] = useState<InventoryReportSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getInventoryReportSummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader

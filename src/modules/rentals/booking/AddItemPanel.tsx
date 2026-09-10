@@ -253,9 +253,9 @@ export function AddItemPanel({
   const listboxId = `${reactId}-add-item-listbox`
   const hintId = `${reactId}-add-item-hint`
 
-  /* Inline mode has nothing to open — the field is the control, so it starts
-     open and `close()` never hides it. */
-  const [open, setOpen] = useState(inline)
+  /* Starts closed by default so catalogue results do not clutter the page up front.
+     Shows on search or when clicking the input / browse button. */
+  const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<TabKey>('all')
   const [category, setCategory] = useState<string | null>(null)
@@ -304,33 +304,40 @@ export function AddItemPanel({
     el?.scrollIntoView({ block: 'nearest' })
   }, [open, activeId])
 
+  /** Close on outside pointer interaction */
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null
+      if (rootRef.current && !rootRef.current.contains(target)) {
+        if (preview !== null || overrideUnit !== null) return
+        setOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [open, preview, overrideUnit])
+
   /** ⌘K / Ctrl+K — open the panel and put the cursor in the field. */
   useEffect(() => {
     if (disabled) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() !== 'k' || !(e.metaKey || e.ctrlKey)) return
       e.preventDefault()
-      // Inline: already open, so this is purely "put my cursor in the field".
-      if (!inline) setOpen(true)
-      // Next frame — the input does not exist until the panel has rendered.
+      setOpen(true)
       globalThis.requestAnimationFrame(() => inputRef.current?.focus())
     }
     globalThis.addEventListener('keydown', onKey)
     return () => globalThis.removeEventListener('keydown', onKey)
-  }, [disabled, inline])
+  }, [disabled])
 
   const close = useCallback(() => {
-    if (inline) {
-      /* Nothing to close. Escape does what it does in every other search field:
-         empties it and hands the cursor back, so the results list collapses to
-         the section's own empty state. */
-      setQuery('')
-      setActiveIndex(0)
-      inputRef.current?.focus()
-      return
-    }
     setOpen(false)
-    triggerRef.current?.focus()
+    if (inline) {
+      inputRef.current?.blur()
+    } else {
+      triggerRef.current?.focus()
+    }
   }, [inline])
 
   /* ── Committing ─────────────────────────────────────────────────────── */
@@ -432,9 +439,6 @@ export function AddItemPanel({
           minHeight: TOUCH,
           padding: '0 12px',
           borderRadius: 'var(--r-btn)',
-          // redesign v1 §7.2 — one accent on the page: Confirm Booking is the
-          // only filled-blue button. Add Item was competing with it, so this
-          // moves to the same `secondary` treatment Button.tsx uses.
           background: 'var(--btn-secondary-bg)',
           color: 'var(--text)',
           border: '1px solid var(--btn-secondary-border)',
@@ -466,84 +470,197 @@ export function AddItemPanel({
       </button>
       )}
 
+      {inline && (
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+          <div style={{ position: 'relative', flex: 1 }}>
+            <input
+              ref={inputRef}
+              id={inputId}
+              type="text"
+              role="combobox"
+              autoComplete="off"
+              spellCheck={false}
+              aria-expanded={open}
+              aria-controls={listboxId}
+              aria-autocomplete="list"
+              aria-haspopup="listbox"
+              aria-describedby={hintId}
+              {...(activeId ? { 'aria-activedescendant': activeId } : {})}
+              placeholder="Search equipment, bundles & services by name, SKU, serial, brand, category…"
+              value={query}
+              onFocus={() => setOpen(true)}
+              onClick={() => setOpen(true)}
+              onChange={(e) => {
+                setQuery(e.target.value)
+                setActiveIndex(0)
+                if (!open) setOpen(true)
+              }}
+              onKeyDown={onKeyDown}
+              style={{
+                ...inputStyle,
+                width: '100%',
+                height: 38,
+                paddingLeft: 34,
+                paddingRight: query ? 32 : 12,
+                borderRadius: 'var(--r-btn)',
+              }}
+            />
+            <span
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                left: 10,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                display: 'inline-flex',
+                color: 'var(--muted)',
+                pointerEvents: 'none',
+              }}
+            >
+              <Icon name="search" size={16} />
+            </span>
+            {query && (
+              <button
+                type="button"
+                className="press"
+                aria-label="Clear search query"
+                onClick={() => {
+                  setQuery('')
+                  setActiveIndex(0)
+                  inputRef.current?.focus()
+                }}
+                style={{
+                  position: 'absolute',
+                  right: 8,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 4,
+                }}
+              >
+                <Icon name="close" size={14} />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="press"
+            onClick={() => {
+              setOpen((o) => {
+                const next = !o
+                if (next) {
+                  globalThis.requestAnimationFrame(() => inputRef.current?.focus())
+                }
+                return next
+              })
+            }}
+            aria-expanded={open}
+            aria-label={open ? 'Hide catalogue' : 'Browse catalogue'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 38,
+              padding: '0 14px',
+              borderRadius: 'var(--r-btn)',
+              background: open ? 'var(--st-primary-bg)' : 'var(--btn-secondary-bg)',
+              color: open ? 'var(--st-primary-fg)' : 'var(--text)',
+              border: `1px solid ${open ? 'var(--primary)' : 'var(--btn-secondary-border)'}`,
+              fontFamily: 'inherit',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
+            <span>{open ? 'Hide' : 'Browse'}</span>
+          </button>
+        </div>
+      )}
+
       {open && (
         <div
-          {...(inline ? {} : { role: 'dialog', 'aria-label': 'Add item to booking' })}
+          role="dialog"
+          aria-label="Add item to booking"
           style={{
-            /* Inline: part of the section, so it takes the section's width and
-               loses the popover's lift. A dialog role would be a lie for
-               something that is simply on the page, and the modal shadow would
-               make it read as floating over content it is not covering. */
+            position: 'absolute' as const,
+            zIndex: 45,
+            top: 'calc(100% + 6px)',
             ...(inline
-              ? { position: 'relative' as const, width: '100%', background: 'var(--card2)' }
-              : {
-                  position: 'absolute' as const,
-                  zIndex: 45,
-                  top: 'calc(100% + 6px)',
-                  right: 0,
-                  width: 'min(620px, calc(100vw - 32px))',
-                  background: 'var(--dropdown)',
-                  boxShadow: 'var(--shadow-modal)',
-                }),
+              ? { left: 0, width: '100%' }
+              : { right: 0, width: 'min(620px, calc(100vw - 32px))' }),
+            background: 'var(--dropdown)',
+            boxShadow: 'var(--shadow-modal)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--r-card)',
             overflow: 'hidden',
+            maxHeight: 'min(560px, 80vh)',
+            display: 'flex',
+            flexDirection: 'column',
           }}
-          {...(inline
-            ? {}
-            : {
-                onBlur: (e: React.FocusEvent<HTMLDivElement>) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node | null) && preview === null) setOpen(false)
-                },
-              })}
         >
-          {/* ── Search field ─────────────────────────────────────────── */}
-          <div style={{ padding: 10, borderBottom: '1px solid var(--border)', display: 'grid', gap: 9 }}>
-            <div style={{ position: 'relative' }}>
-              <input
-                ref={inputRef}
-                id={inputId}
-                type="text"
-                role="combobox"
-                autoComplete="off"
-                spellCheck={false}
-                aria-expanded
-                aria-controls={listboxId}
-                aria-autocomplete="list"
-                aria-haspopup="listbox"
-                aria-describedby={hintId}
-                {...(activeId ? { 'aria-activedescendant': activeId } : {})}
-                placeholder="Search name, SKU, serial, brand, category, bundle code — or a model inside a bundle…"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value)
-                  setActiveIndex(0)
-                }}
-                onKeyDown={onKeyDown}
-                style={{
-                  ...inputStyle,
-                  width: '100%',
-                  height: 36,
-                  paddingLeft: 32,
-                  paddingRight: 10,
-                }}
-              />
-              <span
-                aria-hidden="true"
-                style={{
-                  position: 'absolute',
-                  left: 10,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  display: 'inline-flex',
-                  color: 'var(--muted)',
-                  pointerEvents: 'none',
-                }}
-              >
-                <Icon name="search" size={15} />
-              </span>
+          {/* ── Search field (popover mode only) ─────────────────────── */}
+          {!inline && (
+            <div style={{ padding: 10, borderBottom: '1px solid var(--border)' }}>
+              <div style={{ position: 'relative' }}>
+                <input
+                  ref={inputRef}
+                  id={inputId}
+                  type="text"
+                  role="combobox"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-expanded
+                  aria-controls={listboxId}
+                  aria-autocomplete="list"
+                  aria-haspopup="listbox"
+                  aria-describedby={hintId}
+                  {...(activeId ? { 'aria-activedescendant': activeId } : {})}
+                  placeholder="Search name, SKU, serial, brand, category, bundle code — or a model inside a bundle…"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value)
+                    setActiveIndex(0)
+                  }}
+                  onKeyDown={onKeyDown}
+                  style={{
+                    ...inputStyle,
+                    width: '100%',
+                    height: 36,
+                    paddingLeft: 32,
+                    paddingRight: 10,
+                  }}
+                />
+                <span
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    left: 10,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    display: 'inline-flex',
+                    color: 'var(--muted)',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <Icon name="search" size={15} />
+                </span>
+              </div>
             </div>
+          )}
 
+          {/* ── Tabs & filters ───────────────────────────────────────── */}
+          <div style={{ padding: 10, borderBottom: '1px solid var(--border)', display: 'grid', gap: 9 }}>
             {/* ── Tabs (§27) ─────────────────────────────────────────── */}
             <div role="tablist" aria-label="Catalogue type" style={{ display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
               {TABS.map((t) => {
@@ -1059,10 +1176,14 @@ function EquipmentGroupRow({
   onRequestOverride: (unit: EquipmentResult) => void
 }) {
   const bulk = group.units.length === 1 && group.units[0]!.serial === '—'
-  /* Counted on the VERDICT, not on a unit's present status — since NR-09 a live
-     row carries no status at all, and for a seed serialised row the two tests
-     agree exactly (`equipmentAvailability` maps In Stock → available). */
-  const freeCount = group.units.filter((u) => u.availability.level === 'available').length
+  /* Counted on free availability or In Stock status so serials are honestly accounted for */
+  const freeCount = group.units.filter(
+    (u) =>
+      u.availability.level !== 'unavailable' &&
+      u.status !== 'On Rent' &&
+      u.status !== 'Reserved' &&
+      u.status !== 'Maintenance',
+  ).length
   const allOnBooking = group.units.every((u) => existing.has(u.id))
   const meta = [group.kind === 'accessory' ? 'Accessory' : 'Equipment', group.category, group.sku ?? null, group.brand ?? null].filter(
     (x): x is string => Boolean(x),
@@ -1138,6 +1259,21 @@ function EquipmentGroupRow({
         >
           {group.name}
         </span>
+        {!bulk && group.units.length > 1 && (
+          <span
+            style={{
+              flexShrink: 0,
+              fontSize: 'var(--t-meta)',
+              color: 'var(--text2)',
+              fontWeight: 500,
+              background: 'var(--hover-row)',
+              padding: '1px 6px',
+              borderRadius: 'var(--r-badge)',
+            }}
+          >
+            {group.units.length} serials
+          </span>
+        )}
         <span style={{ flexShrink: 0 }}>
           <AvailabilityChip verdict={group.availability} />
         </span>
@@ -1185,65 +1321,106 @@ function EquipmentGroupRow({
       </div>
 
       {!bulk && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {group.units.map((u) => {
-            /* The verdict, not a raw status: a chip is only ever drawn for a
-               serialised SEED unit today (a live row is `bulk`), where the two
-               agree — but reading the verdict means this cannot start lying the
-               day live units get their own chips. */
-            const free = u.availability.level === 'available'
-            const onBooking = existing.has(u.id)
-            /* What is holding it, in words. A unit row has a status; if it ever
-               does not, the verdict's own detail is the honest substitute. */
-            const why = `${u.status ?? u.availability.detail}${u.committedTo !== '—' ? ` · ${u.committedTo}` : ''}`
-            // §3 — a booked/maintenance chip is a hard block by default. When
-            // the valve is on it becomes tappable too, opening the override
-            // dialog instead of adding directly.
-            const opensOverride = !free && allowOverbooking && !onBooking
-            const tappable = (free && !onBooking) || opensOverride
-            return (
-              <button
-                key={u.id}
-                type="button"
-                className="press"
-                disabled={!tappable}
-                title={free ? `${u.serial} — free` : `${u.serial} · ${why}`}
-                aria-label={
-                  onBooking
-                    ? `${u.serial} — already on this booking`
-                    : free
-                      ? `Add unit ${u.serial}`
-                      : opensOverride
-                        ? `${u.serial} — booked. ${why}. Opens the overbooking override.`
-                        : `${u.serial} — booked, not tappable. ${why}`
-                }
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (free && !onBooking) onPickUnit(u)
-                  else if (opensOverride) onRequestOverride(u)
-                }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  minHeight: 24,
-                  padding: '0 8px',
-                  borderRadius: 'var(--r-badge)',
-                  border: 'none',
-                  background: onBooking ? 'var(--st-neutral-bg)' : free ? 'var(--st-in-bg)' : 'var(--st-danger-bg)',
-                  color: onBooking ? 'var(--st-neutral-fg)' : free ? 'var(--st-in-fg)' : 'var(--st-danger-fg)',
-                  fontFamily: 'inherit',
-                  fontSize: 'var(--t-th)',
-                  fontWeight: 700,
-                  cursor: tappable ? 'pointer' : 'not-allowed',
-                  opacity: onBooking ? 0.7 : 1,
-                }}
-              >
-                <Icon name={free ? 'check' : 'error'} size={10} />
-                <span className="identifier">{u.serial}</span>
-              </button>
-            )
-          })}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            marginTop: 4,
+            padding: '8px 10px',
+            background: 'var(--card)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--r-btn)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+              {group.units.length > 1 ? `Choose serial (${group.units.length} available):` : 'Serial number:'}
+            </span>
+            {group.units.length > 1 && (
+              <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                Click a serial button to select that exact unit
+              </span>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            {group.units.map((u) => {
+              const free =
+                u.availability.level !== 'unavailable' &&
+                u.status !== 'On Rent' &&
+                u.status !== 'Reserved' &&
+                u.status !== 'Maintenance'
+              const onBooking = existing.has(u.id)
+              const why = `${u.status ?? u.availability.detail}${u.committedTo !== '—' ? ` · ${u.committedTo}` : ''}`
+              const opensOverride = !free && allowOverbooking && !onBooking
+              const tappable = (free && !onBooking) || opensOverride
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  className="press"
+                  disabled={!tappable}
+                  title={
+                    onBooking
+                      ? `${u.serial} — already on this booking`
+                      : free
+                        ? `Add unit ${u.serial} (Free)`
+                        : `${u.serial} · ${why}`
+                  }
+                  aria-label={
+                    onBooking
+                      ? `${u.serial} — already on this booking`
+                      : free
+                        ? `Add unit with serial ${u.serial}`
+                        : opensOverride
+                          ? `${u.serial} — booked. ${why}. Opens the overbooking override.`
+                          : `${u.serial} — booked, not tappable. ${why}`
+                  }
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (free && !onBooking) onPickUnit(u)
+                    else if (opensOverride) onRequestOverride(u)
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    minHeight: 28,
+                    padding: '3px 10px',
+                    borderRadius: 'var(--r-btn)',
+                    border: onBooking
+                      ? '1px solid var(--border)'
+                      : free
+                        ? '1px solid var(--border)'
+                        : '1px solid var(--st-danger-fg)',
+                    background: onBooking
+                      ? 'var(--st-neutral-bg)'
+                      : free
+                        ? 'var(--btn-secondary-bg)'
+                        : 'var(--st-danger-bg)',
+                    color: onBooking
+                      ? 'var(--st-neutral-fg)'
+                      : free
+                        ? 'var(--text)'
+                        : 'var(--st-danger-fg)',
+                    fontFamily: 'inherit',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    cursor: tappable ? 'pointer' : 'not-allowed',
+                    opacity: onBooking ? 0.75 : 1,
+                  }}
+                >
+                  <Icon name={onBooking ? 'check' : free ? 'plus' : 'error'} size={12} />
+                  <span className="identifier" style={{ fontWeight: 700 }}>{u.serial}</span>
+                  {onBooking ? (
+                    <span style={{ fontSize: '11px', opacity: 0.8 }}>(Added)</span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
     </li>

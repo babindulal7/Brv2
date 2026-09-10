@@ -1,8 +1,16 @@
+import { useEffect, useState } from 'react'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
-import { FORECAST_METRICS, PURCHASE_FORECAST, MAINTENANCE_FORECAST, SEASONAL_DEMAND } from '../../data/forecastingReports'
+import {
+  FORECAST_METRICS,
+  PURCHASE_FORECAST,
+  MAINTENANCE_FORECAST,
+  SEASONAL_DEMAND,
+  getForecastingReportsSummary,
+  type ForecastingReportsSummary,
+} from '../../lib/queries/forecastingReports'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -32,6 +40,17 @@ function forecastCsv(): ReportCsvRow[] {
 
 export default function ForecastingReports() {
   const money = useCanViewMoney()
+  const [, setSummary] = useState<ForecastingReportsSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getForecastingReportsSummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   /*
    * The whole page is gated on money because its lead figure is Forecast

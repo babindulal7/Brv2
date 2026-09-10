@@ -8,6 +8,7 @@ import { price, formatMoney, parseMoney, rupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { validateDiscount } from '../../lib/discount'
 import { getSetting } from '../../lib/settingsStore'
+import { isMoneySurface } from '../../lib/queries/tools'
 
 /**
  * **Pricing Calculator — `10_TOOLS.md` §10.3.**
@@ -86,6 +87,7 @@ const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, 25] as const
 
 export default function PricingCalculator() {
   const viewport = useViewport()
+  const isMoney = isMoneySurface('/tools/pricing')
 
   const [lines, setLines] = useState<Line[]>([NEW_LINE(1)])
   const [nextId, setNextId] = useState(2)
@@ -146,7 +148,7 @@ export default function PricingCalculator() {
       <PageHeader
         icon="dollar"
         title="Pricing"
-        description="A quote sandbox on the same engine as New Rental. It books nothing and saves nothing."
+        description={isMoney ? "A quote sandbox on the same engine as New Rental. It books nothing and saves nothing." : "A quote sandbox."}
       />
 
       <div

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, cardStyle, useRailGridColumns } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
@@ -25,7 +26,9 @@ import {
   profitToCashGap,
   collectionUpside,
   OVERDUE,
-} from '../../data/liquidityReports'
+  getLiquiditySummary,
+  type LiquiditySummary,
+} from '../../lib/queries/liquidity'
 
 /**
  * **Finance ▸ Reports ▸ Cash Flow** — built from the `Babin Cash Flow Report`
@@ -148,6 +151,18 @@ export default function CashFlowReport() {
       </>
     )
   }
+
+  const [, setSummary] = useState<LiquiditySummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getLiquiditySummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const bsStart = toBs(PERIOD_START)
   const bsEnd = toBs(PERIOD_END)

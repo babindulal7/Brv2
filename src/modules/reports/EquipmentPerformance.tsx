@@ -1,8 +1,15 @@
+import { useEffect, useState } from 'react'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
-import { EQUIPMENT_METRICS, TOP_PERFORMERS, WORST_PERFORMERS } from '../../data/equipmentPerformance'
+import {
+  EQUIPMENT_METRICS,
+  TOP_PERFORMERS,
+  WORST_PERFORMERS,
+  getEquipmentPerformanceSummary,
+  type EquipmentPerformanceSummary,
+} from '../../lib/queries/equipmentPerformance'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -45,6 +52,17 @@ function equipmentCsv(): ReportCsvRow[] {
 
 export default function EquipmentPerformance() {
   const money = useCanViewMoney()
+  const [, setSummary] = useState<EquipmentPerformanceSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getEquipmentPerformanceSummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   /*
    * Law 6. Every figure on this page is money or a ratio derived from it, so

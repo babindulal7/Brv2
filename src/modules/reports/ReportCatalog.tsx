@@ -22,6 +22,31 @@ import {
 import type { PeriodFigures } from '../../data/pulse'
 import { GROUPS, REPORTS, CATALOG_ERRORS, reportsIn, type CatalogReport, type GroupKey } from './catalog'
 import { ReportTemplate } from './ReportTemplate'
+import Pulse from './Pulse'
+import ExpenseReports from './ExpenseReports'
+import ClientReports from './ClientReports'
+import PromotionsReports from './PromotionsReports'
+import StaffReports from './StaffReports'
+import InventoryReports from './InventoryReports'
+import ProductReports from './ProductReports'
+import EquipmentPerformance from './EquipmentPerformance'
+import ForecastingReports from './ForecastingReports'
+import CashFlowReport from './CashFlowReport'
+import WorkingCapital from './WorkingCapitalReport'
+
+const DEDICATED_REPORTS: Record<string, React.ComponentType> = {
+  '/reports/pulse': Pulse,
+  '/reports/expenses': ExpenseReports,
+  '/reports/clients': ClientReports,
+  '/reports/promotions': PromotionsReports,
+  '/reports/staff': StaffReports,
+  '/reports/inventory': InventoryReports,
+  '/reports/products': ProductReports,
+  '/reports/equipment-performance': EquipmentPerformance,
+  '/reports/forecasting': ForecastingReports,
+  '/reports/cash-flow': CashFlowReport,
+  '/reports/working-capital': WorkingCapital,
+}
 
 /**
  * # `09_FINANCE.md` §9.6 — the Report Catalog, the way into all 43
@@ -162,7 +187,39 @@ export function ReportCatalog() {
   }, [query])
 
   if (openReport) {
-    return <ReportTemplate report={openReport} onBackToCatalog={() => setOpenReport(null)} />
+    const DedicatedComponent = openReport.route ? DEDICATED_REPORTS[openReport.route] : undefined
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <div>
+          <button
+            type="button"
+            onClick={() => setOpenReport(null)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 14px',
+              borderRadius: 'var(--r-btn)',
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              color: 'var(--text)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            <Icon name="chevron_left" size={13} />
+            Back to Report Catalog
+          </button>
+        </div>
+        {DedicatedComponent ? (
+          <DedicatedComponent />
+        ) : (
+          <ReportTemplate report={openReport} onBackToCatalog={() => setOpenReport(null)} />
+        )}
+      </div>
+    )
   }
 
   const columns = viewport === 'desktop' ? 3 : viewport === 'tablet' ? 2 : 1
@@ -544,7 +601,6 @@ function ReportRow({ report, onOpen, showGroup = false }: { report: CatalogRepor
               fontSize: 'var(--t-meta)',
             }}
           >
-            <Icon name="external_link" size={11} />
             {`Opens the ${report.financeTab} tab`}
           </span>
         </Link>
@@ -587,25 +643,6 @@ function ReportRow({ report, onOpen, showGroup = false }: { report: CatalogRepor
           </span>
         )}
       </button>
-
-      {/* A built screen is never hidden behind the in-page view. */}
-      {report.route && (
-        <Link
-          to={report.route}
-          aria-label={`Open the full ${report.name} screen`}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 44,
-            height: 44,
-            flexShrink: 0,
-            color: 'var(--link)',
-          }}
-        >
-          <Icon name="external_link" size={13} />
-        </Link>
-      )}
     </div>
   )
 }

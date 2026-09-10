@@ -10,12 +10,11 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
 import { rupees, formatMoney } from '../../lib/money'
-import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { toBs, formatBs, formatAd, businessDayAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useTabularLayout } from '../../lib/device'
 import { newClientUuid } from '../../lib/supabase'
-import { businessDayAd } from '../../data/today'
 import {
   listExpenses,
   listExpenseCategories,

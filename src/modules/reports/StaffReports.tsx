@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
@@ -6,7 +7,12 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
-import { STAFF_METRICS, STAFF_LIST } from '../../data/staffReports'
+import {
+  STAFF_METRICS,
+  STAFF_LIST,
+  getStaffReportsSummary,
+  type StaffReportsSummary,
+} from '../../lib/queries/staffReports'
 
 /**
  * The export body.
@@ -41,6 +47,17 @@ function staffCsv(isManager: boolean, myName: string | undefined): ReportCsvRow[
 export default function StaffReports() {
   const money = useCanViewMoney()
   const { user } = useAuth()
+  const [, setSummary] = useState<StaffReportsSummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getStaffReportsSummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   // Law 6 — revenue handled and collections are the report; there is no
   // money-free version of it, so the shared RESTRICTED state stands in for the

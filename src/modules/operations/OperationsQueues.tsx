@@ -2,6 +2,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
+import { CasesWorkspace } from './CasesWorkspace'
 import { STATUS } from '../../lib/status'
 import { statusToken, JOBS as JOBS_META, type JobName } from '../../lib/workflow'
 import { listBookings, overdue, quotesExpiring, type BookingListRow } from '../../lib/queries/bookings'
@@ -135,8 +136,6 @@ const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-met
  * so nothing is unreachable. Revisit if Cases gains a due instant and a
  * booking link.
  */
-const CASES_ROUTE = '/inventory/cases' // moved from /operations/cases 30 Aug — the chip stays here, the page filed under Inventory
-
 /* Open cases, off the same seed the Cases page lists — chip equals page. */
 const openCases = CASES.filter((c) => isOpenStatus(c.status)).length
 
@@ -705,10 +704,16 @@ export default function OperationsQueues() {
           figure beside four database figures; when Cases moves to the `cases`
           table, this count and that page move together.
         */}
-        <Link
-          to={CASES_ROUTE}
-          style={{ ...chipStyle(false), textDecoration: 'none' }}
-          aria-label={`Cases: ${openCases} open — opens the Cases page`}
+        <button
+          type="button"
+          onClick={() => patch({ queue: selected === 'Cases' ? null : 'cases', quick: null })}
+          aria-pressed={selected === 'Cases'}
+          style={{
+            ...chipStyle(selected === 'Cases'),
+            border: `1px solid ${selected === 'Cases' ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+            cursor: 'pointer',
+          }}
+          aria-label={`Cases: ${openCases} open`}
         >
           <Icon name="eye" size={15} style={{ color: STATUS.danger.fg, flexShrink: 0 }} />
           Cases
@@ -730,7 +735,7 @@ export default function OperationsQueues() {
           >
             {openCases}
           </span>
-        </Link>
+        </button>
       </div>
 
       <div
@@ -747,11 +752,14 @@ export default function OperationsQueues() {
           </SideRail>
         )}
 
-        <Card
-          title={`${listLabel}${countSuffix}`}
-          action={isFiltered ? <Button onClick={clearAllFilters}>Clear filter</Button> : undefined}
-          bodyStyle={{ padding: tabular ? 0 : 10 }}
-        >
+        {selected === 'Cases' ? (
+          <CasesWorkspace embedded />
+        ) : (
+          <Card
+            title={`${listLabel}${countSuffix}`}
+            action={isFiltered ? <Button onClick={clearAllFilters}>Clear filter</Button> : undefined}
+            bodyStyle={{ padding: tabular ? 0 : 10 }}
+          >
           {/*
             Fixed ladder: restricted → error → loading → empty → children.
 
@@ -918,6 +926,7 @@ export default function OperationsQueues() {
             )}
           </PageBody>
         </Card>
+      )}
 
         {/* Rulings §7 — below 1280 the rail REFLOWS beneath the list; it does not
             hide behind `CollapsibleAside`'s handle. */}

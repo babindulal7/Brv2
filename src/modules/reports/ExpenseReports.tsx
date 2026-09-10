@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -31,8 +31,9 @@ import {
   budgetOf,
   byCategory,
   toSlices,
-} from '../../data/expenseReports'
-import type { ExpenseRow } from '../../data/expenseReports'
+  getExpenseReportsSummary,
+} from '../../lib/queries/expenseReports'
+import type { ExpenseRow } from '../../lib/queries/expenseReports'
 
 /**
  * **Finance ▸ Expenses** — built against `03 Core Modules/Expenses.PNG` and its
@@ -218,7 +219,21 @@ export default function ExpenseReports() {
   const [report, setReport] = useState<ReportFilters>({ dateRange: SEEDED_RANGE })
   const branch = report.chips?.branch?.[0] ?? ''
 
-  const vendors = useMemo(() => [...new Set(EXPENSES.map((r) => r.vendor))].sort(), [])
+  const [expenseList, setExpenseList] = useState<ExpenseRow[]>(EXPENSES)
+
+  useEffect(() => {
+    let active = true
+    getExpenseReportsSummary().then((summary) => {
+      if (active && summary.rows) {
+        setExpenseList(summary.rows)
+      }
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const vendors = useMemo(() => [...new Set(expenseList.map((r) => r.vendor))].sort(), [expenseList])
 
   /*
    * Every predicate EXCEPT the category chips.
@@ -235,7 +250,7 @@ export default function ExpenseReports() {
    */
   const scoped = useMemo(() => {
     const q = query.trim().toLowerCase()
-    return EXPENSES.filter((r) => {
+    return expenseList.filter((r) => {
       if (status !== 'All' && r.status !== status) return false
       if (method !== 'All' && r.method !== method) return false
       if (vendor !== 'All' && r.vendor !== vendor) return false

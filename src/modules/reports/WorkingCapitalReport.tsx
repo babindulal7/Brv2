@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, useRailGridColumns } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
@@ -27,7 +28,9 @@ import {
   receivableShare,
   cashPerDayOfCycle,
   cycleUpside,
-} from '../../data/liquidityReports'
+  getLiquiditySummary,
+  type LiquiditySummary,
+} from '../../lib/queries/liquidity'
 
 /**
  * **Finance ▸ Reports ▸ Working Capital** — built from the
@@ -187,6 +190,18 @@ export default function WorkingCapitalReport() {
       </>
     )
   }
+
+  const [, setSummary] = useState<LiquiditySummary | null>(null)
+
+  useEffect(() => {
+    let active = true
+    void getLiquiditySummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const bs = toBs(PERIOD_END)
   const asAt = bs ? `As at ${formatAd(PERIOD_END)} (${formatBs(bs, { suffix: true })})` : `As at ${formatAd(PERIOD_END)}`

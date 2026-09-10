@@ -434,3 +434,10 @@ export function getBusinessToday(now: Date = new Date()): Date {
 export function isWeekend(ad: Date): boolean {
   return new Date(kathmanduCivil(ad)).getUTCDay() === 6
 }
+
+/**
+ * The business day formatted as YYYY-MM-DD in Kathmandu civil time.
+ */
+export function businessDayAd(now: Date = new Date()): string {
+  return new Date(kathmanduCivil(getBusinessToday(now))).toISOString().slice(0, 10)
+}

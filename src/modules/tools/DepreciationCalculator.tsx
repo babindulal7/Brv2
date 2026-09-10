@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -10,9 +10,11 @@ import {
   straightLineSchedule,
   DEPRECIATION_DEFAULTS_UNAVAILABLE_REASON,
   IRD_POOL_BLOCKED_REASON,
-} from '../../data/tools'
-import type { DepreciationYear } from '../../data/tools'
-import { PARENTS } from '../../data/inventory'
+  PRICED_ASSETS,
+  getDepreciableAssets,
+  type DepreciationYear,
+  type DepreciableAsset,
+} from '../../lib/queries/depreciation'
 import { DateField } from '../../components/ui/DateField'
 
 /**
@@ -70,12 +72,20 @@ type Tab = 'book' | 'ird'
 
 const WHOLE_FLEET = '__fleet__'
 
-/** Parents whose purchase price is a recorded fact rather than a blank. */
-const PRICED_ASSETS = PARENTS.filter((p) => p.purchasePricePaisa !== undefined)
-
 export default function DepreciationCalculator() {
   const viewport = useViewport()
   const [tab, setTab] = useState<Tab>('book')
+  const [assets, setAssets] = useState<DepreciableAsset[]>(PRICED_ASSETS)
+
+  useEffect(() => {
+    let active = true
+    void getDepreciableAssets().then((res) => {
+      if (active) setAssets(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const [assetName, setAssetName] = useState('')
   const [purchaseDate, setPurchaseDate] = useState('')
@@ -151,14 +161,14 @@ export default function DepreciationCalculator() {
                   onChange={(e) => {
                     const v = e.target.value
                     setAssetName(v)
-                    const row = PRICED_ASSETS.find((p) => p.name === v)
+                    const row = assets.find((p) => p.name === v)
                     if (row?.purchasePricePaisa !== undefined) setCost(String(row.purchasePricePaisa / 100))
                   }}
                   style={controlStyle}
                 >
                   <option value="">Not selected — enter figures by hand</option>
                   <option value={WHOLE_FLEET}>Whole fleet</option>
-                  {PRICED_ASSETS.map((p) => (
+                  {assets.map((p) => (
                     <option key={p.name} value={p.name}>
                       {p.name}
                     </option>

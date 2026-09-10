@@ -4,6 +4,7 @@ import { statusToken, STATUS_ORDER } from '../lib/workflow'
 import type { BookingStatus, Flag } from '../lib/workflow'
 import {
   getBusinessToday,
+  businessDayAd as bsBusinessDayAd,
   toBs,
   formatBs,
   formatAd,
@@ -807,7 +808,7 @@ export function businessNowAd(now: Date = new Date()): string {
  * terms of this function so the two cannot answer differently.
  */
 export function businessDayAd(now: Date = new Date()): string {
-  return new Date(kathmanduCivil(getBusinessToday(now))).toISOString().slice(0, 10)
+  return bsBusinessDayAd(now)
 }
 
 /**
