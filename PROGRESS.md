@@ -4,6 +4,56 @@
 
 
 
+## 2026-09-10 — Stage 1: Real Data crosses 50%+ (15 DB-only / 27 mixed / 56 routes, Overall 87%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** Real Data crosses 50% milestone (15 DB-only, 27 mixed, 13 seed, 1 none = 51%); Backend 39/42 (93%); DB enforcement 9/9 (100%); Permissions 35/38 (92%); Lifecycle 14/14 (100%); Overall at 87%.
+
+### Did
+
+- **Wired 5 additional core application screens to the database query layer, transforming them to 100% DB-only:**
+  - `SubRental.tsx`: Created `src/lib/queries/subrentals.ts` and `__tests__/subrentals.test.ts`. Connected to `booking_lines_v` filtering by `line_type = 'Sub-rental'`. Dynamically recomputes counterparty intel and status chips. Removed all imports from `src/data/*`.
+  - `CrewBooking.tsx`: Created `src/lib/queries/crew.ts` and `__tests__/crew.test.ts`. Connected to `crew_bookings_v` joined with `crew_members_v`. Re-exported all domain helpers and intel builders without any `src/data/*` imports.
+  - `ActivityLog.tsx`: Created `src/lib/queries/activity.ts` and `__tests__/activity.test.ts`. Connected to `audit_events`. Dynamically computes filter options, user options, and module lists. Removed all `src/data/*` imports.
+  - `AuditSettings.tsx`: Extended `src/lib/queries/audit.ts` with `getAuditSettingsSummary()`, connected to `audit_events`. Removed `src/data/*` imports.
+  - `Membership.tsx`: Created `src/lib/queries/membership.ts` and `__tests__/membership.test.ts`. Connected to `client_memberships_v`. Removed all `src/data/*` imports.
+- **Advanced Real Data Dimension:**
+  - DB-only routes grew from 8 to **15** (+7 DB-only routes: `CasesWorkspace`, `Documents`, `SubRental`, `CrewBooking`, `ActivityLog`, `AuditSettings`, `Membership`).
+  - Seed-only routes fell from 20 to **13** (-7 seed routes).
+  - Real Data metric reached **51%** (`15 + 27/2 = 28.5 / 56`), crossing the Stage 1 >50% target.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run` **162 test files passed, 3082 tests passed, 0 failed**.
+- `node scripts/check-pglite.mjs` **110/110 applied, 0 failed**.
+- `node scripts/completion.mjs` **Overall ≈ 87% (+2)**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 39 / 42 (93%) | +0 |
+| Real data | DB-only · mixed · seed · none / 56 | 15 · 27 · 13 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 87% | +2 |
+
+Migrations 110 files · check:pglite 110/110 applied, 0 failed. Suite: 162 passed, 3082 tests.
+Gates read from .lifecycle-result.json, written 2026-09-09T16:29:36.280Z.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- 3 actions remaining (`startInspection`, `passInspection`, `failInspection`) pending inspections table decision.
+- 3 inspection capabilities declared but unmapped.
+- Remaining seed routes (13): Reports suite, Tools, Settings, AddEquipment.
+
 ## 2026-09-09 — Stage 1: reserveEquipment action (Backend 93%, Overall 85%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** `reserveEquipment` action live (+1); Backend 39/42 (93%); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Overall at 85%.
