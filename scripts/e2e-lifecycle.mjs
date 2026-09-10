@@ -584,60 +584,109 @@ const STEPS = [
   {
     id: 'L6',
     title: 'Booked → Packed → On Rent as Warehouse requires the session rows each stage needs',
-    expect: 'red',
-    red: 'gate.pack.session_missing and gate.handover.session_missing not enforced by database engine yet',
+    expect: 'green',
     async run() {
-      let gatePackRefused = false
-      let gateHandoverRefused = false
-
       await as('Warehouse', async () => {
         // 1. Moving to Packed without a Packing session is refused
-        try {
-          await refuses(
-            'moving to Packed with no Packing session',
-            `insert into booking_stage_transitions
-               (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
-             values (gen_random_uuid(), $1, $2, 'Booked', 'Packed', $3, 'Warehouse', now())`,
-            [bookingIds.a, BRANCH, U.Warehouse],
-            /gate\.pack\.session_missing/,
-          )
-          gatePackRefused = true
-        } catch {
-          /* gate check format not yet active */
-        }
+        await refuses(
+          'moving to Packed with no Packing session',
+          `insert into booking_stage_transitions
+             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+           values (gen_random_uuid(), $1, $2, 'Booked', 'Packed', $3, 'Warehouse', now())`,
+          [bookingIds.a, BRANCH, U.Warehouse],
+          /gate\.pack\.session_missing/,
+        )
 
-        // 2. Open a Packing session, then transition to Packed succeeds
+        // 2. Open a Packing session
         const packingSessionId = crypto.randomUUID()
         await q(
           `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
            values ($1, gen_random_uuid(), $2, 'Packing', 1, 'In Progress', $3, $3)`,
           [packingSessionId, bookingIds.a, U.Warehouse],
         )
+
+        // Moving to Packed without packing movements is refused
+        await refuses(
+          'moving to Packed with no packing movement',
+          `insert into booking_stage_transitions
+             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+           values (gen_random_uuid(), $1, $2, 'Booked', 'Packed', $3, 'Warehouse', now())`,
+          [bookingIds.a, BRANCH, U.Warehouse],
+          /gate\.pack\.units_unpacked/,
+        )
+
+        // Insert packing movement for the unit
+        await q(
+          `insert into session_line_movements (client_uuid, session_id, booking_line_id, unit_id, serial, qty, moved_at, created_by)
+           values (gen_random_uuid(), $1, (select id from booking_lines where booking_id = $2 limit 1), $3, 'SN-A1', 1, now(), $4)`,
+          [packingSessionId, bookingIds.a, UNITS[0], U.Warehouse],
+        )
+
         await transition('a', 'Booked', 'Packed', 'Warehouse')
-        assertEq(await stageOf('a'), 'Packed', 'the booking moved to Packed once Packing session exists')
+        assertEq(await stageOf('a'), 'Packed', 'the booking moved to Packed once Packing session and movements exist')
+
+        // Cancellation guard checks at Packed
+        await undone(async () => {
+          await refuses(
+            'cancel at Packed by Warehouse is refused',
+            `update bookings set cancelled_at = now(), cancellation_reason = 'Cancelled by warehouse staff without manager authorization' where id = $1`,
+            [bookingIds.a],
+            /gate\.cancel\.stage_too_late/,
+          )
+        })
 
         // 3. Moving to On Rent without a Handover session is refused
-        try {
-          await refuses(
-            'moving to On Rent with no Handover session',
-            `insert into booking_stage_transitions
-               (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
-             values (gen_random_uuid(), $1, $2, 'Packed', 'On Rent', $3, 'Warehouse', now())`,
-            [bookingIds.a, BRANCH, U.Warehouse],
-            /gate\.handover\.session_missing/,
-          )
-          gateHandoverRefused = true
-        } catch {
-          /* gate check format not yet active */
-        }
+        await refuses(
+          'moving to On Rent with no Handover session',
+          `insert into booking_stage_transitions
+             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+           values (gen_random_uuid(), $1, $2, 'Packed', 'On Rent', $3, 'Warehouse', now())`,
+          [bookingIds.a, BRANCH, U.Warehouse],
+          /gate\.handover\.session_missing/,
+        )
 
-        // 4. Open a Handover session, then transition to On Rent succeeds
+        // 4. Open a Handover session
         const handoverSessionId = crypto.randomUUID()
         await q(
           `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
            values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', 'Customer Pickup', $3, $3)`,
           [handoverSessionId, bookingIds.a, U.Warehouse],
         )
+
+        // Moving to On Rent with no handover lines is refused
+        await refuses(
+          'moving to On Rent with no handover lines',
+          `insert into booking_stage_transitions
+             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+           values (gen_random_uuid(), $1, $2, 'Packed', 'On Rent', $3, 'Warehouse', now())`,
+          [bookingIds.a, BRANCH, U.Warehouse],
+          /gate\.handover\.units_unhanded/,
+        )
+
+        // Insert handover line
+        await q(
+          `insert into handover_lines (client_uuid, booking_line_id, state, qty_required, first_session_id, completed_session_id, created_by)
+           values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), 'Picked Up', 1, $2, $2, $3)`,
+          [bookingIds.a, handoverSessionId, U.Warehouse],
+        )
+
+        // Moving to On Rent with no signature is refused
+        await refuses(
+          'moving to On Rent with unsigned agreement',
+          `insert into booking_stage_transitions
+             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+           values (gen_random_uuid(), $1, $2, 'Packed', 'On Rent', $3, 'Warehouse', now())`,
+          [bookingIds.a, BRANCH, U.Warehouse],
+          /gate\.handover\.agreement_unsigned/,
+        )
+
+        // Insert agreement signature
+        await q(
+          `insert into signatures (client_uuid, session_id, signature_role, signer_name, signed_at, device, is_required, created_by)
+           values (gen_random_uuid(), $1, 'Receiver', 'Lifecycle Client Signer', now(), 'iPad-1', true, $2)`,
+          [handoverSessionId, U.Warehouse],
+        )
+
         await transition('a', 'Packed', 'On Rent', 'Warehouse')
       })
 
@@ -647,17 +696,13 @@ const STEPS = [
         await one('select count(*) from operation_sessions where booking_id = $1', [bookingIds.a]),
       )
       assertEq(sessions, 2, 'both Packing and Handover sessions exist for the booking')
-
-      assert(gatePackRefused, 'gate.pack.session_missing not enforced yet')
-      assert(gateHandoverRefused, 'gate.handover.session_missing not enforced yet')
     },
   },
 
   {
     id: 'L7',
     title: 'A partial return: one unit back, one missing',
-    expect: 'red',
-    red: 'gate.return.session_missing not enforced yet',
+    expect: 'green',
     async run() {
       await as('Warehouse', async () => {
         await q(
@@ -676,20 +721,39 @@ const STEPS = [
         )
 
         // Refuse moving to Returned with no Return session
-        let gateReturnRefused = false
-        try {
-          await refuses(
-            'moving to Returned with no Return session',
-            `insert into booking_stage_transitions
-               (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
-             values (gen_random_uuid(), $1, $2, 'On Rent', 'Returned', $3, 'Warehouse', now())`,
-            [bookingIds.a, BRANCH, U.Warehouse],
-            /gate\.return\.session_missing/,
-          )
-          gateReturnRefused = true
-        } catch {
-          /* gate not yet active */
-        }
+        await refuses(
+          'moving to Returned with no Return session',
+          `insert into booking_stage_transitions
+             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+           values (gen_random_uuid(), $1, $2, 'On Rent', 'Returned', $3, 'Warehouse', now())`,
+          [bookingIds.a, BRANCH, U.Warehouse],
+          /gate\.return\.session_missing/,
+        )
+
+        // Open a Return session
+        const returnSessionId = crypto.randomUUID()
+        await q(
+          `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
+           values ($1, gen_random_uuid(), $2, 'Return', 1, 'In Progress', $3, $3)`,
+          [returnSessionId, bookingIds.a, U.Warehouse],
+        )
+
+        // Refuse moving to Returned with no return lines
+        await refuses(
+          'moving to Returned with no return lines',
+          `insert into booking_stage_transitions
+             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+           values (gen_random_uuid(), $1, $2, 'On Rent', 'Returned', $3, 'Warehouse', now())`,
+          [bookingIds.a, BRANCH, U.Warehouse],
+          /gate\.return\.units_unaccounted/,
+        )
+
+        // Insert return line
+        await q(
+          `insert into return_lines (client_uuid, booking_line_id, state, qty_expected, session_id, returned_at, created_by)
+           values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), 'Returned', 1, $2, now(), $3)`,
+          [bookingIds.a, returnSessionId, U.Warehouse],
+        )
 
         await transition('a', 'On Rent', 'Returned', 'Warehouse')
       })
@@ -703,7 +767,6 @@ const STEPS = [
         await one("select count(*) from cases where linked_booking_id = $1 and type = 'Missing'", [bookingIds.a]),
       )
       assert(cases > 0, 'no Missing case was opened for the unit that did not come back')
-      assert(gateReturnRefused, 'gate.return.session_missing not enforced yet')
     },
   },
 
@@ -901,18 +964,48 @@ const STEPS = [
          would leave a closed booking in the corpus and Closed is final. */
       const closedWithNoInvoice = await undone(async () => {
         await as('Warehouse', async () => {
+          const packSessId = crypto.randomUUID()
           await q(
-            `insert into operation_sessions (client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
-             values (gen_random_uuid(), $1, 'Packing', 1, 'In Progress', $2, $2)`,
-            [bookingIds.c, U.Warehouse],
+            `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
+             values ($1, gen_random_uuid(), $2, 'Packing', 1, 'In Progress', $3, $3)`,
+            [packSessId, bookingIds.c, U.Warehouse],
+          )
+          await q(
+            `insert into session_line_movements (client_uuid, session_id, booking_line_id, unit_id, serial, qty, moved_at, created_by)
+             values (gen_random_uuid(), $1, (select id from booking_lines where booking_id = $2 limit 1), $3, 'SN-C1', 1, now(), $4)`,
+            [packSessId, bookingIds.c, UNITS[0], U.Warehouse],
           )
           await transition('c', 'Booked', 'Packed', 'Warehouse')
+
+          const handoverSessId = crypto.randomUUID()
           await q(
-            `insert into operation_sessions (client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
-             values (gen_random_uuid(), $1, 'Handover', 1, 'In Progress', 'Customer Pickup', $2, $2)`,
-            [bookingIds.c, U.Warehouse],
+            `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
+             values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', 'Customer Pickup', $3, $3)`,
+            [handoverSessId, bookingIds.c, U.Warehouse],
+          )
+          await q(
+            `insert into handover_lines (client_uuid, booking_line_id, state, qty_required, first_session_id, completed_session_id, created_by)
+             values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), 'Picked Up', 1, $2, $2, $3)`,
+            [bookingIds.c, handoverSessId, U.Warehouse],
+          )
+          await q(
+            `insert into signatures (client_uuid, session_id, signature_role, signer_name, signed_at, device, is_required, created_by)
+             values (gen_random_uuid(), $1, 'Receiver', 'Lifecycle Client Signer', now(), 'iPad-1', true, $2)`,
+            [handoverSessId, U.Warehouse],
           )
           await transition('c', 'Packed', 'On Rent', 'Warehouse')
+
+          const returnSessId = crypto.randomUUID()
+          await q(
+            `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
+             values ($1, gen_random_uuid(), $2, 'Return', 1, 'In Progress', $3, $3)`,
+            [returnSessId, bookingIds.c, U.Warehouse],
+          )
+          await q(
+            `insert into return_lines (client_uuid, booking_line_id, state, qty_expected, session_id, returned_at, created_by)
+             values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), 'Returned', 1, $2, now(), $3)`,
+            [bookingIds.c, returnSessId, U.Warehouse],
+          )
           await transition('c', 'On Rent', 'Returned', 'Warehouse')
         })
         await as('Coordinator', async () => {
