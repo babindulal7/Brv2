@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -19,8 +19,10 @@ import { gateContext } from '../../lib/fieldGating'
 import { useMenuFlip } from '../../lib/menuFlip'
 import { IntelCard } from '../../components/ui/IntelCard'
 import type { IntelGlance, IntelGroup } from '../../components/ui/IntelCard'
-import { documentGlance, documentDetailGroups } from '../../data/documentIntel'
 import {
+  listDocuments,
+  documentGlance,
+  documentDetailGroups,
   ALL_TAB,
   ALL_BRANCHES,
   ALL_RELATED,
@@ -44,8 +46,11 @@ import {
   missingFor,
   quickActionsFor,
   summarySlices,
-} from '../../data/documents'
-import type { CategoryKey, DocRow, RelatedKind, SortKey } from '../../data/documents'
+  type CategoryKey,
+  type DocRow,
+  type RelatedKind,
+  type SortKey,
+} from '../../lib/queries/documents'
 import { DateField } from '../../components/ui/DateField'
 
 const th = {
@@ -460,7 +465,21 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const gctx = useMemo(() => gateContext(role), [role])
 
   const categories = useMemo(() => categoriesFor(money), [money])
-  const allDocs = useMemo(() => documentsFor(money), [money])
+  const [docRows, setDocRows] = useState<DocRow[]>(() => documentsFor(money))
+
+  useEffect(() => {
+    let mounted = true
+    listDocuments().then((res) => {
+      if (mounted && res.rows.length > 0) {
+        setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
+      }
+    }).catch(() => {})
+    return () => {
+      mounted = false
+    }
+  }, [money])
+
+  const allDocs = docRows
   const kpis = useMemo(() => kpisFor(money), [money])
   const slices = useMemo(() => summarySlices(categories), [categories])
   const missing = useMemo(() => missingFor(money), [money])
