@@ -73,7 +73,7 @@ function booking(lines: FloorLine[]): FloorBooking {
     pickupAtAd: null,
     returnAtAd: null,
     actualReturnAtAd: null,
-    deliveryType: 'Customer Pickup',
+    deliveryType: 'Client Pickup',
     isCancelled: false,
     isClosed: false,
     linesPresence: 'present',

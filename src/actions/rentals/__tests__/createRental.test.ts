@@ -68,7 +68,7 @@ function input(over: Record<string, unknown> = {}) {
     project: 'Test',
     pickupAt: '2026-09-10T09:00:00+05:45',
     returnAt: '2026-09-12T18:00:00+05:45',
-    deliveryType: 'Customer Pickup' as const,
+    deliveryType: 'Client Pickup' as const,
     lines: [{ lineType: 'Equipment' as const, productId: PRODUCT_ID, qty: 2, days: 3, rate: 5000 }],
     ...over,
   }
@@ -88,10 +88,10 @@ beforeEach(() => {
 
 describe('deliveryTypeFromLabel — the Law 17 label crossing into a write', () => {
   /* PLAN.md §6.1: the word "customer" appears nowhere in the UI, so the label
-     is "Client Pickup". The Postgres enum still spells the member
-     'Customer Pickup'. This map is the one place that gap is crossed. */
+     is "Client Pickup". 0113 renamed the enum member to 'Client Pickup'. */
   it('maps the UI label to the stored enum member', () => {
-    expect(deliveryTypeFromLabel('Client Pickup')).toBe('Customer Pickup')
+    expect(deliveryTypeFromLabel('Client Pickup')).toBe('Client Pickup')
+    expect(deliveryTypeFromLabel('Customer Pickup')).toBe('Client Pickup')
   })
 
   it('passes the three labels that already match the enum', () => {

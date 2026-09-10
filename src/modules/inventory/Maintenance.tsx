@@ -823,7 +823,7 @@ export function Maintenance() {
               onClick={() => setTab(t)}
               aria-current={on ? 'page' : undefined}
               style={{
-                height: 34,
+                minHeight: 44,
                 padding: '0 12px',
                 border: 'none',
                 borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
@@ -833,6 +833,7 @@ export function Maintenance() {
                 fontWeight: on ? 700 : 500,
                 cursor: 'pointer',
                 fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
                 marginBottom: -1,
               }}
             >
@@ -853,7 +854,17 @@ export function Maintenance() {
           has a preventive plan yet. */}
       <DueForService />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+      <div
+        className="rsp-chip-scroll"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--sp-sm)',
+          flexWrap: phone ? 'nowrap' : 'wrap',
+          overflowX: phone ? 'auto' : undefined,
+          paddingBottom: phone ? 2 : 0,
+        }}
+      >
         {statusChips.map((c) => (
           <button key={c.label} type="button" onClick={() => setActiveFilter(c.label)} aria-pressed={activeFilter === c.label} style={chipStyle(activeFilter === c.label)}>
             {c.label}
@@ -899,25 +910,27 @@ export function Maintenance() {
           )
         })}
 
-        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-          <label className="focus-host" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 34, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)' }}>
+        <span style={{ marginLeft: phone ? 0 : 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', width: phone ? '100%' : 'auto', flexWrap: phone ? 'nowrap' : 'wrap' }}>
+          <label className="focus-host" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', flex: phone ? '1 1 0' : undefined, minWidth: 0, boxSizing: 'border-box' }}>
             <Icon name="search" size={14} style={{ color: 'var(--muted)' }} />
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search job, equipment, serial…"
               aria-label="Search maintenance jobs"
-              style={{ width: 190, border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+              style={{ width: phone ? '100%' : 190, border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
             />
           </label>
-          <Button icon="download" onClick={() => exportCsv(filteredRecords, money)}>
-            Export
+          <Button icon="download" aria-label="Export maintenance records" onClick={() => exportCsv(filteredRecords, money)}>
+            {phone ? '' : 'Export'}
           </Button>
-          <Unavailable reason={MAINTENANCE_JOB_CREATE_UNAVAILABLE_REASON}>
-            <Button icon="plus" variant="primary" disabled onClick={() => setIsLogMaintenanceOpen(true)}>
-              Log Maintenance
-            </Button>
-          </Unavailable>
+          {!phone && (
+            <Unavailable reason={MAINTENANCE_JOB_CREATE_UNAVAILABLE_REASON}>
+              <Button icon="plus" variant="primary" disabled onClick={() => setIsLogMaintenanceOpen(true)}>
+                Log Maintenance
+              </Button>
+            </Unavailable>
+          )}
         </span>
       </div>
 

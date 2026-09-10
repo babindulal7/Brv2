@@ -1208,7 +1208,7 @@ export function toMovementRow(row: BookingListRow, side: 'outgoing' | 'incoming'
     client: row.clientName,
     monogram: monogramOf(row.clientName),
     avatarTone: avatarToneFor(row.clientId),
-    kind: side === 'incoming' ? 'Return' : row.deliveryType === 'Customer Pickup' ? 'Pickup' : 'Delivery',
+    kind: side === 'incoming' ? 'Return' : row.deliveryType === 'Client Pickup' ? 'Pickup' : 'Delivery',
     at: kathmanduMinutes(atAd),
     atDayAd: new Date(kathmanduCivil(new Date(atAd))).toISOString().slice(0, 10),
     status: row.stage,

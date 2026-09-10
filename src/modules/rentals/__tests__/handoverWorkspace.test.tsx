@@ -68,7 +68,7 @@ vi.mock('../../../lib/queries/bookings', () => ({
     pickupAtAd,
     returnAtAd,
     actualReturnAtAd: null,
-    deliveryType: 'Customer Pickup',
+    deliveryType: 'Client Pickup',
     isCancelled: false,
     isClosed: false,
     linesPresence: 'present',

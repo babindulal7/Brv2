@@ -279,7 +279,7 @@ const ROW: BookingListRow = {
   pickupAtAd: '2026-08-14T03:15:00.000Z',
   returnAtAd: '2026-08-18T10:30:00.000Z',
   actualReturnAtAd: null,
-  deliveryType: 'Customer Pickup',
+  deliveryType: 'Client Pickup',
   pickupLocation: null,
   returnLocation: null,
   quoteExpiresAtAd: null,

@@ -472,7 +472,7 @@ const ROW: BookingListRow = {
   pickupAtAd: '2026-08-14T03:15:00.000Z',
   returnAtAd: '2026-08-18T10:30:00.000Z',
   actualReturnAtAd: null,
-  deliveryType: 'Customer Pickup',
+  deliveryType: 'Client Pickup',
   pickupLocation: 'Kathmandu',
   returnLocation: null,
   quoteExpiresAtAd: null,
@@ -706,9 +706,8 @@ describe('Law 17 — the word "customer" appears in no UI copy', () => {
   })
 
   it('leaves the delivery_type enum member alone, which is data and not copy', () => {
-    // 'Customer Pickup' is a `delivery_type` value (0001:279). Renaming it would
-    // be renaming a column value, not fixing UI copy.
-    expect(map().deliveryType).toBe('Customer Pickup')
+    // 0113 renamed 'Customer Pickup' to 'Client Pickup' in Postgres delivery_type enum.
+    expect(map().deliveryType).toBe('Client Pickup')
   })
 
   /*
@@ -721,14 +720,14 @@ describe('Law 17 — the word "customer" appears in no UI copy', () => {
    * These two ask the payload instead.
    */
   it('renders the stored delivery type through the sanctioned label', () => {
-    const schedule = rentalDetailGroups(map({ deliveryType: 'Customer Pickup' }), OWNER).find(
+    const schedule = rentalDetailGroups(map({ deliveryType: 'Client Pickup' }), OWNER).find(
       (g) => g.title === 'Schedule',
     )
     expect(schedule?.fields.find((f) => f.label === 'Delivery')?.value).toBe('Client Pickup')
   })
 
   it('never puts the banned word in the Intel payload, for any enum member', () => {
-    const MEMBERS = ['Customer Pickup', 'Babin Delivery', 'Courier', 'Third Party'] as const
+    const MEMBERS = ['Client Pickup', 'Babin Delivery', 'Courier', 'Third Party'] as const
     for (const member of MEMBERS) {
       const row = map({ deliveryType: member })
       for (const gctx of [OWNER, WAREHOUSE]) {

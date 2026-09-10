@@ -137,7 +137,7 @@ on conflict (asset_tag) do nothing;`)
   parts.push(`insert into bookings (client_uuid, booking_no, branch_id, client_id, project,
   pickup_at, return_at, delivery_type, deposit_required, created_by, updated_by)
 select ${key("'booking:' || v.no")}, v.no, ${BR}, c.id, v.project, v.pickup::timestamptz,
-  v.ret::timestamptz, 'Customer Pickup', v.dep::numeric, ${BILLING}, ${BILLING}
+  v.ret::timestamptz, 'Client Pickup', v.dep::numeric, ${BILLING}, ${BILLING}
 from (values
 ${corpus.bookings
     .map(

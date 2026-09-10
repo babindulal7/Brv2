@@ -12838,7 +12838,7 @@ export type Database = {
         | "Courier"
         | "Third Party"
       delivery_type:
-        | "Customer Pickup"
+        | "Client Pickup"
         | "Babin Delivery"
         | "Courier"
         | "Third Party"
@@ -14297,7 +14297,7 @@ export const Constants = {
         "Third Party",
       ],
       delivery_type: [
-        "Customer Pickup",
+        "Client Pickup",
         "Babin Delivery",
         "Courier",
         "Third Party",

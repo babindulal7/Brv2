@@ -287,7 +287,7 @@ async function seed() {
 
   await q(
     `insert into bookings (client_uuid, booking_no, client_id, branch_id, pickup_at, return_at, delivery_type, stage, created_by, updated_by)
-     values (gen_random_uuid(), $4, $1, $2, '2099-12-01T04:00:00Z', '2099-12-03T04:00:00Z', 'Customer Pickup', 'Quote', $3, $3)
+     values (gen_random_uuid(), $4, $1, $2, '2099-12-01T04:00:00Z', '2099-12-03T04:00:00Z', 'Client Pickup', 'Quote', $3, $3)
      on conflict do nothing`,
     [OTHER_CLIENT, BRANCH, U.Owner, await one("select next_document_number('booking')")],
   )
@@ -334,7 +334,7 @@ function createPayload({ key, window, actor, lines, discountPercent }) {
     client_id: CLIENT,
     pickup_at: window[0],
     return_at: window[1],
-    delivery_type: 'Customer Pickup',
+    delivery_type: 'Client Pickup',
     lines: lines.map((line) => ({
       client_uuid: crypto.randomUUID(),
       line_type: 'Equipment',

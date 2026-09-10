@@ -1691,10 +1691,9 @@ insert into bookings (
   ${txt(s.project)},
   ${ts(s.pickupAt)},
   ${ts(s.returnAt)},
-  -- Sample Data.md: transport Rs 0 — the client collects. 'Customer Pickup' is
-  -- the delivery_type enum member's own spelling (0001), not UI copy; Law 17
-  -- governs what the screens say, and no screen renders this literal.
-  'Customer Pickup'::delivery_type,
+  -- Sample Data.md: transport Rs 0 — the client collects.
+  -- 0113 renamed delivery_type enum to 'Client Pickup' (Law 17).
+  'Client Pickup'::delivery_type,
   ${money(rupees(s.depositRequiredRupees))},
   ${BILLING},
   ${BILLING}

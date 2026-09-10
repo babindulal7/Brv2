@@ -51,7 +51,7 @@ vi.mock('../../../lib/queries/bookings', () => ({
     pickupAtAd: '2026-07-16T00:15:00.000Z',
     returnAtAd: '2026-07-19T00:15:00.000Z',
     actualReturnAtAd: '2026-07-19T04:00:00.000Z',
-    deliveryType: 'Customer Pickup',
+    deliveryType: 'Client Pickup',
     isCancelled: false,
     isClosed: false,
     linesPresence: 'present',

@@ -87,7 +87,7 @@ function raw(over: Partial<Raw> = {}): Raw {
     // 00:15Z + 05:45 = 06:00 in Kathmandu.
     returnAtAd: '2026-08-02T00:15:00.000Z',
     actualReturnAtAd: null,
-    deliveryType: 'Customer Pickup',
+    deliveryType: 'Client Pickup',
     pickupLocation: 'Boudha',
     returnLocation: null,
     quoteExpiresAtAd: null,
@@ -134,7 +134,7 @@ describe('toMovementRow · which instant the row sits at', () => {
 
 describe('toMovementRow · kind', () => {
   it('separates Pickup from Delivery on delivery_type', () => {
-    expect(toMovementRow(raw({ deliveryType: 'Customer Pickup' }), 'outgoing', NOW_AD).kind).toBe('Pickup')
+    expect(toMovementRow(raw({ deliveryType: 'Client Pickup' }), 'outgoing', NOW_AD).kind).toBe('Pickup')
     expect(toMovementRow(raw({ deliveryType: 'Babin Delivery' }), 'outgoing', NOW_AD).kind).toBe('Delivery')
     expect(toMovementRow(raw({ deliveryType: 'Courier' }), 'outgoing', NOW_AD).kind).toBe('Delivery')
     expect(toMovementRow(raw({ deliveryType: 'Third Party' }), 'outgoing', NOW_AD).kind).toBe('Delivery')

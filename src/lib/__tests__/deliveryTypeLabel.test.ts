@@ -31,6 +31,7 @@ import { deliveryTypeLabel } from '../format'
  */
 describe('deliveryTypeLabel — Law 17 on the read path', () => {
   it('renames the stored enum member for display', () => {
+    expect(deliveryTypeLabel('Client Pickup')).toBe('Client Pickup')
     expect(deliveryTypeLabel('Customer Pickup')).toBe('Client Pickup')
   })
 
@@ -41,7 +42,7 @@ describe('deliveryTypeLabel — Law 17 on the read path', () => {
   })
 
   it('never returns the banned word, for any enum member', () => {
-    for (const member of ['Customer Pickup', 'Babin Delivery', 'Courier', 'Third Party']) {
+    for (const member of ['Client Pickup', 'Customer Pickup', 'Babin Delivery', 'Courier', 'Third Party']) {
       expect(deliveryTypeLabel(member).toLowerCase()).not.toContain('customer')
     }
   })

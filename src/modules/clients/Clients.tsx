@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import { useViewport } from '../../lib/device'
 import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { ClientsDirectory } from './ClientsDirectory'
@@ -51,6 +52,8 @@ function csvCell(v: string | number): string {
 }
 
 export default function Clients() {
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
   const money = useCanViewMoney()
   const { showSuccessToast } = useToast()
   const [params, setParams] = useSearchParams()
@@ -79,26 +82,20 @@ export default function Clients() {
    * local override map: painting `isBlocked` over a fetched row is what made the
    * old version unable to tell a real block from an imagined one.
    */
-  const requested = (params.get('tab') ?? 'clients') as TabKey
-  const allAllowedTabs = useMemo(() => TAB_DEFS.filter((t) => money || !t.money), [money])
-  const activeTab: TabKey = allAllowedTabs.some((t) => t.key === requested) ? requested : 'clients'
-  const visibleTabs = useMemo(
-    () => allAllowedTabs.filter((t) => !t.hideInBar || activeTab === t.key),
-    [allAllowedTabs, activeTab],
-  )
+  const tabParam = (params.get('tab') as TabKey | null) ?? 'clients'
+  const activeTab: TabKey = TAB_DEFS.some((t) => t.key === tabParam) ? tabParam : 'clients'
 
   const setTab = (key: TabKey) => {
     const next = new URLSearchParams(params)
     if (key === 'clients') next.delete('tab')
     else next.set('tab', key)
-    setParams(next, { replace: true })
+    setParams(next)
   }
 
-  /**
-   * A real CSV of the directory. Money columns are omitted for Warehouse — an
-   * export is still the application handing out figures, so §8.3 applies to the
-   * file exactly as it applies to the table.
-   */
+  // Filter out tabs hidden from bar or money-restricted (§8.3)
+  const visibleTabs = TAB_DEFS.filter((t) => !t.hideInBar && (!t.money || money))
+
+  /** Full directory export as CSV. Escaped cells; dates in both calendars. */
   const exportCsv = () => {
     const headers = [
       'Client ID',
@@ -110,7 +107,7 @@ export default function Clients() {
       'PAN',
       'Active Rentals',
       ...(money ? ['Outstanding (Rs)', 'Deposit Held (Rs)'] : []),
-      'Last Rental',
+      'Last Rental (BS)',
       'Status',
     ]
     const lines = clients.map((c) =>
@@ -147,23 +144,42 @@ export default function Clients() {
         description="Manage your clients, memberships, referrals, imports, duplicates and credit"
         actions={
           <>
-            <Button variant="primary" icon="plus" onClick={() => setTab('new')}>
-              New Client
+            <Button variant="primary" icon="plus" aria-label="New Client" onClick={() => setTab('new')}>
+              {phone ? 'New' : 'New Client'}
             </Button>
-            <Button icon="upload" onClick={() => setTab('import')}>
-              Import
-            </Button>
-            <Button icon="download" onClick={exportCsv}>
-              Export
-            </Button>
-            <Button icon="users" onClick={() => setTab('duplicates')}>
-              Find Duplicates
-            </Button>
+            {!phone && (
+              <>
+                <Button icon="upload" onClick={() => setTab('import')}>
+                  Import
+                </Button>
+                <Button icon="download" onClick={exportCsv}>
+                  Export
+                </Button>
+                <Button icon="users" onClick={() => setTab('duplicates')}>
+                  Find Duplicates
+                </Button>
+              </>
+            )}
+            {phone && (
+              <Button icon="download" aria-label="Export clients" onClick={exportCsv}>
+                Export
+              </Button>
+            )}
           </>
         }
       />
 
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)', overflowX: 'auto' }}>
+      <div
+        className="rsp-chip-scroll"
+        style={{
+          display: 'flex',
+          gap: 'var(--sp-xs)',
+          borderBottom: '1px solid var(--border)',
+          overflowX: 'auto',
+          flexWrap: 'nowrap',
+          paddingBottom: 1,
+        }}
+      >
         {visibleTabs.map((t) => {
           const on = activeTab === t.key
           return (
@@ -173,7 +189,7 @@ export default function Clients() {
               onClick={() => setTab(t.key)}
               aria-current={on ? 'page' : undefined}
               style={{
-                height: 34,
+                minHeight: 44,
                 padding: '0 12px',
                 border: 'none',
                 borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,

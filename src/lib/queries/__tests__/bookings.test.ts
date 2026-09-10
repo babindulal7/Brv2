@@ -279,7 +279,7 @@ const RAW = {
   pickup_at: '2026-08-14T04:15:00+00:00',
   return_at: '2026-08-18T10:30:00+00:00',
   actual_return_at: null,
-  delivery_type: 'Customer Pickup' as const,
+  delivery_type: 'Client Pickup' as const,
   pickup_location: 'Thamel warehouse',
   return_location: 'Lalitpur yard',
   quote_expires_at: '2026-08-20T18:15:00+00:00',
@@ -322,7 +322,7 @@ describe('toRow — raw DB row → BookingListRow', () => {
       pickupAtAd: RAW.pickup_at,
       returnAtAd: RAW.return_at,
       actualReturnAtAd: null,
-      deliveryType: 'Customer Pickup',
+      deliveryType: 'Client Pickup',
       itemCount: 7, // units, not lines — 5 + 2
       depositRequired: null, // not requested, so not known
       isCancelled: false,

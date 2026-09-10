@@ -76,8 +76,8 @@ import type { CrewRoleDb } from '../../types/database'
  * forbids by name.
  */
 
-/** `bookings.delivery_type`, read live from the enum on 16 Aug 2026. */
-export type DeliveryType = 'Customer Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
+/** `bookings.delivery_type`, renamed to Client Pickup by 0113 (Law 17). */
+export type DeliveryType = 'Client Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
 
 /** `booking_lines.line_type`, read live from the enum on 16 Aug 2026. */
 export type BookingLineType = 'Equipment' | 'Bundle' | 'Accessory' | 'Service' | 'Sub-rental' | 'Manual item'
@@ -87,24 +87,18 @@ export type BookingLineType = 'Equipment' | 'Bundle' | 'Accessory' | 'Service' |
  *
  * **This is the mapping `NewRental.tsx` says must exist.** Law 17 renamed the
  * customer-facing label to **Client Pickup** (PLAN.md §6.1 — the word
- * "customer" appears nowhere in the UI), while the Postgres enum still spells
- * that member `'Customer Pickup'` (`0001_enums.sql:34`). `NewRental.tsx`'s own
- * `TODO(decision)` states the rule: *"Whoever wires this screen to a real write
- * must map label → enum value"*, and warns against "correcting" the mirrors in
- * `types/database.ts`, `data/handover.ts` and `booqable/map/orders.ts` to match
- * the label.
+ * "customer" appears nowhere in the UI). Migration 0113 renamed the enum member
+ * `'Customer Pickup'` (`0001_enums.sql:34`) to `'Client Pickup'`.
  *
- * This is that map, in the one place the label crosses into a write. It is NOT
- * a rename and it does not move any stored data — the coordinated schema-wide
- * rename is still `AUDIT_FINDINGS.md` P3, unstarted.
+ * This function accepts both the canonical 'Client Pickup' and legacy 'Customer Pickup',
+ * returning the canonical 'Client Pickup'.
  */
 export function deliveryTypeFromLabel(label: string): DeliveryType {
-  if (label === 'Client Pickup') return 'Customer Pickup'
+  if (label === 'Client Pickup' || label === 'Customer Pickup') return 'Client Pickup'
   if (label === 'Babin Delivery' || label === 'Courier' || label === 'Third Party') return label
-  if (label === 'Customer Pickup') return label
   throw new Error(
     `"${label}" is not a delivery type. The UI's labels are Client Pickup, Babin Delivery, Courier and ` +
-      'Third Party; the stored enum spells the first one "Customer Pickup". Nothing was sent.',
+      'Third Party. Nothing was sent.',
   )
 }
 

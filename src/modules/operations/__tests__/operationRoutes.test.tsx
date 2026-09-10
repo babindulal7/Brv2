@@ -88,7 +88,7 @@ const FLOOR_B715 = {
   pickupAtAd: '2026-07-16T00:15:00.000Z',
   returnAtAd: '2026-07-19T00:15:00.000Z',
   actualReturnAtAd: null,
-  deliveryType: 'Customer Pickup',
+  deliveryType: 'Client Pickup',
   isCancelled: false,
   isClosed: false,
   linesPresence: 'present' as const,
