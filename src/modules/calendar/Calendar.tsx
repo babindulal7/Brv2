@@ -58,9 +58,16 @@ import {
   layerOf,
   adDay,
   dayDiff,
-} from '../../data/calendar'
-import type { Bar, BarKind, CountKey, CountSlot, LaneRow, ResourceRow, RowType, ViewName } from '../../data/calendar'
-import { businessDayAd } from '../../data/today'
+  businessDayAd,
+  type Bar,
+  type BarKind,
+  type CountKey,
+  type CountSlot,
+  type LaneRow,
+  type ResourceRow,
+  type RowType,
+  type ViewName,
+} from '../../lib/queries/calendar'
 
 /*
  * The operating day, resolved once when this module loads, from the real

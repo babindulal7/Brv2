@@ -18,11 +18,17 @@ import { useAuth } from '../../lib/auth'
 import { canUpdateBundle } from '../../lib/rbac'
 import { gateContext } from '../../lib/fieldGating'
 import { useViewport } from '../../lib/device'
-import { useBundleRecord } from '../../lib/queries/useBundles'
+import {
+  useBundleRecord,
+  bundleDetailGroups,
+  factsOf,
+  ratioLabelOf,
+  iconFor,
+  isPriced,
+  type BundleRecord,
+  type BundleState,
+} from '../../lib/queries/useBundles'
 import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
-import { bundleDetailGroups } from '../../data/bundleIntel'
-import { factsOf, ratioLabelOf, iconFor, isPriced } from '../../data/bundles'
-import type { BundleRecord, BundleState } from '../../data/bundles'
 
 /**
  * **Bundle detail** — `/inventory/bundles/:bundleRef`.

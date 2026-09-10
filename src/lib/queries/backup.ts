@@ -220,3 +220,22 @@ export async function listBackupLogs(opts: ListBackupLogsOptions = {}): Promise<
 
   return { rows: (data ?? []).map(toBackupLogRow), total: count ?? null }
 }
+
+export {
+  KPIS,
+  OVERVIEW,
+  SCHEDULE,
+  RESTORE_SCOPES,
+  RESTORE_OPTIONS,
+  RESTORE_POINT,
+  DESTINATIONS,
+  INTEGRITY,
+  INTEGRITY_TOTAL,
+  CLOUD_USAGE,
+  ANALYTICS,
+  SUMMARY,
+  ALERTS,
+  QUICK_ACTIONS,
+  ACTIVITY,
+} from '../../data/backup'
+

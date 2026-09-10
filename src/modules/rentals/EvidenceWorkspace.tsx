@@ -28,8 +28,8 @@ import {
   STEPS,
   BULK_ACTIONS,
   LIMITS,
-} from '../../data/evidence'
-import type { MatchState } from '../../data/evidence'
+} from '../../lib/queries/evidence'
+import type { MatchState } from '../../lib/queries/evidence'
 
 /**
  * **Evidence Workspace** — `Evidence Workspace.md` v1.1 (Build Locked).

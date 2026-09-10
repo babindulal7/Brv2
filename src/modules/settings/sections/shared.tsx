@@ -13,8 +13,8 @@ import { getAllowOverbooking, setAllowOverbooking } from '../../../lib/bookingRu
 import { TEXT_SIZES, applyTextSize, readTextSize } from '../../../lib/textSize'
 import type { TextSize } from '../../../lib/textSize'
 import type { UseEditModeResult } from '../../../lib/edit/useEditMode'
-import type { Dest, TabKey, TabDef, ActivityEntry, QuickAction } from '../../../data/settings'
-import { isDestVisible } from '../../../data/settings'
+import type { Dest, TabKey, TabDef, ActivityEntry, QuickAction } from '../../../lib/queries/settings'
+import { isDestVisible } from '../../../lib/queries/settings'
 
 /**
  * **Settings — the atoms every section is built from.**

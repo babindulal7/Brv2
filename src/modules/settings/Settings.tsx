@@ -32,8 +32,8 @@ import {
   BRANCHES,
   SYSTEM_SUMMARY,
   SEED_ERRORS,
-} from '../../data/settings'
-import type { Branch, TabKey } from '../../data/settings'
+} from '../../lib/queries/settings'
+import type { Branch, TabKey } from '../../lib/queries/settings'
 import { useSettingsLoad } from './useSettingsLoad'
 import {
   DestControl,

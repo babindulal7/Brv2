@@ -63,16 +63,14 @@ import {
   unitLocationOf,
   inventoryGlance,
   inventoryDetailGroups,
-} from '../../data/inventory'
-import type {
-  InvStatus,
-  Condition,
-  EquipmentChip,
-  FacetKey,
-  InventoryTab,
-  SortKey,
-  StatusCount,
-} from '../../data/inventory'
+  type InvStatus,
+  type Condition,
+  type EquipmentChip,
+  type FacetKey,
+  type InventoryTab,
+  type SortKey,
+  type StatusCount,
+} from '../../lib/queries/inventory'
 
 /* ── shared cell geometry ──────────────────────────────────────────────── */
 

@@ -16,8 +16,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { TIER_TONE, type ClientRecord } from '../../data/clients'
-import { STACK_NOTE } from '../../data/membership'
+import { TIER_TONE, type ClientRecord, STACK_NOTE } from '../../lib/queries/clients'
 import { STATUS } from '../../lib/status'
 
 /**

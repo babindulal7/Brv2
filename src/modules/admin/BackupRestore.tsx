@@ -31,7 +31,7 @@ import {
   QUICK_ACTIONS,
   ACTIVITY,
   /* `ADVISOR` is deliberately not imported — see the Law 16 note at the rail. */
-} from '../../data/backup'
+} from '../../lib/queries/backup'
 
 const STATUS_OF: Record<string, StatusKey> = {
   Completed: 'in',

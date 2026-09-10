@@ -31,6 +31,9 @@ import type { Database } from '../../types/supabase'
 import { rupees, type Paisa } from '../money'
 import { formatBsOrAd, formatAd } from '../bs'
 import type { ClientRecord, MembershipTier } from '../../data/clients'
+export * from '../../data/clients'
+export { clientGlance, clientDetailGroups } from '../../data/clientIntel'
+export { STACK_NOTE } from '../../data/membership'
 
 type ClientView = Database['public']['Views']['clients_v']['Row']
 type ClientInsert = Database['public']['Tables']['clients']['Insert']

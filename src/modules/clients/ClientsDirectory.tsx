@@ -37,8 +37,9 @@ import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewPII } from '../../lib/fieldGating'
 import { shouldFlipUp } from '../../lib/menuFlip'
 import { IntelCard } from '../../components/ui/IntelCard'
-import { clientGlance, clientDetailGroups } from '../../data/clientIntel'
 import {
+  clientGlance,
+  clientDetailGroups,
   TIER_TONE,
   clientMetrics,
   CLIENT_ROWS_PER_PAGE,
@@ -47,7 +48,7 @@ import {
   readOverdueStopDays,
   type ClientRecord,
   type CreditStopVerdict,
-} from '../../data/clients'
+} from '../../lib/queries/clients'
 
 /* ── last-rental sort key ──────────────────────────────────────────────── */
 

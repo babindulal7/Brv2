@@ -3,7 +3,7 @@ import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
 import { rupees, toRupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
-import { CREW_ROSTER } from '../../../data/crew'
+import { CREW_ROSTER } from '../../../lib/queries/crew'
 import { bookCrew } from '../../../actions/crew/bookCrew'
 import { useAuth } from '../../../lib/auth'
 

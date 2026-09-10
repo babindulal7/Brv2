@@ -25,10 +25,9 @@ import {
   stockAuditRestriction,
   unitStateOfOutcome,
   withOutcomes,
+  STOCK_CHECK_STATE_META,
 } from '../../lib/queries/stockAudits'
-import type { StockAuditItemRow, StockAuditListRow } from '../../lib/queries/stockAudits'
-import { STOCK_CHECK_STATE_META } from '../../data/stockCheck'
-import type { StockCheckUnitState } from '../../data/stockCheck'
+import type { StockAuditItemRow, StockAuditListRow, StockCheckUnitState } from '../../lib/queries/stockAudits'
 
 /**
  * **§7.3 Stock Check.**

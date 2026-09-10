@@ -15,22 +15,26 @@ import { formatAd } from '../../lib/bs'
 import { useList } from '../../lib/queries/useList'
 import type { ListQueryResult } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
-import { getAssetDetail, INVENTORY_STATES, UNIT_CONDITIONS } from '../../lib/queries/inventory'
-import type { AssetDetailRecord, InventoryUnitRow } from '../../lib/queries/inventory'
-import { Badge } from '../../components/ui/Badge'
-import { ServiceDueBadge } from '../../components/ui/ServiceDueBadge'
-import { ServicePlanCard } from './components/ServicePlanCard'
-import { readServiceDue } from '../../lib/queries/serviceDue'
-import type { ServiceRow } from '../../lib/serviceDue'
 import {
+  getAssetDetail,
+  INVENTORY_STATES,
+  UNIT_CONDITIONS,
   stockLabel,
   unitLocationOf,
   INV_STYLE,
   INV_TONE,
   INV_LABEL,
   CONDITION_TONE,
-} from '../../data/inventory'
-import type { InvStatus, Condition } from '../../data/inventory'
+  type AssetDetailRecord,
+  type InventoryUnitRow,
+  type InvStatus,
+  type Condition,
+} from '../../lib/queries/inventory'
+import { Badge } from '../../components/ui/Badge'
+import { ServiceDueBadge } from '../../components/ui/ServiceDueBadge'
+import { ServicePlanCard } from './components/ServicePlanCard'
+import { readServiceDue } from '../../lib/queries/serviceDue'
+import type { ServiceRow } from '../../lib/serviceDue'
 
 /**
  * # Asset Detail — `/inventory/:assetId`

@@ -11,7 +11,7 @@ import {
   isStaff,
 } from '../../../lib/rbac'
 import type { SystemRole } from '../../../types/database'
-import { BRANCHES } from '../../../data/settings'
+import { BRANCHES } from '../../../lib/queries/settings'
 import { ToneChip, td } from './shared'
 import { StaffDirectoryCard } from './StaffDirectory'
 

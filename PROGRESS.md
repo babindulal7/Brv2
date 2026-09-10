@@ -4,6 +4,66 @@
 
 
 
+## 2026-09-10 — Stage 1: Real Data Surges to 45 DB-Only Routes (45 DB-only / 3 mixed / 0 seed / 0 none / 48 routes, Overall 96%)
+
+**Phase:** Phase 1 · Stage 1 Foundation · **Status:** Real Data surges from 27 to 45 DB-only routes (45 DB-only, 3 mixed, 0 seed, 0 none); Real Data dimension reaches 97%; Backend 39/42 (93%); DB enforcement 9/9 (100%); Permissions 35/38 (92%); Lifecycle 14/14 (100%); Overall completion rises to ≈ 96% (+3).
+
+### Did
+
+- **Converted 18 additional routed surfaces and workspaces to 100% DB-only:**
+  - `BackupRestore.tsx`: Decoupled from `data/backup`, wired through `src/lib/queries/backup.ts`.
+  - `ResetWorkspace.tsx`: Created `src/lib/queries/reset.ts` and `__tests__/reset.test.ts` (2/2 passing), wired through `cleaning_queue_entries`.
+  - `EvidenceWorkspace.tsx`: Created `src/lib/queries/evidence.ts` and `__tests__/evidence.test.ts` (3/3 passing), wired through `evidence_files`.
+  - `StockCheck.tsx`: Decoupled from `data/stockCheck`, wired through `src/lib/queries/stockAudits.ts`.
+  - `Warehouses.tsx`: Decoupled from `data/warehouse` and `data/rackIntel`, wired through `src/lib/queries/warehouses.ts`.
+  - `PurchaseRequests.tsx` & `CreatePurchaseRequestModal.tsx`: Decoupled from `data/purchaseRequests`, wired through `src/lib/queries/purchaseRequests.ts`.
+  - `AssetDetail.tsx`: Decoupled from `data/inventory`, wired through `src/lib/queries/inventory.ts`.
+  - `BundleDetail.tsx`: Decoupled from `data/bundles` and `data/bundleIntel`, wired through `src/lib/queries/useBundles.ts`.
+  - `AddBundle.tsx`: Created `src/lib/queries/addBundle.ts` and `__tests__/addBundle.test.ts` (3/3 passing), decoupled from `data/addBundle`.
+  - `Clients.tsx` & `ClientsDirectory.tsx`: Decoupled entire clients directory and modal suite from `data/clients`, `data/clientIntel`, and `data/membership`, wired through `src/lib/queries/clients.ts`.
+  - `ClientDetail.tsx`: Decoupled from `data/clients` and `data/invoiceIntel`, wired through `src/lib/queries/clients.ts` and `finance.ts`.
+  - `Calendar.tsx`: Decoupled from `data/calendar` and `data/today`, wired through `src/lib/queries/calendar.ts`.
+  - `Finance.tsx`: Decoupled from `data/invoiceIntel`, `data/today`, and `data/nav`, wired through `src/lib/queries/finance.ts`.
+  - `RentalsList.tsx`: Decoupled from `data/booking`, `data/today`, and `data/rentals`, wired through `src/lib/queries/bookings.ts`.
+  - `OperationsQueues.tsx`: Created `src/lib/queries/operations.ts` and `__tests__/operations.test.ts` (4/4 passing), decoupled from `data/operations`, `data/today`, and `data/cases`.
+  - `BookingDetail.tsx` & `AssignCrewModal.tsx`: Decoupled from `data/bookingIntel`, `data/booking`, and `data/crew`, wired through `src/lib/queries/bookings.ts` and `crew.ts`.
+  - `Today.tsx`, `MovementList.tsx`, and `TimelinePanel.tsx`: Created `src/lib/queries/today.ts` and `__tests__/today.test.ts` (3/3 passing), decoupled from `data/today`.
+  - `Settings.tsx` & all section views: Created `src/lib/queries/settings.ts` and `__tests__/settings.test.ts` (2/2 passing), decoupled from `data/settings`.
+- **Only 3 mixed routes remain across the entire codebase (`NewRental.tsx`, `Inventory.tsx`, `AddEquipment.tsx`).**
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 type errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/lib/queries/__tests__` **39 test files passed, 515 tests passed, 0 failed**.
+- `node scripts/check-pglite.mjs` **110/110 applied, 0 failed**.
+- `node scripts/completion.mjs` **Real data 45 · 3 · 0 · 0 / 48 (97%), Overall ≈ 96% (+3)**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 39 / 42 (93%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 45 · 3 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 96% | +3 |
+
+Migrations 110 files · check:pglite 110/110 passed.
+Gates read from .lifecycle-result.json.
+Counted by `node scripts/completion.mjs`, not typed.
+
+### Remaining
+
+- **Real Data (3 remaining mixed routes out of 48):**
+  - `NewRental.tsx`: Decouple residual `itemCatalogue`, `clientHealth`, and rental booking helpers from `src/data/` through `src/lib/queries/`.
+  - `Inventory.tsx`: Decouple `Bundles.tsx`, `Maintenance.tsx`, and `DamageTab.tsx` tabs from `data/`.
+  - `AddEquipment.tsx`: Decouple components in `src/modules/inventory/components/` from `src/data/addEquipment.ts`.
+- **Backend / Permissions (3 unmapped inspection actions):**
+  - `inspection.create`, `inspection.pass`, `inspection.fail` remain intentionally unmapped until an `inspections` table/schema migration is designed (`PLAN.md §4.29`).
+
+---
+
 ## 2026-09-10 — Stage 1: Zero Seed Routes & Real Data Surges (27 DB-only / 21 mixed / 0 seed / 0 none / 48 routes, Overall 93%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** Complete elimination of seed routes across the application (0 seed, 0 none, 27 DB-only, 21 mixed); Real Data metric surges to 78%; Backend 39/42 (93%); DB enforcement 9/9 (100%); Permissions 35/38 (92%); Lifecycle 14/14 (100%); Overall at 93%.

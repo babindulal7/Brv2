@@ -20,14 +20,10 @@ import { useAuth } from '../../lib/auth'
 import { useViewport } from '../../lib/device'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
-import { OPERATIONS } from '../../data/booking'
-import { listBookings, type BookingListRow } from '../../lib/queries/bookings'
-import { useList, type ListQueryResult } from '../../lib/queries/useList'
-import { useFilters } from '../../lib/queries/useFilters'
-import { useFacetCounts } from '../../lib/queries/facetCounts'
-import type { ListFilters } from '../../lib/queries/listQuery'
-import { businessNowAd } from '../../data/today'
 import {
+  listBookings,
+  OPERATIONS,
+  businessNowAd,
   VIEWS,
   ROWS_PER_PAGE,
   OPTIONAL_COLUMNS,
@@ -45,8 +41,15 @@ import {
   subRentalBookingIds,
   toRentalListRow,
   withSubRental,
-} from '../../data/rentals'
-import type { ChipKey, OptionalColumn, RentalListRow } from '../../data/rentals'
+  type BookingListRow,
+  type ChipKey,
+  type OptionalColumn,
+  type RentalListRow,
+} from '../../lib/queries/bookings'
+import { useList, type ListQueryResult } from '../../lib/queries/useList'
+import { useFilters } from '../../lib/queries/useFilters'
+import { useFacetCounts } from '../../lib/queries/facetCounts'
+import type { ListFilters } from '../../lib/queries/listQuery'
 import { DateField } from '../../components/ui/DateField'
 
 

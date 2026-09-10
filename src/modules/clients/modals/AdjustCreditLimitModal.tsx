@@ -4,7 +4,7 @@ import { Button } from '../../../components/ui/Page'
 import { Unavailable } from '../../../components/ui/Unavailable'
 import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
-import type { ClientRecord } from '../../../data/clients'
+import type { ClientRecord } from '../../../lib/queries/clients'
 
 export interface AdjustCreditLimitModalProps {
   isOpen: boolean

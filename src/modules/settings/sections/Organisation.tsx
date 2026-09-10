@@ -1,5 +1,5 @@
 import { LANGUAGE_LABEL, coverage } from '../../../lib/i18n'
-import { BRANCH } from '../../../data/nav'
+import { BRANCH } from '../../../lib/queries/settings'
 import type { Section } from './shared'
 
 /**

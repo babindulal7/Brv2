@@ -40,9 +40,9 @@ import {
   type ClientRecord,
   type MembershipTier,
   type KycStatus,
-} from '../../data/clients'
+} from '../../lib/queries/clients'
 import type { Paisa } from '../../lib/money'
-import { INVOICE_TOKEN } from '../../data/invoiceIntel'
+import { INVOICE_TOKEN } from '../../lib/queries/finance'
 import { AdjustCreditLimitModal } from './modals/AdjustCreditLimitModal'
 import { UpgradeTierModal } from './modals/UpgradeTierModal'
 import { VerifyKycModal } from './modals/VerifyKycModal'

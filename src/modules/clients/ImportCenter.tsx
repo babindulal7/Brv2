@@ -16,8 +16,7 @@ import {
   type ImportTargetField,
   type ImportRowResult,
 } from '../../lib/clientImport'
-import { findClientMatches } from '../../lib/queries/clients'
-import type { ClientRecord } from '../../data/clients'
+import { findClientMatches, type ClientRecord } from '../../lib/queries/clients'
 
 /**
  * Import Center — the last confirmed Clients gap from this session's audit

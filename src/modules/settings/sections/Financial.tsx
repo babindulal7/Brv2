@@ -1,13 +1,13 @@
 import { Card } from '../../../components/ui/Page'
 import { thStyle as th } from '../../../components/ui/TableHeaderCell'
 import { toRupees } from '../../../lib/money'
-import { FEE_PER_CREW_DAY_PAISA } from '../../../data/crew'
+import { FEE_PER_CREW_DAY_PAISA } from '../../../lib/queries/crew'
 import {
   MEMBERSHIP_MATRIX,
   DEPOSIT_BY_CATEGORY_UNAVAILABLE,
   CANCELLATION_TIERS_UNAVAILABLE,
-} from '../../../data/settings'
-import type { Dest } from '../../../data/settings'
+} from '../../../lib/queries/settings'
+import type { Dest } from '../../../lib/queries/settings'
 import { NotTrackedYet, SectionCards, ToneChip, td } from './shared'
 import type { Section } from './shared'
 

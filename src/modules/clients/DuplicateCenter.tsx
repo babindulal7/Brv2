@@ -14,7 +14,7 @@ import { useNetwork } from '../../lib/network'
 import type { ActionContext } from '../../actions/core'
 import { useList } from '../../lib/queries/useList'
 import { listClientRecords } from '../../lib/queries/clients'
-import { findDuplicateGroups, type ClientRecord, type DuplicateGroup, type DuplicateMatchReason } from '../../data/clients'
+import { findDuplicateGroups, type ClientRecord, type DuplicateGroup, type DuplicateMatchReason } from '../../lib/queries/clients'
 
 /**
  * Duplicate & Merge Center — confirmed gap named in this session's audit

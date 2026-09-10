@@ -16,8 +16,8 @@ import { formatBsOrAd, formatAd } from '../../lib/bs'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import type { ResetEntryInput } from '../../actions/rentals/floorVerb'
-import { SHARED_CLEAN_TASKS, DAMAGE_TYPES, SEVERITIES, PROBLEM_ROUTE, QUEUE_FILTERS } from '../../data/reset'
-import type { QueueState, ProblemState } from '../../data/reset'
+import { SHARED_CLEAN_TASKS, DAMAGE_TYPES, SEVERITIES, PROBLEM_ROUTE, QUEUE_FILTERS } from '../../lib/queries/reset'
+import type { QueueState, ProblemState } from '../../lib/queries/reset'
 import { CompactButton, TouchTarget } from '../../components/ui/TouchTarget'
 
 /**

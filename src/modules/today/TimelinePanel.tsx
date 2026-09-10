@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { STATUS, BRAND } from '../../lib/status'
-import { clockNowMinutes, timeOf, statusKeyOf, dotTone, type MovementRow } from '../../data/today'
+import { clockNowMinutes, timeOf, statusKeyOf, dotTone, type MovementRow } from '../../lib/queries/today'
 import { cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 

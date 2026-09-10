@@ -39,7 +39,7 @@ import {
   rateDriftOf,
   parentsHolding,
   duplicateFrom,
-} from '../../data/addBundle'
+} from '../../lib/queries/addBundle'
 import type {
   DraftLine,
   CrewPick,
@@ -47,7 +47,7 @@ import type {
   VehicleType,
   InventoryCategory,
   InventoryModel,
-} from '../../data/addBundle'
+} from '../../lib/queries/addBundle'
 
 /**
  * **Inventory ▸ Bundles ▸ New Bundle** — rebuilt 8 Aug against

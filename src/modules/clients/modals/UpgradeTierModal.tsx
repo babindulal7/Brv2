@@ -2,8 +2,7 @@ import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
 import { Unavailable } from '../../../components/ui/Unavailable'
-import { MEMBERSHIP_TIERS } from '../../../data/clients'
-import type { ClientRecord, MembershipTier } from '../../../data/clients'
+import { MEMBERSHIP_TIERS, type ClientRecord, type MembershipTier } from '../../../lib/queries/clients'
 
 export interface UpgradeTierModalProps {
   isOpen: boolean

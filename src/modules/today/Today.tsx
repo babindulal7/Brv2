@@ -18,7 +18,7 @@ import {
   toMovementRow,
   type LivePeriod,
   type MovementRow,
-} from '../../data/today'
+} from '../../lib/queries/today'
 import { BS_UNSUPPORTED_NOTE } from '../../lib/bs'
 import { listBookings, overdue } from '../../lib/queries/bookings'
 import type { ListFilters } from '../../lib/queries/listQuery'

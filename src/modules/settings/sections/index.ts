@@ -1,4 +1,4 @@
-import type { TabKey } from '../../../data/settings'
+import type { TabKey } from '../../../lib/queries/settings'
 import type { Section } from './shared'
 import { ORGANISATION_SECTIONS } from './Organisation'
 import { SYSTEM_SECTIONS } from './System'

@@ -10,11 +10,11 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
 import {
+  usePurchaseRequests,
   type PRStatus,
   type PRPriority,
   type PurchaseRequest,
-} from '../../data/purchaseRequests'
-import { usePurchaseRequests } from '../../lib/queries/purchaseRequests'
+} from '../../lib/queries/purchaseRequests'
 import { PageBody } from '../../components/ui/PageBody'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'

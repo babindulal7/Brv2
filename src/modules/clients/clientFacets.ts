@@ -1,5 +1,4 @@
-import type { ClientRecord, MembershipTier } from '../../data/clients'
-import { MEMBERSHIP_TIERS } from '../../data/clients'
+import { type ClientRecord, type MembershipTier, MEMBERSHIP_TIERS } from '../../lib/queries/clients'
 import { rupees, type Paisa } from '../../lib/money'
 import type { IconName } from '../../components/ui/Icon'
 

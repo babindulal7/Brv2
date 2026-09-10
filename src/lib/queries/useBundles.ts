@@ -153,3 +153,6 @@ export function useBundleWithItems(
     { isFilteredOverride: false },
   )
 }
+
+export { bundleDetailGroups } from '../../data/bundleIntel'
+export { factsOf, ratioLabelOf, iconFor, isPriced, type BundleRecord, type BundleState } from '../../data/bundles'

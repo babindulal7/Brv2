@@ -1191,3 +1191,48 @@ async function fetchCategories(): Promise<ListQueryResult<CategoryOption>> {
 export function useInventoryCategories(): ListResult<CategoryOption> {
   return useList<CategoryOption>(fetchCategories, {}, { isFilteredOverride: false })
 }
+
+export {
+  stockLabel,
+  unitLocationOf,
+  INV_STYLE,
+  INV_DOT,
+  INV_ORDER,
+  INV_TONE,
+  INV_LABEL,
+  invLabel,
+  CONDITIONS,
+  CONDITION_TONE,
+  CONDITION_INK,
+  TABS,
+  TAB_SLUG,
+  tabFromSlug,
+  EQUIPMENT_CHIPS,
+  chipKey,
+  PARENTS,
+  CATEGORY_ICON,
+  CATEGORY_OPTIONS,
+  PRODUCT_CATEGORIES,
+  TRACKING_MODES,
+  FILTER_RAIL,
+  breakdownOf,
+  conditionOf,
+  inventoryGlance,
+  inventoryDetailGroups,
+  SORTS,
+  SORT_UNAVAILABLE,
+  ROWS_PER_PAGE_OPTIONS,
+} from '../../data/inventory'
+
+export type {
+  InvStatus,
+  Condition,
+  InventoryTab,
+  EquipmentChip,
+  ChildRow,
+  StatusCount,
+  ParentRow,
+  FacetKey,
+  RailRow,
+  SortKey,
+} from '../../data/inventory'

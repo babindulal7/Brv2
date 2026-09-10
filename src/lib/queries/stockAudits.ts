@@ -558,3 +558,5 @@ export async function findStockAuditItemByCode(auditId: string, rawCode: string)
   const row = (data ?? [])[0]
   return row ? toItemRow(row) : null
 }
+
+export { STOCK_CHECK_STATE_META, type StockCheckUnitState } from '../../data/stockCheck'

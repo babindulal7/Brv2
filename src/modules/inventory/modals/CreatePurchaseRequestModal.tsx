@@ -5,7 +5,7 @@ import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { DomainEvents, EVENT_TYPES } from '../../../events/eventBus'
 import { useAuth } from '../../../lib/auth'
-import type { PRPriority, PurchaseRequest } from '../../../data/purchaseRequests'
+import type { PRPriority, PurchaseRequest } from '../../../lib/queries/purchaseRequests'
 
 export interface CreatePurchaseRequestModalProps {
   isOpen: boolean

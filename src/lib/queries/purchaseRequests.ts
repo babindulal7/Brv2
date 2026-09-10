@@ -195,3 +195,5 @@ async function fetchPurchaseRequests(_filters: ListFilters): Promise<ListQueryRe
 export function usePurchaseRequests(): ListResult<PurchaseRequest> {
   return useList<PurchaseRequest>(fetchPurchaseRequests, {}, { isFilteredOverride: false })
 }
+
+export type { PRStatus, PRPriority, PRReason, PurchaseRequest } from '../../data/purchaseRequests'

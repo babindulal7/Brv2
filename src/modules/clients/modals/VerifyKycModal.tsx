@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
 import { Unavailable } from '../../../components/ui/Unavailable'
-import type { ClientRecord, KycStatus } from '../../../data/clients'
+import type { ClientRecord, KycStatus } from '../../../lib/queries/clients'
 
 export interface VerifyKycModalProps {
   isOpen: boolean

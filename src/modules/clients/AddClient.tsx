@@ -22,8 +22,8 @@ import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
 import type { ActionContext } from '../../actions/core'
-import { findClientsByPhoneTail } from '../../lib/queries/clients'
 import {
+  findClientsByPhoneTail,
   CLIENT_SOURCES,
   PAYMENT_TERMS_OPTIONS,
   PREFERRED_CONTACT_METHODS,
@@ -35,7 +35,7 @@ import {
   type OrganisationType,
   type Profession,
   type Segment,
-} from '../../data/clients'
+} from '../../lib/queries/clients'
 
 
 /**

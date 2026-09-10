@@ -25,9 +25,9 @@ import {
   equipmentSlices,
   totalsOf,
   warehousesOfBranch,
-} from '../../../data/settings'
-import type { Branch, BranchStatus, BranchActionKind, Dest } from '../../../data/settings'
-import type { Warehouse } from '../../../data/warehouse'
+} from '../../../lib/queries/settings'
+import type { Branch, BranchStatus, BranchActionKind, Dest } from '../../../lib/queries/settings'
+import type { Warehouse } from '../../../lib/queries/warehouses'
 import {
   ActivityList,
   DestControl,

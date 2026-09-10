@@ -803,7 +803,12 @@ describe('Law 4 — payments are immutable, and this module offers no way in', (
       'FINANCE_MONEY_ROLES',
       'FINANCE_REQUIRED_ROLE',
       'FINANCE_RESTRICTED_REASON',
+      'INVOICE_STATUSES',
+      'INVOICE_TOKEN',
+      'SPEC_TABS',
       'STORED_INVOICE_STATUSES',
+      'businessDayAd',
+      'businessNowAd',
       'createExpense',
       'expensesAwaitingApproval',
       'expensesByReceipt',
@@ -813,6 +818,8 @@ describe('Law 4 — payments are immutable, and this module offers no way in', (
       'expensesForCategory',
       'expensesInPeriod',
       'financeRestriction',
+      'invoiceDetailGroups',
+      'invoiceGlance',
       /*
        * Added 4 Sep 2026 for the Calendar Workspace's *Upcoming* rail, and
        * added deliberately rather than to silence this guard: it is a named
@@ -844,6 +851,7 @@ describe('Law 4 — payments are immutable, and this module offers no way in', (
       'paymentsInPeriod',
       'receivedPayments',
       'setExpenseStatus',
+      'todayDate',
       'voidedInvoices',
     ])
   })

@@ -18,12 +18,11 @@ import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
-import { useStockTransfers, useWarehouses } from '../../lib/queries/warehouses'
-import { listInventory } from '../../lib/queries/inventory'
-import { gateContext } from '../../lib/fieldGating'
-import { IntelCard } from '../../components/ui/IntelCard'
-import { rackGlance, rackDetailGroups } from '../../data/rackIntel'
 import {
+  useStockTransfers,
+  useWarehouses,
+  rackGlance,
+  rackDetailGroups,
   WAREHOUSES,
   STORAGE_LOCATIONS,
   EQUIPMENT_DISTRIBUTION,
@@ -46,13 +45,14 @@ import {
   recentActivity,
   transferActivity,
   insightsOf,
-} from '../../data/warehouse'
-import type {
-  Warehouse,
-  StockTransfer,
-  TransferType,
-  AlertKey,
-} from '../../data/warehouse'
+  type Warehouse,
+  type StockTransfer,
+  type TransferType,
+  type AlertKey,
+} from '../../lib/queries/warehouses'
+import { listInventory } from '../../lib/queries/inventory'
+import { gateContext } from '../../lib/fieldGating'
+import { IntelCard } from '../../components/ui/IntelCard'
 import type { ActionContext } from '../../actions/core'
 
 /*

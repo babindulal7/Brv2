@@ -30,7 +30,6 @@ import { useToast } from '../../components/ui/Toast'
 import { formatMoney, grouped, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { formatAdDateTime, toBs, formatBs } from '../../lib/bs'
-import { paymentGlance, paymentDetailGroups } from '../../data/bookingIntel'
 import { ExtendRentalModal } from './modals/ExtendRentalModal'
 import { AssignCrewModal } from './modals/AssignCrewModal'
 import { CreateSubRentalModal } from './modals/CreateSubRentalModal'
@@ -38,7 +37,15 @@ import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
 import { CreateInvoiceModal } from '../finance/modals/CreateInvoiceModal'
 import type { ActionContext } from '../../actions/core'
 import { useList } from '../../lib/queries/useList'
-import { listBookings, fetchFloorBooking } from '../../lib/queries/bookings'
+import {
+  listBookings,
+  fetchFloorBooking,
+  paymentGlance,
+  paymentDetailGroups,
+  isSubRentedLine,
+  isSubRentalBooking,
+  type PaymentHistoryRow,
+} from '../../lib/queries/bookings'
 import type { BookingListOptions, BookingListRow, FloorBooking, FloorLine } from '../../lib/queries/bookings'
 import { listInvoices, invoicesForBooking, listPayments, paymentsForBooking } from '../../lib/queries/finance'
 import type { InvoiceListRow, PaymentListRow } from '../../lib/queries/finance'
@@ -53,8 +60,6 @@ import { openWaLink } from '../../lib/whatsapp'
 import { readSettings } from '../../lib/settingsStore'
 import { releaseBookingLineUnit } from '../../actions/rentals/releaseBookingLineUnit'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
-import { isSubRentedLine, isSubRentalBooking } from '../../data/booking'
-import type { PaymentHistoryRow } from '../../data/booking'
 import { deliveryTypeLabel } from '../../lib/format'
 import { rentalDaysBetween, formatRentalDays } from '../../lib/rentalDays'
 

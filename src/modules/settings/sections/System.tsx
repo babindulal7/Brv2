@@ -1,4 +1,4 @@
-import type { Dest } from '../../../data/settings'
+import type { Dest } from '../../../lib/queries/settings'
 import type { Field, Section } from './shared'
 import { DevicePinControl } from './DevicePin'
 
