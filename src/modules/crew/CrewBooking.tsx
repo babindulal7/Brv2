@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo, useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import { Card, Button, PageHeader, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
@@ -13,13 +13,14 @@ import { useAuth } from '../../lib/auth'
 import { gateContext, canViewMoneyField, canViewPII } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import type { IntelGlance, IntelGroup } from '../../components/ui/IntelCard'
-import { crewGlance, crewDetailGroups } from '../../data/crewIntel'
 import { STATUS, STATUS_ICON } from '../../lib/status'
 import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
 import { useViewport } from '../../lib/device'
 import { getBusinessToday } from '../../lib/bs'
 import {
+  listCrewAssignments,
+  listCrewMembers,
   CREW_DATA,
   CREW_ROSTER,
   OPEN_ROLE_REQUESTS,
@@ -35,8 +36,13 @@ import {
   payoutLedger,
   crewDaysBooked,
   fillRate,
-} from '../../data/crew'
-import type { CrewAssignment, PayoutStatus, RosterChip, CrewMember } from '../../data/crew'
+  crewGlance,
+  crewDetailGroups,
+  type CrewAssignment,
+  type PayoutStatus,
+  type RosterChip,
+  type CrewMember,
+} from '../../lib/queries/crew'
 
 
 /** §11.1 — Tentative and Confirmed share one tone (blue); "on shoot today" is the derived solid-green override. */
@@ -199,31 +205,52 @@ export function CrewBooking() {
   // owns the three-chips-over-four-states union (law 1), so the count and the
   // predicate can never drift apart.
   const [rosterChip, setRosterChip] = useState<RosterChip>('All')
+  const [crewAssignments, setCrewAssignments] = useState<CrewAssignment[]>(CREW_DATA)
+  const [crewMembers, setCrewMembers] = useState<CrewMember[]>(CREW_ROSTER)
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    let active = true
+    listCrewAssignments().then((res) => {
+      if (active && res.rows.length > 0) {
+        setCrewAssignments(res.rows)
+      }
+    }).catch(() => {})
+
+    listCrewMembers().then((res) => {
+      if (active && res.rows.length > 0) {
+        setCrewMembers(res.rows)
+      }
+    }).catch(() => {})
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   // HIS v2.1 Crew card is person-level; this screen lists one row per
   // *assignment*. Group by name so the hover card can show a person's full
   // schedule/pay even though the table itself stays assignment-per-row.
   const crewByName = useMemo(() => {
     const map = new Map<string, CrewAssignment[]>()
-    for (const c of CREW_DATA) {
+    for (const c of crewAssignments) {
       const list = map.get(c.name) ?? []
       list.push(c)
       map.set(c.name, list)
     }
     return map
-  }, [])
+  }, [crewAssignments])
 
   // §5.1 — conflicts are derived, never stored.
-  const conflicts = useMemo(() => detectConflicts(CREW_DATA), [])
+  const conflicts = useMemo(() => detectConflicts(crewAssignments), [crewAssignments])
   const conflictIds = useMemo(() => conflictedAssignmentIds(conflicts), [conflicts])
-  const travelWarnings = useMemo(() => detectTravelWarnings(CREW_DATA), [])
-  const roster = useMemo(() => rosterSummary(CREW_ROSTER), [])
-  const crewDays = useMemo(() => crewDaysBooked(CREW_DATA), [])
-  const fill = useMemo(() => fillRate(CREW_DATA, OPEN_ROLE_REQUESTS), [])
+  const travelWarnings = useMemo(() => detectTravelWarnings(crewAssignments), [crewAssignments])
+  const roster = useMemo(() => rosterSummary(crewMembers), [crewMembers])
+  const crewDays = useMemo(() => crewDaysBooked(crewAssignments), [crewAssignments])
+  const fill = useMemo(() => fillRate(crewAssignments, OPEN_ROLE_REQUESTS), [crewAssignments])
 
   const billing = useMemo(() => {
-    const payoutsPaisa = CREW_DATA.filter((a) => !a.cancelled).reduce((sum, a) => sum + a.totalCostPaisa, 0) as CrewAssignment['totalCostPaisa']
+    const payoutsPaisa = crewAssignments.filter((a) => !a.cancelled).reduce((sum, a) => sum + a.totalCostPaisa, 0) as CrewAssignment['totalCostPaisa']
     return crewBilling({
       crewDays,
       payoutsPaisa,
@@ -231,26 +258,26 @@ export function CrewBooking() {
       expensesPaisa: CREW_EXPENSES_THIS_MONTH_PAISA,
       rechargeExpenses: true, // §2.3 Model A — recharge at cost (spec's recommendation)
     })
-  }, [crewDays])
+  }, [crewAssignments, crewDays])
 
-  const crewBookedToday = useMemo(() => CREW_DATA.filter((a) => onShootToday(a)).length, [])
-  const ledger = useMemo(() => payoutLedger(CREW_DATA), [])
+  const crewBookedToday = useMemo(() => crewAssignments.filter((a) => onShootToday(a)).length, [crewAssignments])
+  const ledger = useMemo(() => payoutLedger(crewAssignments), [crewAssignments])
 
-  const chipCounts = useMemo(() => rosterChipCounts(CREW_ROSTER), [])
+  const chipCounts = useMemo(() => rosterChipCounts(crewMembers), [crewMembers])
 
   /** §6.1's CREW list — roster people, filtered by the chip row and the search box. */
   const filteredRoster = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
-    return CREW_ROSTER.filter((m) => {
+    return crewMembers.filter((m) => {
       if (!matchesRosterChip(m, rosterChip)) return false
       if (!q) return true
       return m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q) || m.role.toLowerCase().includes(q)
     })
-  }, [searchQuery, rosterChip])
+  }, [crewMembers, searchQuery, rosterChip])
 
   /** §6.1's ASSIGNMENTS list. Search only — the chips above govern the roster. */
   const filteredCrew = useMemo(() => {
-    return CREW_DATA.filter((c) => {
+    return crewAssignments.filter((c) => {
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         return (
@@ -263,7 +290,7 @@ export function CrewBooking() {
       }
       return true
     })
-  }, [searchQuery])
+  }, [crewAssignments, searchQuery])
 
   // HIS builders (crewGlance/crewDetailGroups) construct a full field-gated
   // object graph per row — compute them once per relevant dependency change
@@ -335,12 +362,12 @@ export function CrewBooking() {
         </RailSection>
       )}
 
-      <RailSection title="Alerts" badge={String(railAlertCount(conflicts.length, travelWarnings.length, OPEN_ROLE_REQUESTS.length, CREW_DATA))}>
+      <RailSection title="Alerts" badge={String(railAlertCount(conflicts.length, travelWarnings.length, OPEN_ROLE_REQUESTS.length, crewAssignments))}>
         <AlertsList
           conflicts={conflicts}
           travelWarnings={travelWarnings}
           openRoles={OPEN_ROLE_REQUESTS}
-          assignments={CREW_DATA}
+          assignments={crewAssignments}
         />
       </RailSection>
 
@@ -485,7 +512,7 @@ export function CrewBooking() {
               list rather than squeezing `minmax(0,1fr)` to nothing. */}
           <div style={{ display: 'grid', gridTemplateColumns: desktop ? 'minmax(0,1fr) auto' : '1fr', gap: 'var(--sp-md)', alignItems: 'start' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-              <WeekCalendar assignments={CREW_DATA} conflictIds={conflictIds} />
+              <WeekCalendar assignments={crewAssignments} conflictIds={conflictIds} />
 
               {/* §6.1's CREW list — `name │ role │ rate │ [Book] ⋮`. */}
               <Card title="Crew" style={{ overflow: 'hidden' }}>
