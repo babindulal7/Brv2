@@ -522,6 +522,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
     count is set per band rather than left to `auto-fill`.
   */
   const viewport = useViewport()
+  const phone = viewport === 'phone'
   const desktop = viewport === 'desktop'
   const [cards, setCards] = useState(false)
   const cardView = viewport === 'phone' ? true : cards
@@ -681,22 +682,26 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         description="Every rental and finance document in one place. Create, manage, send and track — a document exists once."
         actions={
           <>
-            <Unavailable reason={NOT_BUILT}>
-              <Button icon="upload" disabled>
-                Upload Document
-              </Button>
-            </Unavailable>
-            <Unavailable reason={NOT_BUILT}>
-              <Button icon="upload" disabled>
-                Import
-              </Button>
-            </Unavailable>
-            <Button icon="download" onClick={exportCsv}>
-              Export
+            {!phone && (
+              <>
+                <Unavailable reason={NOT_BUILT}>
+                  <Button icon="upload" disabled>
+                    Upload Document
+                  </Button>
+                </Unavailable>
+                <Unavailable reason={NOT_BUILT}>
+                  <Button icon="upload" disabled>
+                    Import
+                  </Button>
+                </Unavailable>
+              </>
+            )}
+            <Button icon="download" aria-label="Export documents" onClick={exportCsv}>
+              {phone ? '' : 'Export'}
             </Button>
             <Unavailable reason={CREATE_UNAVAILABLE}>
-              <Button icon="plus" variant="primary" disabled>
-                Create Document
+              <Button icon="plus" variant="primary" aria-label="Create Document" disabled>
+                {phone ? '' : 'Create Document'}
               </Button>
             </Unavailable>
           </>
@@ -707,7 +712,17 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
 
       {/* §2 — tabs. The rail's category list below shares this one selection,
           so the two controls can never disagree about what is on screen. */}
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+      <div
+        className="rsp-chip-scroll"
+        style={{
+          display: 'flex',
+          gap: 'var(--sp-xs)',
+          borderBottom: '1px solid var(--border)',
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          paddingBottom: 1,
+        }}
+      >
         {[{ key: 'All' as const, tab: ALL_TAB }, ...categories].map((t) => {
           const on = category === t.key
           return (
@@ -717,7 +732,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               onClick={() => pickCategory(t.key)}
               aria-current={on ? 'page' : undefined}
               style={{
-                height: 36,
+                minHeight: 44,
                 padding: '0 12px',
                 border: 'none',
                 borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
@@ -727,6 +742,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                 fontWeight: on ? 700 : 500,
                 cursor: 'pointer',
                 fontFamily: 'inherit',
+                whiteSpace: 'nowrap',
                 marginBottom: -1,
               }}
             >

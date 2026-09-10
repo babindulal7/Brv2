@@ -8,6 +8,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { EmptyState } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
 import { useViewport } from '../../lib/device'
+import { BAR_BOX } from '../../components/shell/BottomBar'
 import { useNetwork } from '../../lib/network'
 import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
@@ -1522,6 +1523,7 @@ function CrewSearch({
               setOpen((o) => {
                 const next = !o
                 if (next) globalThis.requestAnimationFrame(() => inputRef.current?.focus())
+                else inputRef.current?.blur()
                 return next
               })
             }}
@@ -1545,8 +1547,8 @@ function CrewSearch({
               flexShrink: 0,
             }}
           >
-            <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
             <span>{open ? 'Hide' : 'Browse'}</span>
+            <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
           </button>
         </div>
       </Field>
@@ -1654,8 +1656,20 @@ function CrewSearch({
   )
 }
 
-export default function NewRental() {
+export interface NewRentalProps {
+  embedded?: boolean
+  onDone?: () => void
+}
+
+export default function NewRental({ embedded = false, onDone }: NewRentalProps = {}) {
   const navigate = useNavigate()
+  const handleExit = useCallback(() => {
+    if (onDone) {
+      onDone()
+    } else {
+      navigate('/rentals')
+    }
+  }, [onDone, navigate])
   const viewport = useViewport()
   const isDesktop = viewport === 'desktop'
   const isPhone = viewport === 'phone'
@@ -2480,6 +2494,14 @@ export default function NewRental() {
     })
   }
 
+  const updateCrewExtras = (
+    crewId: string,
+    field: 'overtimePaisa' | 'mealsPaisa' | 'accommodationPaisa',
+    valPaisa: Paisa,
+  ) => {
+    setCrew((p) => p.map((c) => (c.crewId === crewId ? { ...c, [field]: valPaisa } : c)))
+  }
+
   /**
    * The last dispatch failure, shown in the page's own inline error line.
    * Law 12 — errors are inline and persistent; there is no error toast to reach
@@ -2779,7 +2801,7 @@ export default function NewRental() {
         setSaveState('saved')
         /* Landing on the rentals list is this app's universal "the write
            landed" signal — now it has. */
-        navigate('/rentals')
+        handleExit()
       } catch (err) {
         setSaveState('error')
         const reason = err instanceof Error ? err.message : String(err)
@@ -2836,7 +2858,7 @@ export default function NewRental() {
     driverContact,
     days,
     depositRequiredPaisa,
-    navigate,
+    handleExit,
   ])
 
   /**
@@ -2852,8 +2874,8 @@ export default function NewRental() {
    */
   const discardDraft = useCallback(() => {
     setCancelIntent(null)
-    navigate('/rentals')
-  }, [navigate])
+    handleExit()
+  }, [handleExit])
 
   /**
    * The post-save path: `CANCEL_RENTAL`, the named terminal transition, with
@@ -2886,13 +2908,13 @@ export default function NewRental() {
       const input = { id: 'draft-new', reason: reason ?? null }
       void import('../../actions/rentals/index')
         .then((m) => m.cancelRental(input, ctx))
-        .then(() => navigate('/rentals'))
+        .then(() => handleExit())
         .catch((err: unknown) => {
           console.error('cancel booking failed:', err)
           setActionError(`Not cancelled — ${err instanceof Error ? err.message : String(err)}`)
         })
     },
-    [dispatchContext, navigate],
+    [dispatchContext, handleExit],
   )
 
   /* ── §7–20 — client selection handlers. ───────────────────────────────── */
@@ -3678,6 +3700,16 @@ export default function NewRental() {
         description={`${client?.name ?? 'No client selected'} · ${kind}`}
         actions={
           <>
+            {embedded && (
+              <Button
+                variant="ghost"
+                icon="chevron_left"
+                onClick={handleExit}
+                aria-label="Back to Rentals List"
+              >
+                Back to Rentals
+              </Button>
+            )}
             <span
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, padding: '0 10px', borderRadius: 'var(--r-badge)', background: STATUS[statusToken(status)].bg, color: STATUS[statusToken(status)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}
             >
@@ -4264,7 +4296,18 @@ export default function NewRental() {
                                       aria-label={`${expanded ? 'Hide' : 'Show'} overtime, meals and accommodation for ${c.name}`}
                                       aria-expanded={expanded}
                                       onClick={() => toggleCrewExpanded(c.crewId)}
-                                      style={{ position: 'relative', width: 22, height: 22, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: hasExtras ? 'var(--text2)' : 'var(--muted)', cursor: 'pointer' }}
+                                      style={{
+                                        position: 'relative',
+                                        width: 22,
+                                        height: 22,
+                                        display: 'grid',
+                                        placeItems: 'center',
+                                        borderRadius: 'var(--r-xs)',
+                                        border: 'none',
+                                        background: hasExtras ? 'var(--st-primary-bg)' : 'transparent',
+                                        color: hasExtras ? 'var(--st-primary-fg)' : expanded ? 'var(--text)' : 'var(--muted)',
+                                        cursor: 'pointer',
+                                      }}
                                     >
                                       <TouchInset />
                                       <Icon name={expanded ? 'chevron_up' : 'chevron_down'} size={13} />
@@ -4295,20 +4338,38 @@ export default function NewRental() {
                             </tr>
                             {canCrewMoney && expanded && (
                               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td colSpan={7} style={{ ...td, background: 'var(--card2)' }}>
-                                  <div style={{ display: 'flex', gap: 'var(--sp-lg)', flexWrap: 'wrap', fontSize: 'var(--t-meta)' }}>
-                                    <span style={{ display: 'inline-flex', gap: 5 }}>
-                                      <span style={{ color: 'var(--text2)' }}>Overtime</span>
-                                      <span className="figure" style={{ fontWeight: 600 }}>{c.overtimePaisa > 0 ? formatMoney(c.overtimePaisa) : '—'}</span>
-                                    </span>
-                                    <span style={{ display: 'inline-flex', gap: 5 }}>
-                                      <span style={{ color: 'var(--text2)' }}>Meals</span>
-                                      <span className="figure" style={{ fontWeight: 600 }}>{c.mealsPaisa > 0 ? formatMoney(c.mealsPaisa) : '—'}</span>
-                                    </span>
-                                    <span style={{ display: 'inline-flex', gap: 5 }}>
-                                      <span style={{ color: 'var(--text2)' }}>Accommodation</span>
-                                      <span className="figure" style={{ fontWeight: 600 }}>{c.accommodationPaisa > 0 ? formatMoney(c.accommodationPaisa) : '—'}</span>
-                                    </span>
+                                <td colSpan={7} style={{ ...td, background: 'var(--card2)', padding: '10px 12px' }}>
+                                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, minmax(0, 180px))', gap: 12, alignItems: 'center' }}>
+                                    <Field label="Overtime (Rs)">
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={c.overtimePaisa > 0 ? c.overtimePaisa / 100 : ''}
+                                        placeholder="0"
+                                        onChange={(e) => updateCrewExtras(c.crewId, 'overtimePaisa', rupees(Math.max(0, Number(e.target.value) || 0)))}
+                                        style={{ ...inputStyle, height: 32, fontSize: 'var(--t-meta)' }}
+                                      />
+                                    </Field>
+                                    <Field label="Meals (Rs)">
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={c.mealsPaisa > 0 ? c.mealsPaisa / 100 : ''}
+                                        placeholder="0"
+                                        onChange={(e) => updateCrewExtras(c.crewId, 'mealsPaisa', rupees(Math.max(0, Number(e.target.value) || 0)))}
+                                        style={{ ...inputStyle, height: 32, fontSize: 'var(--t-meta)' }}
+                                      />
+                                    </Field>
+                                    <Field label="Accommodation (Rs)">
+                                      <Input
+                                        type="number"
+                                        min={0}
+                                        value={c.accommodationPaisa > 0 ? c.accommodationPaisa / 100 : ''}
+                                        placeholder="0"
+                                        onChange={(e) => updateCrewExtras(c.crewId, 'accommodationPaisa', rupees(Math.max(0, Number(e.target.value) || 0)))}
+                                        style={{ ...inputStyle, height: 32, fontSize: 'var(--t-meta)' }}
+                                      />
+                                    </Field>
                                   </div>
                                 </td>
                               </tr>
@@ -4350,7 +4411,8 @@ export default function NewRental() {
             onToggle={() => toggle(4)}
             summary={clientPickup ? 'Client Pickup · Rs 0' : `Babin Delivery · ${canBookingMoney ? formatMoney(transportPaisa) : 'charged'}`}
           >
-            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr))', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+              {/* Left Column: Delivery Type & Dispatch Details */}
               <div style={{ minWidth: 0 }}>
                 <Field label="Delivery Type">
                   <Select
@@ -4362,37 +4424,33 @@ export default function NewRental() {
                     <option>Babin Delivery</option>
                   </Select>
                 </Field>
-                {canBookingMoney && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginTop: 9 }}>
-                    <Field label="Delivery Charge">
-                      <Input
-                        type="number"
-                        min={0}
-                        disabled={clientPickup}
-                        value={clientPickup ? 0 : deliveryChargePaisa / 100}
-                        onChange={(e) => setDeliveryChargePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
-                        style={{ ...inputStyle, opacity: clientPickup ? 0.55 : 1, cursor: clientPickup ? 'not-allowed' : 'text' }}
-                      />
-                    </Field>
-                    <Field label="Fuel Charge">
-                      <Input
-                        type="number"
-                        min={0}
-                        disabled={clientPickup}
-                        value={clientPickup ? 0 : fuelChargePaisa / 100}
-                        onChange={(e) => setFuelChargePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
-                        style={{ ...inputStyle, opacity: clientPickup ? 0.55 : 1, cursor: clientPickup ? 'not-allowed' : 'text' }}
-                      />
-                    </Field>
+
+                {clientPickup ? (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: '12px 14px',
+                      borderRadius: 'var(--r-btn)',
+                      background: 'var(--card2)',
+                      border: '1px solid var(--border)',
+                      display: 'flex',
+                      gap: 10,
+                      alignItems: 'flex-start',
+                      fontSize: 'var(--t-meta)',
+                      color: 'var(--text2)',
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <span style={{ color: 'var(--muted)', display: 'inline-flex', marginTop: 1, flexShrink: 0 }}>
+                      <Icon name="info" size={15} />
+                    </span>
+                    <div>
+                      <strong style={{ color: 'var(--text)', display: 'block', marginBottom: 2 }}>Client Warehouse Pickup</strong>
+                      Equipment will be collected and returned at the warehouse by the client. No vehicle or driver is required.
+                    </div>
                   </div>
-                )}
-                {/* The delivery's own facts. Shown only for a Babin Delivery,
-                    which is exactly when a transport row is written — Client
-                    Pickup sends none, so a vehicle typed under it would be
-                    collected and dropped. Not money, so no `canBookingMoney`
-                    gate: a money-blind operator still books the van. */}
-                {!clientPickup && (
-                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr))', gap: 9, marginTop: 9 }}>
+                ) : (
+                  <div style={{ display: 'grid', gap: 9, marginTop: 12 }}>
                     <Field label="Vehicle">
                       <Input
                         value={vehicle}
@@ -4401,32 +4459,70 @@ export default function NewRental() {
                         style={inputStyle}
                       />
                     </Field>
-                    <Field label="Number Plate">
-                      <Input
-                        value={numberPlate}
-                        onChange={(e) => setNumberPlate(e.target.value)}
-                        placeholder="e.g. BA 2 CHA 1234"
-                        style={inputStyle}
-                      />
-                    </Field>
-                    <Field label="Driver Contact">
-                      <Input
-                        value={driverContact}
-                        onChange={(e) => setDriverContact(e.target.value)}
-                        placeholder="Name and phone"
-                        style={inputStyle}
-                      />
-                    </Field>
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 9 }}>
+                      <Field label="Number Plate">
+                        <Input
+                          value={numberPlate}
+                          onChange={(e) => setNumberPlate(e.target.value)}
+                          placeholder="e.g. BA 2 CHA 1234"
+                          style={inputStyle}
+                        />
+                      </Field>
+                      <Field label="Driver Contact">
+                        <Input
+                          value={driverContact}
+                          onChange={(e) => setDriverContact(e.target.value)}
+                          placeholder="Name and phone"
+                          style={inputStyle}
+                        />
+                      </Field>
+                    </div>
                   </div>
                 )}
-                {/* §9.2 — Client Pickup forces both to zero. */}
-                {clientPickup && (
-                  <p style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                    Client Pickup forces delivery and fuel charges to Rs 0. Overriding writes to audit.
-                  </p>
-                )}
+              </div>
+
+              {/* Right Column: Transport Charges & Total */}
+              <div style={{ ...moneyBlock, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <h3 style={sub}>Transport Charges</h3>
+                  {canBookingMoney ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginTop: 6 }}>
+                      <Field label="Delivery Charge">
+                        <Input
+                          type="number"
+                          min={0}
+                          disabled={clientPickup}
+                          value={clientPickup ? 0 : deliveryChargePaisa / 100}
+                          onChange={(e) => setDeliveryChargePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
+                          style={{ ...inputStyle, opacity: clientPickup ? 0.55 : 1, cursor: clientPickup ? 'not-allowed' : 'text' }}
+                        />
+                      </Field>
+                      <Field label="Fuel Charge">
+                        <Input
+                          type="number"
+                          min={0}
+                          disabled={clientPickup}
+                          value={clientPickup ? 0 : fuelChargePaisa / 100}
+                          onChange={(e) => setFuelChargePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
+                          style={{ ...inputStyle, opacity: clientPickup ? 0.55 : 1, cursor: clientPickup ? 'not-allowed' : 'text' }}
+                        />
+                      </Field>
+                    </div>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                      Transport rates are hidden for your role.
+                    </p>
+                  )}
+
+                  {clientPickup && (
+                    <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                      Client Pickup forces delivery and fuel charges to Rs 0.
+                    </p>
+                  )}
+                </div>
+
                 {canBookingMoney && (
-                  <div style={{ marginTop: 11, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                     <MoneyRow label="Transport Total" value={formatMoney(transportPaisa)} strong />
                   </div>
                 )}
@@ -4535,7 +4631,10 @@ export default function NewRental() {
                     <span style={{ flex: 1, color: 'var(--text2)' }}>Invoice State</span>
                     <span style={{ fontWeight: 600 }}>{invoiceState}</span>
                   </div>
-                  <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                  <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+                    <MoneyRow label="Rental Outstanding" value={formatMoney(breakdown.outstanding)} strong />
+                  </div>
+                  <p style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                     <strong style={{ color: 'var(--text2)' }}>Partially Paid</strong> is an invoice state, not a payment
                     status — a payment is Received in full or it is not.
                   </p>
@@ -4720,8 +4819,8 @@ export default function NewRental() {
         <div
           style={{
             position: 'sticky',
-            bottom: 0,
-            zIndex: 30,
+            bottom: isPhone ? BAR_BOX : 0,
+            zIndex: 40,
             display: 'flex',
             alignItems: 'center',
             gap: 'var(--sp-md)',
@@ -4731,6 +4830,8 @@ export default function NewRental() {
             borderTop: '1px solid var(--border)',
             borderRadius: 'var(--r-card) var(--r-card) 0 0',
             boxShadow: '0 -4px 16px rgba(0,0,0,0.10)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
           }}
         >
           {canBookingMoney && (
@@ -4866,3 +4967,5 @@ export default function NewRental() {
     </div>
   )
 }
+
+export { NewRental }

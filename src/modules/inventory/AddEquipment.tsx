@@ -12,6 +12,7 @@ import { ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Modal } from '../../components/ui/Modal'
 import { PageHeader, Button, FooterNote, Rail, cardStyle } from '../../components/ui/Page'
+import Icon from '../../components/ui/Icon'
 import { Link, useNavigate } from 'react-router-dom'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
@@ -40,7 +41,7 @@ function paisa(s: string): Paisa | undefined {
   return p == null ? undefined : p
 }
 
-function AddEquipmentLayout() {
+function AddEquipmentLayout({ embedded, onDone }: { embedded?: boolean; onDone?: () => void } = {}) {
   const ctx = useEquipmentContext()
   const {
     assetCode,
@@ -61,6 +62,7 @@ function AddEquipmentLayout() {
     chosenLocation,
   } = ctx
   const navigate = useNavigate()
+  const handleExit = () => (onDone ? onDone() : navigate('/inventory'))
   const viewport = useViewport()
   const money = useCanViewMoney()
   const online = useNetwork()
@@ -195,7 +197,7 @@ function AddEquipmentLayout() {
           mode === 'draft' ? 'Draft saved' : 'Equipment created',
           `${res.assetCode} · ${res.status}${res.unitCount ? ` · ${res.unitCount} unit${res.unitCount === 1 ? '' : 's'}` : ''}`,
         )
-        navigate('/inventory')
+        handleExit()
       })
       .catch((err: unknown) => {
         captureError(err, { where: 'AddEquipment.create' })
@@ -208,11 +210,33 @@ function AddEquipmentLayout() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', paddingBottom: 'var(--sp-3xl)' }}>
-      {/* §2 — breadcrumb, and deliberately no Back button. */}
+      {/* §2 — breadcrumb */}
       <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-        <Link to="/inventory" style={{ color: 'var(--text2)', textDecoration: 'none' }}>
-          Inventory
-        </Link>
+        {embedded ? (
+          <button
+            type="button"
+            onClick={handleExit}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text2)',
+              cursor: 'pointer',
+              fontSize: 'var(--t-meta)',
+              fontFamily: 'inherit',
+              padding: 0,
+            }}
+          >
+            <Icon name="chevron_left" size={14} />
+            Back to Inventory
+          </button>
+        ) : (
+          <Link to="/inventory" style={{ color: 'var(--text2)', textDecoration: 'none' }}>
+            Inventory
+          </Link>
+        )}
         <span aria-hidden>›</span>
         <span style={{ color: 'var(--text)', fontWeight: 600 }}>Add Equipment</span>
         {/* Not an identifier and no longer styled as one: the Asset Code is
@@ -238,7 +262,7 @@ function AddEquipmentLayout() {
         description="Create an equipment record: its identity, its serialised units, where it lives, what it belongs to and what it works with."
         actions={
           <>
-            <Button variant="ghost" onClick={() => (isDirty ? setShowDiscard(true) : navigate('/inventory'))}>
+            <Button variant="ghost" onClick={() => (isDirty ? setShowDiscard(true) : handleExit())}>
               Cancel
             </Button>
             <Unavailable reason={PREVIEW_UNAVAILABLE_REASON}>
@@ -400,7 +424,7 @@ function AddEquipmentLayout() {
             <Button variant="secondary" onClick={() => setShowDiscard(false)}>
               Keep Editing
             </Button>
-            <Button variant="danger" onClick={() => navigate('/inventory')}>
+            <Button variant="danger" onClick={handleExit}>
               Discard
             </Button>
           </div>
@@ -414,10 +438,10 @@ function AddEquipmentLayout() {
   )
 }
 
-export default function AddEquipment() {
+export default function AddEquipment(props: { embedded?: boolean; onDone?: () => void } = {}) {
   return (
     <EquipmentProvider>
-      <AddEquipmentLayout />
+      <AddEquipmentLayout {...props} />
     </EquipmentProvider>
   )
 }

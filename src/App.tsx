@@ -88,6 +88,10 @@ const SubRental         = lazy(() => import('./modules/operations/SubRental').th
  *   /inventory/EQ000234        /cases/CASE-2026-0041
  * Never `BR-` — that is the branch prefix.
  */
+void AddEquipment
+void AddBundle
+void NewRental
+
 export default function App() {
   const { user } = useAuth()
   return (
@@ -172,14 +176,7 @@ export default function App() {
         />
 
         {/* Declared before /rentals/:bookingNo so "new" is not read as an ID. */}
-        <Route
-          path="/rentals/new"
-          element={
-            <Shell crumbs={[{ label: 'Rentals List' }, { label: 'New Rental' }]} search="Search client, equipment…">
-              <NewRental />
-            </Shell>
-          }
-        />
+        <Route path="/rentals/new" element={<Navigate to="/rentals?action=new" replace />} />
 
         {/* §4.3 — operations are full-screen routes, never modals. */}
         <Route
@@ -272,17 +269,10 @@ export default function App() {
         />
 
         {/*
-          `06 Inventory` renders. Declared before `/inventory/:code` so a word
-          like "new" is never read as an equipment code.
+          Integrated in-page: /inventory/new redirects to /inventory?tab=new so
+          operators remain inside the Inventory module workspace without detached shortcuts.
         */}
-        <Route
-          path="/inventory/new"
-          element={
-            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Add Equipment' }]} search="Search equipment, serial, SKU, category…">
-              <AddEquipment />
-            </Shell>
-          }
-        />
+        <Route path="/inventory/new" element={<Navigate to="/inventory?tab=new" replace />} />
 
         <Route
           path="/inventory/warehouses"
@@ -327,14 +317,11 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/inventory/bundles/new"
-          element={
-            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Bundles' }, { label: 'New Bundle' }]} search="Search inventory, category…">
-              <AddBundle />
-            </Shell>
-          }
-        />
+        {/*
+          Integrated in-page: /inventory/bundles/new redirects to /inventory?tab=bundles&action=new
+          so operators create bundles in-page within the Bundles workspace.
+        */}
+        <Route path="/inventory/bundles/new" element={<Navigate to="/inventory?tab=bundles&action=new" replace />} />
 
         {/*
           Declared after `/inventory/bundles/new` to match this file's grouping
@@ -970,6 +957,7 @@ function Shell({
   const viewport = useViewport()
   const phone = viewport === 'phone'
   const isFloor = FLOOR_ROUTE_SUFFIXES.some((s) => pathname.endsWith(s))
+  const hasElevatedStickyBar = isFloor || pathname === '/rentals/new'
 
   // Restoring a persisted Supabase session is async. Redirecting during that
   // window would flash /login on every refresh and throw away the route the
@@ -1041,7 +1029,7 @@ function Shell({
                row of content under the bar on a notched phone. Floor routes add
                another 64px on phone for StickyFloorBar. */
             padding: phone
-              ? `16px 20px calc(${isFloor ? '88px' : '24px'} + ${BAR_BOX})`
+              ? `16px 20px calc(${hasElevatedStickyBar ? '88px' : '24px'} + ${BAR_BOX})`
               : '16px 20px 24px',
           }}
         >

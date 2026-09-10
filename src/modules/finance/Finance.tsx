@@ -623,6 +623,7 @@ export default function Finance() {
    * cards at the same threshold RentalsList uses.
    */
   const viewport = useViewport()
+  const phone = viewport === 'phone'
   const tabular = useTabularLayout()
 
   // Modals state
@@ -1173,8 +1174,8 @@ export default function Finance() {
           Manager · Accounts), the same predicate `actions/core.ts` resolves
           `invoice.create` through; its TODO(decision) is closed. */}
       {canIssueInvoice && (
-        <Button icon="plus" variant="secondary" onClick={() => setShowCreateInvoice(true)}>
-          Create Invoice
+        <Button icon="plus" variant="secondary" aria-label="Create Invoice" onClick={() => setShowCreateInvoice(true)}>
+          {phone ? '' : 'Create Invoice'}
         </Button>
       )}
       {/* Launcher 2 of 2. Export stays on the page's money gate alone — it
@@ -1183,16 +1184,17 @@ export default function Finance() {
         <Button
           icon="dollar"
           variant="primary"
+          aria-label="Record Payment"
           onClick={() => {
             setSelectedInvoiceForRecord('')
             setShowRecordPayment(true)
           }}
         >
-          Record Payment
+          {phone ? '' : 'Record Payment'}
         </Button>
       )}
-      <Button icon="download" onClick={exportCsv}>
-        Export
+      <Button icon="download" aria-label="Export invoices" onClick={exportCsv}>
+        {phone ? '' : 'Export'}
       </Button>
     </>
   )
@@ -1343,6 +1345,7 @@ export default function Finance() {
       <div
         role="tablist"
         aria-label="Finance"
+        className="rsp-chip-scroll"
         style={{
           display: 'flex',
           gap: 'var(--sp-xs)',

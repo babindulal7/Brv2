@@ -203,12 +203,11 @@ export const StickyFloorBar: FC<StickyFloorBarProps> = ({
             fontWeight: 600,
             fontFamily: 'inherit',
             cursor: primaryAction.disabled ? 'not-allowed' : 'pointer',
-            border: '1px solid transparent',
+            border: primaryAction.disabled ? '1px solid var(--border)' : '1px solid transparent',
             ...(primaryAction.disabled
               ? {
                   background: 'var(--card2)',
                   color: 'var(--muted)',
-                  border: '1px solid var(--border)',
                 }
               : {
                   background: 'var(--btn-primary-bg)',

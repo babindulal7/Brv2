@@ -57,10 +57,10 @@ export const ScannerInput: React.FC<ScannerInputProps> = ({
   }
 
   return (
-    <div className={`w-full flex flex-col gap-2 ${className}`}>
-      <form onSubmit={handleSubmit} className="relative flex items-center">
-        <div className="absolute left-3.5 flex items-center pointer-events-none text-blue-400">
-          <IconBarcode className="w-5 h-5" />
+    <div className={className || undefined} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <form onSubmit={handleSubmit} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <div style={{ position: 'absolute', left: 14, display: 'flex', alignItems: 'center', pointerEvents: 'none', color: 'var(--nav-active-accent)' }}>
+          <IconBarcode size={20} />
         </div>
 
         <input
@@ -69,27 +69,78 @@ export const ScannerInput: React.FC<ScannerInputProps> = ({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
-          className="w-full min-h-[46px] pl-11 pr-24 py-2.5 text-sm font-mono rounded-xl bg-slate-900 border border-slate-700 text-slate-100 placeholder-slate-500 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-inner"
+          style={{
+            width: '100%',
+            minHeight: 46,
+            paddingLeft: 44,
+            paddingRight: 96,
+            paddingTop: 10,
+            paddingBottom: 10,
+            fontSize: 'var(--t-ui)',
+            fontFamily: 'monospace',
+            borderRadius: 'var(--r-card)',
+            background: 'var(--card2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+            outline: 'none',
+            boxShadow: 'var(--shadow-card)',
+            transition: 'border-color var(--dur) var(--ease)',
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = 'var(--nav-active-accent)'
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = 'var(--border)'
+          }}
         />
 
-        <div className="absolute right-2 flex items-center gap-1.5">
+        <div style={{ position: 'absolute', right: 4, display: 'flex', alignItems: 'center' }}>
           <button
             type="submit"
             disabled={!value.trim()}
-            className="min-h-[36px] px-3 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 text-white font-medium text-xs flex items-center gap-1 transition-all cursor-pointer shadow-sm"
+            /* Law 15 — 44×44 touch target */
+            style={{
+              minHeight: 44,
+              minWidth: 44,
+              padding: '0 12px',
+              borderRadius: 'var(--r-sm)',
+              background: 'var(--btn-primary-bg)',
+              color: 'var(--btn-primary-fg)',
+              border: 'none',
+              fontWeight: 600,
+              fontSize: 'var(--t-meta)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              cursor: !value.trim() ? 'not-allowed' : 'pointer',
+              opacity: !value.trim() ? 0.4 : 1,
+              transition: 'opacity var(--dur) var(--ease)',
+            }}
           >
             <span>Scan</span>
-            <IconCornerDownLeft className="w-3.5 h-3.5" />
+            <IconCornerDownLeft size={14} />
           </button>
         </div>
       </form>
 
       {/* Real-time scan confirmation feedback */}
       {recentScan && (
-        <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 px-3 py-1.5 rounded-lg animate-fadeIn">
-          <IconCheck className="w-4 h-4 shrink-0" />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 'var(--t-meta)',
+            color: 'var(--st-in-fg)',
+            background: 'var(--st-in-bg)',
+            border: '1px solid var(--st-in-border)',
+            padding: '6px 12px',
+            borderRadius: 'var(--r-sm)',
+          }}
+        >
+          <IconCheck size={16} style={{ flexShrink: 0 }} />
           <span>
-            Scanned: <span className="font-mono font-bold text-white">{recentScan}</span>
+            Scanned: <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{recentScan}</span>
           </span>
         </div>
       )}

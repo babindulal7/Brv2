@@ -20,6 +20,7 @@ import { IntelCard } from '../../components/ui/IntelCard'
 import { Bundles } from './Bundles'
 import { Maintenance } from './Maintenance'
 import StockCheck from './StockCheck'
+import AddEquipment from './AddEquipment'
 import {
   listInventory,
   listUnits,
@@ -1221,7 +1222,9 @@ export default function Inventory() {
    * stack the operator has to walk out of.
    */
   const [params, setParams] = useSearchParams()
-  const tab = tabFromSlug(params.get('tab'))
+  const tabParam = params.get('tab')
+  const isNew = tabParam === 'new'
+  const tab = tabFromSlug(tabParam)
   const setTab = useCallback(
     (next: InventoryTab) => {
       const p = new URLSearchParams(params)
@@ -1508,11 +1511,13 @@ export default function Inventory() {
         <Button icon="refresh" onClick={refreshAll}>
           {phone ? '' : 'Refresh'}
         </Button>
-        <Unavailable reason="Import is not built — there is no catalogue intake pipeline in this release.">
-          <Button icon="upload" disabled>
-            {phone ? '' : 'Import'}
-          </Button>
-        </Unavailable>
+        {!phone && (
+          <Unavailable reason="Import is not built — there is no catalogue intake pipeline in this release.">
+            <Button icon="upload" disabled>
+              Import
+            </Button>
+          </Unavailable>
+        )}
         {/* `Button` takes no `title`, so the scope note sits on a wrapper —
             the file is the PAGE, and the label and the tooltip both say so. */}
         <span
@@ -1523,7 +1528,15 @@ export default function Inventory() {
             {phone ? '' : 'Export'}
           </Button>
         </span>
-        <Button icon="plus" variant="primary" onClick={() => navigate('/inventory/new')}>
+        <Button
+          icon="plus"
+          variant="primary"
+          onClick={() => {
+            const p = new URLSearchParams(params)
+            p.set('tab', 'new')
+            setParams(p, { replace: true })
+          }}
+        >
           {phone ? '' : 'Add Equipment'}
         </Button>
       </>
@@ -1565,13 +1578,20 @@ export default function Inventory() {
         }}
       >
         {TABS.map((t) => {
-          const on = tab === t
+          const on = !isNew && tab === t
           return (
             <button
               key={t}
               type="button"
               role="tab"
-              onClick={() => setTab(t)}
+              onClick={() => {
+                if (isNew) {
+                  const p = new URLSearchParams(params)
+                  p.delete('tab')
+                  setParams(p, { replace: true })
+                }
+                setTab(t)
+              }}
               aria-selected={on}
               aria-current={on ? 'page' : undefined}
               style={{
@@ -1595,9 +1615,43 @@ export default function Inventory() {
             </button>
           )
         })}
+        {isNew && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={true}
+            aria-current="page"
+            style={{
+              flexShrink: 0,
+              minHeight: 44,
+              padding: '0 13px',
+              border: 'none',
+              borderBottom: '2px solid var(--nav-active-accent)',
+              background: 'transparent',
+              color: 'var(--nav-active-accent)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              whiteSpace: 'nowrap',
+              marginBottom: -1,
+            }}
+          >
+            Add Equipment
+          </button>
+        )}
       </div>
 
-      {tab === 'Bundles' ? (
+      {isNew ? (
+        <AddEquipment
+          embedded
+          onDone={() => {
+            const p = new URLSearchParams(params)
+            p.delete('tab')
+            setParams(p, { replace: true })
+          }}
+        />
+      ) : tab === 'Bundles' ? (
         <Bundles />
       ) : tab === 'Maintenance' ? (
         <Maintenance />
@@ -1630,6 +1684,7 @@ export default function Inventory() {
           */}
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <div
+              className="rsp-chip-scroll"
               style={{
                 display: 'flex',
                 gap: 6,

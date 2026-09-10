@@ -2889,7 +2889,7 @@ export default function BookingDetail() {
           style={{
             position: 'sticky',
             bottom: viewport === 'phone' ? BAR_BOX : 0,
-            zIndex: 5,
+            zIndex: 40,
             display: 'flex',
             alignItems: 'center',
             gap: 'var(--sp-md)',
@@ -2898,6 +2898,8 @@ export default function BookingDetail() {
             border: '1px solid var(--border)',
             background: 'var(--card)',
             boxShadow: 'var(--shadow-modal)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
           }}
         >
           <span style={{ minWidth: 0, flex: 1 }}>

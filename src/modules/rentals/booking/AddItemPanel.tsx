@@ -49,6 +49,7 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useViewport } from '../../../lib/device'
 import Icon from '../../../components/ui/Icon'
 import { formatMoney } from '../../../lib/money'
 import type { BundleRecord } from '../../../lib/queries/bundles'
@@ -249,6 +250,8 @@ export function AddItemPanel({
   applyBundleSaving = false,
 }: AddItemPanelProps) {
   const reactId = useId()
+  const viewport = useViewport()
+  const onPhone = viewport === 'phone'
   const inputId = `${reactId}-add-item-input`
   const listboxId = `${reactId}-add-item-listbox`
   const hintId = `${reactId}-add-item-hint`
@@ -558,6 +561,8 @@ export function AddItemPanel({
                 const next = !o
                 if (next) {
                   globalThis.requestAnimationFrame(() => inputRef.current?.focus())
+                } else {
+                  inputRef.current?.blur()
                 }
                 return next
               })
@@ -582,8 +587,8 @@ export function AddItemPanel({
               flexShrink: 0,
             }}
           >
-            <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
             <span>{open ? 'Hide' : 'Browse'}</span>
+            <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
           </button>
         </div>
       )}
@@ -596,15 +601,15 @@ export function AddItemPanel({
             position: 'absolute' as const,
             zIndex: 45,
             top: 'calc(100% + 6px)',
-            ...(inline
-              ? { left: 0, width: '100%' }
+            ...(inline || onPhone
+              ? { left: 0, right: 0, width: '100%' }
               : { right: 0, width: 'min(620px, calc(100vw - 32px))' }),
             background: 'var(--dropdown)',
             boxShadow: 'var(--shadow-modal)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--r-card)',
             overflow: 'hidden',
-            maxHeight: 'min(560px, 80vh)',
+            maxHeight: onPhone ? 'min(480px, 70vh)' : 'min(560px, 80vh)',
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -697,7 +702,7 @@ export function AddItemPanel({
                 )
               })}
 
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
+              <span style={{ marginLeft: onPhone ? 0 : 'auto', display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap', width: onPhone ? '100%' : 'auto' }}>
                 {/* ── Category (§28–30) — derived, never typed ───────── */}
                 <select
                   aria-label="Filter by category"

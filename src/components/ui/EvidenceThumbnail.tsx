@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { IconPhoto, IconZoomIn, IconX, IconUser, IconClock, IconSignature } from '@tabler/icons-react'
+import { IconPhoto, IconX, IconUser, IconClock, IconSignature } from '@tabler/icons-react'
 import { BsAdDate } from './BsAdDate'
 
 export interface EvidenceItem {
@@ -25,10 +25,10 @@ export const EvidenceThumbnail: React.FC<EvidenceThumbnailProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false)
 
-  const sizeClasses = {
-    sm: 'w-12 h-12',
-    md: 'w-20 h-20',
-    lg: 'w-32 h-32',
+  const sizePx = {
+    sm: 48,
+    md: 80,
+    lg: 128,
   }[size]
 
   const isSignature = evidence.category === 'signature'
@@ -37,42 +37,128 @@ export const EvidenceThumbnail: React.FC<EvidenceThumbnailProps> = ({
     <>
       <div
         onClick={() => setIsOpen(true)}
-        className={`group relative rounded-lg overflow-hidden border border-slate-800 bg-slate-950 cursor-pointer hover:border-blue-500 transition-all ${sizeClasses} ${className}`}
+        className={className || undefined}
+        style={{
+          width: sizePx,
+          height: sizePx,
+          position: 'relative',
+          borderRadius: 'var(--r-sm)',
+          overflow: 'hidden',
+          border: '1px solid var(--border)',
+          background: 'var(--card2)',
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
       >
         {evidence.url ? (
           <img
             src={evidence.url}
             alt={evidence.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+            }}
           />
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 bg-slate-900">
-            {isSignature ? <IconSignature className="w-6 h-6" /> : <IconPhoto className="w-6 h-6" />}
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--muted)',
+              background: 'var(--card2)',
+            }}
+          >
+            {isSignature ? <IconSignature size={24} /> : <IconPhoto size={24} />}
           </div>
         )}
 
-        {/* Hover overlay with zoom icon */}
-        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-          <IconZoomIn className="w-5 h-5 text-white" />
-        </div>
-
         {/* Category tag */}
-        <span className="absolute bottom-1 right-1 text-[9px] font-semibold px-1 py-0.2 rounded bg-black/70 text-slate-200 uppercase">
+        <span
+          style={{
+            position: 'absolute',
+            bottom: 3,
+            right: 3,
+            fontSize: '9px',
+            fontWeight: 700,
+            padding: '1px 4px',
+            borderRadius: 'var(--r-chip)',
+            background: 'rgba(0, 0, 0, 0.7)',
+            color: '#fff',
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            lineHeight: 1.2,
+          }}
+        >
           {evidence.category}
         </span>
       </div>
 
       {/* Full Evidence Zoom Modal */}
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="fixed inset-0" onClick={() => setIsOpen(false)} />
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 60,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            background: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+          }}
+        >
+          <div
+            style={{ position: 'fixed', inset: 0 }}
+            onClick={() => setIsOpen(false)}
+          />
 
-          <div className="relative z-10 max-w-3xl w-full bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+          <div
+            style={{
+              position: 'relative',
+              zIndex: 10,
+              maxWidth: 800,
+              width: '100%',
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r-card)',
+              boxShadow: 'var(--shadow-card)',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              maxHeight: '90vh',
+            }}
+          >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '14px 20px',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
               <div>
-                <h3 className="text-base font-semibold text-white">{evidence.title}</h3>
-                <span className="text-xs uppercase tracking-wider text-blue-400 font-semibold">
+                <h3 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                  {evidence.title}
+                </h3>
+                <span
+                  style={{
+                    fontSize: 'var(--t-meta)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                    color: 'var(--nav-active-accent)',
+                    fontWeight: 600,
+                  }}
+                >
                   Category: {evidence.category}
                 </span>
               </div>
@@ -80,43 +166,86 @@ export const EvidenceThumbnail: React.FC<EvidenceThumbnailProps> = ({
                 type="button"
                 aria-label="Close evidence viewer"
                 onClick={() => setIsOpen(false)}
-                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                /* Law 15 — 44×44 touch target */
+                style={{
+                  minWidth: 44,
+                  minHeight: 44,
+                  width: 44,
+                  height: 44,
+                  borderRadius: 'var(--r-sm)',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--text2)',
+                  cursor: 'pointer',
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
               >
-                <IconX className="w-5 h-5" />
+                <IconX size={20} />
               </button>
             </div>
 
             {/* Media Body */}
-            <div className="flex-1 overflow-auto bg-slate-950 flex items-center justify-center p-4 min-h-[300px]">
+            <div
+              style={{
+                flex: 1,
+                overflow: 'auto',
+                background: 'var(--card2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 16,
+                minHeight: 280,
+              }}
+            >
               {evidence.url ? (
                 <img
                   src={evidence.url}
                   alt={evidence.title}
-                  className="max-h-[60vh] max-w-full object-contain rounded-lg border border-slate-800"
+                  style={{
+                    maxHeight: '60vh',
+                    maxWidth: '100%',
+                    objectFit: 'contain',
+                    borderRadius: 'var(--r-sm)',
+                    border: '1px solid var(--border)',
+                  }}
                 />
               ) : (
-                <div className="text-slate-500 flex flex-col items-center gap-2">
-                  <IconPhoto className="w-12 h-12" />
-                  <span>No image data available</span>
+                <div style={{ color: 'var(--muted)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <IconPhoto size={48} />
+                  <span style={{ fontSize: 'var(--t-ui)' }}>No image data available</span>
                 </div>
               )}
             </div>
 
             {/* Metadata Footer */}
-            <div className="px-6 py-4 bg-slate-900 border-t border-slate-800 flex flex-wrap items-center justify-between gap-4 text-xs text-slate-400">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-1.5">
-                  <IconClock className="w-4 h-4 text-slate-500" />
+            <div
+              style={{
+                padding: '14px 20px',
+                background: 'var(--card)',
+                borderTop: '1px solid var(--border)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                fontSize: 'var(--t-meta)',
+                color: 'var(--text2)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <IconClock size={16} style={{ color: 'var(--muted)' }} />
                   <BsAdDate date={evidence.capturedAt} layout="inline" showTime />
                 </div>
                 {evidence.capturedBy && (
-                  <div className="flex items-center gap-1.5">
-                    <IconUser className="w-4 h-4 text-slate-500" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <IconUser size={16} style={{ color: 'var(--muted)' }} />
                     <span>Captured by {evidence.capturedBy}</span>
                   </div>
                 )}
               </div>
-              {evidence.notes && <p className="text-slate-300 italic">{evidence.notes}</p>}
+              {evidence.notes && <p style={{ margin: 0, fontStyle: 'italic', color: 'var(--text)' }}>{evidence.notes}</p>}
             </div>
           </div>
         </div>

@@ -901,8 +901,8 @@ export default function Today() {
           <>
             <DatePill />
             <PeriodControl period={period} setPeriod={setPeriod} />
-            <Button icon="plus" variant="primary" onClick={() => navigate('/rentals/new')}>
-              New Rental
+            <Button icon="plus" variant="primary" aria-label="New Rental" onClick={() => navigate('/rentals/new')}>
+              {viewport === 'phone' ? '' : 'New Rental'}
             </Button>
           </>
         }

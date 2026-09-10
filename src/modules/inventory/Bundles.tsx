@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { AddBundle } from './AddBundle'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui/Select'
@@ -365,6 +366,8 @@ const ROWS_PER_PAGE = [10, 25, 50]
 
 export function Bundles() {
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const isNewBundle = params.get('action') === 'new'
   const money = useCanViewMoney()
   const { user } = useAuth()
   const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
@@ -625,6 +628,19 @@ export function Bundles() {
     )
   }
 
+  if (isNewBundle) {
+    return (
+      <AddBundle
+        embedded
+        onDone={() => {
+          const next = new URLSearchParams(params)
+          next.delete('action')
+          setParams(next, { replace: true })
+        }}
+      />
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
 
@@ -641,18 +657,38 @@ export function Bundles() {
           <Button icon="download" onClick={() => exportBundles(filtered, money)}>
             Export
           </Button>
-          <Button icon="plus" variant="primary" onClick={() => navigate('/inventory/bundles/new')}>
+          <Button
+            icon="plus"
+            variant="primary"
+            onClick={() => {
+              const next = new URLSearchParams(params)
+              next.set('action', 'new')
+              setParams(next, { replace: true })
+            }}
+          >
             New Bundle
           </Button>
           <Menu
             label="More"
             icon="chevron_down"
             items={[
-              { key: 'blank', label: 'Start a blank bundle', onSelect: () => navigate('/inventory/bundles/new') },
+              {
+                key: 'blank',
+                label: 'Start a blank bundle',
+                onSelect: () => {
+                  const next = new URLSearchParams(params)
+                  next.set('action', 'new')
+                  setParams(next, { replace: true })
+                },
+              },
               {
                 key: 'dup',
                 label: preview ? `Duplicate ${preview.id}` : 'Duplicate a bundle',
-                onSelect: () => navigate('/inventory/bundles/new'),
+                onSelect: () => {
+                  const next = new URLSearchParams(params)
+                  next.set('action', 'new')
+                  setParams(next, { replace: true })
+                },
               },
               {
                 key: 'tpl',

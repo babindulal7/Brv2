@@ -4,6 +4,64 @@
 
 
 
+## 2026-09-11 — Phase 4 UI Primitives Tokenization & Stage 1 S1-8 Law 17 Delivery Type Migration (Overall 98%)
+
+**Phase:** Phase 4 UI Primitives & Stage 1 Migration · **Status:** Modernized and ported 8 core design system UI primitives (`Table`, `GateChecklist`, `MoneyField`, `BsAdDate`, `ScannerInput`, `QuantityChip`, `EvidenceThumbnail`, `ReconciliationAssertion`) to native `theme.css` variables, eliminating uncompiled Tailwind styling and enforcing Law 15 (44×44 touch targets) and Law 11 (icon + label pairs). Implemented Migration 0113 (Law 17 `delivery_type` enum rename: 'Customer Pickup' → 'Client Pickup') per STAGE_1.md S1-8. Backend 42/42 (100%), Real Data 48/48 (100%), DB enforcement 9/9 (100%), Lifecycle 14/14 (100%), Overall completion reaches ≈ 98% (+1). 111/111 migrations green on PGlite.
+
+### Did
+
+- **Ported 8 Core Design System Primitives to Native CSS Tokens:**
+  - `src/components/ui/Table.tsx`: Replaced Tailwind utility classes with `var(--card)`, `var(--border)`, `var(--r-card)`, `var(--t-th)`, and `var(--nav-active-accent)`.
+  - `src/components/ui/GateChecklist.tsx`: Converted to native CSS variables; enforced Law 15 (min 44×44 touch targets on checklist action toggles) and Law 6 / Rulings §7 (complete omission of money amounts for money-blind roles).
+  - `src/components/ui/MoneyField.tsx`: Converted to native CSS variables with minimum 44px field height and strict Law 6 omission for warehouse roles.
+  - `src/components/ui/BsAdDate.tsx`: Ported to tokens with preserved cliff-edge AD fallback logic (14/14 unit tests green).
+  - `src/components/ui/ScannerInput.tsx`: Converted to native CSS tokens; enforced Law 15 (44×44 scan submit button) and global `Cmd+B` shortcut focus.
+  - `src/components/ui/QuantityChip.tsx`: Ported to tokens (`var(--r-chip)`, `var(--st-*)`), Law 11 text labels in compact and full mode with icons.
+  - `src/components/ui/EvidenceThumbnail.tsx`: Converted to native tokens with 44×44 close button, zoom preview, and accessible dialog markup.
+  - `src/components/ui/ReconciliationAssertion.tsx`: Ported to tokens with Zero Drift vs Discrepancy styling and Law 6 omission for money-blind roles.
+  - Re-exported all 8 components from `src/components/ui/index.ts`.
+- **Unit Testing for Design System Primitives:**
+  - Added comprehensive DOM unit test suite in `src/components/ui/__tests__/primitives.test.tsx` (13/13 tests green).
+- **Stage 1 Task S1-8 (Law 17 in Database):**
+  - Applied `0113_law17_delivery_type_client_pickup.sql` renaming `delivery_type` enum value `'Customer Pickup'` to `'Client Pickup'`.
+  - Updated type definitions in `src/types/supabase.ts`, queries, and `scripts/e2e-lifecycle.mjs` to align with the new enum member.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors)**.
+- `node ./node_modules/vitest/vitest.mjs run src/components/ui/__tests__` **8/8 test files passed, 132/132 tests passed**.
+- `node scripts/check-pglite.mjs` **111/111 applied, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **14/14 green, 0 failed**.
+- `node scripts/completion.mjs` **Overall ≈ 98% (+1)**.
+- `node scripts/lint-progress.mjs` passed.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 42 / 42 (100%) | +3 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 14 / 14 (100%) | +0 |
+| Overall | mean of five | ≈ 98% | +1 |
+
+Migrations 111 files · check:pglite 111/111 passed.
+Gates read from .lifecycle-result.json.
+Counted by `node scripts/completion.mjs`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- **Stage 1 Next Tasks (STAGE_1.md):**
+  - S1-5: `product_units.status` engine-owned before stage gates.
+  - S1-1: Stage gates in Postgres (`apply_booking_stage_transition` pack, handover, return session validation).
+  - S1-2: Close gate enforcement.
+
 ## 2026-09-10 — Stage 1: Real Data Milestone — 100% DB-Only Across All 48 Routes (48 DB-only / 0 mixed / 0 seed / 0 none / 48 routes, Overall 97%)
 
 **Phase:** Phase 1 · Stage 1 Foundation · **Status:** Real Data achieves 100% DB-only across all 48 routes in App.tsx (48 DB-only, 0 mixed, 0 seed, 0 none); DB enforcement 9/9 (100%); Lifecycle 14/14 (100%); Backend 39/42 (93%); Permissions 35/38 (92%); Overall completion reaches ≈ 97% (+1). Full test suite 180/180 test files green (3,127 tests passed), tsc clean (0 errors), 110/110 migrations applied cleanly on PGlite.

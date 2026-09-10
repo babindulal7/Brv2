@@ -615,15 +615,47 @@ export default function OperationsQueues() {
       {/* Two labelled groups, matching the SideRail variant — the side chips
           are a stage union, not part of the day scope, and their group label
           must say so on the tablet too. */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div role="group" aria-label="Day scope" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div
+        className="rsp-chip-scroll"
+        style={{
+          display: 'flex',
+          gap: 6,
+          flexWrap: tabular ? 'wrap' : 'nowrap',
+          overflowX: tabular ? 'visible' : 'auto',
+          alignItems: 'center',
+          paddingBottom: tabular ? 0 : 4,
+        }}
+      >
+        <div
+          role="group"
+          aria-label="Day scope"
+          className="rsp-chip-scroll"
+          style={{
+            display: 'flex',
+            gap: 6,
+            flexWrap: tabular ? 'wrap' : 'nowrap',
+            overflowX: tabular ? 'visible' : 'auto',
+            paddingBottom: tabular ? 0 : 4,
+          }}
+        >
           {SCOPE_ORDER.map((sc) => (
             <button key={sc} type="button" onClick={() => setScope(sc)} aria-pressed={scope === sc} style={chipStyle(scope === sc)}>
               {SCOPE_LABEL[sc]}
             </button>
           ))}
         </div>
-        <div role="group" aria-label="Group queues by pickup or return side" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div
+          role="group"
+          aria-label="Group queues by pickup or return side"
+          className="rsp-chip-scroll"
+          style={{
+            display: 'flex',
+            gap: 6,
+            flexWrap: tabular ? 'wrap' : 'nowrap',
+            overflowX: tabular ? 'visible' : 'auto',
+            paddingBottom: tabular ? 0 : 4,
+          }}
+        >
           {(['pickup', 'return'] as const).map((q) => (
             <button key={q} type="button" onClick={() => setQuick(q)} aria-pressed={group === q} style={chipStyle(group === q)}>
               {GROUP_LABEL[q]}
@@ -683,6 +715,7 @@ export default function OperationsQueues() {
       <div
         role="group"
         aria-label="Queues"
+        className="rsp-chip-scroll"
         style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: tabular ? 'wrap' : 'nowrap', overflowX: tabular ? 'visible' : 'auto', paddingBottom: tabular ? 0 : 4 }}
       >
         {CHIPS.map((q) => (

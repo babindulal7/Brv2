@@ -35,17 +35,43 @@ export const ReconciliationAssertion: React.FC<ReconciliationAssertionProps> = (
   if (compact) {
     return isReconciled ? (
       <span
-        className={`inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 px-2 py-0.5 rounded-full select-none ${className}`}
+        className={className || undefined}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 'var(--t-meta)',
+          fontWeight: 600,
+          color: 'var(--st-in-fg)',
+          background: 'var(--st-in-bg)',
+          border: '1px solid var(--st-in-border)',
+          padding: '2px 8px',
+          borderRadius: 'var(--r-badge)',
+          userSelect: 'none',
+        }}
         title="All financial lines reconcile to the exact paisa (Foundation §2)"
       >
-        <IconCheck className="w-3 h-3" />
+        <IconCheck size={12} />
         <span>Reconciled</span>
       </span>
     ) : (
       <span
-        className={`inline-flex items-center gap-1 text-[11px] font-semibold text-amber-400 bg-amber-950/60 border border-amber-800 px-2 py-0.5 rounded-full select-none animate-pulse ${className}`}
+        className={className || undefined}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          fontSize: 'var(--t-meta)',
+          fontWeight: 600,
+          color: 'var(--st-progress-fg)',
+          background: 'var(--st-progress-bg)',
+          border: '1px solid var(--st-progress-border)',
+          padding: '2px 8px',
+          borderRadius: 'var(--r-badge)',
+          userSelect: 'none',
+        }}
       >
-        <IconAlertTriangle className="w-3 h-3" />
+        <IconAlertTriangle size={12} />
         <span>Reconciliation Drift</span>
       </span>
     )
@@ -53,49 +79,78 @@ export const ReconciliationAssertion: React.FC<ReconciliationAssertionProps> = (
 
   return (
     <div
-      className={`rounded-xl border p-4 flex flex-col gap-2.5 ${
-        isReconciled
-          ? 'bg-emerald-950/20 border-emerald-800/50 text-emerald-50'
-          : 'bg-amber-950/40 border-amber-800 text-amber-100'
-      } ${className}`}
+      className={className || undefined}
+      style={{
+        borderRadius: 'var(--r-card)',
+        border: isReconciled ? '1px solid var(--st-in-border)' : '1px solid var(--st-progress-border)',
+        background: 'var(--card)',
+        padding: 14,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        boxShadow: 'var(--shadow-card)',
+      }}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {isReconciled ? (
-            <div className="p-1 rounded-full bg-emerald-500/20 text-emerald-400">
-              <IconCheck className="w-4 h-4" />
-            </div>
-          ) : (
-            <div className="p-1 rounded-full bg-amber-500/20 text-amber-400">
-              <IconAlertTriangle className="w-4 h-4" />
-            </div>
-          )}
-          <h4 className="text-xs font-semibold uppercase tracking-wider">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              display: 'grid',
+              placeItems: 'center',
+              background: isReconciled ? 'var(--st-in-bg)' : 'var(--st-progress-bg)',
+              color: isReconciled ? 'var(--st-in-fg)' : 'var(--st-progress-fg)',
+              flexShrink: 0,
+            }}
+          >
+            {isReconciled ? <IconCheck size={14} /> : <IconAlertTriangle size={14} />}
+          </div>
+          <h4
+            style={{
+              margin: 0,
+              fontSize: 'var(--t-meta)',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              color: 'var(--text)',
+            }}
+          >
             {isReconciled ? 'Foundation v2.0 Financial Reconciliation' : 'Calculation Discrepancy Detected'}
           </h4>
         </div>
 
-        <span className="text-xs font-mono text-slate-400">
+        <span style={{ fontSize: 'var(--t-meta)', fontFamily: 'monospace', color: 'var(--muted)' }}>
           {isReconciled ? 'Zero Drift' : 'Drift Detected'}
         </span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono pt-2 border-t border-slate-800/60">
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+          gap: 10,
+          fontSize: 'var(--t-meta)',
+          paddingTop: 10,
+          borderTop: '1px solid var(--border)',
+        }}
+      >
         <div>
-          <span className="text-slate-400 block text-[10px]">Rental Total</span>
-          <span className="text-slate-200 font-semibold">{formatPaisa(rentalTotal)}</span>
+          <span style={{ color: 'var(--muted)', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>Rental Total</span>
+          <span style={{ color: 'var(--text)', fontFamily: 'monospace', fontWeight: 600 }}>{formatPaisa(rentalTotal)}</span>
         </div>
         <div>
-          <span className="text-slate-400 block text-[10px]">Payments</span>
-          <span className="text-emerald-400 font-semibold">{formatPaisa(payments)}</span>
+          <span style={{ color: 'var(--muted)', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>Payments</span>
+          <span style={{ color: 'var(--st-in-fg)', fontFamily: 'monospace', fontWeight: 600 }}>{formatPaisa(payments)}</span>
         </div>
         <div>
-          <span className="text-slate-400 block text-[10px]">Outstanding</span>
-          <span className="text-blue-300 font-semibold">{formatPaisa(outstanding)}</span>
+          <span style={{ color: 'var(--muted)', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>Outstanding</span>
+          <span style={{ color: 'var(--st-out-fg)', fontFamily: 'monospace', fontWeight: 600 }}>{formatPaisa(outstanding)}</span>
         </div>
         <div>
-          <span className="text-slate-400 block text-[10px]">Status</span>
-          <span className={isReconciled ? 'text-emerald-400' : 'text-amber-400 font-bold'}>
+          <span style={{ color: 'var(--muted)', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>Status</span>
+          <span style={{ color: isReconciled ? 'var(--st-in-fg)' : 'var(--st-progress-fg)', fontWeight: 700 }}>
             {isReconciled ? 'Balanced ✓' : 'Mismatch ✗'}
           </span>
         </div>

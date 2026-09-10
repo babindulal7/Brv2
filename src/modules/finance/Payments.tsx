@@ -496,6 +496,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
   const [params, setParams] = useSearchParams()
   /* Law 13/14 — one width reading, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
+  const phone = viewport === 'phone'
   const tabular = viewport !== 'phone'
   const railBesideList = viewport === 'desktop'
 
@@ -729,12 +730,12 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                 `canTakePayment` narrows it further to the roles allowed to
                 record one; see its definition above. */}
             {money && canTakePayment && (
-              <Button icon="plus" variant="primary" onClick={() => setRecordOpen(true)}>
-                Record Payment
+              <Button icon="plus" variant="primary" aria-label="Record Payment" onClick={() => setRecordOpen(true)}>
+                {phone ? '' : 'Record Payment'}
               </Button>
             )}
-            <Button icon="refresh" onClick={refreshAll}>
-              Refresh
+            <Button icon="refresh" aria-label="Refresh" onClick={refreshAll}>
+              {phone ? '' : 'Refresh'}
             </Button>
           </>
         }
@@ -742,7 +743,18 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
 
       {/* §9.3 filter row — `(All)(Received)(Refunded)(Reversed)  [method ▾][date▾]` */}
       <div style={{ display: 'flex', gap: 'var(--sp-md)', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div role="group" aria-label="Payment filters" style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+        <div
+          role="group"
+          aria-label="Payment filters"
+          className="rsp-chip-scroll"
+          style={{
+            display: 'flex',
+            gap: 'var(--sp-sm)',
+            flexWrap: phone ? 'nowrap' : 'wrap',
+            overflowX: phone ? 'auto' : undefined,
+            paddingBottom: phone ? 2 : 0,
+          }}
+        >
           {PAYMENT_CHIPS.map((c) => (
             <button
               key={c}

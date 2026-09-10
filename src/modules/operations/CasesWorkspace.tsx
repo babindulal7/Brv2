@@ -11,6 +11,7 @@ import Icon from '../../components/ui/Icon'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { formatBsOrAd } from '../../lib/bs'
+import { useViewport } from '../../lib/device'
 import {
   listCases,
   CASES,
@@ -118,6 +119,8 @@ function statusFromParam(value: string | null): FilterKey {
 export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
 
   const [params, setParams] = useSearchParams()
   /*
@@ -300,7 +303,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
 
       {/* KPIs — derived from the list the table renders, never hand-typed
           (§3 / AUDIT_FINDINGS P1 #13) and never from the frozen seed (RS-09). */}
-      <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2, 1fr)' : (money ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)'), gap: 14 }}>
         <Card padding="md">
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
             Open Cases
@@ -352,8 +355,19 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
       </div>
 
       {/* Toolbar & Chips */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
+        <div
+          className="rsp-chip-scroll"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--sp-sm)',
+            flexWrap: phone ? 'nowrap' : 'wrap',
+            overflowX: phone ? 'auto' : 'visible',
+            width: phone ? '100%' : undefined,
+            paddingBottom: phone ? 4 : 0,
+          }}
+        >
           {([
             { label: 'All', count: counts.total },
             { label: 'Open', count: counts.byStatus['Open'] },
@@ -367,7 +381,8 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
               key={chip.label}
               onClick={() => setActiveFilter(chip.label as FilterKey)}
               style={{
-                padding: '6px 14px',
+                minHeight: 44,
+                padding: '0 14px',
                 borderRadius: 'var(--r-modal)',
                 fontSize: 13,
                 fontWeight: 500,
@@ -376,6 +391,10 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
                 background: activeFilter === chip.label ? 'var(--nav-active-accent)' : 'var(--card)',
                 color: activeFilter === chip.label ? 'var(--on-primary)' : 'var(--text)',
                 transition: 'all 0.15s ease',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
               }}
             >
               {chip.label} <span className="figure" style={{ opacity: 0.85, marginLeft: 'var(--sp-xs)' }}>{chip.count}</span>
@@ -383,8 +402,8 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
           ))}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 240 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: phone ? '100%' : 'auto' }}>
+          <div style={{ flex: phone ? 1 : undefined, width: phone ? undefined : 240 }}>
             <Input
               placeholder="Search ID, title, client…"
               value={searchQuery}
@@ -395,20 +414,24 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
           {/* Both were success-toasts for work that never happened — the exact
               fabrication src/actions/core.ts §1 names. Unbuilt renders as
               Unavailable with the honest sentence, never as a fake success. */}
-          <Unavailable reason={CASES_EXPORT_UNAVAILABLE_REASON}>
-            <Button variant="secondary" icon={<IconDownload size={16} />} disabled>
-              Export
-            </Button>
-          </Unavailable>
+          {!phone && (
+            <Unavailable reason={CASES_EXPORT_UNAVAILABLE_REASON}>
+              <Button variant="secondary" icon={<IconDownload size={16} />} disabled>
+                Export
+              </Button>
+            </Unavailable>
+          )}
           {/* RS-06 — LogCaseModal mints CASE-2026-${random}, writes nothing and
               closes as a success. Until a case-creation action exists the
               opener is Unavailable with the reason data/cases.ts already
               states; the modal stays mounted below, unreachable from here. */}
-          <Unavailable reason={NEW_CASE_UNAVAILABLE_REASON}>
-            <Button variant="primary" icon={<IconPlus size={16} />} disabled onClick={() => setIsLogCaseOpen(true)}>
-              Log Incident
-            </Button>
-          </Unavailable>
+          {!phone && (
+            <Unavailable reason={NEW_CASE_UNAVAILABLE_REASON}>
+              <Button variant="primary" icon={<IconPlus size={16} />} disabled onClick={() => setIsLogCaseOpen(true)}>
+                Log Incident
+              </Button>
+            </Unavailable>
+          )}
         </div>
       </div>
 

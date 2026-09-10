@@ -38,15 +38,33 @@ export const MoneyField: React.FC<MoneyFieldProps> = ({
   }
 
   return (
-    <div className={`w-full flex flex-col gap-1.5 ${className}`}>
+    <div className={className || undefined} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
       {label && (
-        <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <label
+          style={{
+            fontSize: 'var(--t-th)',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.04em',
+            color: 'var(--muted)',
+          }}
+        >
           {label}
         </label>
       )}
 
-      <div className="relative flex items-center">
-        <span className="absolute left-3.5 text-sm font-semibold text-slate-400 select-none pointer-events-none">
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <span
+          style={{
+            position: 'absolute',
+            left: 14,
+            fontSize: 'var(--t-ui)',
+            fontWeight: 600,
+            color: 'var(--muted)',
+            userSelect: 'none',
+            pointerEvents: 'none',
+          }}
+        >
           Rs
         </span>
 
@@ -58,16 +76,37 @@ export const MoneyField: React.FC<MoneyFieldProps> = ({
           placeholder="0"
           onChange={handleInputChange}
           disabled={disabled}
-          className={`w-full min-h-[44px] pl-10 pr-3.5 py-2 text-sm font-mono rounded-lg bg-slate-900 border text-slate-100 placeholder-slate-500 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${
-            error ? 'border-red-500 focus:ring-red-500' : 'border-slate-800 hover:border-slate-700'
-          }`}
+          style={{
+            width: '100%',
+            minHeight: 44,
+            paddingLeft: 42,
+            paddingRight: 14,
+            paddingTop: 8,
+            paddingBottom: 8,
+            fontSize: 'var(--t-ui)',
+            fontFamily: 'monospace',
+            borderRadius: 'var(--r-sm)',
+            background: 'var(--card2)',
+            border: error ? '1px solid var(--danger-border)' : '1px solid var(--border)',
+            color: 'var(--text)',
+            outline: 'none',
+            transition: 'border-color var(--dur) var(--ease)',
+            cursor: disabled ? 'not-allowed' : 'text',
+            opacity: disabled ? 0.6 : 1,
+          }}
+          onFocus={(e) => {
+            if (!error) e.currentTarget.style.borderColor = 'var(--nav-active-accent)'
+          }}
+          onBlur={(e) => {
+            if (!error) e.currentTarget.style.borderColor = 'var(--border)'
+          }}
         />
       </div>
 
       {error ? (
-        <span className="text-xs text-red-400">{error}</span>
+        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--danger-text)' }}>{error}</span>
       ) : helperText ? (
-        <span className="text-xs text-slate-500">{helperText}</span>
+        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{helperText}</span>
       ) : null}
     </div>
   )

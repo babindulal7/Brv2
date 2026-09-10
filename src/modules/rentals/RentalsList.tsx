@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
@@ -51,6 +51,7 @@ import { useFilters } from '../../lib/queries/useFilters'
 import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { DateField } from '../../components/ui/DateField'
+import NewRental from './NewRental'
 
 
 
@@ -678,7 +679,6 @@ function pageWindow(current: number, pageCount: number, span = 5): number[] {
  * *before* render, so a money-blind session has no masked cell to un-hide.
  */
 export default function RentalsList() {
-  const navigate = useNavigate()
   const { user } = useAuth()
   const role: SystemRole = user ? user.role : 'Client'
   /** The single money gate. Mirrors `auth_can_view_money()` — see Law 6 above. */
@@ -705,6 +705,7 @@ export default function RentalsList() {
    * page can own this one directly and the two writers compose.
    */
   const [rawParams, setRawParams] = useSearchParams()
+  const isNew = rawParams.get('action') === 'new' || rawParams.get('tab') === 'new'
   const perPage = useMemo(() => {
     const n = Number(rawParams.get('per'))
     return (ROWS_PER_PAGE as readonly number[]).includes(n) ? n : 20
@@ -1235,6 +1236,23 @@ export default function RentalsList() {
     </Card>
   )
 
+  if (isNew) {
+    return (
+      <NewRental
+        embedded
+        onDone={() => {
+          setRawParams((prev) => {
+            const next = new URLSearchParams(prev)
+            next.delete('action')
+            next.delete('tab')
+            return next
+          })
+          refreshAll()
+        }}
+      />
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
@@ -1242,7 +1260,17 @@ export default function RentalsList() {
         description="Manage all bookings and their current status"
         actions={
           <>
-            <Button icon="plus" variant="primary" onClick={() => navigate('/rentals/new')}>
+            <Button
+              icon="plus"
+              variant="primary"
+              onClick={() => {
+                setRawParams((prev) => {
+                  const next = new URLSearchParams(prev)
+                  next.set('action', 'new')
+                  return next
+                })
+              }}
+            >
               New Rental
             </Button>
             <Button icon="refresh" onClick={refreshAll}>

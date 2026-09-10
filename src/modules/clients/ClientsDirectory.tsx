@@ -474,6 +474,7 @@ export function ClientsDirectory({
      *hide*, so at tablet the Filters/Saved Views and Client-profile content
      renders inline rather than going into `CollapsibleAside`'s handle. */
   const viewport = useViewport()
+  const phone = viewport === 'phone'
   const tabular = viewport !== 'phone'
   const desktop = viewport === 'desktop'
   /** Tablet keeps the table but not nine columns of it — see the `<table>` below. */
@@ -1088,7 +1089,17 @@ export function ClientsDirectory({
       <KpiStrip items={kpis} columns={kpis.length} />
 
       {/* ── quick filters + view switch ───────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+      <div
+        className="rsp-chip-scroll"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--sp-sm)',
+          flexWrap: phone ? 'nowrap' : 'wrap',
+          overflowX: phone ? 'auto' : undefined,
+          paddingBottom: phone ? 4 : 0,
+        }}
+      >
         {chips.map((c) => {
           const on = activeFilter === c.key
           return (
@@ -1214,8 +1225,8 @@ export function ClientsDirectory({
           )
         })}
 
-        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, position: 'relative' }}>
+        <span style={{ marginLeft: phone ? 0 : 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', width: phone ? '100%' : 'auto', flexWrap: phone ? 'nowrap' : 'nowrap' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, position: 'relative', flex: phone ? '1 1 0' : undefined, minWidth: 0 }}>
             <Icon name="search" size={15} style={{ color: 'var(--muted)', position: 'absolute', left: 9 }} />
             <input
               type="search"
@@ -1231,7 +1242,7 @@ export function ClientsDirectory({
               placeholder="Search client, phone, email, PAN…"
               aria-label="Search clients"
               style={{
-                width: 280,
+                width: phone ? '100%' : 280,
                 minHeight: 44,
                 padding: '0 10px 0 29px',
                 borderRadius: 'var(--r-input)',
@@ -1240,6 +1251,7 @@ export function ClientsDirectory({
                 color: 'var(--text)',
                 fontSize: 'var(--t-meta)',
                 fontFamily: 'inherit',
+                boxSizing: 'border-box',
               }}
             />
           </label>
@@ -1541,26 +1553,28 @@ export function ClientsDirectory({
                   )}
                 </>
               )}
-              <button
-                type="button"
-                onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
-                aria-pressed={density === 'compact'}
-                title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
-                style={{
-                  marginLeft: 'auto',
-                  minWidth: 44,
-                  minHeight: 44,
-                  borderRadius: 'var(--r-input)',
-                  border: '1px solid var(--input-border)',
-                  background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--input-bg)',
-                  color: density === 'compact' ? 'var(--nav-active-accent)' : 'var(--text2)',
-                  cursor: 'pointer',
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
-                <Icon name={density === 'compact' ? 'chevron_up' : 'chevron_down'} size={15} />
-              </button>
+              {!phone && (
+                <button
+                  type="button"
+                  onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
+                  aria-pressed={density === 'compact'}
+                  title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
+                  style={{
+                    marginLeft: 'auto',
+                    minWidth: 44,
+                    minHeight: 44,
+                    borderRadius: 'var(--r-input)',
+                    border: '1px solid var(--input-border)',
+                    background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--input-bg)',
+                    color: density === 'compact' ? 'var(--nav-active-accent)' : 'var(--text2)',
+                    cursor: 'pointer',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <Icon name={density === 'compact' ? 'chevron_up' : 'chevron_down'} size={15} />
+                </button>
+              )}
 
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
                 Show

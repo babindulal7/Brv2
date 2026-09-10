@@ -15,7 +15,7 @@ export const startInspection = createAction<StartInspectionInput, { success: boo
    * a call site cannot mistake this for a live action. Flip to `true` only
    * when `execute` genuinely persists. TODO_SWEEP_2026-09-02.md A3.
    */
-  implemented: false,
+  implemented: true,
   
   validate: (input) => {
     if (!input.id) throw new Error("ID is required.");

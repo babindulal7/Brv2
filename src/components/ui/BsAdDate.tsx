@@ -15,12 +15,12 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
   className = '',
 }) => {
   if (!date) {
-    return <span className="text-slate-500 font-mono text-sm">—</span>
+    return <span style={{ color: 'var(--muted)', fontFamily: 'monospace', fontSize: 'var(--t-ui)' }}>—</span>
   }
 
   const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
   if (isNaN(d.getTime())) {
-    return <span className="text-slate-500 font-mono text-sm">—</span>
+    return <span style={{ color: 'var(--muted)', fontFamily: 'monospace', fontSize: 'var(--t-ui)' }}>—</span>
   }
 
   const bs = toBs(d)
@@ -66,41 +66,41 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
 
   if (layout === 'bs-only') {
     return (
-      <span className={`text-slate-200 text-sm font-medium ${className}`} title={primaryTitle}>
-        {primary} {timeFormatted && <span className="text-slate-400 text-xs ml-1">({timeFormatted})</span>}
+      <span className={className || undefined} style={{ color: 'var(--text)', fontSize: 'var(--t-ui)', fontWeight: 500 }} title={primaryTitle}>
+        {primary} {timeFormatted && <span style={{ color: 'var(--text2)', fontSize: 'var(--t-meta)', marginLeft: 4 }}>({timeFormatted})</span>}
       </span>
     )
   }
 
   if (layout === 'ad-only') {
     return (
-      <span className={`text-slate-200 text-sm font-medium ${className}`}>
-        {adFormatted} {timeFormatted && <span className="text-slate-400 text-xs ml-1">({timeFormatted})</span>}
+      <span className={className || undefined} style={{ color: 'var(--text)', fontSize: 'var(--t-ui)', fontWeight: 500 }}>
+        {adFormatted} {timeFormatted && <span style={{ color: 'var(--text2)', fontSize: 'var(--t-meta)', marginLeft: 4 }}>({timeFormatted})</span>}
       </span>
     )
   }
 
   if (layout === 'inline') {
     return (
-      <span className={`inline-flex items-center gap-1.5 text-sm ${className}`}>
-        <span className="font-medium text-slate-200" title={primaryTitle}>
+      <span className={className || undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-ui)' }}>
+        <span style={{ fontWeight: 500, color: 'var(--text)' }} title={primaryTitle}>
           {primary}
         </span>
         {/* No parenthetical when BS is unavailable — the primary IS the AD date,
             and repeating it would read as two different dates. */}
-        {bsFormatted && <span className="text-xs text-slate-500">({adFormatted})</span>}
-        {timeFormatted && <span className="text-xs text-slate-400 font-mono">{timeFormatted}</span>}
+        {bsFormatted && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>({adFormatted})</span>}
+        {timeFormatted && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontFamily: 'monospace' }}>{timeFormatted}</span>}
       </span>
     )
   }
 
   // Default stacked layout
   return (
-    <div className={`flex flex-col leading-tight ${className}`}>
-      <span className="text-sm font-medium text-slate-100" title={primaryTitle}>
+    <div className={className || undefined} style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
+      <span style={{ fontSize: 'var(--t-ui)', fontWeight: 500, color: 'var(--text)' }} title={primaryTitle}>
         {primary}
       </span>
-      <span className="text-xs text-slate-400">
+      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
         {/* The second line carries the AD date only when the first carries BS.
             When BS is unavailable the first line already IS the AD date, so this
             line states WHY rather than repeating it. */}

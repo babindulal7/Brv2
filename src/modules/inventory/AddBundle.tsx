@@ -400,8 +400,9 @@ function downloadCsv(name: string, rows: string[][]) {
  */
 const NOTES_LIMIT = 500
 
-export function AddBundle() {
+export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: () => void } = {}) {
   const navigate = useNavigate()
+  const handleExit = () => (onDone ? onDone() : navigate('/inventory'))
   const money = useCanViewMoney()
   /*
     Spec 7.7: "TABLET: three panes become three stacked sections. PHONE: three
@@ -1054,6 +1055,11 @@ export function AddBundle() {
         description="Create a reusable equipment kit and set bundle pricing."
         actions={
           <>
+            {embedded && onDone && (
+              <Button icon="chevron_left" onClick={onDone}>
+                Back to Bundles
+              </Button>
+            )}
             <Unavailable reason="Templates are not built — there is no bundle template store in this release.">
               <Button icon="upload" disabled>
                 Import Template
@@ -1940,7 +1946,7 @@ export function AddBundle() {
                 : {}),
             }}
           >
-            <Button onClick={() => navigate('/inventory')}>Cancel</Button>
+            <Button onClick={handleExit}>Cancel</Button>
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
               {draftBlockingReason ? (
                 <Unavailable reason={draftBlockingReason}>
