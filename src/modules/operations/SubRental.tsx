@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { PageHeader } from '../../components/ui/Page'
@@ -9,116 +9,28 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
-import { formatMoney, rupees, type Paisa } from '../../lib/money'
+import { formatMoney, type Paisa } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import {
+  listSubRentals,
   groupByCounterparty,
   supplierGlance,
   supplierDetailGroups,
   supplierDirectoryRow,
-} from '../../data/supplierIntel'
-import type { SupplierGroup, SupplierDirectoryRow } from '../../data/supplierIntel'
+  type SupplierGroup,
+  type SupplierDirectoryRow,
+  type SubRentalStatus,
+  type SubRentalRecord,
+  SUB_RENTAL_DATA,
+} from '../../lib/queries/subrentals'
 import type { GateContext } from '../../lib/fieldGating'
 import { IconSearch, IconPlus, IconDownload, IconArrowUpRight, IconArrowDownLeft } from '@tabler/icons-react'
 
-type SubRentalDirection = 'Borrowing' | 'Lending'
-type SubRentalStatus = 'Reserved' | 'Picked Up' | 'On Rent' | 'Returned' | 'Checked In' | 'Cancelled'
+export type { SubRentalRecord }
 
-export interface SubRentalRecord {
-  id: string
-  counterparty: string
-  linkedBooking?: string
-  direction: SubRentalDirection
-  equipment: string
-  quantity: number
-  startDateBs: string
-  endDateBs: string
-  startDateAd: string
-  endDateAd: string
-  rentalValuePaisa: Paisa
-  revenuePaisa: Paisa
-  costPaisa: Paisa
-  status: SubRentalStatus
-  isOverdue: boolean
-}
 
-const SUB_RENTAL_DATA: SubRentalRecord[] = [
-  {
-    id: 'SR-2026-0032',
-    counterparty: 'GearHouse KTM',
-    linkedBooking: 'B-715',
-    direction: 'Borrowing',
-    equipment: 'RED V-Raptor 8K VV',
-    quantity: 1,
-    startDateBs: '2083/03/10',
-    endDateBs: '2083/03/15',
-    startDateAd: '24 Jun 2026',
-    endDateAd: '29 Jun 2026',
-    rentalValuePaisa: rupees(120000),
-    revenuePaisa: rupees(120000),
-    costPaisa: rupees(91500), // ~23.75% margin (120000 - 91500 = 28500 / 120000)
-    status: 'On Rent',
-    isOverdue: false,
-  },
-  {
-    id: 'SR-2026-0033',
-    counterparty: 'Kathmandu Cinema Works',
-    direction: 'Lending',
-    equipment: 'ARRI SkyPanel S60-C',
-    quantity: 2,
-    startDateBs: '2083/03/12',
-    endDateBs: '2083/03/14',
-    startDateAd: '26 Jun 2026',
-    endDateAd: '28 Jun 2026',
-    rentalValuePaisa: rupees(30000),
-    revenuePaisa: rupees(30000),
-    costPaisa: rupees(0), // Lending idle stock
-    status: 'Returned',
-    isOverdue: true, // Returned late
-  },
-  {
-    id: 'SR-2026-0034',
-    counterparty: 'Freelance - Bikram',
-    linkedBooking: 'B-718',
-    direction: 'Borrowing',
-    equipment: 'DJI Inspire 3 Drone',
-    quantity: 1,
-    startDateBs: '2083/03/18',
-    endDateBs: '2083/03/20',
-    startDateAd: '02 Jul 2026',
-    endDateAd: '04 Jul 2026',
-    rentalValuePaisa: rupees(85000),
-    revenuePaisa: rupees(85000),
-    costPaisa: rupees(75000),
-    status: 'Reserved',
-    isOverdue: false,
-  },
-  {
-    id: 'SR-2026-0035',
-    counterparty: 'Shine Pictures',
-    direction: 'Lending',
-    equipment: 'Sony FX9 Camera Package',
-    quantity: 1,
-    startDateBs: '2083/03/05',
-    endDateBs: '2083/03/08',
-    startDateAd: '19 Jun 2026',
-    endDateAd: '22 Jun 2026',
-    rentalValuePaisa: rupees(100000),
-    revenuePaisa: rupees(0),
-    costPaisa: rupees(0),
-    status: 'Cancelled',
-    isOverdue: false,
-  }
-]
-
-/**
- * Static, so computed once at module scope rather than re-grouped every
- * render — the counterparty ↔ transactions mapping the Supplier Hover Intel
- * card is built from (`data/supplierIntel.ts`).
- */
-const SUPPLIER_GROUPS = groupByCounterparty(SUB_RENTAL_DATA)
 
 /**
  * The §4 hue for each sub-rental status — the shape `Finance.tsx`'s
@@ -221,24 +133,7 @@ const EXPORT_REASON =
 const NOT_TRACKED = 'Not tracked yet'
 const NOT_TRACKED_NOTE = 'No sub-rental ledger is wired yet — there is nothing to total.'
 
-const RECORD_COUNT = SUB_RENTAL_DATA.length
-const DIRECTION_COUNT: Record<SubRentalDirection, number> = {
-  Borrowing: SUB_RENTAL_DATA.filter((r) => r.direction === 'Borrowing').length,
-  Lending: SUB_RENTAL_DATA.filter((r) => r.direction === 'Lending').length,
-}
 
-/** The filter chips, each counting exactly the rows its filter selects. */
-const FILTER_CHIPS: ReadonlyArray<{ label: FilterKey; count: number }> = (
-  ['All', 'Overdue', 'Reserved', 'Picked Up', 'On Rent', 'Returned', 'Checked In'] as const
-).map((label) => ({
-  label,
-  count:
-    label === 'All'
-      ? RECORD_COUNT
-      : label === 'Overdue'
-        ? SUB_RENTAL_DATA.filter((r) => r.isOverdue).length
-        : SUB_RENTAL_DATA.filter((r) => r.status === label).length,
-}))
 
 /**
  * **Suppliers directory** — promotes `SUPPLIER_GROUPS` (already grouped by
@@ -455,6 +350,40 @@ export function SubRental() {
   // rendered and then hidden.
   const canSeeFinance = canViewMoneyField(gctx, 'asset-finance')
 
+  const [records, setRecords] = useState<SubRentalRecord[]>(SUB_RENTAL_DATA)
+
+  useEffect(() => {
+    let active = true
+    listSubRentals().then((res) => {
+      if (active && res.rows.length > 0) {
+        setRecords(res.rows)
+      }
+    }).catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const supplierGroups = useMemo(() => groupByCounterparty(records), [records])
+
+  const recordCount = records.length
+  const directionCount = useMemo(() => ({
+    Borrowing: records.filter((r) => r.direction === 'Borrowing').length,
+    Lending: records.filter((r) => r.direction === 'Lending').length,
+  }), [records])
+
+  const filterChips = useMemo(() => (
+    ['All', 'Overdue', 'Reserved', 'Picked Up', 'On Rent', 'Returned', 'Checked In'] as const
+  ).map((label) => ({
+    label,
+    count:
+      label === 'All'
+        ? recordCount
+        : label === 'Overdue'
+          ? records.filter((r) => r.isOverdue).length
+          : records.filter((r) => r.status === label).length,
+  })), [records, recordCount])
+
   const [searchQuery, setSearchQuery] = useState('')
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
@@ -462,15 +391,15 @@ export function SubRental() {
   const [supplierSearch, setSupplierSearch] = useState('')
 
   const supplierRows = useMemo(() => {
-    const all = Array.from(SUPPLIER_GROUPS.values())
+    const all = Array.from(supplierGroups.values())
       .map((group) => ({ group, row: supplierDirectoryRow(group, gctx) }))
       .sort((a, b) => a.group.counterparty.localeCompare(b.group.counterparty))
     const q = supplierSearch.trim().toLowerCase()
     return q ? all.filter(({ group }) => group.counterparty.toLowerCase().includes(q)) : all
-  }, [gctx, supplierSearch])
+  }, [supplierGroups, gctx, supplierSearch])
 
   const filteredData = useMemo(() => {
-    return SUB_RENTAL_DATA.filter((c) => {
+    return records.filter((c) => {
       if (activeFilter === 'Overdue' && !c.isOverdue) return false
       if (activeFilter !== 'All' && activeFilter !== 'Overdue' && c.status !== activeFilter) return false
       if (searchQuery.trim()) {
@@ -484,7 +413,7 @@ export function SubRental() {
       }
       return true
     })
-  }, [searchQuery, activeFilter])
+  }, [records, searchQuery, activeFilter])
 
   // Perf: same reasoning as `SupplierDirectoryTable`'s `rowsWithIntel` above
   // — `supplierGlance`/`supplierDetailGroups` build a full field-gated
@@ -499,18 +428,18 @@ export function SubRental() {
       filteredData.map((c) => {
         // Falls back to a single-transaction group rather than a
         // non-null assertion — every real row's counterparty is
-        // present in `SUPPLIER_GROUPS` since that map is built from
-        // this same `SUB_RENTAL_DATA`, but a card builder degrading
+        // present in `supplierGroups` since that map is built from
+        // this same `records`, but a card builder degrading
         // gracefully instead of ever throwing matches §6's "a blank
         // page is never acceptable."
-        const supplierGroup = SUPPLIER_GROUPS.get(c.counterparty) ?? { counterparty: c.counterparty, transactions: [c] }
+        const supplierGroup = supplierGroups.get(c.counterparty) ?? { counterparty: c.counterparty, transactions: [c] }
         return {
           record: c,
           glance: supplierGlance(supplierGroup, gctx),
           detail: supplierDetailGroups(supplierGroup, gctx),
         }
       }),
-    [filteredData, gctx],
+    [filteredData, supplierGroups, gctx],
   )
 
   const handleSelectAll = (checked: boolean) => {
@@ -588,10 +517,10 @@ export function SubRental() {
             Records
           </span>
           <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
-            {RECORD_COUNT}
+            {recordCount}
           </div>
           <span className="figure" style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Borrowing ({DIRECTION_COUNT.Borrowing}) · Lending ({DIRECTION_COUNT.Lending}) · every record in the table
+            Borrowing ({directionCount.Borrowing}) · Lending ({directionCount.Lending}) · every record in the table
           </span>
         </Card>
         {canSeeFinance && (
@@ -636,7 +565,7 @@ export function SubRental() {
       {/* Toolbar & Chips */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-          {FILTER_CHIPS.map((chip) => (
+          {filterChips.map((chip) => (
             <button
               key={chip.label}
               onClick={() => setActiveFilter(chip.label)}
