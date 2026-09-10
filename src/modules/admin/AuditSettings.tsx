@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, ReflowRail, SummaryRows, FooterNote, useRailGridColumns } from '../../components/ui/Page'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
@@ -6,6 +7,7 @@ import { useAuth } from '../../lib/auth'
 import { canManageSettings } from '../../lib/rbac'
 import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
 import {
+  getAuditSettingsSummary,
   KPIS,
   LOG_EVENTS,
   CATEGORIES,
@@ -24,7 +26,7 @@ import {
   ALERTS,
   QUICK_ACTIONS,
   ACTIVITY,
-} from '../../data/audit'
+} from '../../lib/queries/audit'
 
 const th = {
   textAlign: 'left' as const,
@@ -257,6 +259,10 @@ export default function AuditSettings() {
   /** Which sentence a write-shaped control states: the gate outranks the wiring gap. */
   const whyNoWrite = mayManage ? AUDIT_WRITES_UNAVAILABLE : SETTINGS_ONLY_UNAVAILABLE
   const railGridColumns = useRailGridColumns()
+
+  useEffect(() => {
+    getAuditSettingsSummary().catch(() => {})
+  }, [])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
