@@ -1100,8 +1100,7 @@ const STEPS = [
   {
     id: 'L14',
     title: 'Client portal user sees only their own rows, never another client\'s',
-    expect: 'red',
-    red: 'users table visibility not restricted by role ceiling / RLS yet',
+    expect: 'green',
     async run() {
       await as('Client', async () => {
         // 1. clients table: sees own client row, cannot see OTHER_CLIENT
