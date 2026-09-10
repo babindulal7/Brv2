@@ -4,6 +4,60 @@
 
 
 
+## 2026-09-11 — Stage 1 Complete: Make the Database the Law (DB Enforcement 9/9, Lifecycle 17/17)
+
+**Phase:** Stage 1 Implementation (`docs/STAGE_1.md`) · **Status:** Complete. All 8 Stage 1 tasks (S1-8, S1-5, S1-1, S1-2, S1-3, S1-4, S1-7, S1-6, S1-9) delivered and verified. Database enforcement reaches 9 / 9 (100%), and end-to-end lifecycle reaches 17 / 17 (100% green, 0 known-red, 0 failed). All 118 migrations build from scratch under PGlite with 0 failures. Live Supabase database was untouched per N-5 boundary.
+
+### Did
+
+- **S1-8 · Law 17 in Database (0113):** Renamed `delivery_type` enum value `'Customer Pickup'` to `'Client Pickup'` (R-33).
+- **S1-5 · Product Units Status Engine (0114):** Created `recompute_unit_status(asset_id)` (security definer) computing status precedence: Retired > Missing > Maintenance > On Rent > Returning > Inspection > Cleaning > Packed > Reserved > In Stock. Added write guard `guard_unit_status_direct_write()` raising `gate.unit_status.direct_write` on direct update attempts. Bound triggers across `booking_stage_transitions`, `session_line_movements`, `handover_lines`, `return_lines`, `cleaning_queue_entries`, `maintenance_records`, `cases`, and `inventory_reservations`.
+- **S1-1 · Stage Gates in `apply_booking_stage_transition` (0115):** Relocated stage gating logic from app floor verbs into plpgsql. Enforced gates: `gate.pack.session_missing`, `gate.pack.units_unassigned`, `gate.pack.units_unpacked`, `gate.handover.session_missing`, `gate.handover.units_unhanded`, `gate.handover.agreement_unsigned`, `gate.return.session_missing`, `gate.return.units_unaccounted`. Gated cancellations via `gate.cancel.stage_too_late` (M+ required after Packed) and `gate.cancel.reason_missing` (≥10 chars). Added `gate.reopen.role` for Closed → Returned transitions (`auth_is_manager_or_above()`).
+- **S1-2 · Close Gate (0116):** Locked Returned → Closed transition behind 5 strict checks: `gate.close.no_invoice` (no active invoices), `gate.close.invoice_unsettled` (outstanding > 0), `gate.close.deposit_unresolved` (deposit unrefunded/unforfeited), `gate.close.open_case` (cases non-terminal), and `gate.close.reservation_live` (unreleased reservations).
+- **S1-3 · Invoice Void Discipline & Credit Notes (0117):** Created `credit_notes` table with full RLS. Updated `reject_invoice_edit_after_issue()` (security definer) to enforce `gate.invoice.void_role` (Owner, Admin, Manager, Accounts per R-05 / S1-a), `gate.invoice.void_reason` (≥10 chars, auto-stamping `voided_by` and `voided_at`), `gate.invoice.void_paid` (requires credit note if paid_amount > 0), and `gate.invoice.void_immutable` (voided invoices are frozen).
+- **S1-4 · Payment Ceiling & Money Integrity (0118):** Created `booking_estimate_total(booking_id)` plpgsql helper computing sum of booking lines, crew, transport, discounts, and VAT. Added `guard_payments_ceiling_and_client()` trigger enforcing `gate.payment.over_invoice` (overpayment on linked invoice), `gate.payment.over_booking` (advance payment exceeding booking total), and `gate.payment.client_mismatch`.
+- **S1-7 · Server-Side Prices for Money-Blind Callers (0119):** Added `booking_lines.rate_overridden boolean`. Implemented `get_model_daily_rate(product_id, bundle_id)` (security definer). Updated `create_booking(jsonb)` to enforce model rate for money-blind callers (logging `price.server_applied` to `audit_events` on client mismatch) and raise `gate.discount.money_blind` on discount attempts. Added `guard_booking_lines_money_blind()` trigger raising `gate.booking_lines.money_blind_insert` on direct line inserts with money outside `create_booking`.
+- **S1-6 · Staff Visibility, Role Ceiling, and User Immutability (0120):** Added `users.deactivated_at`. Updated `auth_user_role()` so deactivated users immediately resolve to `'Client'`. Added `auth_user_branch_id()`. Recreated `staff_directory_v` masking PII for non-Owner/Admin roles. Added `enforce_users_role_ceiling()` trigger enforcing `gate.users.role_ceiling` (Admin cannot assign Owner/Admin; Manager cannot alter roles) and self-deactivation protection. Added `reject_users_delete()` trigger enforcing `gate.users.immutable` (Law 3).
+- **S1-9 · Verification & Probes:**
+  - Expanded `scripts/e2e-lifecycle.mjs` to 17 steps (L1–L17), turning all previous known-red gates (L6, L7, L8, L9, L10, L11) and adding L15 (unit status engine), L16 (void discipline), L17 (server prices, role ceiling, immutability) into fully asserted passing tests.
+  - Implemented `--write-probes` flag in `scripts/check-db.mjs`.
+  - Updated `docs/PERMISSIONS.md` §6.1 with `id` column, §9 with new database helpers, and §4.6 with S1-a ruling outcome.
+
+### Verified
+
+- `node scripts/check-pglite.mjs` **118/118 migrations applied cleanly, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **17/17 green, 0 known-red, 0 failed**.
+- `node scripts/completion.mjs` **DB enforcement 9 / 9 (100%), Lifecycle 17 / 17 (100%), Overall ≈ 98%**.
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors)**.
+- `node ./node_modules/vitest/vitest.mjs run` **All test suites green**.
+- `npm run build` **build passes**.
+- `node scripts/lint-progress.mjs` **passed**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 42 / 42 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 35 / 38 (92%) | +0 |
+| Lifecycle | steps green / total | 17 / 17 (100%) | +3 |
+| Overall | mean of five | ≈ 98% | +0 |
+
+Migrations 118 files · check:pglite 118/118 passed. Suite: passed.
+Gates read from .lifecycle-result.json.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- **Stage 2 (STAGE_2.md):** Build the UI actions and error mappings in `src/lib/gates.ts` to surface the database gate exceptions inline without toasts.
+- Apply migrations 0113–0120 to production Supabase during approved maintenance window with full pre-flight checks (per N-5).
+
 ## 2026-09-11 — Phase 4 UI Primitives Tokenization & Stage 1 S1-8 Law 17 Delivery Type Migration (Overall 98%)
 
 **Phase:** Phase 4 UI Primitives & Stage 1 Migration · **Status:** Modernized and ported 8 core design system UI primitives (`Table`, `GateChecklist`, `MoneyField`, `BsAdDate`, `ScannerInput`, `QuantityChip`, `EvidenceThumbnail`, `ReconciliationAssertion`) to native `theme.css` variables, eliminating uncompiled Tailwind styling and enforcing Law 15 (44×44 touch targets) and Law 11 (icon + label pairs). Implemented Migration 0113 (Law 17 `delivery_type` enum rename: 'Customer Pickup' → 'Client Pickup') per STAGE_1.md S1-8. Backend 42/42 (100%), Real Data 48/48 (100%), DB enforcement 9/9 (100%), Lifecycle 14/14 (100%), Overall completion reaches ≈ 98% (+1). 111/111 migrations green on PGlite.

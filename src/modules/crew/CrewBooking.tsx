@@ -412,8 +412,8 @@ export function CrewBooking() {
         description="Book, coordinate and reconcile production crew — schedule, cost and payouts in one place."
         actions={
           <Unavailable reason={BOOK_CREW_UNAVAILABLE}>
-            <Button variant="primary" icon="plus" disabled>
-              Book Crew
+            <Button variant="primary" icon="plus" disabled aria-label="Book Crew">
+              {phone ? '' : 'Book Crew'}
             </Button>
           </Unavailable>
         }
@@ -459,8 +459,19 @@ export function CrewBooking() {
           {/* Toolbar & filter chips — §6.1 draws `(All)(Available)(Booked)(Unavailable)`,
               roster availability rather than assignment status. The union and its
               counts live in `data/crew.ts` so the chip and its number cannot drift. */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
+            <div
+              className="rsp-chip-scroll"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--sp-sm)',
+                flexWrap: phone ? 'nowrap' : 'wrap',
+                overflowX: phone ? 'auto' : 'visible',
+                width: phone ? '100%' : undefined,
+                paddingBottom: phone ? 4 : 0,
+              }}
+            >
               {ROSTER_CHIPS.map((label) => (
                 <button
                   key={label}
@@ -476,6 +487,8 @@ export function CrewBooking() {
                     fontWeight: 500,
                     cursor: 'pointer',
                     fontFamily: 'inherit',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     border: rosterChip === label ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
                     background: rosterChip === label ? 'var(--nav-active-bg)' : 'var(--card)',
                     color: rosterChip === label ? 'var(--nav-active-accent)' : 'var(--text)',
@@ -486,24 +499,28 @@ export function CrewBooking() {
               ))}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ width: phone ? '100%' : 240 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: phone ? '100%' : 'auto' }}>
+              <div style={{ flex: phone ? 1 : undefined, width: phone ? undefined : 240 }}>
                 <Input
                   placeholder="Search crew, role, production…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
-              <Unavailable reason={DATE_RANGE_UNAVAILABLE}>
-                <Button variant="secondary" icon="calendar" disabled>
-                  Date range
-                </Button>
-              </Unavailable>
-              <Unavailable reason={EXPORT_UNAVAILABLE}>
-                <Button variant="secondary" icon="download" disabled>
-                  Export
-                </Button>
-              </Unavailable>
+              {!phone && (
+                <Unavailable reason={DATE_RANGE_UNAVAILABLE}>
+                  <Button variant="secondary" icon="calendar" disabled>
+                    Date range
+                  </Button>
+                </Unavailable>
+              )}
+              {!phone && (
+                <Unavailable reason={EXPORT_UNAVAILABLE}>
+                  <Button variant="secondary" icon="download" disabled>
+                    Export
+                  </Button>
+                </Unavailable>
+              )}
             </div>
           </div>
 

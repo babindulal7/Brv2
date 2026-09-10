@@ -94,6 +94,7 @@ alter table invoices drop constraint if exists invoices_void_requires_reason;
 create or replace function reject_invoice_edit_after_issue()
 returns trigger
 language plpgsql
+security definer
 set search_path = public, pg_temp
 as $$
 begin
@@ -121,7 +122,14 @@ begin
 
     -- Auto-stamp voided_by and voided_at if not set
     if NEW.voided_by is null then
-      NEW.voided_by := coalesce(nullif(current_setting('app.current_user_id', true), '')::uuid, auth.uid());
+      NEW.voided_by := nullif(current_setting('app.current_user_id', true), '')::uuid;
+      if NEW.voided_by is null then
+        begin
+          NEW.voided_by := auth.uid();
+        exception when others then
+          null;
+        end;
+      end if;
     end if;
     if NEW.voided_at is null then
       NEW.voided_at := now();

@@ -91,6 +91,9 @@ const SubRental         = lazy(() => import('./modules/operations/SubRental').th
 void AddEquipment
 void AddBundle
 void NewRental
+void StockCheck
+void Payments
+void Expenses
 
 export default function App() {
   const { user } = useAuth()
@@ -283,14 +286,7 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/inventory/stock-check"
-          element={
-            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Stock Check' }]} search="Scan or search equipment, serial…">
-              <StockCheck />
-            </Shell>
-          }
-        />
+        <Route path="/inventory/stock-check" element={<Navigate to="/inventory?tab=stock-check" replace />} />
 
         <Route
           path="/inventory/purchase-requests"
@@ -455,35 +451,9 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/finance/payments"
-          element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Payments' }]} search="Search payment no, transaction ref…">
-              <Payments />
-            </Shell>
-          }
-        />
-
-        {/* §9.4. Money surface by prefix — `isMoneySurface('/finance/expenses')`
-            already matches on `/finance`, so the Shell guard refuses a typed URL
-            for a money-blind role without `MONEY_ROUTES` gaining an entry. */}
-        <Route
-          path="/finance/expenses"
-          element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Expenses' }]} search="Search expense no, vendor, description…">
-              <Expenses />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/finance/documents"
-          element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Tax & Invoices' }]} search="Search tax invoices…">
-              <Documents />
-            </Shell>
-          }
-        />
+        <Route path="/finance/payments" element={<Navigate to="/finance?tab=payments" replace />} />
+        <Route path="/finance/expenses" element={<Navigate to="/finance?tab=expenses" replace />} />
+        <Route path="/finance/documents" element={<Navigate to="/finance?tab=documents" replace />} />
 
         <Route
           path="/reports/pulse"

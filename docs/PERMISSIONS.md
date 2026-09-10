@@ -288,7 +288,7 @@ model**. Nothing is stored: `product_units_service_v` derives it at read time.
 | `payment.refund` | M+ · Accounts | capped at paid amount; deposit refund only when outstanding = 0 | ○ |
 | `payment.reverse` | **Owner · Admin · Manager** | reversal row referencing original + reason; Accounts ⭐ F-a | ○ |
 | `invoice.create` / `invoice.issue` | C+ · Accounts | Draft until return; issued once (4 Sep rulings) | ○ |
-| `invoice.void` (+ credit note) | M+ · Accounts | issued invoices immutable | ✓ |
+| `invoice.void` (+ credit note) | M+ · Accounts | issued invoices immutable; ⭐ S1-a default: Owner · Admin · Manager · Accounts (R-05). Coordinator excluded. | ✓ |
 | `deposit.confirm_refund` | M+ · Accounts | accountant confirms auto-calculated refund (21 Jul) | ○ |
 | `deposit.release` | M+ · Accounts | never automated (Tier 3) | ○ |
 | `expense.submit` | all staff | own claims for Floor/Driver | ○ |
@@ -388,34 +388,56 @@ Known hole to keep closed: **`security_deposits` was readable by money-blind ses
 
 ### 6.1 The gate table
 
-| Gate | Who may pass it | Reason | Audit | Source |
-|---|---|---|---|---|
-| Release gear with **payment outstanding** (advance tier not met) | **Any staff** — warning shown, release allowed | none | yes, per session | his ruling 7 Sep; 21 Jul soft gate |
-| Release gear with **deposit outstanding** | same as above | none | yes | same rule — the gate is one gate |
-| Receiver not verified at handover | M+ override | ≥10 chars | yes | Handover v1.1 |
-| Overbooking (GiST conflict) | M+ | mandatory | yes; losing reservation deactivated | 21 Jul |
-| Crew double-booking | M+ | mandatory | yes | Crew v3.1 |
-| Discount — any % | C+ | **none** | line audited like any booking write | 31 Aug: ungated |
-| Damage / case charge **< Rs 25,000** | Owner · Admin · Manager | yes | yes | 21 Jul |
-| Damage / case charge **≥ Rs 25,000** | **Owner** | yes | yes | 21 Jul |
-| Write-off (Missing → Lost) | M+ under threshold · Owner above | yes | yes | ⭐ threshold |
-| Maintenance cost | M+ (⭐ Rs 25,000) | yes | yes | Settings ▸ Finance |
-| Purchase request | Manager < Rs 50,000 · Admin · Owner | — | yes | Admin v3.0 limits ⭐ |
-| Expense | M+ · Accounts (⭐ Rs 25,000; above → Owner); never own | — | yes | Expenses v2.2 |
-| Credit limit / payment terms override | M+ | ≥10 chars | yes | Add Client v2.1 |
-| Block client | Owner · Admin · Manager | from list | yes | his ruling 7 Sep |
-| Merge clients | M+ | yes | yes, reversible 30 d | Clients v2.0 |
-| Cancel after Packed | M+ | ≥10 chars | yes | this doc |
-| Payment reversal | Owner · Admin · Manager | yes | yes | Booking Workspace v2.3 |
-| Void issued invoice (+ credit note) | M+ · Accounts | yes | yes | 4 Sep rulings |
-| Deposit refund | Accounts confirms (M+ may) | — | yes | 21 Jul |
-| Reopen a Closed booking (stage only) | M+ | yes | yes | 4 Sep rulings |
-| Counter reset | **Owner** | ≥10 chars | yes | 15 Aug ⭐ closed here |
-| Rule class 3 change | **Owner** + PIN + typed confirm | consequence note | forensic level regardless of setting | Rules Registry v1.0 |
-| Restore backup | **Owner** | typed `RESTORE` | yes + maintenance mode | Admin v3.3 |
-| BS date table edit | **Owner** | validation | yes | Date Engine v1.0 |
-| Audit configuration | **Owner** | yes | forensic | Admin v3.3 |
-| Grant / revoke Admin | **Owner** | — | yes | this doc |
+| id | Gate | Who may pass it | Reason | Audit | Source |
+|---|---|---|---|---|---|
+| `gate.handover.payment_outstanding` | Release gear with **payment outstanding** (advance tier not met) | **Any staff** — warning shown, release allowed | none | yes, per session | his ruling 7 Sep; 21 Jul soft gate |
+| `gate.handover.payment_outstanding` | Release gear with **deposit outstanding** | same as above | none | yes | same rule — the gate is one gate |
+| `gate.handover.receiver_unverified` | Receiver not verified at handover | M+ override | ≥10 chars | yes | Handover v1.1 |
+| `gate.conflict.overbooking` | Overbooking (GiST conflict) | M+ | mandatory | yes; losing reservation deactivated | 21 Jul |
+| `gate.conflict.crew` | Crew double-booking | M+ | mandatory | yes | Crew v3.1 |
+| `gate.discount.general` | Discount — any % | C+ | **none** | line audited like any booking write | 31 Aug: ungated |
+| `gate.case.charge_tier1` | Damage / case charge **< Rs 25,000** | Owner · Admin · Manager | yes | yes | 21 Jul |
+| `gate.case.charge_tier2` | Damage / case charge **≥ Rs 25,000** | **Owner** | yes | yes | 21 Jul |
+| `gate.case.write_off` | Write-off (Missing → Lost) | M+ under threshold · Owner above | yes | yes | ⭐ threshold |
+| `gate.maintenance.cost` | Maintenance cost | M+ (⭐ Rs 25,000) | yes | yes | Settings ▸ Finance |
+| `gate.purchase.request` | Purchase request | Manager < Rs 50,000 · Admin · Owner | — | yes | Admin v3.0 limits ⭐ |
+| `gate.expense.approve` | Expense | M+ · Accounts (⭐ Rs 25,000; above → Owner); never own | — | yes | Expenses v2.2 |
+| `gate.client.terms_override` | Credit limit / payment terms override | M+ | ≥10 chars | yes | Add Client v2.1 |
+| `gate.client.block` | Block client | Owner · Admin · Manager | from list | yes | his ruling 7 Sep |
+| `gate.client.merge` | Merge clients | M+ | yes | yes, reversible 30 d | Clients v2.0 |
+| `gate.cancel.stage_too_late` | Cancel after Packed | M+ | ≥10 chars | yes | this doc |
+| `gate.cancel.reason_missing` | Cancellation without valid reason | nobody | ≥10 chars | yes | Stage 1 (0115) |
+| `gate.payment.reverse` | Payment reversal | Owner · Admin · Manager | yes | yes | Booking Workspace v2.3 |
+| `gate.payment.over_invoice` | Payment exceeds invoice outstanding | nobody | — | yes | Stage 1 (0118) |
+| `gate.payment.over_booking` | Advance payment exceeds booking estimate | nobody | — | yes | Stage 1 (0118) |
+| `gate.invoice.void_role` | Void issued invoice (+ credit note) | M+ · Accounts (R-05) | yes | yes | 4 Sep rulings; Stage 1 (0117) |
+| `gate.invoice.void_reason` | Void invoice without valid reason | nobody | ≥10 chars | yes | Stage 1 (0117) |
+| `gate.invoice.void_paid` | Void paid invoice without credit note | nobody | credit note required | yes | Stage 1 (0117) |
+| `gate.deposit.refund` | Deposit refund | Accounts confirms (M+ may) | — | yes | 21 Jul |
+| `gate.reopen.role` | Reopen a Closed booking (stage only) | M+ | yes | yes | 4 Sep rulings; Stage 1 (0115) |
+| `gate.pack.session_missing` | Booked → Packed with no pack session | nobody | — | yes | Stage 1 (0115) |
+| `gate.pack.units_unassigned` | Serial line with unassigned units at pack | nobody | — | yes | Stage 1 (0115) |
+| `gate.pack.units_unpacked` | Unit unpacked in pack session | nobody | — | yes | Stage 1 (0115) |
+| `gate.handover.session_missing` | Packed → On Rent with no handover session | nobody | — | yes | Stage 1 (0115) |
+| `gate.handover.units_unhanded` | Packed unit without handover line | nobody | — | yes | Stage 1 (0115) |
+| `gate.handover.agreement_unsigned` | Agreement unsigned at handover | nobody | — | yes | Stage 1 (0115) |
+| `gate.return.session_missing` | On Rent → Returned with no return session | nobody | — | yes | Stage 1 (0115) |
+| `gate.return.units_unaccounted` | On-rent unit with no return line | nobody | — | yes | Stage 1 (0115) |
+| `gate.close.no_invoice` | Returned → Closed with no invoice | nobody | — | yes | Stage 1 (0116) |
+| `gate.close.invoice_unsettled` | Returned → Closed with unsettled invoice | nobody | — | yes | Stage 1 (0116) |
+| `gate.close.deposit_unresolved` | Returned → Closed with unresolved deposit | nobody | — | yes | Stage 1 (0116) |
+| `gate.close.open_case` | Returned → Closed with open case | nobody | — | yes | Stage 1 (0116) |
+| `gate.close.reservation_live` | Returned → Closed with live reservation | nobody | — | yes | Stage 1 (0116) |
+| `gate.unit_status.direct_write` | Direct write to product_units.status | nobody (engine-owned) | — | yes | Stage 1 (0114) |
+| `gate.users.role_ceiling` | Role assignment exceeds caller ceiling | Owner only | — | yes | Stage 1 (0120) |
+| `gate.users.immutable` | Deleting row from users | nobody (immutable) | — | yes | Stage 1 (0120) |
+| `gate.booking_lines.money_blind_insert` | Direct line insert with money by money-blind | nobody (use create_booking) | — | yes | Stage 1 (0119) |
+| `gate.discount.money_blind` | Money-blind caller attempting discount | nobody | — | yes | Stage 1 (0119) |
+| `gate.counter.reset` | Counter reset | **Owner** | ≥10 chars | yes | 15 Aug ⭐ closed here |
+| `gate.rule.class3` | Rule class 3 change | **Owner** + PIN + typed confirm | consequence note | forensic level regardless of setting | Rules Registry v1.0 |
+| `gate.backup.restore` | Restore backup | **Owner** | typed `RESTORE` | yes + maintenance mode | Admin v3.3 |
+| `gate.date.bs_edit` | BS date table edit | **Owner** | validation | yes | Date Engine v1.0 |
+| `gate.audit.config` | Audit configuration | **Owner** | yes | forensic | Admin v3.3 |
 
 WARN-class rules (Rules Registry) are passed by **any staff** with the warning logged — the same shape as the payment soft gate, because a driver at 6 AM cannot reach a manager. BLOCK-class rules are passed only by the role this table names.
 
@@ -484,12 +506,16 @@ Everyone has an inbox. Role defaults: Coordinator → bookings; Warehouse/Techni
 
 | Helper | Returns | Used by |
 |---|---|---|
-| `auth_user_role()` | the session's `system_role`; **fallback `Client`** when no `users` row | every policy |
+| `auth_user_role()` | the session's `system_role`; resolves deactivated users to `Client`, fallback `Client` when no `users` row | every policy |
 | `auth_is_staff()` | role ≠ Client | all staff tables |
 | `auth_can_view_money()` | role ∈ {Owner, Admin, Manager, Coordinator, Accounts} | money tables + views |
-| `auth_is_finance_or_admin()` | ⛔ **CORRECTED — {Owner, Admin, Manager, Coordinator, Accounts}.** Manager *is* included (question answered); **Coordinator is present and this row omitted it**, so the helper is set-identical to `auth_can_view_money()` and cannot distinguish Accounts/M+ from Coordinator. A policy written from the old row would silently let Coordinator approve expenses, contradicting §3.1 E1. | invoice void, refunds, expenses approve |
-| `auth_is_manager_or_above()` **(add)** | role ∈ {Owner, Admin, Manager} | every M+ row in §4 |
-| `auth_is_owner()` **(add)** | role = Owner | §6.2 |
+| `auth_is_finance_or_admin()` | role ∈ {Owner, Admin, Manager, Accounts} (R-05 / S1-a default; Coordinator excluded) | invoice void, credit notes, refunds |
+| `auth_is_manager_or_above()` | role ∈ {Owner, Admin, Manager} | stage gates (cancel late, reopen), M+ rows |
+| `auth_is_owner()` | role = Owner | §6.2 |
+| `auth_user_branch_id()` | session's `branch_id` from `users` | branch scoping in RLS and views |
+| `recompute_unit_status(p_asset_id uuid)` | `product_unit_status` | unit status engine (0114) |
+| `booking_estimate_total(p_booking_id uuid)` | `numeric` | payment ceiling (0118) |
+| `get_model_daily_rate(product_id, bundle_id)` | `numeric` | server-side prices (0119) |
 
 Rules:
 - `create_booking()` and every future RPC stay **SECURITY INVOKER** so each insert faces its own policy (a Warehouse call that includes a discount is rejected whole).

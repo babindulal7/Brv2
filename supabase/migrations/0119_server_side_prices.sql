@@ -11,6 +11,8 @@
 -- 4. guard_booking_lines_money_blind() trigger before insert on booking_lines:
 --    - Refuses direct money figure insertion by money-blind callers outside create_booking
 
+alter type audit_action add value if not exists 'price.server_applied';
+
 alter table booking_lines add column if not exists rate_overridden boolean not null default false;
 grant select (rate_overridden) on booking_lines to authenticated;
 

@@ -1135,6 +1135,267 @@ const STEPS = [
       })
     },
   },
+
+  {
+    id: 'L15',
+    title: 'Unit status is owned by the engine; direct write is refused (S1-5)',
+    expect: 'green',
+    async run() {
+      // 1. Direct update to status as Owner is refused by gate.unit_status.direct_write
+      await asOwnerOfTheDatabase(async () => {
+        await refuses(
+          'direct update to product_units.status',
+          "update product_units set status = 'On Rent' where id = $1",
+          [UNITS[0]],
+          /gate\.unit_status\.direct_write/,
+        )
+      })
+
+      // 2. Status recomputed: active maintenance record sets status to 'Maintenance'
+      const maintId = crypto.randomUUID()
+      await asOwnerOfTheDatabase(async () => {
+        await q(
+          `insert into maintenance_records (id, client_uuid, record_no, product_unit_id, maintenance_type, description, scheduled_date, created_by)
+           values ($1, gen_random_uuid(), 'MR-L15-01', $2, 'Cleaning', 'Routine scheduled cleaning', now(), $3)`,
+          [maintId, UNITS[0], U.Owner],
+        )
+      })
+      const unit0StatusMaint = await one('select status::text from product_units where id = $1', [UNITS[0]])
+      assertEq(unit0StatusMaint, 'Maintenance', 'Unit with active maintenance record has status Maintenance')
+
+      // 3. Complete the maintenance record -> status recomputes back to 'In Stock'
+      await asOwnerOfTheDatabase(async () => {
+        await q(
+          `update maintenance_records set status = 'Completed', completed_at = now() where id = $1`,
+          [maintId],
+        )
+      })
+      const unit0StatusStock = await one('select status::text from product_units where id = $1', [UNITS[0]])
+      assertEq(unit0StatusStock, 'In Stock', 'Unit with completed maintenance recomputes to In Stock')
+    },
+  },
+
+  {
+    id: 'L16',
+    title: 'Invoice void discipline: role check, reason, credit note requirement (S1-3)',
+    expect: 'green',
+    async run() {
+      // In L10, invoiceId is Paid (paid_amount: 7119).
+      // 1. Coordinator cannot void (gate.invoice.void_role)
+      await asOwnerOfTheDatabase(async () => {
+        await db.exec(`select set_config('app.current_user_id', '${U.Coordinator}', false);`)
+        try {
+          await refuses(
+            'void by Coordinator',
+            "update invoices set status = 'Void', void_reason = 'Cancelled by client agreement' where id = $1",
+            [invoiceId],
+            /gate\.invoice\.void_role/,
+          )
+        } finally {
+          await db.exec("select set_config('app.current_user_id', '', false);")
+        }
+      })
+
+      // 2. Void without reason (or reason < 10 chars) by Accounts is refused (gate.invoice.void_reason)
+      await as('Accounts', async () => {
+        await refuses(
+          'void without reason',
+          "update invoices set status = 'Void' where id = $1",
+          [invoiceId],
+          /gate\.invoice\.void_reason/,
+        )
+        await refuses(
+          'void with short reason',
+          "update invoices set status = 'Void', void_reason = 'mistake' where id = $1",
+          [invoiceId],
+          /gate\.invoice\.void_reason/,
+        )
+      })
+
+      // 3. Void of a paid invoice without a credit note is refused (gate.invoice.void_paid)
+      await as('Accounts', async () => {
+        await refuses(
+          'void of paid invoice without credit note',
+          "update invoices set status = 'Void', void_reason = 'Customer requested full refund' where id = $1",
+          [invoiceId],
+          /gate\.invoice\.void_paid/,
+        )
+      })
+
+      // 4. Issue a credit note for this invoice, then void succeeds
+      await as('Accounts', async () => {
+        await q(
+          `insert into credit_notes (client_uuid, credit_note_no, invoice_id, amount, reason, created_by)
+           values (gen_random_uuid(), next_document_number('credit_note'), $1, 7119, 'Full refund credit note issued', $2)`,
+          [invoiceId, U.Accounts],
+        )
+
+        await q(
+          `update invoices
+              set status = 'Void',
+                  void_reason = 'Cancelled and refunded with credit note'
+            where id = $1`,
+          [invoiceId],
+        )
+      })
+
+      const voidRow = (await q('select status::text, voided_by, voided_at from invoices where id = $1', [invoiceId])).rows[0]
+      assertEq(voidRow.status, 'Void', 'invoice status is Void')
+      assert(voidRow.voided_by !== null, 'voided_by was stamped by trigger')
+      assert(voidRow.voided_at !== null, 'voided_at was stamped by trigger')
+
+      // 5. Unvoiding or modifying voided invoice is refused (gate.invoice.void_immutable)
+      await as('Accounts', async () => {
+        await refuses(
+          'unvoiding voided invoice',
+          "update invoices set status = 'Draft' where id = $1",
+          [invoiceId],
+          /gate\.invoice\.void_immutable/,
+        )
+      })
+    },
+  },
+
+  {
+    id: 'L17',
+    title: 'Server-side prices for money-blind callers, line guard, role ceiling & user immutability (S1-6, S1-7)',
+    expect: 'green',
+    async run() {
+      // 1. Warehouse create_booking with rate: 1 on a Rs 3,500 model sets line rate 3500, rate_overridden = false, audit row present
+      let whBookingId
+      await as('Warehouse', async () => {
+        const res = await createBooking({
+          key: 'wh-booking',
+          window: W.d,
+          actor: 'Warehouse',
+          lines: [
+            {
+              productId: SERIAL_PRODUCT,
+              description: 'Warehouse created booking',
+              qty: 1,
+              days: 1,
+              rate: 1,
+            },
+          ],
+        })
+        whBookingId = res.booking_id
+      })
+
+      const lineRow = (
+        await q(
+          'select rate, rate_overridden from booking_lines where booking_id = $1',
+          [whBookingId],
+        )
+      ).rows[0]
+      assertEq(Number(lineRow.rate), 3500, 'line rate was set to server product daily_rate 3500')
+      assertEq(lineRow.rate_overridden, false, 'rate_overridden is false')
+
+      const auditCount = Number(
+        await one(
+          "select count(*) from audit_events where record_id = $1 and action = 'price.server_applied'",
+          [whBookingId],
+        ),
+      )
+      assert(auditCount > 0, 'audit_events row for price.server_applied was written')
+
+      // 2. Coordinator create_booking with rate: 3000 sets rate 3000, rate_overridden = true
+      let coordBookingId
+      await as('Coordinator', async () => {
+        const res = await createBooking({
+          key: 'coord-booking',
+          window: W.d,
+          actor: 'Coordinator',
+          lines: [
+            {
+              productId: SERIAL_PRODUCT,
+              description: 'Coordinator created override booking',
+              qty: 1,
+              days: 1,
+              rate: 3000,
+            },
+          ],
+        })
+        coordBookingId = res.booking_id
+      })
+
+      const coordLineRow = (
+        await q(
+          'select rate, rate_overridden from booking_lines where booking_id = $1',
+          [coordBookingId],
+        )
+      ).rows[0]
+      assertEq(Number(coordLineRow.rate), 3000, 'Coordinator line rate is 3000')
+      assertEq(coordLineRow.rate_overridden, true, 'rate_overridden is true')
+
+      // 3. Warehouse direct insert into booking_lines with rate is refused (gate.booking_lines.money_blind_insert)
+      await as('Warehouse', async () => {
+        await refuses(
+          'direct insert into booking_lines by Warehouse',
+          `insert into booking_lines
+             (client_uuid, booking_id, line_type, product_id, qty, days, rate, created_by)
+           values (gen_random_uuid(), $1, 'Equipment', $2, 1, 1, 3500, $3)`,
+          [whBookingId, SERIAL_PRODUCT, U.Warehouse],
+          /gate\.booking_lines\.money_blind_insert/,
+        )
+      })
+
+      // 4. Money-blind caller attempting discounts in create_booking is refused (gate.discount.money_blind)
+      await as('Warehouse', async () => {
+        await refuses(
+          'create_booking with discounts by money-blind caller',
+          'select create_booking($1::jsonb)',
+          [
+            JSON.stringify({
+              client_uuid: crypto.randomUUID(),
+              created_by: U.Warehouse,
+              branch_id: BRANCH,
+              client_id: CLIENT,
+              pickup_at: W.d[0],
+              return_at: W.d[1],
+              delivery_type: 'Client Pickup',
+              lines: [
+                {
+                  client_uuid: crypto.randomUUID(),
+                  product_id: SERIAL_PRODUCT,
+                  qty: 1,
+                  days: 1,
+                },
+              ],
+              discounts: [
+                {
+                  client_uuid: crypto.randomUUID(),
+                  discount_source: 'Commercial Negotiation',
+                  percent: 10,
+                  reason: 'Test discount',
+                },
+              ],
+            }),
+          ],
+          /gate\.discount\.money_blind/,
+        )
+      })
+
+      // 5. Admin assigning Owner or Admin role is refused by role ceiling (gate.users.role_ceiling)
+      await as('Admin', async () => {
+        await refuses(
+          'Admin setting role to Admin',
+          "update users set primary_role = 'Admin' where id = $1",
+          [U.Coordinator],
+          /gate\.users\.role_ceiling/,
+        )
+      })
+
+      // 6. Deleting from users is refused (gate.users.immutable)
+      await asOwnerOfTheDatabase(async () => {
+        await refuses(
+          'Owner deleting from users',
+          'delete from users where id = $1',
+          [U.Coordinator],
+          /gate\.users\.immutable/,
+        )
+      })
+    },
+  },
 ]
 
 /* ── Run ──────────────────────────────────────────────────────────────────── */

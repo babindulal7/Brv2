@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
 import { Card, PageHeader, Button, KpiStrip, Rail, SideRail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
@@ -590,7 +590,28 @@ export default function Finance() {
    */
   const canIssueInvoice = user ? rbacCanIssueInvoice(user.role) : false
 
-  const [tab, setTab] = useState<FinanceTab>('Dashboard')
+  const [params, setParams] = useSearchParams()
+  const tabParam = params.get('tab')?.toLowerCase()
+  const tab: FinanceTab = useMemo(() => {
+    if (!tabParam) return 'Dashboard'
+    const found = (FINANCE_TABS as readonly string[]).find((t) => t.toLowerCase() === tabParam)
+    return (found as FinanceTab) ?? 'Dashboard'
+  }, [tabParam])
+
+  const setTab = useCallback(
+    (next: FinanceTab) => {
+      setParams(
+        (prev) => {
+          const p = new URLSearchParams(prev)
+          if (next === 'Dashboard') p.delete('tab')
+          else p.set('tab', next.toLowerCase())
+          return p
+        },
+        { replace: true },
+      )
+    },
+    [setParams],
+  )
   /** §9.2 — the seven chips. Law 3 keeps `Void` among them, never a Delete. */
   const [chip, setChip] = useState<InvoiceChip>('All')
 

@@ -442,6 +442,7 @@ export function Bundles() {
     is only the operator's desktop preference.
   */
   const viewport = useViewport()
+  const phone = viewport === 'phone'
   const [view, setView] = useState<'list' | 'grid'>(() => 'list')
   const effectiveView: 'list' | 'grid' = viewport === 'phone' ? 'grid' : viewport === 'tablet' && view === 'list' ? 'grid' : view
   const [rowsPerPage, setRowsPerPage] = useState(25)
@@ -649,24 +650,27 @@ export function Bundles() {
           Create and manage equipment kits and rental packages.
         </p>
         <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-          <Unavailable reason="Import is not built — there is no bundle intake pipeline in this release.">
-            <Button icon="upload" disabled>
-              Import
-            </Button>
-          </Unavailable>
-          <Button icon="download" onClick={() => exportBundles(filtered, money)}>
-            Export
+          {!phone && (
+            <Unavailable reason="Import is not built — there is no bundle intake pipeline in this release.">
+              <Button icon="upload" disabled>
+                Import
+              </Button>
+            </Unavailable>
+          )}
+          <Button icon="download" onClick={() => exportBundles(filtered, money)} aria-label="Export bundles">
+            {phone ? '' : 'Export'}
           </Button>
           <Button
             icon="plus"
             variant="primary"
+            aria-label="New Bundle"
             onClick={() => {
               const next = new URLSearchParams(params)
               next.set('action', 'new')
               setParams(next, { replace: true })
             }}
           >
-            New Bundle
+            {phone ? '' : 'New Bundle'}
           </Button>
           <Menu
             label="More"
@@ -707,7 +711,17 @@ export function Bundles() {
           <KpiStrip items={kpis} columns={4} />
 
           {/* §2 — chips, then the invariant readout that can fail (§1.1). */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div
+            className="rsp-chip-scroll"
+            style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: phone ? 'nowrap' : 'wrap',
+              overflowX: phone ? 'auto' : 'visible',
+              alignItems: 'center',
+              paddingBottom: phone ? 4 : 0,
+            }}
+          >
             {chipRow.map((c) => {
               const on = chip === c.label
               return (
@@ -723,8 +737,8 @@ export function Bundles() {
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 6,
-                    height: 30,
-                    padding: '0 10px',
+                    minHeight: 44,
+                    padding: '0 14px',
                     borderRadius: 'var(--r-sm)',
                     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                     background: on ? 'var(--nav-active-bg)' : 'var(--card)',
@@ -734,6 +748,7 @@ export function Bundles() {
                     cursor: 'pointer',
                     fontFamily: 'inherit',
                     whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
                   {c.label}

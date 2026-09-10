@@ -360,6 +360,100 @@ async function main() {
       console.log(`  ${C.dim}(not a money-blind role; run again as Warehouse for the real test)${C.off}`)
     }
   }
+
+  /* ── 4 · write probes (Stage 1 Law enforcement) ───────────────────────── */
+  if (args.includes('--write-probes')) {
+    console.log(`\n  ${C.warn}── Stage 1 Database Enforcement Write Probes ──${C.off}`)
+    if (!signedIn) {
+      console.log(`  ${C.bad}Write probes require a signed-in session. Pass --email and --password.${C.off}`)
+    } else {
+      const role = staffRow?.primary_role || 'Unknown'
+      console.log(`  Running write probes as: ${staffRow?.full_name || email} (${role})\n`)
+
+      const runProbe = async (id, name, fn) => {
+        try {
+          const err = await fn()
+          if (err) {
+            const errMsg = String(err.message || err).split('\n')[0]
+            if (errMsg.includes(id) || errMsg.includes('GATE:')) {
+              console.log(`  ${C.ok}gate.${id}${C.off} → refused (${errMsg})`)
+              return true
+            } else {
+              console.log(`  ${C.warn}gate.${id}${C.off} → refused by policy/error (${errMsg})`)
+              return true
+            }
+          } else {
+            console.log(`  ${C.bad}ALLOWED (P0)${C.off} — ${name}`)
+            return false
+          }
+        } catch (ex) {
+          const exMsg = String(ex.message || ex).split('\n')[0]
+          if (exMsg.includes(id) || exMsg.includes('GATE:')) {
+            console.log(`  ${C.ok}gate.${id}${C.off} → refused (${exMsg})`)
+            return true
+          } else {
+            console.log(`  ${C.warn}gate.${id}${C.off} → refused by policy/error (${exMsg})`)
+            return true
+          }
+        }
+      }
+
+      // 1. Direct update to product_units.status
+      await runProbe('unit_status.direct_write', 'Direct update to product_units.status', async () => {
+        const { error } = await supabase.from('product_units').update({ status: 'On Rent' }).eq('id', '00000000-0000-0000-0000-000000000000')
+        return error
+      })
+
+      // 2. Void invoice without reason
+      await runProbe('invoice.void_reason', 'Void invoice without reason', async () => {
+        const { error } = await supabase.from('invoices').update({ status: 'Void' }).eq('id', '00000000-0000-0000-0000-000000000000')
+        return error
+      })
+
+      // 3. User immutability (delete from users)
+      await runProbe('users.immutable', 'Delete from users table', async () => {
+        const { error } = await supabase.from('users').delete().eq('id', uid)
+        return error
+      })
+
+      // 4. Role ceiling (elevate role to Owner)
+      await runProbe('users.role_ceiling', 'Assign Owner role beyond ceiling', async () => {
+        const { error } = await supabase.from('users').update({ primary_role: 'Owner' }).eq('id', uid)
+        return error
+      })
+
+      // 5. Stage transition: Booked -> Packed without pack session
+      await runProbe('stage.no_pack_session', 'Booked -> Packed with no packing session', async () => {
+        const { error } = await supabase.from('booking_stage_transitions').insert({
+          booking_id: '00000000-0000-0000-0000-000000000000',
+          from_stage: 'Booked',
+          to_stage: 'Packed',
+        })
+        return error
+      })
+
+      // 6. Close gate: Returned -> Closed with no invoice
+      await runProbe('close.no_invoice', 'Returned -> Closed with no invoice', async () => {
+        const { error } = await supabase.from('booking_stage_transitions').insert({
+          booking_id: '00000000-0000-0000-0000-000000000000',
+          from_stage: 'Returned',
+          to_stage: 'Closed',
+        })
+        return error
+      })
+
+      // 7. Money-blind line insert with rate
+      if (MONEY_BLIND.has(role)) {
+        await runProbe('booking_lines.money_blind_insert', 'Direct line insert with money by money-blind caller', async () => {
+          const { error } = await supabase.from('booking_lines').insert({
+            booking_id: '00000000-0000-0000-0000-000000000000',
+            rate: 1000,
+          })
+          return error
+        })
+      }
+    }
+  }
   console.log()
 }
 
