@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { PageHeader } from '../../components/ui/Page'
@@ -11,9 +11,10 @@ import Icon from '../../components/ui/Icon'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { formatBsOrAd } from '../../lib/bs'
-import { findClientIdByBooking } from '../../data/clients'
 import {
+  listCases,
   CASES,
+  findClientIdByBooking,
   CASE_STATUS_META,
   CASE_PRIORITY_META,
   CASE_WORKSPACE_ROUTE,
@@ -29,7 +30,7 @@ import {
   type Case,
   type CaseStatus,
   type CasePriority,
-} from '../../data/cases'
+} from '../../lib/queries/cases'
 import { IconSearch, IconPlus, IconDownload } from '@tabler/icons-react'
 import { LogCaseModal } from './modals/LogCaseModal'
 import { useDomainEvent } from '../../events/useDomainEvent'
@@ -132,6 +133,18 @@ export function CasesWorkspace() {
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [isLogCaseOpen, setIsLogCaseOpen] = useState(false)
   const [casesList, setCasesList] = useState<Case[]>(() => [...CASES])
+
+  useEffect(() => {
+    let mounted = true
+    listCases().then((res) => {
+      if (mounted && res.rows.length > 0) {
+        setCasesList(res.rows)
+      }
+    }).catch(() => {})
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   /**
    * **RS-09 — one row per case id, however many times this screen is told

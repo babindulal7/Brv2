@@ -6,7 +6,7 @@ import type { Paisa } from '../../../lib/money'
 import { DomainEvents, EVENT_TYPES } from '../../../events/eventBus'
 import { useAuth } from '../../../lib/auth'
 import { useCanViewMoney } from '../../../lib/moneyVisibility'
-import type { Case, CasePriority, CaseType } from '../../../data/cases'
+import type { Case, CasePriority, CaseType } from '../../../lib/queries/cases'
 
 export interface LogCaseModalProps {
   isOpen: boolean
