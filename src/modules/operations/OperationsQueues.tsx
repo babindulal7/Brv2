@@ -704,14 +704,18 @@ export default function OperationsQueues() {
           figure beside four database figures; when Cases moves to the `cases`
           table, this count and that page move together.
         */}
-        <button
-          type="button"
-          onClick={() => patch({ queue: selected === 'Cases' ? null : 'cases', quick: null })}
+        <Link
+          to="/inventory/cases"
+          onClick={(e) => {
+            e.preventDefault()
+            patch({ queue: selected === 'Cases' ? null : 'cases', quick: null })
+          }}
           aria-pressed={selected === 'Cases'}
           style={{
             ...chipStyle(selected === 'Cases'),
             border: `1px solid ${selected === 'Cases' ? 'var(--nav-active-accent)' : 'var(--border)'}`,
             cursor: 'pointer',
+            textDecoration: 'none',
           }}
           aria-label={`Cases: ${openCases} open`}
         >
@@ -735,7 +739,7 @@ export default function OperationsQueues() {
           >
             {openCases}
           </span>
-        </button>
+        </Link>
       </div>
 
       <div

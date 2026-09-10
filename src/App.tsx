@@ -146,14 +146,7 @@ export default function App() {
 
         {/* Declared before nothing needs it — /new is a static segment, not a
             client ID, so there is no :id route to collide with. */}
-        <Route
-          path="/clients/new"
-          element={
-            <Shell crumbs={[{ label: 'Clients' }, { label: 'Add New Client' }]} search="Search client, company, PAN, phone…">
-              <AddClient />
-            </Shell>
-          }
-        />
+        <Route path="/clients/new" element={<Navigate to="/clients?tab=new" replace />} />
 
         <Route
           path="/dashboard"
@@ -611,41 +604,10 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/clients/memberships"
-          element={
-            <Shell crumbs={[{ label: 'Clients' }, { label: 'Directory & Membership' }]}>
-              <Membership />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/clients/import"
-          element={
-            <Shell crumbs={[{ label: 'Clients' }, { label: 'Import Clients' }]}>
-              <ImportCenter />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/clients/duplicates"
-          element={
-            <Shell crumbs={[{ label: 'Clients' }, { label: 'Duplicate & Merge Center' }]}>
-              <DuplicateCenter />
-            </Shell>
-          }
-        />
-
-        <Route
-          path="/clients/referral/new"
-          element={
-            <Shell crumbs={[{ label: 'Clients' }, { label: 'Referral' }, { label: 'Generate Referral Code' }]}>
-              <GenerateReferralCode />
-            </Shell>
-          }
-        />
+        <Route path="/clients/memberships" element={<Navigate to="/clients?tab=membership" replace />} />
+        <Route path="/clients/import" element={<Navigate to="/clients?tab=import" replace />} />
+        <Route path="/clients/duplicates" element={<Navigate to="/clients?tab=duplicates" replace />} />
+        <Route path="/clients/referral/new" element={<Navigate to="/clients?tab=referral" replace />} />
 
         {/* Last of the /clients/* group, same reasoning as /inventory/:code —
             a bare segment here is a client ID, so it's declared after every
