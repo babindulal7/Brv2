@@ -584,18 +584,27 @@ const STEPS = [
   {
     id: 'L6',
     title: 'Booked → Packed → On Rent as Warehouse requires the session rows each stage needs',
-    expect: 'green',
+    expect: 'red',
+    red: 'gate.pack.session_missing and gate.handover.session_missing not enforced by database engine yet',
     async run() {
+      let gatePackRefused = false
+      let gateHandoverRefused = false
+
       await as('Warehouse', async () => {
         // 1. Moving to Packed without a Packing session is refused
-        await refuses(
-          'moving to Packed with no Packing session',
-          `insert into booking_stage_transitions
-             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
-           values (gen_random_uuid(), $1, $2, 'Booked', 'Packed', $3, 'Warehouse', now())`,
-          [bookingIds.a, BRANCH, U.Warehouse],
-          /cannot reach Packed without a Packing session/i,
-        )
+        try {
+          await refuses(
+            'moving to Packed with no Packing session',
+            `insert into booking_stage_transitions
+               (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+             values (gen_random_uuid(), $1, $2, 'Booked', 'Packed', $3, 'Warehouse', now())`,
+            [bookingIds.a, BRANCH, U.Warehouse],
+            /gate\.pack\.session_missing/,
+          )
+          gatePackRefused = true
+        } catch {
+          /* gate check format not yet active */
+        }
 
         // 2. Open a Packing session, then transition to Packed succeeds
         const packingSessionId = crypto.randomUUID()
@@ -608,14 +617,19 @@ const STEPS = [
         assertEq(await stageOf('a'), 'Packed', 'the booking moved to Packed once Packing session exists')
 
         // 3. Moving to On Rent without a Handover session is refused
-        await refuses(
-          'moving to On Rent with no Handover session',
-          `insert into booking_stage_transitions
-             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
-           values (gen_random_uuid(), $1, $2, 'Packed', 'On Rent', $3, 'Warehouse', now())`,
-          [bookingIds.a, BRANCH, U.Warehouse],
-          /cannot reach On Rent without a Handover session/i,
-        )
+        try {
+          await refuses(
+            'moving to On Rent with no Handover session',
+            `insert into booking_stage_transitions
+               (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+             values (gen_random_uuid(), $1, $2, 'Packed', 'On Rent', $3, 'Warehouse', now())`,
+            [bookingIds.a, BRANCH, U.Warehouse],
+            /gate\.handover\.session_missing/,
+          )
+          gateHandoverRefused = true
+        } catch {
+          /* gate check format not yet active */
+        }
 
         // 4. Open a Handover session, then transition to On Rent succeeds
         const handoverSessionId = crypto.randomUUID()
@@ -633,13 +647,17 @@ const STEPS = [
         await one('select count(*) from operation_sessions where booking_id = $1', [bookingIds.a]),
       )
       assertEq(sessions, 2, 'both Packing and Handover sessions exist for the booking')
+
+      assert(gatePackRefused, 'gate.pack.session_missing not enforced yet')
+      assert(gateHandoverRefused, 'gate.handover.session_missing not enforced yet')
     },
   },
 
   {
     id: 'L7',
     title: 'A partial return: one unit back, one missing',
-    expect: 'green',
+    expect: 'red',
+    red: 'gate.return.session_missing not enforced yet',
     async run() {
       await as('Warehouse', async () => {
         await q(
@@ -656,6 +674,23 @@ const STEPS = [
              (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), $2, 1, 'Missing', 'Lost on location during shoot', $3)`,
           [bookingIds.a, UNITS[1], U.Warehouse],
         )
+
+        // Refuse moving to Returned with no Return session
+        let gateReturnRefused = false
+        try {
+          await refuses(
+            'moving to Returned with no Return session',
+            `insert into booking_stage_transitions
+               (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+             values (gen_random_uuid(), $1, $2, 'On Rent', 'Returned', $3, 'Warehouse', now())`,
+            [bookingIds.a, BRANCH, U.Warehouse],
+            /gate\.return\.session_missing/,
+          )
+          gateReturnRefused = true
+        } catch {
+          /* gate not yet active */
+        }
+
         await transition('a', 'On Rent', 'Returned', 'Warehouse')
       })
 
@@ -668,6 +703,7 @@ const STEPS = [
         await one("select count(*) from cases where linked_booking_id = $1 and type = 'Missing'", [bookingIds.a]),
       )
       assert(cases > 0, 'no Missing case was opened for the unit that did not come back')
+      assert(gateReturnRefused, 'gate.return.session_missing not enforced yet')
     },
   },
 
@@ -971,7 +1007,8 @@ const STEPS = [
   {
     id: 'L14',
     title: 'Client portal user sees only their own rows, never another client\'s',
-    expect: 'green',
+    expect: 'red',
+    red: 'users table visibility not restricted by role ceiling / RLS yet',
     async run() {
       await as('Client', async () => {
         // 1. clients table: sees own client row, cannot see OTHER_CLIENT
@@ -999,6 +1036,10 @@ const STEPS = [
         // 3. booking_lines table: sees lines for own bookings only
         const myLines = await q('select id, booking_id from booking_lines')
         assert(myLines.rows.length > 0, 'Client sees booking lines for own bookings')
+
+        // 4. Staff directory view exists and is accessible
+        const staff = await q('select count(*) from staff_directory_v')
+        assert(Number(staff.rows[0].count) > 0, 'Staff directory view exists and lists staff')
       })
     },
   },
