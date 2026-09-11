@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
 import type { CSSProperties } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import EditBundle from './EditBundle'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { Badge } from '../../components/ui/Badge'
@@ -141,6 +142,28 @@ export function BundleDetail() {
      which renders AssetDetail hunting for an asset called "bundles". */
   const backTo = `/inventory${windowSearch.replace('?', '?tab=bundles&')}`
 
+  const [params, setParams] = useSearchParams()
+  const isEdit = params.get('action') === 'edit'
+
+  /*
+   * Integrated in-page: When action === 'edit', render EditBundle in-place
+   * within BundleDetail workspace instead of bouncing to a detached shortcut page.
+   */
+  if (isEdit && user && canUpdateBundle(user.role)) {
+    return (
+      <EditBundle
+        bundleRef={bundleRef}
+        embedded
+        onDone={() => {
+          record.refetch()
+          const p = new URLSearchParams(params)
+          p.delete('action')
+          setParams(p, { replace: true })
+        }}
+      />
+    )
+  }
+
   /*
    * The record gate, in the shape every sibling detail screen uses: guard on the
    * record, hand `PageBody` the four states and `{null}` children, and let it
@@ -249,9 +272,16 @@ export function BundleDetail() {
               answering (§4.44).
             */}
             {user && canUpdateBundle(user.role) && (
-              <Link to={`/inventory/bundles/${bundleRef ?? bundle.id}/edit${windowSearch}`} style={{ textDecoration: 'none' }}>
-                <Button variant="secondary">Edit bundle</Button>
-              </Link>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const p = new URLSearchParams(params)
+                  p.set('action', 'edit')
+                  setParams(p, { replace: true })
+                }}
+              >
+                Edit bundle
+              </Button>
             )}
             <Link to={backTo} style={{ textDecoration: 'none' }}>
               <Button icon="chevron_left" variant="secondary">Back to Bundles</Button>

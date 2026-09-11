@@ -4,6 +4,65 @@
 
 
 
+## 2026-09-11 — Stage 2: Gate Error Registry, Inline Exceptions & Void Invoice Action (43/43 Actions, 119/119 Migrations)
+
+**Phase:** Stage 2 Implementation (`docs/STAGE_2.md`) · **Status:** Complete. Central gate error parser and bilingual registry implemented in `src/lib/gates.ts`. Inline error handling wired across floor workspaces (Packing, Handover, Return, Reset) ensuring gate exceptions surface inline without toasts (Law 12). Void invoice database RPC `void_invoice(jsonb)` (migration 0121) and corresponding action `voidInvoice` implemented and wired to `VoidInvoiceModal.tsx`. 119/119 migrations applied in PGlite with 0 failures. 183/183 test suites passed (3,156 tests green).
+
+### Did
+
+- **Gate Error Registry & Parser (`src/lib/gates.ts`):**
+  - Created centralized dictionary for all 30 database gates defined in Stage 1 and `docs/PERMISSIONS.md` §6.1.
+  - Implemented bilingual error descriptions and operational resolution guidance (English and Nepali Devanagari) for every gate.
+  - Exported `parseGateError()`, `formatGateError()`, and `getGateDefinition()`.
+  - Added unit test suite `src/lib/__tests__/gates.test.ts` (10/10 tests green).
+- **Floor Workspaces Inline Error Handling:**
+  - Connected `formatGateError` to `PackingWorkspace.tsx`, `HandoverWorkspace.tsx`, `ReturnWorkspace.tsx`, and `ResetWorkspace.tsx`.
+  - Gate exceptions render cleanly in inline persistent error banners without relying on toasts (Law 12).
+- **Void Invoice Database RPC & Migration (0121):**
+  - Created `supabase/migrations/0121_void_invoice_rpc.sql` (`void_invoice(p_payload jsonb)`): atomically generates credit note for paid invoices, voids invoice, logs audit event, and returns credit note details.
+  - Verified with PGlite: 119/119 migrations applied, 0 failed.
+- **Void Invoice Action & UI Integration:**
+  - Implemented `src/actions/finance/voidInvoice.ts` (`implemented: true`, capability `invoice.void`).
+  - Added unit tests `src/actions/finance/__tests__/voidInvoice.test.ts` (6/6 tests green).
+  - Connected `VoidInvoiceModal.tsx` to dispatch `voidInvoice` directly with client UUID and reason.
+- **Route & Component Enhancements:**
+  - Integrated bundle editing in-page within `BundleDetail.tsx` and updated `EditBundleProps` for `exactOptionalPropertyTypes`.
+  - Re-routed warehouse view cleanly to Settings ▸ Branches & Warehouses.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors)**.
+- `node ./node_modules/vitest/vitest.mjs run` **183/183 passed, 3,156/3,156 tests green**.
+- `node scripts/check-pglite.mjs` **119/119 applied cleanly, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **17/17 green, 0 known-red, 0 failed**.
+- `node scripts/completion.mjs` **Backend 43/43 (100%), Real data 48/48 (100%), DB enforcement 9/9 (100%), Permissions 36/39 (92%), Lifecycle 17/17 (100%), Overall ≈ 98%**.
+- `node scripts/lint-progress.mjs` **passed**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +1 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 36 / 39 (92%) | +1 |
+| Lifecycle | steps green / total | 17 / 17 (100%) | +0 |
+| Overall | mean of five | ≈ 98% | +0 |
+
+Migrations 119 files · check:pglite 119/119 passed. Suite: passed.
+Gates read from .lifecycle-result.json.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- Keep inspection capabilities unmapped pending schema ruling (`PLAN.md §4.29`).
+- Production deployment of migrations 0113–0121 to remote Supabase (`sxguwvgoserhdolewibb`) during approved maintenance window.
+
 ## 2026-09-11 — Stage 1 Complete: Make the Database the Law (DB Enforcement 9/9, Lifecycle 17/17)
 
 **Phase:** Stage 1 Implementation (`docs/STAGE_1.md`) · **Status:** Complete. All 8 Stage 1 tasks (S1-8, S1-5, S1-1, S1-2, S1-3, S1-4, S1-7, S1-6, S1-9) delivered and verified. Database enforcement reaches 9 / 9 (100%), and end-to-end lifecycle reaches 17 / 17 (100% green, 0 known-red, 0 failed). All 118 migrations build from scratch under PGlite with 0 failures. Live Supabase database was untouched per N-5 boundary.

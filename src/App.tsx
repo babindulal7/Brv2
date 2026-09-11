@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
 import Sidebar from './components/shell/Sidebar'
@@ -90,10 +90,12 @@ const SubRental         = lazy(() => import('./modules/operations/SubRental').th
  */
 void AddEquipment
 void AddBundle
+void EditBundle
 void NewRental
 void StockCheck
 void Payments
 void Expenses
+void Warehouses
 
 export default function App() {
   const { user } = useAuth()
@@ -277,14 +279,11 @@ export default function App() {
         */}
         <Route path="/inventory/new" element={<Navigate to="/inventory?tab=new" replace />} />
 
-        <Route
-          path="/inventory/warehouses"
-          element={
-            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Warehouses' }]} search="Search warehouse, zone, bay…">
-              <Warehouses />
-            </Shell>
-          }
-        />
+        {/*
+          Integrated in-page: Warehouses moved to Settings ▸ Branches & Warehouses (§11.3).
+          /inventory/warehouses redirects to /settings?tab=branches&view=warehouses.
+        */}
+        <Route path="/inventory/warehouses" element={<Navigate to="/settings?tab=branches&view=warehouses" replace />} />
 
         <Route path="/inventory/stock-check" element={<Navigate to="/inventory?tab=stock-check" replace />} />
 
@@ -348,13 +347,14 @@ export default function App() {
           screen reads it the same way (code or uuid), so the two never disagree
           about which bundle is on screen.
         */}
+        {/*
+          Integrated in-page: /inventory/bundles/:bundleRef/edit redirects to
+          /inventory/bundles/:bundleRef?action=edit so operators edit bundles
+          in-place within BundleDetail without isolated shortcut sub-pages.
+        */}
         <Route
           path="/inventory/bundles/:bundleRef/edit"
-          element={
-            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Bundles' }, { label: 'Bundle' }, { label: 'Edit' }]} search="Search inventory, category…">
-              <EditBundle />
-            </Shell>
-          }
+          element={<BundleEditRedirect />}
         />
 
         <Route
@@ -884,6 +884,14 @@ function MockBanner() {
 function CasesLegacyRedirect() {
   const { id } = useParams()
   return <Navigate to={id ? `/inventory/cases/${id}` : '/inventory/cases'} replace />
+}
+
+function BundleEditRedirect() {
+  const { bundleRef } = useParams<{ bundleRef: string }>()
+  const [searchParams] = useSearchParams()
+  const p = new URLSearchParams(searchParams)
+  p.set('action', 'edit')
+  return <Navigate to={`/inventory/bundles/${bundleRef}?${p.toString()}`} replace />
 }
 
 function BookingShell({

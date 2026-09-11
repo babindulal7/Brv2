@@ -24,6 +24,7 @@ import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
 import { CompactButton } from '../../components/ui/TouchTarget'
 import { deliveryTypeLabel } from '../../lib/format'
+import { formatGateError } from '../../lib/gates'
 
 /**
  * **Handover Workspace** — `Handover Workflow.md` v1.1 (Build Locked), wired
@@ -993,7 +994,7 @@ export default function HandoverWorkspace() {
         // front of them now. Only the RENDERED consequences are suppressed.
         captureError(err, { where: 'HandoverWorkspace.close', bookingId: dispatchedRoute })
         if (!stillHere()) return
-        setDispatchError(err instanceof Error ? err.message : String(err))
+        setDispatchError(formatGateError(err))
         setDispatching(false)
       })
   }

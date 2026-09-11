@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { Card, PageHeader, Button, FooterNote } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { Input } from '../../components/ui/Input'
@@ -161,8 +161,16 @@ const td: CSSProperties = {
   verticalAlign: 'middle',
 }
 
-export default function EditBundle() {
-  const { bundleRef } = useParams<{ bundleRef: string }>()
+export interface EditBundleProps {
+  bundleRef?: string | undefined
+  embedded?: boolean
+  onDone?: () => void
+}
+
+export default function EditBundle(props: EditBundleProps = {}) {
+  const { bundleRef: propBundleRef, embedded, onDone } = props
+  const routeParams = useParams<{ bundleRef: string }>()
+  const bundleRef = propBundleRef ?? routeParams.bundleRef
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const { user } = useAuth()
@@ -174,6 +182,14 @@ export default function EditBundle() {
      their window to today on the way back. */
   const { search } = useRentalWindowParams()
   const backTo = `/inventory/bundles/${bundleRef ?? ''}${search}`
+
+  const handleExit = () => {
+    if (onDone) {
+      onDone()
+    } else {
+      navigate(backTo)
+    }
+  }
 
   const record = useBundleWithItems(bundleRef, money)
   const categories = useInventoryCategories()
@@ -376,8 +392,8 @@ export default function EditBundle() {
           skeleton="card"
           emptyTitle="Bundle not found"
           emptyMessage={`No bundle matches "${bundleRef ?? ''}". It may have been opened from a stale link.`}
-          emptyActionLabel="Back to Bundles"
-          onEmptyAction={() => navigate('/inventory/bundles')}
+          emptyActionLabel={embedded ? 'Back to Bundle' : 'Back to Bundles'}
+          onEmptyAction={handleExit}
         >
           {null}
         </PageBody>
@@ -469,7 +485,7 @@ export default function EditBundle() {
         /* Only a landed write leaves the page — the failing path keeps every
            edit on screen instead of discarding it to show a page that would not
            reflect it. */
-        navigate(backTo)
+        handleExit()
       })
       .catch((e: unknown) => {
         setSaveError(e instanceof Error ? e.message : String(e))
@@ -495,9 +511,9 @@ export default function EditBundle() {
         actions={
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
             {!bundle.isActive && <Badge tone="neutral" label="Archived" />}
-            <Link to={backTo} style={{ textDecoration: 'none' }}>
-              <Button icon="chevron_left" variant="secondary">Cancel</Button>
-            </Link>
+            <Button icon="chevron_left" variant="secondary" onClick={handleExit}>
+              {embedded ? 'Back to Bundle' : 'Cancel'}
+            </Button>
             <Button
               icon="check"
               onClick={save}

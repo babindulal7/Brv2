@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../../components/ui/Icon'
 import type { IconName } from '../../../components/ui/Icon'
 import { Card, Button, SummaryRows, cardStyle } from '../../../components/ui/Page'
@@ -350,7 +350,18 @@ export function BranchesPane({
   setAddOpen: (v: boolean) => void
 }) {
   const tabular = useTabularLayout()
-  const [view, setView] = useState<View>('branches')
+  const [params, setParams] = useSearchParams()
+  const viewParam = params.get('view')
+  const view: View = viewParam === 'warehouses' ? 'warehouses' : 'branches'
+  const setView = (next: View) => {
+    const p = new URLSearchParams(params)
+    if (next === 'branches') {
+      p.delete('view')
+    } else {
+      p.set('view', next)
+    }
+    setParams(p, { replace: true })
+  }
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'All' | BranchStatus>('All')
   const [sort, setSort] = useState<SortState | null>(null)

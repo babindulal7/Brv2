@@ -28,6 +28,7 @@ import { notReturnedDecisionEndsLine, type FloorLineInput } from '../../actions/
 import type { ItemCondition, NotReturnedDecision } from '../../types/database'
 import { CompactButton } from '../../components/ui/TouchTarget'
 import { deliveryTypeLabel } from '../../lib/format'
+import { formatGateError } from '../../lib/gates'
 
 /**
  * **Return & Inspection Workspace** — the floor-loop model
@@ -764,7 +765,7 @@ export default function ReturnWorkspace() {
       .then(() => navigate(`/rentals/${id}`))
       .catch((err: unknown) => {
         captureError(err, { where: 'ReturnWorkspace.return', bookingId: id })
-        setDispatchError(err instanceof Error ? err.message : String(err))
+        setDispatchError(formatGateError(err))
         setDispatching(false)
       })
   }

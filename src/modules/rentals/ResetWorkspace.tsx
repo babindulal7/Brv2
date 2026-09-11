@@ -19,6 +19,7 @@ import type { ResetEntryInput } from '../../actions/rentals/floorVerb'
 import { SHARED_CLEAN_TASKS, DAMAGE_TYPES, SEVERITIES, PROBLEM_ROUTE, QUEUE_FILTERS } from '../../lib/queries/reset'
 import type { QueueState, ProblemState } from '../../lib/queries/reset'
 import { CompactButton, TouchTarget } from '../../components/ui/TouchTarget'
+import { formatGateError } from '../../lib/gates'
 
 /**
  * **Reset Workspace** — `04 Operations/Cleaning & Reset Workflow.md` v3.1
@@ -719,7 +720,7 @@ export default function ResetWorkspace() {
       .then(() => navigate(`/rentals/${id}`))
       .catch((err) => {
         captureError(err, { where: 'ResetWorkspace.reset', bookingId: id })
-        setDispatchError(err instanceof Error ? err.message : String(err))
+        setDispatchError(formatGateError(err))
         setDispatching(false)
       })
   }

@@ -13,6 +13,7 @@ import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
 import { BarcodeScannerModal, type ScanOutcome } from '../../components/ui/BarcodeScannerModal'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { CompactButton } from '../../components/ui/TouchTarget'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { captureError } from '../../lib/monitoring'
@@ -20,10 +21,10 @@ import { formatBsOrAd, formatAd, formatAdDateTime } from '../../lib/bs'
 import { newClientUuid } from '../../lib/supabase'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import type { FloorLineInput } from '../../actions/rentals/floorVerb'
-import { CompactButton } from '../../components/ui/TouchTarget'
 import { deliveryTypeLabel } from '../../lib/format'
 import { readServiceDue } from '../../lib/queries/serviceDue'
 import { serviceStatus, type ServiceRow } from '../../lib/serviceDue'
+import { formatGateError } from '../../lib/gates'
 
 /**
  * **Packing Workspace** — `Packing Workflow.md` v2.1 (Build Locked), wired live.
@@ -859,7 +860,7 @@ export default function PackingWorkspace() {
       })
       .catch((err) => {
         captureError(err, { where: 'PackingWorkspace.pack', bookingId: id })
-        setDispatchError(err instanceof Error ? err.message : String(err))
+        setDispatchError(formatGateError(err))
         setDispatching(false)
       })
   }
@@ -1047,7 +1048,7 @@ export default function PackingWorkspace() {
                       .then((m) => m.saveDraft({ id: floor.id }, { userId: user.id, role: user.role }))
                       .catch((err) => {
                         captureError(err, { where: 'PackingWorkspace.saveDraft' })
-                        setDispatchError(err instanceof Error ? err.message : String(err))
+                        setDispatchError(formatGateError(err))
                       })
                   }}
                 >
