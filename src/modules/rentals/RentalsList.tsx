@@ -1350,14 +1350,13 @@ export default function RentalsList() {
             ]}
             extra={
               <>
-                <Button icon="refresh" onClick={refreshAll} title="Refresh live list">
+                <Button icon="refresh" onClick={refreshAll}>
                   Refresh
                 </Button>
                 <Button
                   icon="download"
                   variant="secondary"
                   onClick={handleBulkExport}
-                  title="Export current list or selected rows to CSV"
                 >
                   Export
                 </Button>
@@ -2293,6 +2292,7 @@ export default function RentalsList() {
             label: 'Export CSV',
             icon: 'download',
             onClick: handleBulkExport,
+            disabled: bulkProcessing,
           },
           {
             id: 'bulk-pack',
@@ -2300,18 +2300,21 @@ export default function RentalsList() {
             icon: 'box',
             onClick: handleBulkPack,
             variant: 'primary',
+            disabled: bulkProcessing,
           },
           {
             id: 'bulk-handover',
             label: 'Handover',
             icon: 'truck',
             onClick: handleBulkHandover,
+            disabled: bulkProcessing,
           },
           {
             id: 'bulk-return',
             label: 'Fast Return',
             icon: 'return_arrow',
             onClick: () => setFastReturnOpen(true),
+            disabled: bulkProcessing,
           },
         ]}
       />
@@ -2333,6 +2336,7 @@ export default function RentalsList() {
         <RecordPaymentModal
           isOpen={paymentModalOpen}
           onClose={() => setPaymentModalOpen(false)}
+          invoices={availableInvoices}
           onSuccess={() => {
             setPaymentModalOpen(false)
             refreshAll()
