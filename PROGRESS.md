@@ -4,6 +4,65 @@
 
 
 
+## 2026-09-11 — Stage 3: CancelRentalModal, Modal Dispatch Gaps & Inline Gate Error Wiring (184 Test Files, 3161 Tests Green)
+
+**Phase:** Stage 3 Implementation (`docs/STAGE_3.md`) · **Status:** Complete. Created `CancelRentalModal.tsx` enforcing minimum 10-character reason, manager authority warnings for post-Packed stages, Law 3 inventory allocation release warnings, and inline gate error rendering via `formatGateError` (Law 12). Wired cancellation across `BookingDetail.tsx` (overflow menu + modal) and `RentalsList.tsx` (row operations + modal). Resolved missing payload fields in `AssignCrewModal.tsx` (`dailyRate`, `days`) and `CreateSubRentalModal.tsx` (`bookingId`, `vendorName`, `chargePaisa`). Connected `formatGateError` to `BookingDetail.tsx` stage actions (`confirmBooking`, `closeBooking`). All 184 test suites (3,161 tests) green, `tsc --noEmit` exit 0, 119/119 migrations applied in PGlite, 17/17 lifecycle steps passed.
+
+### Did
+
+- **CancelRentalModal (`src/modules/rentals/modals/CancelRentalModal.tsx`):**
+  - Implemented cancellation modal with reason validation (minimum 10 non-whitespace characters).
+  - Explicit Law 3 warning: booking row is preserved with `cancelled_at` timestamp and all equipment allocations/reservations are released.
+  - Stage-sensitive warnings: alerts operator if stage is `Packed` or later that manager authority is required per gate `gate.cancel.stage_too_late`.
+  - Dispatches `cancelRental` with `client_uuid` (Law 8).
+  - Inline error formatting via `formatGateError` with persistent banner on failure (Law 12); toast reserved for success.
+  - Built unit test suite `src/modules/rentals/modals/__tests__/CancelRentalModal.test.tsx` (5/5 tests green).
+- **BookingDetail Integration (`src/modules/rentals/BookingDetail.tsx`):**
+  - Added "Cancel booking" item to header overflow menu (`[⋮]`).
+  - Mounted `CancelRentalModal` within booking workspace with state control.
+  - Wrapped `confirmBooking` and `closeBooking` with `formatGateError` for inline gate failure rendering.
+  - Updated layout test `src/modules/rentals/__tests__/BookingDetail.layout.test.tsx` to verify overflow menu items (6 items).
+- **RentalsList Integration (`src/modules/rentals/RentalsList.tsx`):**
+  - Updated `RowOperations` menu to expose "Cancel Booking" for active pre-transit rentals (`Quote`, `Booked`, `Packed`).
+  - Mounted `CancelRentalModal` in list view with refresh callback.
+- **Dispatch Payload Fixes:**
+  - `AssignCrewModal.tsx`: Fixed payload gaps by calculating and supplying `dailyRate` (converted to paisa) and `days` to `bookCrew`, with inline `formatGateError` handling.
+  - `CreateSubRentalModal.tsx`: Fixed payload gaps by passing `bookingId`, `vendorName`, and `chargePaisa` to `createSubRental`, with inline `formatGateError` handling.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors)**.
+- `node ./node_modules/vitest/vitest.mjs run` **184/184 passed, 3,161/3,161 tests green**.
+- `node scripts/check-pglite.mjs` **119/119 applied cleanly, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **17/17 green, 0 known-red, 0 failed**.
+- `node scripts/completion.mjs` **Backend 43/43 (100%), Real data 48/48 (100%), DB enforcement 9/9 (100%), Permissions 36/39 (92%), Lifecycle 17/17 (100%), Overall ≈ 98%**.
+- `node scripts/lint-progress.mjs` **passed**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 36 / 39 (92%) | +0 |
+| Lifecycle | steps green / total | 17 / 17 (100%) | +0 |
+| Overall | mean of five | ≈ 98% | +0 |
+
+Migrations 119 files · check:pglite 119/119 passed. Suite: 184/184 passed.
+Gates read from .lifecycle-result.json.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- Keep inspection capabilities unmapped pending schema ruling (`PLAN.md §4.29`).
+- Production deployment of migrations 0113–0121 to remote Supabase (`sxguwvgoserhdolewibb`) during approved maintenance window.
+
 ## 2026-09-11 — Stage 2: Gate Error Registry, Inline Exceptions & Void Invoice Action (43/43 Actions, 119/119 Migrations)
 
 **Phase:** Stage 2 Implementation (`docs/STAGE_2.md`) · **Status:** Complete. Central gate error parser and bilingual registry implemented in `src/lib/gates.ts`. Inline error handling wired across floor workspaces (Packing, Handover, Return, Reset) ensuring gate exceptions surface inline without toasts (Law 12). Void invoice database RPC `void_invoice(jsonb)` (migration 0121) and corresponding action `voidInvoice` implemented and wired to `VoidInvoiceModal.tsx`. 119/119 migrations applied in PGlite with 0 failures. 183/183 test suites passed (3,156 tests green).

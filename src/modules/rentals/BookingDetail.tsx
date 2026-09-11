@@ -33,8 +33,10 @@ import { formatAdDateTime, toBs, formatBs } from '../../lib/bs'
 import { ExtendRentalModal } from './modals/ExtendRentalModal'
 import { AssignCrewModal } from './modals/AssignCrewModal'
 import { CreateSubRentalModal } from './modals/CreateSubRentalModal'
+import { CancelRentalModal } from './modals/CancelRentalModal'
 import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
 import { CreateInvoiceModal } from '../finance/modals/CreateInvoiceModal'
+import { formatGateError } from '../../lib/gates'
 import type { ActionContext } from '../../actions/core'
 import { useList } from '../../lib/queries/useList'
 import {
@@ -1089,6 +1091,7 @@ export default function BookingDetail() {
   const [showSubRentalModal, setShowSubRentalModal] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showCreateInvoice, setShowCreateInvoice] = useState(false)
+  const [showCancelModal, setShowCancelModal] = useState(false)
   const { showSuccessToast } = useToast()
   const viewport = useViewport()
 
@@ -1449,7 +1452,7 @@ export default function BookingDetail() {
         refetchHead()
       })
       .catch((err: unknown) => {
-        setConfirmError(`Not confirmed — ${err instanceof Error ? err.message : String(err)}`)
+        setConfirmError(formatGateError(err))
       })
       .finally(() => setConfirming(false))
   }, [id, user, showSuccessToast, refetchHead])
@@ -1494,7 +1497,7 @@ export default function BookingDetail() {
         refetchHead()
       })
       .catch((err: unknown) => {
-        setCloseError(`Not closed — ${err instanceof Error ? err.message : String(err)}`)
+        setCloseError(formatGateError(err))
       })
       .finally(() => setClosing(false))
   }, [id, user, showSuccessToast, refetchHead])
@@ -2100,6 +2103,16 @@ export default function BookingDetail() {
                   onClick: () => undefined,
                   unavailable:
                     'Draft saving has no write path — booking edits from this screen are not persisted yet.',
+                },
+                {
+                  label: 'Cancel booking',
+                  icon: 'close',
+                  onClick: () => setShowCancelModal(true),
+                  ...(booking.isCancelled
+                    ? { unavailable: `${booking.bookingNo} is already cancelled.` }
+                    : ['On Rent', 'Returned', 'Closed'].includes(stage)
+                      ? { unavailable: `Cannot cancel a booking that has reached ${stage} (equipment has already left custody).` }
+                      : {}),
                 },
               ]}
             />
@@ -3101,6 +3114,17 @@ export default function BookingDetail() {
         bookingId={id}
         onSuccess={(subR) => {
           showSuccessToast('Sub-Rental Created', `${subR.itemName} — ${subR.vendor}`)
+        }}
+      />
+
+      <CancelRentalModal
+        isOpen={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        bookingId={booking.id}
+        bookingNo={booking.bookingNo}
+        stage={stage}
+        onSuccess={() => {
+          refetchHead()
         }}
       />
     </div>

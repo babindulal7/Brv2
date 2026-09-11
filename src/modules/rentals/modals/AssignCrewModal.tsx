@@ -6,6 +6,7 @@ import type { Paisa } from '../../../lib/money'
 import { CREW_ROSTER } from '../../../lib/queries/crew'
 import { bookCrew } from '../../../actions/crew/bookCrew'
 import { useAuth } from '../../../lib/auth'
+import { formatGateError } from '../../../lib/gates'
 
 interface AssignCrewModalProps {
   isOpen: boolean
@@ -107,7 +108,13 @@ export function AssignCrewModal({ isOpen, onClose, onSuccess, bookingId }: Assig
        * Left un-widened because `src/actions/` is not this pass's file.
        */
       await bookCrew(
-        { bookingId, crewIds: [selected.id], role: selected.role },
+        {
+          bookingId,
+          crewIds: [selected.id],
+          role: selected.role,
+          dailyRate,
+          days,
+        },
         { userId: user.id, role: user.role },
       )
 
@@ -120,7 +127,7 @@ export function AssignCrewModal({ isOpen, onClose, onSuccess, bookingId }: Assig
       })
       onClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to assign crew member')
+      setError(formatGateError(err))
     } finally {
       setIsSubmitting(false)
     }

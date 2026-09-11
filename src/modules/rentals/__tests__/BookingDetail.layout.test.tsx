@@ -437,9 +437,10 @@ describe('§4.2 header — [Operations ▾] and [⋮], with nothing deleted to g
       'Assign crew',
       'Create sub-rental',
       'Save draft',
+      'Cancel booking',
     ])
     expect(items).toContain('Message client')
-    expect(items).toHaveLength(5)
+    expect(items).toHaveLength(6)
   })
 
   it('renders Save draft disabled with its reason, rather than as a control that does nothing', async () => {

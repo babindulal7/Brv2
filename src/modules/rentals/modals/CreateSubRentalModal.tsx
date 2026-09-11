@@ -5,6 +5,7 @@ import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { createSubRental } from '../../../actions/subrentals/createSubRental'
 import { useAuth } from '../../../lib/auth'
+import { formatGateError } from '../../../lib/gates'
 
 interface CreateSubRentalModalProps {
   isOpen: boolean
@@ -103,7 +104,13 @@ export function CreateSubRentalModal({
        * billed. Left un-widened because `src/actions/` is not this pass's file.
        */
       await createSubRental(
-        { itemDescription: itemName.trim(), costPaisa: rupees(vendorCost) },
+        {
+          bookingId,
+          vendorName: vendor.trim(),
+          itemDescription: itemName.trim(),
+          costPaisa: rupees(vendorCost),
+          chargePaisa: rupees(clientCharge),
+        },
         { userId: user.id, role: user.role },
       )
 
@@ -116,7 +123,7 @@ export function CreateSubRentalModal({
       })
       onClose()
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create sub-rental')
+      setError(formatGateError(err))
     } finally {
       setIsSubmitting(false)
     }

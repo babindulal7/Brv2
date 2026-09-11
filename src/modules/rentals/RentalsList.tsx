@@ -4,8 +4,9 @@ import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
-import { ActiveFilterChips, FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
+import { ActiveFilterChips, FilterButton } from '../../components/ui/FilterDrawer'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { supabase } from '../../lib/supabase'
 import { Badge } from '../../components/ui/Badge'
 import { STATUS, BRAND } from '../../lib/status'
 import type { IconName } from '../../components/ui/Icon'
@@ -52,10 +53,13 @@ import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { DateField } from '../../components/ui/DateField'
 import NewRental from './NewRental'
-
-
-
-
+import { CancelRentalModal } from './modals/CancelRentalModal'
+import { QuickActionBar, FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
+import { BooqableRentalFilterDrawer } from '../../components/ui/BooqableRentalFilterDrawer'
+import { FastReturnModal } from './modals/FastReturnModal'
+import { BarcodeLookupModal } from './modals/BarcodeLookupModal'
+import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
+import { runFloorVerb } from '../../actions/rentals/floorVerb'
 /**
  * ## No tabs, and no Productions — `04_RENTALS.md` line 3
  *
@@ -364,7 +368,13 @@ const menuItemStyle = {
  *  took the 44px `--tap` floor: Open Booking + 4 `OPERATIONS` = 5 × 44, plus 13 divider and 12 padding. */
 const OPS_MENU_H = 245
 
-function RowOperations({ row }: { row: RentalListRow }) {
+function RowOperations({
+  row,
+  onCancel,
+}: {
+  row: RentalListRow
+  onCancel?: (row: RentalListRow) => void
+}) {
   const [open, setOpen] = useState(false)
   const [up, setUp] = useState(false)
   const ref = useDismiss(open, () => setOpen(false))
@@ -458,6 +468,37 @@ function RowOperations({ row }: { row: RentalListRow }) {
               </span>
             )
           })}
+
+          {!row.isCancelled && ['Quote', 'Booked', 'Packed'].includes(row.status) && onCancel && (
+            <>
+              <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false)
+                  onCancel(row)
+                }}
+                style={{
+                  ...menuItemStyle,
+                  width: '100%',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--danger)',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <Icon name="close" size={15} style={{ color: 'var(--danger)' }} />
+                <span style={{ flex: 1 }}>Cancel Booking</span>
+              </button>
+            </>
+          )}
         </div>
       )}
     </span>
@@ -692,6 +733,12 @@ export default function RentalsList() {
 
   const [view, setView] = useState<(typeof VIEWS)[number]>('Table')
   const [hiddenCols, setHiddenCols] = useState<Set<OptionalColumn>>(new Set())
+  const [cancellingRental, setCancellingRental] = useState<RentalListRow | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [fastReturnOpen, setFastReturnOpen] = useState(false)
+  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const [bulkProcessing, setBulkProcessing] = useState(false)
 
   /**
    * Rows-per-page rides the URL, but NOT through `useFilters`.
@@ -1112,129 +1159,132 @@ export default function RentalsList() {
     f.setDateRange('pickup_at', fromAd || undefined, toAd || undefined)
   }
 
+  const allSelected = list.rows.length > 0 && list.rows.every((r) => selectedIds.has(r.id))
+  const someSelected = list.rows.some((r) => selectedIds.has(r.id))
+
+  const toggleSelectAll = useCallback(() => {
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(list.rows.map((r) => r.id)))
+    }
+  }, [allSelected, list.rows])
+
+  const toggleSelectRow = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const handleBulkExport = useCallback(() => {
+    const rowsToExport = list.rows.filter((r) => selectedIds.has(r.id))
+    const rows = rowsToExport.length > 0 ? rowsToExport : list.rows
+    const csvHeaders = ['Booking No', 'Client', 'Project', 'Status', 'Pickup Date', 'Return Date', 'Items']
+    const csvLines = rows.map((r) => [
+      `"${r.bookingNo}"`,
+      `"${(r.client || '').replace(/"/g, '""')}"`,
+      `"${(r.project || '').replace(/"/g, '""')}"`,
+      `"${r.status}"`,
+      `"${r.pickup?.date || ''}"`,
+      `"${r.ret?.date || ''}"`,
+      r.itemCount,
+    ])
+    const csv = [csvHeaders.join(','), ...csvLines.map((l) => l.join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `rentals_export_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }, [list.rows, selectedIds])
+
+  const handleBulkPack = useCallback(async () => {
+    const toPack = list.rows.filter((r) => selectedIds.has(r.id) && r.status === 'Booked')
+    if (toPack.length === 0) {
+      alert('None of the selected bookings are in "Booked" stage awaiting packing.')
+      return
+    }
+    setBulkProcessing(true)
+    for (const b of toPack) {
+      try {
+        await runFloorVerb(
+          'Pack',
+          { bookingRef: b.bookingNo },
+          { userId: user?.id ?? '00000000-0000-0000-0000-000000000000', role: user?.role ?? 'Staff' }
+        )
+      } catch (err) {
+        console.error('Failed to pack', b.bookingNo, err)
+      }
+    }
+    setBulkProcessing(false)
+    setSelectedIds(new Set())
+    refreshAll()
+  }, [list.rows, selectedIds, user, refreshAll])
+
+  const handleBulkHandover = useCallback(async () => {
+    const toHandover = list.rows.filter((r) => selectedIds.has(r.id) && r.status === 'Packed')
+    if (toHandover.length === 0) {
+      alert('None of the selected bookings are in "Packed" stage ready for handover.')
+      return
+    }
+    setBulkProcessing(true)
+    for (const b of toHandover) {
+      try {
+        await runFloorVerb(
+          'Handover',
+          { bookingRef: b.bookingNo },
+          { userId: user?.id ?? '00000000-0000-0000-0000-000000000000', role: user?.role ?? 'Staff' }
+        )
+      } catch (err) {
+        console.error('Failed to handover', b.bookingNo, err)
+      }
+    }
+    setBulkProcessing(false)
+    setSelectedIds(new Set())
+    refreshAll()
+  }, [list.rows, selectedIds, user, refreshAll])
+
+  const [availableInvoices, setAvailableInvoices] = useState<
+    Array<{ id: string; invoiceNo: string | null; client: string; amount: string; status: string; booking?: string }>
+  >([])
+
+  useEffect(() => {
+    if (!paymentModalOpen) return
+    let cancelled = false
+    supabase
+      .from('invoices')
+      .select('id, invoice_no, total_amount, status, client_id, clients:client_id(name), booking_id, bookings:booking_id(booking_no)')
+      .neq('status', 'Paid')
+      .limit(20)
+      .then(({ data }) => {
+        if (cancelled) return
+        if (data) {
+          setAvailableInvoices(
+            data.map((inv: any) => ({
+              id: inv.id,
+              invoiceNo: inv.invoice_no,
+              client: inv.clients?.name ?? 'Client',
+              amount: String(inv.total_amount ?? 0),
+              status: inv.status ?? 'Draft',
+              booking: inv.bookings?.booking_no,
+            }))
+          )
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [paymentModalOpen])
+
   const firstOnPage = (page - 1) * perPage + 1
   const lastOnPage = firstOnPage + list.rows.length - 1
   const countedTitle = total === null ? 'Rentals' : `${total} ${total === 1 ? 'Rental' : 'Rentals'} found`
-
-  /**
-   * The Filters panel's card.
-   *
-   * ⚠ This block used to claim the card "can sit in the grid's left track on
-   * desktop and inline beneath the list below 1280". It cannot and does not:
-   * `filtersCard` has exactly one render site, inside `<FilterDrawer>` near
-   * the bottom of this file, which is `position: fixed` and opens from the
-   * Filters button at **every** width. The accurate account is the earlier
-   * comment on `filtersOpen` — "the filter panel is now an overlay, not a
-   * column… it costs zero layout at every width" — and that is the single
-   * account of this screen now.
-   *
-   * Why that does not breach Rulings §7: §7 governs the **right** rails whose
-   * tablet drawings put rail content *below the list, still visible*. This is
-   * a left filter panel, and spec 04's tablet drawing shows it as a `⌣`
-   * disclosure rather than an always-visible band — a drawer is that
-   * disclosure, reachable identically at all three widths. `CollapsibleAside`
-   * is not involved either way, and its defaults are untouched.
-   *
-   * ⚠ Rulings §1 names this rail (ten of eleven groups inert) and the disabled
-   * Timeline toggle as the strongest deletion candidates now that Status has
-   * moved into the chip row. It says **leave them; raise separately** — so
-   * they are both still here, flagged, not deleted. Its Status accordion reads
-   * and writes the same `statusFilter` set the chip row does, so the two
-   * surfaces are one filter with two doors, not two filters.
-   */
-  const filtersCard = (
-    <Card
-      title="Filters"
-      action={
-        isFiltered ? (
-          <button
-            type="button"
-            onClick={clearFilters}
-            style={{
-              border: 'none',
-              background: 'transparent',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              color: 'var(--link)',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              padding: 0,
-            }}
-          >
-            Clear all
-          </button>
-        ) : (
-          /* Muted, not link-blue: link-blue reads as clickable, and there
-             is nothing behind it until something is actually narrowing. */
-          <span
-            style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', cursor: 'not-allowed' }}
-            aria-disabled
-            title="Nothing to clear yet — pick a stage chip above, or one of the quick filters beside it."
-          >
-            Clear all
-          </span>
-        )
-      }
-      bodyStyle={{ padding: 'var(--sp-sm)' }}
-    >
-      {/* Status is the one real facet: `bookings.stage` is a real column
-          and the six values are Foundation's own, so the group goes to
-          the server. TODO(decision): every other group needs a column or
-          a join `listBookings` does not make — Rental Type and Tags have
-          no column at all, Equipment Category is
-          bookings → booking_lines → products.category_id, Client Type is
-          clients.type_parent, Staff has no assignment table reaching a
-          booking, and Location is free text rather than a facet. Each
-          needs an embed-scoped filter `applyListFilters` cannot build.
-          Until then they stay visibly unavailable rather than accordions
-          that open onto nothing. */}
-      {filterGroups.map((g) =>
-        g.label === 'Status' ? (
-          <StatusFilterGroup
-            key={g.label}
-            icon={g.icon}
-            selected={statusFilter}
-            toggle={toggleStatus}
-            countRows={statusCountRows}
-            countBase={statusCountBase}
-          />
-        ) : (
-          <button
-            key={g.label}
-            type="button"
-            disabled
-            title={`The ${g.label} filter is not wired to the list yet — no column or join on the bookings list query carries it. Use the chips above.`}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              width: '100%',
-              height: 34,
-              padding: '0 8px',
-              borderRadius: 'var(--r-sm)',
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--muted)',
-              fontSize: 'var(--t-meta)',
-              cursor: 'not-allowed',
-              fontFamily: 'inherit',
-            }}
-          >
-            <Icon name={g.icon} size={15} style={{ color: 'var(--disabled)', flexShrink: 0 }} />
-            <span style={{ flex: 1, textAlign: 'left' }}>{g.label}</span>
-            <Icon name="chevron_down" size={13} style={{ color: 'var(--disabled)' }} />
-          </button>
-        ),
-      )}
-      <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
-        <Unavailable reason="Saved filters are not built yet — there is nowhere to store one and nothing settles who it is shared with.">
-          <Button icon="flag" disabled>
-            Save as new filter
-          </Button>
-        </Unavailable>
-      </div>
-    </Card>
-  )
 
   if (isNew) {
     return (
@@ -1259,39 +1309,61 @@ export default function RentalsList() {
         title="Rentals"
         description="Manage all bookings and their current status"
         actions={
-          <>
-            <Button
-              icon="plus"
-              variant="primary"
-              onClick={() => {
-                setRawParams((prev) => {
-                  const next = new URLSearchParams(prev)
-                  next.set('action', 'new')
-                  return next
-                })
-              }}
-            >
-              New Rental
-            </Button>
-            <Button icon="refresh" onClick={refreshAll}>
-              Refresh
-            </Button>
-            {/* ⛔ The Import button is GONE — §4.1 draws `[＋ New Rental]
-                [Export]` and no third control. Nothing is lost: it was disabled
-                with a reason and had no pipeline behind it.
-
-                Export stays, and stays honestly disabled. The spec draws the
-                button, not a built pipeline, and `CLAUDE.md`'s hard rule
-                forbids inventing the two product decisions it needs — the file
-                format, and which columns a role may export (a CSV of every
-                column walks straight around Law 6's money masking). Recorded
-                in `PLAN.md §4.22` rather than answered here. */}
-            <Unavailable reason="Export is not built yet — nothing settles the file format, or which columns a role may export. A full-column export would also walk around Law 6's money masking, so it needs a role rule before it needs code.">
-              <Button icon="download" variant="secondary" disabled>
-                Export
-              </Button>
-            </Unavailable>
-          </>
+          <QuickActionBar
+            actions={[
+              {
+                id: 'new-booking',
+                label: 'New Rental',
+                icon: 'plus',
+                variant: 'primary',
+                onClick: () => {
+                  setRawParams((prev) => {
+                    const next = new URLSearchParams(prev)
+                    next.set('action', 'new')
+                    return next
+                  })
+                },
+              },
+              {
+                id: 'fast-return',
+                label: '⚡ Fast Return',
+                icon: 'return_arrow',
+                variant: 'accent',
+                onClick: () => setFastReturnOpen(true),
+              },
+              ...(money
+                ? [
+                    {
+                      id: 'record-payment',
+                      label: 'Record Payment',
+                      icon: 'invoice' as const,
+                      onClick: () => setPaymentModalOpen(true),
+                    },
+                  ]
+                : []),
+              {
+                id: 'quick-scan',
+                label: 'Scan Barcode',
+                icon: 'search' as const,
+                onClick: () => setBarcodeModalOpen(true),
+              },
+            ]}
+            extra={
+              <>
+                <Button icon="refresh" onClick={refreshAll} title="Refresh live list">
+                  Refresh
+                </Button>
+                <Button
+                  icon="download"
+                  variant="secondary"
+                  onClick={handleBulkExport}
+                  title="Export current list or selected rows to CSV"
+                >
+                  Export
+                </Button>
+              </>
+            }
+          />
         }
       />
 
@@ -1698,6 +1770,20 @@ export default function RentalsList() {
                       }}
                     >
                       <span style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => toggleSelectRow(r.id)}
+                          aria-label={`Select booking ${r.bookingNo}`}
+                          style={{
+                            width: 18,
+                            height: 18,
+                            marginTop: 9,
+                            accentColor: 'var(--primary)',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        />
                         <Avatar row={r} />
                         <span style={{ minWidth: 0, flex: 1 }}>
                           <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
@@ -1825,6 +1911,18 @@ export default function RentalsList() {
                   >
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
+                        <th style={{ ...th, width: 44, paddingLeft: 12 }}>
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            ref={(el) => {
+                              if (el) el.indeterminate = !allSelected && someSelected
+                            }}
+                            onChange={toggleSelectAll}
+                            aria-label="Select all bookings on this page"
+                            style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                          />
+                        </th>
                         {headers.map((h) => (
                           <th key={h} style={th}>
                             {h}
@@ -1853,8 +1951,21 @@ export default function RentalsList() {
                       {rowsWithIntel.map(({ row: r, glance, detail }) => (
                         <tr
                           key={r.id}
-                          style={{ borderBottom: '1px solid var(--border)', ...externalRowStyle(r.isExternal) }}
+                          style={{
+                            borderBottom: '1px solid var(--border)',
+                            background: selectedIds.has(r.id) ? 'var(--hover-card)' : undefined,
+                            ...externalRowStyle(r.isExternal),
+                          }}
                         >
+                          <td style={{ ...td, width: 44, paddingLeft: 12 }}>
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(r.id)}
+                              onChange={() => toggleSelectRow(r.id)}
+                              aria-label={`Select booking ${r.bookingNo}`}
+                              style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                            />
+                          </td>
                           <td style={td}>
                             <IntelCard
                               glance={glance}
@@ -2059,7 +2170,7 @@ export default function RentalsList() {
 
                           {/* §4.1 — stays visible while the table scrolls. */}
                           <td style={stickyTd}>
-                            <RowOperations row={r} />
+                            <RowOperations row={r} onCancel={setCancellingRental} />
                           </td>
                         </tr>
                       ))}
@@ -2131,6 +2242,20 @@ export default function RentalsList() {
 
       </div>
 
+      {cancellingRental && (
+        <CancelRentalModal
+          isOpen={Boolean(cancellingRental)}
+          onClose={() => setCancellingRental(null)}
+          bookingId={cancellingRental.id}
+          bookingNo={cancellingRental.bookingNo}
+          stage={cancellingRental.status}
+          onSuccess={() => {
+            setCancellingRental(null)
+            void list.refetch()
+          }}
+        />
+      )}
+
       {/*
         The same card the rail held, in an overlay that costs no layout.
 
@@ -2142,17 +2267,78 @@ export default function RentalsList() {
         satisfied differently now and better: there is no rail to collapse, and
         the panel is reachable at every width from the same button.
       */}
-      <FilterDrawer
-        id="rentals-filters"
+      <BooqableRentalFilterDrawer
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
         resultCount={list.loading ? null : total}
-        noun={total === 1 ? 'rental' : 'rentals'}
         activeCount={f.activeCount}
         onClearAll={clearFilters}
-      >
-        {filtersCard}
-      </FilterDrawer>
+        statusFilter={statusFilter}
+        onToggleStatus={toggleStatus}
+        quickFilter={chip}
+        onSelectQuickFilter={pickChip}
+        subOn={subOn}
+        onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
+        money={money}
+      />
+
+      <FloatingBulkActionBar
+        selectedCount={selectedIds.size}
+        totalCount={list.rows.length}
+        onClearSelection={() => setSelectedIds(new Set())}
+        noun="rentals"
+        actions={[
+          {
+            id: 'bulk-export',
+            label: 'Export CSV',
+            icon: 'download',
+            onClick: handleBulkExport,
+          },
+          {
+            id: 'bulk-pack',
+            label: 'Pack Selected',
+            icon: 'box',
+            onClick: handleBulkPack,
+            variant: 'primary',
+          },
+          {
+            id: 'bulk-handover',
+            label: 'Handover',
+            icon: 'truck',
+            onClick: handleBulkHandover,
+          },
+          {
+            id: 'bulk-return',
+            label: 'Fast Return',
+            icon: 'return_arrow',
+            onClick: () => setFastReturnOpen(true),
+          },
+        ]}
+      />
+
+      <FastReturnModal
+        isOpen={fastReturnOpen}
+        onClose={() => setFastReturnOpen(false)}
+        onSuccess={() => {
+          refreshAll()
+        }}
+      />
+
+      <BarcodeLookupModal
+        isOpen={barcodeModalOpen}
+        onClose={() => setBarcodeModalOpen(false)}
+      />
+
+      {money && (
+        <RecordPaymentModal
+          isOpen={paymentModalOpen}
+          onClose={() => setPaymentModalOpen(false)}
+          onSuccess={() => {
+            setPaymentModalOpen(false)
+            refreshAll()
+          }}
+        />
+      )}
 
       <FooterNote
         extra={[
