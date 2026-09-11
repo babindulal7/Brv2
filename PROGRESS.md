@@ -4,6 +4,70 @@
 
 
 
+## 2026-09-11 — Universal FilterDrawer, Bikram Sambat Date Presets & Floor Workflow Integration (186 Test Files, 3177 Tests Green)
+
+**Phase:** Phase 4 UI Primitives & Operations Workflow Enhancements · **Status:** Complete. Modernized non-modal overlay `FilterDrawer` consuming 0px layout space on desktop and tablet with live result counters and standard footer actions. Built complete Bikram Sambat / AD calendar `DateRangePresets` engine (16 presets across Days, Weeks, Months, Years, Fiscal Years) and integrated into drawer filters. Added 4-way exception facets (Starting Today, Ending Today, Overdue Departure, Overdue Return) to `OperationsQueues.tsx`. Integrated `FastReturnModal` and `BarcodeLookupModal` into `Today.tsx` and `OperationsQueues.tsx`. Mounted `FloatingBulkActionBar` on `Inventory.tsx`. Upgraded all 7 report modules to responsive `ReflowRail` layout. All 186 test suites (3,177 tests) green, `tsc --noEmit` exit 0, vite production build passed in 1m 5s.
+
+### Did
+
+- **Universal FilterDrawer (`src/components/ui/FilterDrawer.tsx`, `BooqableRentalFilterDrawer.tsx`):**
+  - Engineered fixed-position overlay drawer that occupies zero layout column space, allowing live grid reflow without pushing operations off-screen.
+  - Added `standardFooter` prop with Reset and Apply triggers, live match counter (`item`/`items`), and keyboard (Escape) dismissal.
+  - Added comprehensive unit test suite in `src/components/ui/__tests__/FilterDrawer.test.tsx` (28/28 tests green).
+- **Bikram Sambat & AD Date Range Presets (`src/lib/datePresets.ts`, `src/components/ui/DateRangePresets.tsx`):**
+  - Implemented 16 calendar presets: All time, Today, Yesterday, Tomorrow, Next 7 days, This week, Last week, Next week, This month, Last month, Next month, This year, Last year, Next year, This fiscal year, Last fiscal year.
+  - Handled Kathmandu timezone (`Asia/Kathmandu`) and Nepali fiscal year boundaries (Shrawan 1 to Ashad end).
+  - Added unit test suite `src/lib/__tests__/datePresets.test.ts` (10/10 tests green).
+  - Integrated into `BooqableRentalFilterDrawer.tsx` and `RentalsList.tsx`.
+- **OperationsQueues Exception Facets & Quick Actions (`src/modules/operations/OperationsQueues.tsx`):**
+  - Implemented 4-way exception facets: Starting Today, Ending Today, Overdue Departure, and Overdue Return with live counts.
+  - Integrated `FastReturnModal` and `BarcodeLookupModal` triggers into operation header.
+- **Today Dashboard Quick Actions & Overdue Visibility (`src/modules/today/Today.tsx`, `MovementList.tsx`):**
+  - Mounted `FastReturnModal` and `BarcodeLookupModal` in header actions.
+  - Added visual overdue status pill to `MovementList.tsx` for overdue returns.
+  - Defined explicit metrics rules and zero explanations across all KPI cards.
+- **Inventory Floating Bulk Actions (`src/modules/inventory/Inventory.tsx`):**
+  - Mounted `FloatingBulkActionBar` for multi-item selection with bulk CSV export, stock check transition, and barcode lookup.
+- **Reports Responsive Layout Modernization:**
+  - Upgraded `ProductReports.tsx`, `ClientReports.tsx`, `EquipmentPerformance.tsx`, `ExpenseReports.tsx`, `ForecastingReports.tsx`, `PromotionsReports.tsx`, and `StaffReports.tsx` to `useRailGridColumns()` and `<ReflowRail>`.
+- **Toast Safety Guard (`src/components/ui/Toast.tsx`):**
+  - Guarded state setters with `typeof window !== 'undefined'` to ensure test runner teardown safety.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors)**.
+- `node ./node_modules/vitest/vitest.mjs run` **186/186 test files passed, 3,177/3,177 tests green**.
+- `node ./node_modules/vite/bin/vite.js build` **build passed cleanly in 1m 5s**.
+- `node scripts/check-pglite.mjs` **119/119 applied cleanly, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **17/17 green, 0 known-red, 0 failed**.
+- `node scripts/completion.mjs` **Backend 43/43 (100%), Real data 48/48 (100%), DB enforcement 9/9 (100%), Permissions 36/39 (92%), Lifecycle 17/17 (100%), Overall ≈ 98%**.
+- `node scripts/lint-progress.mjs` **passed**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 36 / 39 (92%) | +0 |
+| Lifecycle | steps green / total | 17 / 17 (100%) | +0 |
+| Overall | mean of five | ≈ 98% | +0 |
+
+Migrations 119 files · check:pglite 119/119 passed. Suite: 186/186 passed.
+Gates read from .lifecycle-result.json.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- Keep inspection capabilities unmapped pending schema ruling (`PLAN.md §4.29`).
+- Production deployment of migrations 0113–0121 to remote Supabase (`sxguwvgoserhdolewibb`) during approved maintenance window.
+
 ## 2026-09-11 — Stage 3 Part 2: Staff Directory Gate Error Hardening & Reports Navigation Linking (185 Test Files, 3163 Tests Green)
 
 **Phase:** Stage 3 Implementation · **Status:** Complete. Hardened User Management error handling in `StaffDirectory.tsx` so role assignment, deactivation, and PIN revocation gate exceptions surface inline via `parseGateError` / `formatGateError` (Law 12) without unmounting the staff directory table. Added unit tests in `StaffDirectory.gateError.test.tsx` (2/2 tests green). Updated `Pulse.tsx` navigation families to link the active `/reports/staff` route. All 185 test suites (3,163 tests) green, `tsc --noEmit` exit 0, 119/119 migrations applied in PGlite, 17/17 lifecycle steps passed.

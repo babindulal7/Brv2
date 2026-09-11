@@ -784,9 +784,32 @@ export default function MovementList({
                     {/* Spec 02 phone card — `time BR#`, then the client block,
                         then the one primary on its own line. */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                      <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                        {clock[0]} <span style={{ color: 'var(--muted)' }}>{clock[1]}</span>
-                      </span>
+                      {has(r, 'Overdue') ? (
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            padding: '2px 6px',
+                            borderRadius: 'var(--r-badge)',
+                            background: 'rgba(245, 158, 11, 0.12)',
+                            border: '1px solid rgba(245, 158, 11, 0.4)',
+                            color: 'var(--amber-text, #b45309)',
+                            fontWeight: 700,
+                            fontSize: 'var(--t-meta)',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title="Overdue return"
+                        >
+                          <Icon name="timer" size={12} style={{ color: 'var(--amber-text, #b45309)' }} />
+                          <span>{clock[0]}</span>
+                          <span style={{ fontSize: 10, opacity: 0.85 }}>{clock[1]}</span>
+                        </span>
+                      ) : (
+                        <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                          {clock[0]} <span style={{ color: 'var(--muted)' }}>{clock[1]}</span>
+                        </span>
+                      )}
                       {bookingChip}
                       <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
                         <Pill text={r.status} status={statusKeyOf(r)} />
@@ -803,13 +826,36 @@ export default function MovementList({
                   </>
                 ) : (
                   <>
-                    <div
-                      className="figure"
-                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', paddingTop: 2 }}
-                    >
-                      <span>{clock[0]}</span>
-                      <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2 }}>{clock[1]}</span>
-                    </div>
+                    {has(r, 'Overdue') ? (
+                      <div
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 3,
+                          padding: '2px 6px',
+                          borderRadius: 'var(--r-badge)',
+                          background: 'rgba(245, 158, 11, 0.12)',
+                          border: '1px solid rgba(245, 158, 11, 0.4)',
+                          color: 'var(--amber-text, #b45309)',
+                          fontWeight: 700,
+                          fontSize: 'var(--t-meta)',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title="Overdue return"
+                      >
+                        <Icon name="timer" size={12} style={{ color: 'var(--amber-text, #b45309)' }} />
+                        <span>{clock[0]}</span>
+                        <span style={{ fontSize: 10, opacity: 0.85 }}>{clock[1]}</span>
+                      </div>
+                    ) : (
+                      <div
+                        className="figure"
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', paddingTop: 2 }}
+                      >
+                        <span>{clock[0]}</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2 }}>{clock[1]}</span>
+                      </div>
+                    )}
 
                     {/*
                       §4.2 — the tint is a token pair, resolved here exactly as

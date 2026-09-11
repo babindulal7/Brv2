@@ -1,5 +1,5 @@
 import { useId } from 'react'
-import { FilterDrawer } from './FilterDrawer'
+import { FilterDrawer, FilterSection } from './FilterDrawer'
 import Icon from './Icon'
 import { Badge } from './Badge'
 import { Button } from './Page'
@@ -7,6 +7,7 @@ import { Unavailable } from './Unavailable'
 import { STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import type { ChipKey } from '../../lib/queries/bookings'
+import { DateRangePresets } from './DateRangePresets'
 
 export interface BooqableRentalFilterDrawerProps {
   open: boolean
@@ -20,6 +21,9 @@ export interface BooqableRentalFilterDrawerProps {
   /** Quick filter preset */
   quickFilter: ChipKey
   onSelectQuickFilter: (chip: ChipKey) => void
+  /** Date range filter and presets */
+  dateRange?: { from: string; to: string }
+  onChangeDateRange?: (range: { from: string; to: string }) => void
   /** Sub-rental toggle */
   subOn: boolean
   onToggleSub: () => void
@@ -56,6 +60,8 @@ export function BooqableRentalFilterDrawer({
   onToggleStatus,
   quickFilter,
   onSelectQuickFilter,
+  dateRange,
+  onChangeDateRange,
   subOn,
   onToggleSub,
   money = false,
@@ -68,31 +74,23 @@ export function BooqableRentalFilterDrawer({
       id={drawerId}
       open={open}
       onClose={onClose}
-      side="right"
+      side="left"
       width={400}
       resultCount={resultCount}
       noun={resultCount === 1 ? 'rental' : 'rentals'}
       activeCount={activeCount}
       onClearAll={onClearAll}
+      standardFooter
+      onApply={onClose}
+      applyLabel={resultCount !== null && resultCount !== undefined ? `Show ${resultCount} Results` : 'Apply'}
     >
-      <div style={{ display: 'grid', gap: 'var(--sp-lg)', paddingBottom: 'var(--sp-md)' }}>
+      <div style={{ display: 'grid', gap: 'var(--sp-xs)', paddingBottom: 'var(--sp-md)' }}>
         {/* Section 1: Booqable Quick Presets / Views */}
-        <section aria-labelledby="preset-views-heading">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <h3
-              id="preset-views-heading"
-              style={{
-                margin: 0,
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-                color: 'var(--muted)',
-              }}
-            >
-              Smart Views & Presets
-            </h3>
-            {quickFilter !== 'All' && (
+        <FilterSection
+          title="Smart Views & Presets"
+          defaultOpen
+          action={
+            quickFilter !== 'All' ? (
               <button
                 type="button"
                 onClick={() => onSelectQuickFilter('All')}
@@ -106,11 +104,11 @@ export function BooqableRentalFilterDrawer({
                   padding: 0,
                 }}
               >
-                Reset preset
+                Reset
               </button>
-            )}
-          </div>
-
+            ) : null
+          }
+        >
           <div style={{ display: 'grid', gap: 6 }}>
             {BOOQABLE_PRESETS.map((p) => {
               // Hide payment preset if user cannot view money (Law 6)
@@ -165,31 +163,18 @@ export function BooqableRentalFilterDrawer({
               )
             })}
           </div>
-        </section>
+        </FilterSection>
 
         {/* Section 2: Rental Stage / Status Facets */}
-        <section aria-labelledby="stage-facets-heading">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <h3
-              id="stage-facets-heading"
-              style={{
-                margin: 0,
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-                color: 'var(--muted)',
-              }}
-            >
-              Lifecycle Stage
-            </h3>
-            {statusFilter.size > 0 && (
-              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--primary)' }}>
-                {statusFilter.size} active
-              </span>
-            )}
-          </div>
-
+        <FilterSection
+          title="Status"
+          defaultOpen
+          badge={
+            statusFilter.size > 0 ? (
+              <Badge tone="primary" label={`${statusFilter.size} active`} size="sm" />
+            ) : undefined
+          }
+        >
           <div style={{ display: 'grid', gap: 6 }}>
             {STATUS_ORDER.map((stage) => {
               const isChecked = statusFilter.has(stage)
@@ -241,24 +226,51 @@ export function BooqableRentalFilterDrawer({
               )
             })}
           </div>
-        </section>
+        </FilterSection>
 
-        {/* Section 3: Sourcing & External Gear */}
-        <section aria-labelledby="sourcing-heading">
-          <h3
-            id="sourcing-heading"
-            style={{
-              margin: '0 0 8px',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-              color: 'var(--muted)',
-            }}
+        {/* Section 3: Booqable Date Range Presets */}
+        {onChangeDateRange && (
+          <FilterSection
+            title="Date"
+            defaultOpen
+            badge={
+              (dateRange?.from || dateRange?.to) ? (
+                <Badge tone="primary" label="Filtered" size="sm" />
+              ) : undefined
+            }
+            action={
+              (dateRange?.from || dateRange?.to) ? (
+                <button
+                  type="button"
+                  onClick={() => onChangeDateRange({ from: '', to: '' })}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--link)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                >
+                  Reset
+                </button>
+              ) : null
+            }
           >
-            Fulfillment & Sourcing
-          </h3>
+            <DateRangePresets
+              from={dateRange?.from ?? ''}
+              to={dateRange?.to ?? ''}
+              onChange={onChangeDateRange}
+            />
+          </FilterSection>
+        )}
 
+        {/* Section 4: Sourcing & External Gear */}
+        <FilterSection
+          title="Fulfillment & Sourcing"
+          defaultOpen
+        >
           <label
             style={{
               display: 'flex',
@@ -295,39 +307,17 @@ export function BooqableRentalFilterDrawer({
               </div>
             </div>
           </label>
-        </section>
+        </FilterSection>
 
-        {/* Save as new filter & Apply & Show Results button */}
-        <div style={{ paddingTop: 'var(--sp-sm)', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* Save as new filter */}
+        <div style={{ paddingTop: 'var(--sp-xs)' }}>
           <Unavailable reason="Saved filters are not built yet — there is nowhere to store one and nothing settles who it is shared with.">
-            <Button icon="flag" disabled>
-              Save as new filter
-            </Button>
+            <div style={{ width: '100%' }}>
+              <Button icon="flag" disabled>
+                Save as new filter
+              </Button>
+            </div>
           </Unavailable>
-          <button
-            type="button"
-            className="press tap"
-            onClick={onClose}
-            style={{
-              width: '100%',
-              minHeight: 44,
-              borderRadius: 'var(--r-btn)',
-              border: '1px solid transparent',
-              background: 'var(--primary)',
-              color: 'var(--on-brand)',
-              fontFamily: 'inherit',
-              fontSize: 'var(--t-ui)',
-              fontWeight: 700,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-            }}
-          >
-            <Icon name="check" size={16} />
-            <span>Show {resultCount !== null ? `${resultCount} ` : ''}Results</span>
-          </button>
         </div>
       </div>
     </FilterDrawer>

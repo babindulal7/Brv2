@@ -1007,10 +1007,42 @@ export default function RentalsList() {
    * which is a fact about the query rather than a second figure.
    */
   const kpis: Kpi[] = [
-    { label: 'Active Rentals', value: countOf(activeKpi, activeKpi.total), icon: 'briefcase', accent: 'primary', note: 'On Rent now' },
-    { label: 'Today Pickups', value: countOf(pickupsKpi, pickupsKpi.total), icon: 'truck', accent: 'primary', note: 'Booked and Packed' },
-    { label: 'Today Returns', value: countOf(returnsKpi, returnsKpi.total), icon: 'return_arrow', accent: 'progress', note: 'Due back today, still out' },
-    { label: 'Overdue', value: countOf(overdueKpi, overdueKpi.total), icon: 'alert_triangle', accent: 'danger', note: 'Past due, never returned' },
+    {
+      label: 'Active Rentals',
+      value: countOf(activeKpi, activeKpi.total),
+      icon: 'briefcase',
+      accent: 'primary',
+      note: 'On Rent now',
+      definition: 'Bookings currently in On Rent stage across all clients',
+      zeroExplanation: 'Rule: On Rent stage only. 0 gear currently dispatched to clients.',
+    },
+    {
+      label: 'Today Pickups',
+      value: countOf(pickupsKpi, pickupsKpi.total),
+      icon: 'truck',
+      accent: 'primary',
+      note: 'Booked and Packed',
+      definition: "Bookings with pickup scheduled inside today's operational day (Booked or Packed)",
+      zeroExplanation: "Rule: Today's operational day. 0 pickups scheduled for departure.",
+    },
+    {
+      label: 'Today Returns',
+      value: countOf(returnsKpi, returnsKpi.total),
+      icon: 'return_arrow',
+      accent: 'progress',
+      note: 'Due back today, still out',
+      definition: "Bookings due for return inside today's operational day, not yet returned",
+      zeroExplanation: 'Rule: Due today, On Rent. 0 bookings due back today.',
+    },
+    {
+      label: 'Overdue',
+      value: countOf(overdueKpi, overdueKpi.total),
+      icon: 'alert_triangle',
+      accent: 'danger',
+      note: 'Past due, never returned',
+      definition: 'Bookings past return deadline where actual return date is unrecorded',
+      zeroExplanation: 'Rule: return_at < now and unreturned. All bookings returned on time.',
+    },
   ]
 
   /*
@@ -1996,22 +2028,45 @@ export default function RentalsList() {
                             .map((c) => {
                               const m = c === 'Pickup' ? r.pickup : r.ret
                               const place = c === 'Pickup' ? r.pickupLocation : r.returnLocation
+                              const isOverdueReturn = c === 'Return' && r.isOverdue
                               return (
                                 <td key={c} style={td}>
-                                  <span
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 5,
-                                      fontSize: 'var(--t-meta)',
-                                      color: 'var(--text)',
-                                    }}
-                                  >
-                                    <Icon name="calendar" size={12} style={{ color: 'var(--muted)' }} />
-                                    {/* §3 / Law 7 — AD rendering belongs to
-                                        lib/bs.ts, in Kathmandu. */}
-                                    <span className="figure">{m.date}</span>
-                                  </span>
+                                  {isOverdueReturn ? (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 4,
+                                        padding: '2px 8px',
+                                        borderRadius: 'var(--r-badge)',
+                                        background: 'rgba(245, 158, 11, 0.12)',
+                                        border: '1px solid rgba(245, 158, 11, 0.4)',
+                                        color: 'var(--amber-text, #b45309)',
+                                        fontWeight: 700,
+                                        fontSize: 'var(--t-meta)',
+                                      }}
+                                      title="Overdue return"
+                                      aria-label={`Overdue return: ${m.date}`}
+                                    >
+                                      <Icon name="timer" size={12} style={{ color: 'var(--amber-text, #b45309)' }} />
+                                      <span className="figure">{m.date}</span>
+                                    </span>
+                                  ) : (
+                                    <span
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        fontSize: 'var(--t-meta)',
+                                        color: 'var(--text)',
+                                      }}
+                                    >
+                                      <Icon name="calendar" size={12} style={{ color: 'var(--muted)' }} />
+                                      {/* §3 / Law 7 — AD rendering belongs to
+                                          lib/bs.ts, in Kathmandu. */}
+                                      <span className="figure">{m.date}</span>
+                                    </span>
+                                  )}
                                   <span
                                     style={{
                                       display: 'flex',
@@ -2196,6 +2251,8 @@ export default function RentalsList() {
         onToggleStatus={toggleStatus}
         quickFilter={chip}
         onSelectQuickFilter={pickChip}
+        dateRange={{ from, to }}
+        onChangeDateRange={(r) => setRange(r.from, r.to)}
         subOn={subOn}
         onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
         money={money}

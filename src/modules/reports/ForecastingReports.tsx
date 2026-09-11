@@ -133,78 +133,84 @@ export default function ForecastingReports() {
           self-scrolling rail. There is no aside content on this page, so there
           is no rail at all. */}
       <section aria-label="Inventory Purchase Forecast" style={cardStyle}>
-            <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Inventory Purchase Forecast</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Category</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Recommended Item</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Reason / Formula</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Confidence</th>
+        <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Inventory Purchase Forecast</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
+            <thead>
+              <tr style={{ color: 'var(--text2)' }}>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Category</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Recommended Item</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Reason / Formula</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Confidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {PURCHASE_FORECAST.map((p) => (
+                <tr key={p.id} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{p.category}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.item}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.reason}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: p.confidence === 'High' ? 'var(--success)' : 'var(--ready)' }}>{p.confidence}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {PURCHASE_FORECAST.map((p) => (
-                  <tr key={p.id} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{p.category}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.item}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.reason}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: p.confidence === 'High' ? 'var(--success)' : 'var(--ready)' }}>{p.confidence}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-          <section aria-label="Maintenance Forecast" style={cardStyle}>
-            <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Maintenance Forecast</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Asset ID</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Item</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Predicted Service Date</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Trigger</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Priority</th>
+      <section aria-label="Maintenance Forecast" style={cardStyle}>
+        <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Maintenance Forecast</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
+            <thead>
+              <tr style={{ color: 'var(--text2)' }}>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Asset ID</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Item</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Predicted Service Date</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Trigger</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Priority</th>
+              </tr>
+            </thead>
+            <tbody>
+              {MAINTENANCE_FORECAST.map((m) => (
+                <tr key={m.id} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{m.id}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{m.item}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{m.nextService}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{m.trigger}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: m.priority === 'High' ? 'var(--danger)' : 'var(--ready)' }}>{m.priority}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {MAINTENANCE_FORECAST.map((m) => (
-                  <tr key={m.id} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{m.id}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{m.item}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{m.nextService}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{m.trigger}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: m.priority === 'High' ? 'var(--danger)' : 'var(--ready)' }}>{m.priority}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-          <section aria-label="Seasonal Demand" style={cardStyle}>
-            <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Seasonal Demand Outlook</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Event / Period</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Dates</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Expected Lift</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Top Categories</th>
+      <section aria-label="Seasonal Demand" style={cardStyle}>
+        <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Seasonal Demand Outlook</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
+            <thead>
+              <tr style={{ color: 'var(--text2)' }}>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Event / Period</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Dates</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Expected Lift</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Top Categories</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SEASONAL_DEMAND.map((s) => (
+                <tr key={s.event} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{s.event}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{s.dates}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: s.expectedLift.startsWith('+') ? 'var(--success)' : 'var(--danger)' }}>{s.expectedLift}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{s.topCategories}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {SEASONAL_DEMAND.map((s) => (
-                  <tr key={s.event} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{s.event}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{s.dates}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: s.expectedLift.startsWith('+') ? 'var(--success)' : 'var(--danger)' }}>{s.expectedLift}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{s.topCategories}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   )
 }

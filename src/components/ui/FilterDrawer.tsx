@@ -104,6 +104,13 @@ export interface FilterDrawerProps {
    * the footer becomes `Apply Filters (n)` instead of Clear all.
    */
   apply?: { pendingCount: number; onApply: () => void } | undefined
+  /**
+   * Booqable standard dual-action footer:
+   * Left = "Clear all", Right = "Apply" / "Show {N} Results".
+   */
+  standardFooter?: boolean
+  onApply?: () => void
+  applyLabel?: string
 }
 
 export function FilterDrawer({
@@ -118,6 +125,9 @@ export function FilterDrawer({
   width = 360,
   side = 'left',
   apply,
+  standardFooter,
+  onApply,
+  applyLabel,
 }: FilterDrawerProps) {
   const viewport = useViewport()
   const phone = viewport === 'phone'
@@ -319,7 +329,67 @@ export function FilterDrawer({
           {children}
         </div>
 
-        {apply ? (
+        {standardFooter || onApply ? (
+          <footer
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 'var(--sp-sm)',
+              padding: phone ? '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))' : '12px 16px',
+              borderTop: '1px solid var(--border)',
+              flexShrink: 0,
+              background: 'var(--card)',
+            }}
+          >
+            <button
+              type="button"
+              className="tap"
+              onClick={onClearAll}
+              disabled={!onClearAll || activeCount === 0}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                padding: '0 12px',
+                borderRadius: 'var(--r-btn)',
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: activeCount > 0 ? 'var(--text)' : 'var(--muted)',
+                fontFamily: 'inherit',
+                fontSize: 'var(--t-ui)',
+                fontWeight: 600,
+                cursor: activeCount > 0 ? 'pointer' : 'not-allowed',
+                opacity: activeCount > 0 ? 1 : 0.45,
+              }}
+            >
+              Clear all {activeCount > 0 ? `(${activeCount})` : ''}
+            </button>
+            <button
+              type="button"
+              className="press tap"
+              onClick={onApply ?? onClose}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                padding: '0 14px',
+                borderRadius: 'var(--r-btn)',
+                border: '1px solid transparent',
+                background: 'var(--primary)',
+                color: 'var(--on-brand)',
+                fontFamily: 'inherit',
+                fontSize: 'var(--t-ui)',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+              }}
+            >
+              {applyLabel ?? (resultCount !== null && resultCount !== undefined ? `Show ${resultCount} Results` : 'Apply')}
+            </button>
+          </footer>
+        ) : apply ? (
           <footer
             style={{
               padding: phone ? '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))' : '12px 16px',
@@ -823,3 +893,131 @@ export function FilterOptionList({
 
 /** Shared by callers that lay their own controls out inside the drawer. */
 export const filterGroupStyle: CSSProperties = { display: 'grid', gap: 'var(--sp-md)', alignContent: 'start' }
+
+/**
+ * # FilterSection — Collapsible Filter Group
+ *
+ * A standardized Booqable-style accordion section inside the Filter Drawer:
+ * - 44px hit-target header button (`tap` class, Law 15)
+ * - Accessible disclosure with `aria-expanded` and `aria-controls`
+ * - Title + optional badge on the left, chevron ˅/˄ on the right
+ * - Supports controlled (`isOpen` + `onToggle`) or uncontrolled (`defaultOpen`) states
+ * - Persists clean spacing and visual separation
+ */
+export interface FilterSectionProps {
+  title: string
+  defaultOpen?: boolean
+  isOpen?: boolean
+  onToggle?: () => void
+  badge?: ReactNode
+  action?: ReactNode
+  children: ReactNode
+  id?: string
+}
+
+export function FilterSection({
+  title,
+  defaultOpen = true,
+  isOpen,
+  onToggle,
+  badge,
+  action,
+  children,
+  id,
+}: FilterSectionProps) {
+  const [internalOpen, setInternalOpen] = useState(defaultOpen)
+  const isControlled = isOpen !== undefined
+  const open = isControlled ? isOpen : internalOpen
+  const toggle = isControlled ? (onToggle ?? (() => {})) : () => setInternalOpen((o) => !o)
+  const generatedId = useId()
+  const sectionId = id ?? generatedId
+  const contentId = `${sectionId}-content`
+
+  return (
+    <section
+      aria-labelledby={`${sectionId}-heading`}
+      style={{
+        borderBottom: '1px solid var(--border)',
+        paddingBottom: open ? 'var(--sp-md)' : 0,
+        marginBottom: 'var(--sp-xs)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          minHeight: 'var(--tap)',
+        }}
+      >
+        <button
+          type="button"
+          id={`${sectionId}-heading`}
+          className="tap"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-controls={contentId}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flex: 1,
+            minHeight: 'var(--tap)',
+            padding: '0 4px',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            textAlign: 'left',
+            fontFamily: 'inherit',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 'var(--t-ui)',
+              fontWeight: 700,
+              color: 'var(--text)',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            {title}
+          </span>
+          {badge && (
+            <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+              {badge}
+            </span>
+          )}
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {action}
+          <button
+            type="button"
+            className="tap"
+            onClick={toggle}
+            aria-label={open ? `Collapse ${title}` : `Expand ${title}`}
+            style={{
+              display: 'grid',
+              placeItems: 'center',
+              width: 32,
+              height: 32,
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              borderRadius: 'var(--r-sm)',
+            }}
+          >
+            <Icon name={open ? 'chevron_up' : 'chevron_down'} size={16} />
+          </button>
+        </div>
+      </div>
+
+      {open && (
+        <div id={contentId} style={{ paddingTop: 'var(--sp-xs)' }}>
+          {children}
+        </div>
+      )}
+    </section>
+  )
+}
+

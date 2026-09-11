@@ -13,7 +13,7 @@ import { rupees, formatMoney } from '../../lib/money'
 import { toBs, formatBs, formatAd, businessDayAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import { useTabularLayout } from '../../lib/device'
+import { useTabularLayout, useViewport } from '../../lib/device'
 import { newClientUuid } from '../../lib/supabase'
 import {
   listExpenses,
@@ -695,6 +695,8 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
   /** The one money gate. Mirrors `auth_can_view_money()` — Law 6. */
   const money = useCanViewMoney()
   const restriction = financeRestriction(money)
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
   const tabular = useTabularLayout()
 
   /**
@@ -854,8 +856,8 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
   const countedTitle = total === null ? 'Expenses' : `${total} ${total === 1 ? 'expense' : 'expenses'}`
 
   const headerActions = (
-    <Button icon="plus" variant="primary" onClick={() => setSheetOpen(true)}>
-      Add Expense
+    <Button icon="plus" variant="primary" onClick={() => setSheetOpen(true)} aria-label="Add Expense">
+      {phone ? '' : 'Add Expense'}
     </Button>
   )
 
@@ -888,7 +890,19 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
           )}
 
           {/* §9.4 line 1 of the filter row — the status chips. */}
-          <div role="group" aria-label="Filter by status" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div
+            role="group"
+            aria-label="Filter by status"
+            className="rsp-chip-scroll"
+            style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: phone ? 'nowrap' : 'wrap',
+              overflowX: phone ? 'auto' : 'visible',
+              alignItems: 'center',
+              paddingBottom: phone ? 4 : 0,
+            }}
+          >
             {(['All', ...EXPENSE_STATUSES] as const).map((s) => {
               const on = status === s
               return (
@@ -904,8 +918,8 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 5,
-                    height: 32,
-                    padding: '0 12px',
+                    minHeight: 44,
+                    padding: '0 14px',
                     borderRadius: 'var(--r-sm)',
                     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                     background: on ? 'var(--nav-active-bg)' : 'var(--card)',
@@ -915,6 +929,7 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
                     fontFamily: 'inherit',
                     cursor: 'pointer',
                     whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
                   {s !== 'All' && <Icon name={STATUS_GLYPH[s]} size={13} />}
@@ -935,7 +950,13 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
                 setPage(1)
               }}
               disabled={categories.length === 0}
-              style={{ ...inputStyle, height: 32, width: 'auto', marginLeft: 'auto' }}
+              style={{
+                ...inputStyle,
+                minHeight: 44,
+                width: phone ? '100%' : 'auto',
+                marginLeft: phone ? 0 : 'auto',
+                marginTop: phone ? 'var(--sp-xs)' : 0,
+              }}
             >
               <option value="All">All categories</option>
               {categories.map((c) => (

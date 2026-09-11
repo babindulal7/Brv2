@@ -23,7 +23,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { ActiveFilterChips, FilterDrawer, FilterOptionList, type ActiveFilter } from '../FilterDrawer'
+import { ActiveFilterChips, FilterDrawer, FilterOptionList, FilterSection, type ActiveFilter } from '../FilterDrawer'
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
@@ -188,6 +188,36 @@ describe('FilterDrawer — the header count and the footer', () => {
     )
     expect(container.querySelector('footer')?.textContent).toBe('Apply Filters (3)')
   })
+
+  it('renders standard Booqable dual footer with Clear all and Apply', () => {
+    let cleared = false
+    let applied = false
+    mount(
+      <FilterDrawer
+        id="f"
+        open
+        onClose={() => {}}
+        activeCount={2}
+        resultCount={15}
+        noun="rentals"
+        onClearAll={() => (cleared = true)}
+        standardFooter
+        onApply={() => (applied = true)}
+      >
+        <p>f</p>
+      </FilterDrawer>,
+    )
+    const footerButtons = container.querySelectorAll('footer button')
+    expect(footerButtons).toHaveLength(2)
+    expect(footerButtons[0]?.textContent).toContain('Clear all (2)')
+    expect(footerButtons[1]?.textContent).toContain('Show 15 Results')
+
+    act(() => (footerButtons[0] as HTMLButtonElement).click())
+    expect(cleared).toBe(true)
+
+    act(() => (footerButtons[1] as HTMLButtonElement).click())
+    expect(applied).toBe(true)
+  })
 })
 
 const OPTIONS = ['Booked', 'Packed', 'Out', 'Returned', 'Closed', 'Cancelled'].map((value) => ({ value }))
@@ -284,3 +314,55 @@ describe('ActiveFilterChips — §8', () => {
     expect(removed).toBe(1)
   })
 })
+
+describe('FilterSection — Collapsible Filter Group', () => {
+  it('renders expanded by default with title, chevron and content', () => {
+    mount(
+      <FilterSection title="Status" id="sec-status">
+        <p id="child-content">Active items</p>
+      </FilterSection>,
+    )
+    const btn = container.querySelector('button#sec-status-heading')
+    expect(btn?.getAttribute('aria-expanded')).toBe('true')
+    expect(btn?.textContent).toContain('Status')
+    expect(container.querySelector('#child-content')).not.toBeNull()
+  })
+
+  it('toggles collapsed on click', () => {
+    mount(
+      <FilterSection title="Date Range" id="sec-date" defaultOpen={true}>
+        <p id="date-content">Date picker</p>
+      </FilterSection>,
+    )
+    const btn = container.querySelector<HTMLButtonElement>('button#sec-date-heading')!
+    expect(btn.getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('#date-content')).not.toBeNull()
+
+    act(() => btn.click())
+    expect(btn.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('#date-content')).toBeNull()
+
+    act(() => btn.click())
+    expect(btn.getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('#date-content')).not.toBeNull()
+  })
+
+  it('renders badge and action if provided', () => {
+    let actionFired = false
+    mount(
+      <FilterSection
+        title="Client"
+        badge={<span>3 active</span>}
+        action={<button type="button" onClick={() => (actionFired = true)}>Reset</button>}
+      >
+        <p>content</p>
+      </FilterSection>,
+    )
+    expect(container.textContent).toContain('3 active')
+    const resetBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Reset')
+    expect(resetBtn).toBeDefined()
+    act(() => resetBtn!.click())
+    expect(actionFired).toBe(true)
+  })
+})
+

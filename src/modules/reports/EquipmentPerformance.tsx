@@ -153,56 +153,60 @@ export default function EquipmentPerformance() {
           self-scrolling rail. There is no aside content on this page, so there
           is no rail at all. */}
       <section aria-label="Top Performing Equipment" style={cardStyle}>
-            <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Top Performing Equipment</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ID</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Name</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Category</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Revenue</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Utilization</th>
+        <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Top Performing Equipment</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 520 }}>
+            <thead>
+              <tr style={{ color: 'var(--text2)' }}>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ID</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Name</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Category</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Revenue</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Utilization</th>
+              </tr>
+            </thead>
+            <tbody>
+              {TOP_PERFORMERS.map((p) => (
+                <tr key={p.id} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{p.id}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.name}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.category}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(p.revenue as Paisa)}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.utilization}%</td>
                 </tr>
-              </thead>
-              <tbody>
-                {TOP_PERFORMERS.map((p) => (
-                  <tr key={p.id} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{p.id}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.name}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.category}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(p.revenue as Paisa)}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.utilization}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-          <section aria-label="Worst Performing Equipment" style={cardStyle}>
-            <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Equipment Needing Attention</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ID</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Name</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Category</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Revenue</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Utilization</th>
+      <section aria-label="Worst Performing Equipment" style={cardStyle}>
+        <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Equipment Needing Attention</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 520 }}>
+            <thead>
+              <tr style={{ color: 'var(--text2)' }}>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ID</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Name</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Category</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Revenue</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Utilization</th>
+              </tr>
+            </thead>
+            <tbody>
+              {WORST_PERFORMERS.map((p) => (
+                <tr key={p.id} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{p.id}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.name}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.category}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(p.revenue as Paisa)}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.utilization}%</td>
                 </tr>
-              </thead>
-              <tbody>
-                {WORST_PERFORMERS.map((p) => (
-                  <tr key={p.id} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{p.id}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.name}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.category}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(p.revenue as Paisa)}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{p.utilization}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   )
 }

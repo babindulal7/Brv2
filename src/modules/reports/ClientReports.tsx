@@ -7,6 +7,7 @@ import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { Donut, Legend, HBars, catColor } from '../../components/ui/Charts'
 import { BRAND, BRAND_TEXT } from '../../lib/status'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import {
   KPIS,
   GROWTH,
@@ -194,6 +195,9 @@ export default function ClientReports() {
   const railGridColumns = useRailGridColumns()
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
+  const tablet = viewport === 'tablet'
   const [, setSummary] = useState<ClientReportsSummary | null>(null)
 
   useEffect(() => {
@@ -241,7 +245,7 @@ export default function ClientReports() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <KpiStrip items={kpis} columns={kpis.length} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(3, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : tablet ? 'repeat(2, minmax(0,1fr))' : money ? 'repeat(3, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
             <Card title="Client Growth Trend">
               <GrowthChart />
             </Card>
@@ -260,7 +264,7 @@ export default function ClientReports() {
             </Card>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: money ? 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)' : 'minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : tablet ? 'repeat(2, minmax(0,1fr))' : money ? 'minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)' : 'minmax(0,1fr) minmax(0,1fr) minmax(0,0.75fr)', gap: 'var(--sp-md)' }}>
             <Card title="Booking Frequency">
               <div style={{ display: 'grid', gridTemplateColumns: `repeat(${frequency.length},1fr)`, gap: 'var(--sp-sm)' }}>
                 {frequency.map((f, i) => (

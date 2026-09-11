@@ -15,6 +15,7 @@ import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import {
   EXPENSES,
   CATEGORIES,
@@ -195,6 +196,8 @@ export default function ExpenseReports() {
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const money = useCanViewMoney()
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
 
   const [category, setCategory] = useState<string>('All')
   const [status, setStatus] = useState<string>('All')
@@ -426,7 +429,16 @@ export default function ExpenseReports() {
       {/* Category chips. Each carries its own count, derived from the same
           array the table reads — every other filter applied, this one not — so
           a chip can never advertise rows that are not there. */}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div
+        className="rsp-chip-scroll"
+        style={{
+          display: 'flex',
+          gap: 6,
+          flexWrap: phone ? 'nowrap' : 'wrap',
+          overflowX: phone ? 'auto' : 'visible',
+          paddingBottom: phone ? 4 : 0,
+        }}
+      >
         {['All', ...CATEGORIES].map((c) => {
           const on = category === c
           const count = c === 'All' ? scoped.length : scoped.filter((r) => r.category === c).length
@@ -443,8 +455,8 @@ export default function ExpenseReports() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
-                height: 30,
-                padding: '0 11px',
+                minHeight: 44,
+                padding: '0 14px',
                 borderRadius: 'var(--r-btn)',
                 /*
                  * Selected = the PRIMARY, not a status hue.
@@ -475,6 +487,7 @@ export default function ExpenseReports() {
                 fontFamily: 'inherit',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               {c !== 'All' && <Icon name={CATEGORY_ICON[c] ?? 'dot'} size={13} />}

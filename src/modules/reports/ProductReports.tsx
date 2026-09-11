@@ -22,12 +22,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, cardStyle, useRailGridColumns } from '../../components/ui/Page'
 import { Donut, Legend, HBars, GroupedBars, catColor } from '../../components/ui/Charts'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { BRAND_TEXT } from '../../lib/status'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useViewport } from '../../lib/device'
 import {
   KPIS,
   SALES_TREND,
@@ -207,6 +208,10 @@ function productsCsv(money: boolean): ReportCsvRow[] {
 export default function ProductReports() {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const viewport = useViewport()
+  const phone = viewport === 'phone'
+  const tablet = viewport === 'tablet'
+  const railGridColumns = useRailGridColumns()
   const [, setSummary] = useState<ProductReportsSummary | null>(null)
 
   useEffect(() => {
@@ -241,11 +246,11 @@ export default function ProductReports() {
       */}
       <ReportToolbar title="Product Reports" csv={{ filename: 'product-reports', build: () => productsCsv(money) }} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <KpiStrip items={kpis} columns={kpis.length} />
 
-          <div style={{ display: 'grid', gridTemplateColumns: money ? 'repeat(4, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : tablet ? 'repeat(2, minmax(0,1fr))' : money ? 'repeat(4, minmax(0,1fr))' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
             {money && (
               <Card title="Product Sales Trend (Rs)">
                 <TrendChart />
@@ -275,7 +280,7 @@ export default function ProductReports() {
             )}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : tablet ? 'repeat(2, minmax(0,1fr))' : 'repeat(5, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
             <Card title="Inventory Turnover by Category">
               <HBars rows={TURNOVER.rows} axisTicks={TURNOVER.axisTicks} colorIndex={2} />
             </Card>
@@ -367,7 +372,7 @@ export default function ProductReports() {
           </Card>
         </div>
 
-        <Rail>
+        <ReflowRail>
           <Card title="Product Summary">
             <SummaryRows rows={summary} />
           </Card>
@@ -473,7 +478,7 @@ export default function ProductReports() {
               <Icon name="refresh" size={12} />
             </span>
           </div>
-        </Rail>
+        </ReflowRail>
       </div>
 
       <FooterNote />

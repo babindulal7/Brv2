@@ -154,7 +154,7 @@ export default function PromotionsReports() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
           <section aria-label="Discount Impact" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Discount Impact Must Net Out</div>
-            <div style={{ display: 'flex', flexDirection: 'row', gap: 'var(--sp-xl)', padding: 'var(--sp-md)' }}>
+            <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 'var(--sp-lg)', padding: 'var(--sp-md)' }}>
               <div>
                 <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Discounts Given</div>
                 <div style={{ fontSize: '18px', fontWeight: 600, color: 'var(--danger)' }}>{formatMoney(IMPACT.given as Paisa)}</div>
@@ -172,56 +172,60 @@ export default function PromotionsReports() {
 
           <section aria-label="Most Used Coupons" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Most Used Coupons</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ID</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Code</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Issued</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Redeemed</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Expiry</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ROP</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TOP_COUPONS.map((c) => (
-                  <tr key={c.id} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{c.id}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.code}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.issued}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.redeemed}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.expiry}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--success)' }}>{c.rop}x</td>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
+                <thead>
+                  <tr style={{ color: 'var(--text2)' }}>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ID</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Code</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Issued</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Redeemed</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Expiry</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ROP</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {TOP_COUPONS.map((c) => (
+                    <tr key={c.id} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{c.id}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.code}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.issued}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.redeemed}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.expiry}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--success)' }}>{c.rop}x</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
 
           <section aria-label="Bundle Discount Analysis" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Bundle Discount Analysis</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bundle</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bookings Generated</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bundle Revenue</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Discount</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ROP</th>
-                </tr>
-              </thead>
-              <tbody>
-                {BUNDLE_ANALYSIS.map((b) => (
-                  <tr key={b.name} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{b.name}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{b.bookings}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(b.revenue as Paisa)}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--danger)' }}>-{formatMoney(b.discount as Paisa)}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--success)' }}>{b.rop}x</td>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
+                <thead>
+                  <tr style={{ color: 'var(--text2)' }}>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bundle</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bookings Generated</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Bundle Revenue</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Discount</th>
+                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>ROP</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {BUNDLE_ANALYSIS.map((b) => (
+                    <tr key={b.name} style={{ borderTop: '1px solid var(--border)' }}>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{b.name}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{b.bookings}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(b.revenue as Paisa)}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--danger)' }}>-{formatMoney(b.discount as Paisa)}</td>
+                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', color: 'var(--success)' }}>{b.rop}x</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
 
         </div>

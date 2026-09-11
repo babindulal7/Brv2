@@ -1,7 +1,10 @@
+import { useState, useMemo } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
+import { FastReturnModal } from '../rentals/modals/FastReturnModal'
+import { BarcodeLookupModal } from '../rentals/modals/BarcodeLookupModal'
 import { CasesWorkspace } from './CasesWorkspace'
 import { STATUS } from '../../lib/status'
 import { statusToken, JOBS as JOBS_META, type JobName } from '../../lib/workflow'
@@ -260,6 +263,53 @@ function useQueueCount(job: JobName, range: { fromAd?: string; toAd?: string } |
   return useList<BookingListRow>(fetchBookings, withScope(queueCountFilters(job), range), { isFilteredOverride: false })
 }
 
+/* ── Law L3: The four-way exception facet group ─────────────────────────── */
+
+export type ExceptionFacet = 'starting_today' | 'ending_today' | 'overdue_start' | 'overdue_end'
+
+export const EXCEPTION_FACETS: Array<{ key: ExceptionFacet; label: string; icon: 'truck' | 'return_arrow' | 'alert_triangle' | 'timer' }> = [
+  { key: 'starting_today', label: 'Starting today', icon: 'truck' },
+  { key: 'ending_today', label: 'Ending today', icon: 'return_arrow' },
+  { key: 'overdue_start', label: 'Overdue start', icon: 'alert_triangle' },
+  { key: 'overdue_end', label: 'Overdue end', icon: 'timer' },
+]
+
+export function exceptionFilters(facet: ExceptionFacet, nowAd: string, todayAd: string): ListFilters {
+  const dayStart = `${todayAd}T00:00:00.000${NPT_OFFSET}`
+  const dayEnd = `${todayAd}T23:59:59.999${NPT_OFFSET}`
+
+  switch (facet) {
+    case 'starting_today':
+      return {
+        dateRange: { column: 'pickup_at', fromAd: dayStart, toAd: dayEnd },
+        chips: { stage: ['Booked', 'Packed'] },
+        presence: { cancelled_at: false },
+        sort: { column: 'pickup_at', ascending: true },
+      }
+    case 'ending_today':
+      return {
+        dateRange: { column: 'return_at', fromAd: dayStart, toAd: dayEnd },
+        chips: { stage: ['On Rent'] },
+        presence: { cancelled_at: false },
+        sort: { column: 'return_at', ascending: true },
+      }
+    case 'overdue_start':
+      return {
+        dateRange: { column: 'pickup_at', toAd: nowAd },
+        chips: { stage: ['Booked', 'Packed'] },
+        presence: { cancelled_at: false },
+        sort: { column: 'pickup_at', ascending: true },
+      }
+    case 'overdue_end':
+      return {
+        dateRange: { column: 'return_at', toAd: nowAd },
+        chips: { stage: ['On Rent'] },
+        presence: { cancelled_at: false, actual_return_at: false },
+        sort: { column: 'return_at', ascending: true },
+      }
+  }
+}
+
 /* ── Chips ─────────────────────────────────────────────────────────────── */
 
 function chipStyle(on: boolean) {
@@ -359,6 +409,8 @@ function StageBadge({ stage }: { stage: JobRow['stage'] }) {
 export default function OperationsQueues() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
+  const [fastReturnOpen, setFastReturnOpen] = useState(false)
+  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const tabular = viewport !== 'phone'
@@ -374,11 +426,13 @@ export default function OperationsQueues() {
   const scope = scopeFromParam(params.get('day'))
   const customFrom = params.get('from') ?? ''
   const customTo = params.get('to') ?? ''
+  const exceptionParam = params.get('exception') as ExceptionFacet | null
+  const exception = exceptionParam && ['starting_today', 'ending_today', 'overdue_start', 'overdue_end'].includes(exceptionParam) ? exceptionParam : null
   /* `queueFromParam` can still answer 'Cases' from a bookmarked URL. It is no
      longer a chip, so it selects nothing rather than swapping the list out. */
   const activeJob: JobName | null = selected === 'Cases' ? null : selected
   const range = scopeRange(scope, customFrom, customTo)
-  const isFiltered = activeJob !== null || group !== null || range !== null
+  const isFiltered = activeJob !== null || group !== null || range !== null || exception !== null
 
   const patch = (next: Record<string, string | null>) => {
     const merged = new URLSearchParams(params)
@@ -389,22 +443,28 @@ export default function OperationsQueues() {
     setParams(merged)
   }
 
-  const setActive = (job: JobName | null) => patch({ queue: job ? URL_KEY[job] : null, quick: null })
-  const setQuick = (q: 'pickup' | 'return') => patch({ quick: group === q ? null : q, queue: null })
+  const setActive = (job: JobName | null) => patch({ queue: job ? URL_KEY[job] : null, quick: null, exception: null })
+  const setQuick = (q: 'pickup' | 'return') => patch({ quick: group === q ? null : q, queue: null, exception: null })
   const setScope = (s: DayScope) => patch({ day: s, ...(s === 'custom' ? {} : { from: null, to: null }) })
   const clearAllFilters = () => setParams(new URLSearchParams())
 
+  const nowAd = businessNowAd()
+  const todayNepal = dayOffsetFromToday(0)
+
+  const activeFilters = useMemo(() => {
+    if (exception) {
+      return exceptionFilters(exception, nowAd, todayNepal)
+    }
+    return withScope(jobListFilters(activeJob, group), range)
+  }, [exception, nowAd, todayNepal, activeJob, group, range])
+
   /*
    * The one list. Every predicate server-side: a queue chip → that queue's
-   * stage; a group chip → the stage union of its two jobs; neither → all four
-   * verbs. The day scope binds onto whichever of those is active.
-   *
-   * `isFilteredOverride` is the same boolean that decides whether "Clear
-   * filter" is live, and it is required rather than optional here: selecting a
-   * chip REPLACES the whole filter set rather than adding to one, so a
-   * baseline comparison cannot answer the question.
+   * stage; a group chip → the stage union of its two jobs; an exception facet →
+   * the 4-way L3 exception filter; neither → all four verbs. The day scope
+   * binds onto whichever of those is active.
    */
-  const list = useList<BookingListRow>(fetchBookings, withScope(jobListFilters(activeJob, group), range), {
+  const list = useList<BookingListRow>(fetchBookings, activeFilters, {
     isFilteredOverride: isFiltered,
   })
 
@@ -425,36 +485,28 @@ export default function OperationsQueues() {
     Reset: resetCount,
   }
 
-  const refreshAll = () => {
-    list.refetch()
-    packCount.refetch()
-    handoverCount.refetch()
-    returnCount.refetch()
-    resetCount.refetch()
-    /* The Alerts panel lives on this page now — the header's Refresh must not
-       leave it quoting stale exceptions beside a fresh queue list. */
-    alertsQ.refetch()
-    quotesQ.refetch()
-  }
+  /* Law L3: The four-way exception facet live counts */
+  const startingTodayCount = useList<BookingListRow>(
+    fetchBookings,
+    exceptionFilters('starting_today', nowAd, todayNepal),
+    { isFilteredOverride: false }
+  )
+  const endingTodayCount = useList<BookingListRow>(
+    fetchBookings,
+    exceptionFilters('ending_today', nowAd, todayNepal),
+    { isFilteredOverride: false }
+  )
+  const overdueStartCount = useList<BookingListRow>(
+    fetchBookings,
+    exceptionFilters('overdue_start', nowAd, todayNepal),
+    { isFilteredOverride: false }
+  )
+  const overdueEndCount = useList<BookingListRow>(
+    fetchBookings,
+    exceptionFilters('overdue_end', nowAd, todayNepal),
+    { isFilteredOverride: false }
+  )
 
-  /*
-   * The Alerts panel — moved here from the Dashboard (30 Aug), replacing the
-   * empty Crew Load card. Same two named filter sets it ran there, off the same
-   * `listBookings` (Law 2): Critical ← overdue (On Rent, due back before now),
-   * High ← quotesExpiring (still a Quote, stated date passed). Deliberately NOT
-   * bound to this page's day scope: an overdue booking is an exception on ANY
-   * day, and a queue narrowed to tomorrow must not hide today's overdue.
-   */
-  /*
-   * ⚠ An INSTANT, resolved on every render — not `data/today.ts`'s old `NOW_AD`,
-   * which was midnight UTC of the operating day and therefore 05:45 in
-   * Kathmandu (X-06). Both sets take an instant and say so in their headers: fed
-   * a day marker, the Critical row missed every booking that fell due earlier
-   * today and the High row missed every quote that lapsed this morning — the two
-   * alerts most likely to matter, silently absent. One reading feeds the query
-   * and the "N days late" wording, so the list and the label agree.
-   */
-  const nowAd = businessNowAd()
   const alertsQ = useList<BookingListRow>(fetchBookings, overdue(nowAd), { isFilteredOverride: false })
   const quotesQ = useList<BookingListRow>(fetchBookings, quotesExpiring(nowAd), { isFilteredOverride: false })
   const alertRows = [
@@ -466,6 +518,22 @@ export default function OperationsQueues() {
     quotesQ.refetch()
   }
 
+  const refreshAll = () => {
+    list.refetch()
+    packCount.refetch()
+    handoverCount.refetch()
+    returnCount.refetch()
+    resetCount.refetch()
+    startingTodayCount.refetch()
+    endingTodayCount.refetch()
+    overdueStartCount.refetch()
+    overdueEndCount.refetch()
+    /* The Alerts panel lives on this page now — the header's Refresh must not
+       leave it quoting stale exceptions beside a fresh queue list. */
+    alertsQ.refetch()
+    quotesQ.refetch()
+  }
+
   /* Resolved once per render, and passed in, so the row mapping stays pure. */
   const now = Date.now()
   const jobs: JobRow[] = list.rows.flatMap((row) => {
@@ -473,11 +541,13 @@ export default function OperationsQueues() {
     return j ? [j] : []
   })
 
-  const listLabel = activeJob
-    ? (CHIPS.find((q) => q.job === activeJob)?.title ?? activeJob)
-    : group
-      ? GROUP_LABEL[group]
-      : 'All jobs'
+  const listLabel = exception
+    ? (EXCEPTION_FACETS.find((ef) => ef.key === exception)?.label ?? exception)
+    : activeJob
+      ? (CHIPS.find((q) => q.job === activeJob)?.title ?? activeJob)
+      : group
+        ? GROUP_LABEL[group]
+        : 'All jobs'
   const scopeLabel = scope === 'custom' && !range ? 'all days' : SCOPE_LABEL[scope].toLowerCase()
   /* No count until one has arrived: `total` is null on a first load, and
      "— 0 jobs" over a skeleton is a claim, not a placeholder. */
@@ -578,6 +648,56 @@ export default function OperationsQueues() {
           </div>
         )}
       </Card>
+      {/* Law L3: Attention required 4-way exception facets */}
+      <Card title="Attention Required">
+        <div role="group" aria-label="Exception facets" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {EXCEPTION_FACETS.map((ef) => {
+            const count =
+              ef.key === 'starting_today'
+                ? startingTodayCount.total
+                : ef.key === 'ending_today'
+                ? endingTodayCount.total
+                : ef.key === 'overdue_start'
+                ? overdueStartCount.total
+                : overdueEndCount.total
+            const isSelected = exception === ef.key
+            return (
+              <button
+                key={ef.key}
+                type="button"
+                className="tap"
+                onClick={() => patch({ exception: isSelected ? null : ef.key, queue: null, quick: null })}
+                aria-pressed={isSelected}
+                style={{
+                  ...chipStyle(isSelected),
+                  justifyContent: 'space-between',
+                  width: '100%',
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Icon name={ef.icon} size={15} />
+                  <span>{ef.label}</span>
+                </span>
+                {count !== null && (
+                  <span
+                    className="figure"
+                    style={{
+                      fontSize: 'var(--t-meta)',
+                      fontWeight: 700,
+                      padding: '1px 6px',
+                      borderRadius: 'var(--r-badge)',
+                      background: isSelected ? 'var(--primary)' : 'var(--chip-neutral-bg, rgba(0,0,0,0.06))',
+                      color: isSelected ? 'var(--on-brand)' : ef.key.startsWith('overdue') && count > 0 ? 'var(--danger-text)' : 'var(--muted)',
+                    }}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </Card>
       <Card title="Side">
         {/* Pickup Today = Pack + Handover (gear out), Return Today = Return +
             Reset (gear back). NOT a date filter despite the labels — a stage
@@ -662,6 +782,57 @@ export default function OperationsQueues() {
             </button>
           ))}
         </div>
+        <div
+          role="group"
+          aria-label="Attention required"
+          className="rsp-chip-scroll"
+          style={{
+            display: 'flex',
+            gap: 6,
+            flexWrap: tabular ? 'wrap' : 'nowrap',
+            overflowX: tabular ? 'visible' : 'auto',
+            paddingBottom: tabular ? 0 : 4,
+          }}
+        >
+          {EXCEPTION_FACETS.map((ef) => {
+            const count =
+              ef.key === 'starting_today'
+                ? startingTodayCount.total
+                : ef.key === 'ending_today'
+                ? endingTodayCount.total
+                : ef.key === 'overdue_start'
+                ? overdueStartCount.total
+                : overdueEndCount.total
+            const isSelected = exception === ef.key
+            return (
+              <button
+                key={ef.key}
+                type="button"
+                onClick={() => patch({ exception: isSelected ? null : ef.key, queue: null, quick: null })}
+                aria-pressed={isSelected}
+                style={chipStyle(isSelected)}
+              >
+                <Icon name={ef.icon} size={14} />
+                <span>{ef.label}</span>
+                {count !== null && (
+                  <span
+                    className="figure"
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '1px 5px',
+                      borderRadius: 'var(--r-badge)',
+                      background: isSelected ? 'var(--primary)' : 'var(--chip-neutral-bg, rgba(0,0,0,0.06))',
+                      color: isSelected ? 'var(--on-brand)' : ef.key.startsWith('overdue') && count > 0 ? 'var(--danger-text)' : 'var(--muted)',
+                    }}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
       </div>
       {scope === 'custom' && (
         <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', flexWrap: 'wrap' }}>
@@ -703,9 +874,17 @@ export default function OperationsQueues() {
         title="Operation"
         description="One floor list for every day. Queue chips filter it; they never replace it."
         actions={
-          <Button icon="refresh" onClick={refreshAll}>
-            Refresh
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+            <Button icon="search" onClick={() => setBarcodeModalOpen(true)} aria-label="Scan barcode or QR">
+              {viewport === 'phone' ? '' : 'Scan'}
+            </Button>
+            <Button icon="return_arrow" onClick={() => setFastReturnOpen(true)} aria-label="Fast return check-in">
+              {viewport === 'phone' ? '' : 'Fast Return'}
+            </Button>
+            <Button icon="refresh" onClick={refreshAll}>
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -980,6 +1159,17 @@ export default function OperationsQueues() {
           railContent
         )}
       </div>
+
+      <FastReturnModal
+        isOpen={fastReturnOpen}
+        onClose={() => setFastReturnOpen(false)}
+        onSuccess={refreshAll}
+      />
+
+      <BarcodeLookupModal
+        isOpen={barcodeModalOpen}
+        onClose={() => setBarcodeModalOpen(false)}
+      />
 
       <FooterNote extra={['Queues are stages — no page defines its own status names']} />
     </div>

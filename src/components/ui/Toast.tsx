@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Icon from './Icon'
 
@@ -164,6 +164,15 @@ function ToastCard({ toast, onDismiss }: { toast: ToastItem; onDismiss: (id: str
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
+  const timerIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+
+  useEffect(() => {
+    const timers = timerIdsRef.current
+    return () => {
+      timers.forEach((t) => clearTimeout(t))
+      timers.clear()
+    }
+  }, [])
 
   const showSuccessToast = useCallback((title: string, message?: string, action?: ToastAction) => {
     const id = Math.random().toString(36).slice(2, 9)
@@ -177,12 +186,16 @@ export function ToastProvider({ children }: { children: ReactNode }) {
      * was caught. Twelve is the dwell the action earns; a toast without one is
      * unchanged, so nothing else in the product slows down.
      */
-    window.setTimeout(
+    const timer = setTimeout(
       () => {
-        setToasts((prev) => prev.filter((t) => t.id !== id))
+        timerIdsRef.current.delete(timer)
+        if (typeof window !== 'undefined') {
+          setToasts((prev) => prev.filter((t) => t.id !== id))
+        }
       },
       action ? 12000 : 4000,
     )
+    timerIdsRef.current.add(timer)
   }, [])
 
   const removeToast = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id))

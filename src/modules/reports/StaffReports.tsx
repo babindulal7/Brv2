@@ -146,45 +146,47 @@ export default function StaffReports() {
           self-scrolling rail. There is no aside content on this page, so there
           is no rail at all. */}
       <section aria-label="Staff Breakdown" style={cardStyle}>
-            <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Team Breakdown</div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-              <thead>
-                <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Staff</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Role</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Revenue Handled</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Collections</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Collection Rate</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>Tasks</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>Performance Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {STAFF_LIST.map((s) => {
-                  const rate = ((s.collections / s.revenueHandled) * 100).toFixed(1)
-                  // RBAC for performance score
-                  const canSeeScore = isManager || s.name === myName
+        <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Team Breakdown</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 640 }}>
+            <thead>
+              <tr style={{ color: 'var(--text2)' }}>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Staff</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Role</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Revenue Handled</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Collections</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>Collection Rate</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>Tasks</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>Performance Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {STAFF_LIST.map((s) => {
+                const rate = ((s.collections / s.revenueHandled) * 100).toFixed(1)
+                // RBAC for performance score
+                const canSeeScore = isManager || s.name === myName
 
-                  return (
-                    <tr key={s.id} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{s.name}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textTransform: 'capitalize' }}>{s.role}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>{formatMoney(s.revenueHandled as Paisa)}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right', color: 'var(--success)' }}>{formatMoney(s.collections as Paisa)}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>{rate}%</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>{s.tasksCompleted}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center', fontWeight: 600 }}>
-                        {canSeeScore ? (
-                          <span style={{ color: s.performanceScore >= 90 ? 'var(--success)' : 'var(--primary)' }}>{s.performanceScore}</span>
-                        ) : (
-                          <span style={{ color: 'var(--text3)' }}>Hidden</span>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+                return (
+                  <tr key={s.id} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{s.name}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textTransform: 'capitalize' }}>{s.role}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>{formatMoney(s.revenueHandled as Paisa)}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right', color: 'var(--success)' }}>{formatMoney(s.collections as Paisa)}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'right' }}>{rate}%</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center' }}>{s.tasksCompleted}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', textAlign: 'center', fontWeight: 600 }}>
+                      {canSeeScore ? (
+                        <span style={{ color: s.performanceScore >= 90 ? 'var(--success)' : 'var(--primary)' }}>{s.performanceScore}</span>
+                      ) : (
+                        <span style={{ color: 'var(--text3)' }}>Hidden</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   )

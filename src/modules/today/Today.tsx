@@ -4,6 +4,8 @@ import Icon from '../../components/ui/Icon'
 import { PageHeader, Button, FooterNote, KpiStrip, Rail, Card, type Kpi } from '../../components/ui/Page'
 import MovementList from './MovementList'
 import TimelinePanel from './TimelinePanel'
+import { FastReturnModal } from '../rentals/modals/FastReturnModal'
+import { BarcodeLookupModal } from '../rentals/modals/BarcodeLookupModal'
 import {
   todayDate,
   MORE_FILTERS,
@@ -538,6 +540,8 @@ export default function Today() {
   const [pickedIn, setPickedIn] = useState<string[]>([])
   const [segment, setSegment] = useState<Segment>('out')
   const [allKpis, setAllKpis] = useState(false)
+  const [fastReturnOpen, setFastReturnOpen] = useState(false)
+  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
 
   /*
    * The operating day, resolved on every render (X-05). It used to be
@@ -700,17 +704,17 @@ export default function Today() {
       icon: 'truck',
       accent: 'primary',
       note: 'Booked and Packed',
+      definition: `Bookings departing during ${period} in Booked or Packed status`,
+      zeroExplanation: `Rule: No pickups scheduled for ${period}.`,
     },
     {
       label: period === 'Today' ? 'Still out today' : `Still out · ${period}`,
       value: countOf(returns, returns.rows.length),
       icon: 'return_arrow',
       accent: 'progress',
-      // Scoped to the period on screen, and says so — the card beside it counts
-      // every overdue booking on any day, and two bare "overdue" figures side
-      // by side that legitimately differ is how a screen loses an operator's
-      // trust in both.
       note: `${countOf(returns, overdueReturns)} overdue in this period`,
+      definition: `Bookings currently On Rent with scheduled return during ${period}`,
+      zeroExplanation: `Rule: 0 returns scheduled for ${period}.`,
     },
     {
       label: 'Overdue',
@@ -718,23 +722,9 @@ export default function Today() {
       icon: 'alert_triangle',
       accent: 'danger',
       note: 'Any day · due back, still out',
+      definition: 'Bookings past scheduled return deadline across all active dates',
+      zeroExplanation: 'Rule: return_at < now and unreturned. All rentals returned on time.',
     },
-    /*
-     * §2.1 Notes — "KPI strip hides money entirely for floor roles — omitted,
-     * not blanked." Law 6, and `moneyVisibility.ts`'s own instruction: call
-     * sites must OMIT the card, never mask it. A money-blind session gets a
-     * three-card strip; there is no fourth card in its DOM to inspect, and the
-     * strip does not leave a hole where one was.
-     *
-     * TODO(decision) — PLAN.md §4: what derives "Cash due"? Spec 02 draws it as
-     * the fourth KPI and nothing in this repo computes it. `payments`
-     * (0006:176) is not joined by `listBookings`, `bookings.deposit_required`
-     * is the figure REQUIRED rather than the figure owed, and a paid-vs-due
-     * total is the Financial Engine's to compute, never a page's. Per rulings
-     * §8 it renders "Not tracked yet" and does NOT borrow
-     * `REVENUE_TODAY_PAISA`, which is a seeded Pulse constant for a different
-     * quantity entirely.
-     */
     ...(money
       ? ([
           {
@@ -743,6 +733,8 @@ export default function Today() {
             icon: 'dollar',
             accent: 'neutral',
             note: 'No derivation exists in this build',
+            definition: 'Cash collection due on bookings (requires Financial Engine)',
+            zeroExplanation: 'Rule: Cash due calculation requires payments integration.',
           },
         ] satisfies Kpi[])
       : []),
@@ -755,6 +747,8 @@ export default function Today() {
       icon: 'briefcase',
       accent: 'primary',
       note: 'On Rent now',
+      definition: 'Total bookings currently active on rent with clients',
+      zeroExplanation: 'Rule: On Rent stage only. 0 gear currently out.',
     },
   ], [active])
 
@@ -844,6 +838,12 @@ export default function Today() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
           <Button icon="plus" variant="primary" onClick={() => navigate('/rentals/new')}>
             New Rental
+          </Button>
+          <Button icon="return_arrow" onClick={() => setFastReturnOpen(true)}>
+            Fast Return
+          </Button>
+          <Button icon="search" onClick={() => setBarcodeModalOpen(true)}>
+            Barcode / QR Scan
           </Button>
           {money && (
             <Button icon="dollar" onClick={() => navigate('/finance/payments')}>
@@ -997,6 +997,19 @@ export default function Today() {
           </Rail>
         )}
       </div>
+
+      <FastReturnModal
+        isOpen={fastReturnOpen}
+        onClose={() => setFastReturnOpen(false)}
+        onSuccess={() => {
+          refetchAll()
+        }}
+      />
+
+      <BarcodeLookupModal
+        isOpen={barcodeModalOpen}
+        onClose={() => setBarcodeModalOpen(false)}
+      />
 
       <FooterNote />
     </div>

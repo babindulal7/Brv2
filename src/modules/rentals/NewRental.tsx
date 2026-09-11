@@ -25,6 +25,7 @@ import type { CrewRoleDb } from '../../types/database'
 import { supabase, newClientUuid } from '../../lib/supabase'
 import { listInventory, INV_STYLE, type InvStatus } from '../../lib/queries/inventory'
 import { readProductAvailability } from '../../lib/queries/productAvailability'
+import { planCreationUnits, type CreationUnitPlan } from '../../lib/queries/availability'
 import type { RentalWindow } from '../../lib/availability'
 import { equipmentConflicts, equipmentResultsFrom } from './booking/itemCatalogue'
 import type {
@@ -2697,6 +2698,25 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           )
         }
 
+        /* D5 (ruled 30 Aug 2026, REFERENCE_SPEC v2.5 Appendix A0) — serials
+           assigned at creation, least-used first. Where availability cannot be
+           known locally (or read fails), planCreationUnits falls back to empty
+           units (unit-less lines), which Pack confirms or fills. */
+        let creationUnitPlan: CreationUnitPlan | null = null
+        try {
+          creationUnitPlan = await planCreationUnits(
+            { fromAd: pickupAt.toISOString(), toAd: returnAt.toISOString() },
+            lines.map((l, i) => ({
+              key: l.id ?? `line-${i}`,
+              productId: l.id ?? null,
+              qty: l.qty,
+              label: l.name ?? `Line ${i + 1}`,
+            })),
+          )
+        } catch {
+          creationUnitPlan = null
+        }
+
         const created = await createRental(
           {
             /* Law 8 — one key for this press, so a double-click is one booking. */
@@ -2767,19 +2787,24 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                     driverContact: driverContact.trim() === '' ? null : driverContact.trim(),
                   },
                 }),
-            lines: lines.map((l, i) => ({
-              clientUuid: newClientUuid(),
-              lineType: 'Equipment' as const,
-              productId: l.id,
-              qty: l.qty,
-              /* Law 9 — days is mandatory and never defaulted. */
-              days: l.days,
-              /* `booking_lines.rate` is numeric(14,2) rupees; `toRupees` is the
-                 engine's paisa→rupees and keeps the paisa the old
-                 `Math.round(paisa / 100)` threw away. */
-              rate: toRupees(l.ratePaisa),
-              sortOrder: i,
-            })),
+            lines: lines.map((l, i) => {
+              const lineKey = l.id ?? `line-${i}`
+              const assigned = creationUnitPlan?.unitsByKey.get(lineKey)
+              return {
+                clientUuid: newClientUuid(),
+                lineType: 'Equipment' as const,
+                productId: l.id,
+                qty: l.qty,
+                /* Law 9 — days is mandatory and never defaulted. */
+                days: l.days,
+                /* `booking_lines.rate` is numeric(14,2) rupees; `toRupees` is the
+                   engine's paisa→rupees and keeps the paisa the old
+                   `Math.round(paisa / 100)` threw away. */
+                rate: toRupees(l.ratePaisa),
+                sortOrder: i,
+                ...(assigned && assigned.length > 0 ? { units: assigned } : {}),
+              }
+            }),
           },
           ctx,
         )

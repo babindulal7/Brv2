@@ -1456,6 +1456,8 @@ export function ClientsDirectory({
               noun={filteredClients.length === 1 ? 'client' : 'clients'}
               activeCount={selectionCount(facetSel)}
               onClearAll={clearAll}
+              standardFooter
+              onApply={() => setFiltersOpen(false)}
             >
               {filtersContent}
             </FilterDrawer>

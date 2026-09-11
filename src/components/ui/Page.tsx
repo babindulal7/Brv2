@@ -181,6 +181,10 @@ export interface Kpi {
   /** Delta line, e.g. "8.4% vs last month". */
   delta?: { direction: 'up' | 'down'; text: string; good?: boolean }
   note?: string
+  /** Law L1 — Every money tile carries its one-line definition tooltip (§9.3, §15.1) */
+  definition?: string
+  /** Law L2 — Every computed figure resolving to zero or less explains itself (§10.3) */
+  zeroExplanation?: string
   /** Sparkline points, 0–100, drawn as a polyline. Optional. */
   spark?: number[]
 }
@@ -217,90 +221,130 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
       aria-label="Key figures"
       style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))`, gap: 'var(--sp-md)' }}
     >
-      {items.map((k) => (
-        <article key={k.label} className="lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <span
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 'var(--r-sm)',
-                background: BRAND[k.accent],
-                color: BRAND_ON[k.accent],
-                display: 'grid',
-                placeItems: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <Icon name={k.icon} size={16} fill />
-            </span>
+      {items.map((k) => {
+        const isZero = k.value === '0' || k.value === 'Rs 0' || k.value === 'Rs. 0' || k.value === 'Rs 0.00' || k.value === '—'
+        return (
+          <article key={k.label} className="lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <span
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 'var(--r-sm)',
+                  background: BRAND[k.accent],
+                  color: BRAND_ON[k.accent],
+                  display: 'grid',
+                  placeItems: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Icon name={k.icon} size={16} fill />
+              </span>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  minWidth: 0,
+                  flex: 1,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    color: 'var(--text2)',
+                    minWidth: 0,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {k.label}
+                </span>
+                {k.definition && (
+                  <span
+                    title={k.definition}
+                    aria-label={k.definition}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 14,
+                      height: 14,
+                      borderRadius: '50%',
+                      background: 'var(--card2, rgba(0,0,0,0.06))',
+                      border: '1px solid var(--border)',
+                      color: 'var(--muted)',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      cursor: 'help',
+                      flexShrink: 0,
+                    }}
+                  >
+                    i
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/*
+              The value gets the card's full width rather than being indented
+              under the icon. Six cards across leaves ~190px, and "Rs 25,00,000"
+              does not fit in what is left after a 30px tile — it would either
+              wrap (reading as two numbers) or clip.
+            */}
             <div
+              className="kpi-value"
               style={{
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                color: 'var(--text2)',
-                minWidth: 0,
+                marginTop: 9,
+                fontSize: k.value.length > 8 ? 'clamp(16px, 1.05vw, var(--t-kpi, 22px))' : 'clamp(16px, 1.5vw, var(--t-kpi, 22px))',
+                fontWeight: 700,
+                color: 'var(--text)',
+                lineHeight: 1.15,
+                letterSpacing: '-0.02em',
                 whiteSpace: 'nowrap',
+                // A figure longer than the card degrades to an ellipsis rather
+                // than bleeding past the border.
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
               }}
             >
-              {k.label}
+              {k.value}
             </div>
-          </div>
 
-          {/*
-            The value gets the card's full width rather than being indented
-            under the icon. Six cards across leaves ~190px, and "Rs 25,00,000"
-            does not fit in what is left after a 30px tile — it would either
-            wrap (reading as two numbers) or clip.
-          */}
-          <div
-            className="kpi-value"
-            style={{
-              marginTop: 9,
-              fontSize: k.value.length > 8 ? 'clamp(16px, 1.05vw, var(--t-kpi, 22px))' : 'clamp(16px, 1.5vw, var(--t-kpi, 22px))',
-              fontWeight: 700,
-              color: 'var(--text)',
-              lineHeight: 1.15,
-              letterSpacing: '-0.02em',
-              whiteSpace: 'nowrap',
-              // A figure longer than the card degrades to an ellipsis rather
-              // than bleeding past the border.
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {k.value}
-          </div>
+            {(k.delta || k.note || (isZero && k.zeroExplanation)) && (
+              <div style={{ marginTop: 7, fontSize: 'var(--t-meta)', display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
+                {k.delta && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      fontWeight: 600,
+                      color: (k.delta.good ?? k.delta.direction === 'up') ? 'var(--success-text)' : 'var(--danger-text)',
+                    }}
+                  >
+                    <Icon name={k.delta.direction === 'up' ? 'arrow_up' : 'arrow_down'} size={12} fill />
+                    {k.delta.text}
+                  </span>
+                )}
+                {k.note ? (
+                  <span style={{ color: 'var(--muted)' }}>{k.note}</span>
+                ) : isZero && k.zeroExplanation ? (
+                  <span style={{ color: 'var(--muted)', fontStyle: 'italic' }}>{k.zeroExplanation}</span>
+                ) : null}
+              </div>
+            )}
 
-          {(k.delta || k.note) && (
-            <div style={{ marginTop: 7, fontSize: 'var(--t-meta)', display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
-              {k.delta && (
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 3,
-                    fontWeight: 600,
-                    color: (k.delta.good ?? k.delta.direction === 'up') ? 'var(--success-text)' : 'var(--danger-text)',
-                  }}
-                >
-                  <Icon name={k.delta.direction === 'up' ? 'arrow_up' : 'arrow_down'} size={12} fill />
-                  {k.delta.text}
-                </span>
-              )}
-              {k.note && <span style={{ color: 'var(--muted)' }}>{k.note}</span>}
-            </div>
-          )}
-
-          {k.spark && (
-            <div style={{ marginTop: 'var(--sp-sm)' }}>
-              <Spark points={k.spark} color={BRAND[k.accent]} />
-            </div>
-          )}
-        </article>
-      ))}
+            {k.spark && (
+              <div style={{ marginTop: 'var(--sp-sm)' }}>
+                <Spark points={k.spark} color={BRAND[k.accent]} />
+              </div>
+            )}
+          </article>
+        )
+      })}
     </section>
   )
 }

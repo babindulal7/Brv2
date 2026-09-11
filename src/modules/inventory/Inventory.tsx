@@ -21,6 +21,8 @@ import { Bundles } from './Bundles'
 import { Maintenance } from './Maintenance'
 import StockCheck from './StockCheck'
 import AddEquipment from './AddEquipment'
+import { FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
+import { BarcodeLookupModal } from '../rentals/modals/BarcodeLookupModal'
 import {
   listInventory,
   listUnits,
@@ -1266,6 +1268,7 @@ export default function Inventory() {
   const [page, setPage] = useState(1)
   /** Keyed on `products.id`, the primary key — the mock keyed on `name`, which is not unique. */
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [barcodeLookupOpen, setBarcodeLookupOpen] = useState(false)
 
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -1528,6 +1531,13 @@ export default function Inventory() {
             {phone ? '' : 'Export'}
           </Button>
         </span>
+        <Button
+          icon="search"
+          onClick={() => setBarcodeLookupOpen(true)}
+          aria-label="Scan or search barcode"
+        >
+          {phone ? '' : 'Scan Barcode'}
+        </Button>
         <Button
           icon="plus"
           variant="primary"
@@ -1834,12 +1844,14 @@ export default function Inventory() {
               id="inventory-filters"
               open={filtersOpen}
               onClose={() => setFiltersOpen(false)}
-              side="right"
+              side="left"
               width={380}
               resultCount={list.loading ? null : (list.total ?? null)}
               noun={list.total === 1 ? 'item' : 'items'}
               activeCount={activeFacetCount}
               onClearAll={clearFilters}
+              standardFooter
+              onApply={() => setFiltersOpen(false)}
             >
               <FilterRail
                 facets={facets}
@@ -1895,11 +1907,24 @@ export default function Inventory() {
                     expanded={filtersOpen}
                   />
 
-                  <Unavailable reason="§4.1 — status is written by the Status Engine, never by hand, so no bulk action is offered. Nothing else is built to act on a selection yet.">
-                    <Button icon="chevron_down" disabled>
-                      Bulk Actions
+                  {selected.size > 0 ? (
+                    <Button
+                      icon="download"
+                      onClick={() => {
+                        const selRows = list.rows.filter((r) => selected.has(r.id))
+                        exportCsv(selRows, money)
+                      }}
+                      aria-label={`Export ${selected.size} selected items`}
+                    >
+                      Export ({selected.size})
                     </Button>
-                  </Unavailable>
+                  ) : (
+                    <Unavailable reason="§4.1 — status is written by the Status Engine, never by hand, so no bulk action is offered. Select items using the checkboxes to export or stock check.">
+                      <Button icon="chevron_down" disabled>
+                        Bulk Actions
+                      </Button>
+                    </Unavailable>
+                  )}
 
                   <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                     Sort by
@@ -2278,6 +2303,46 @@ export default function Inventory() {
           </p>
         </>
       )}
+
+      <FloatingBulkActionBar
+        selectedCount={selected.size}
+        totalCount={list.rows.length}
+        onClearSelection={() => setSelected(new Set())}
+        noun="items"
+        actions={[
+          {
+            id: 'bulk-export',
+            label: 'Export Selected CSV',
+            icon: 'download',
+            onClick: () => {
+              const selRows = list.rows.filter((r) => selected.has(r.id))
+              exportCsv(selRows, money)
+            },
+          },
+          {
+            id: 'bulk-stock-check',
+            label: 'Stock Check',
+            icon: 'check',
+            onClick: () => {
+              const p = new URLSearchParams(params)
+              p.set('tab', 'stock-check')
+              setParams(p, { replace: true })
+            },
+            variant: 'primary',
+          },
+          {
+            id: 'bulk-scan',
+            label: 'Scan Barcode',
+            icon: 'search',
+            onClick: () => setBarcodeLookupOpen(true),
+          },
+        ]}
+      />
+
+      <BarcodeLookupModal
+        isOpen={barcodeLookupOpen}
+        onClose={() => setBarcodeLookupOpen(false)}
+      />
 
       <FooterNote extra={['Equipment is retired, never deleted']} />
     </div>

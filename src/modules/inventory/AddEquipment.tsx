@@ -64,6 +64,7 @@ function AddEquipmentLayout({ embedded, onDone }: { embedded?: boolean; onDone?:
   const navigate = useNavigate()
   const handleExit = () => (onDone ? onDone() : navigate('/inventory'))
   const viewport = useViewport()
+  const phone = viewport === 'phone'
   const money = useCanViewMoney()
   const online = useNetwork()
   const { showSuccessToast } = useToast()
@@ -265,16 +266,18 @@ function AddEquipmentLayout({ embedded, onDone }: { embedded?: boolean; onDone?:
             <Button variant="ghost" onClick={() => (isDirty ? setShowDiscard(true) : handleExit())}>
               Cancel
             </Button>
-            <Unavailable reason={PREVIEW_UNAVAILABLE_REASON}>
-              <Button variant="secondary" icon="eye" disabled>
-                Preview
-              </Button>
-            </Unavailable>
+            {!phone && (
+              <Unavailable reason={PREVIEW_UNAVAILABLE_REASON}>
+                <Button variant="secondary" icon="eye" disabled>
+                  Preview
+                </Button>
+              </Unavailable>
+            )}
             <Button variant="secondary" onClick={() => submit('draft')} disabled={saving}>
-              {saving ? 'Saving…' : 'Save Draft'}
+              {saving ? 'Saving…' : phone ? 'Draft' : 'Save Draft'}
             </Button>
             <Button variant="primary" icon="check" onClick={() => submit('create')} disabled={saving}>
-              {saving ? 'Saving…' : 'Create Equipment'}
+              {saving ? 'Saving…' : phone ? 'Create' : 'Create Equipment'}
             </Button>
           </>
         }
