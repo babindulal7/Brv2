@@ -174,3 +174,28 @@ describe('PK-07 — the test affordance does not ship', () => {
     expect(text()).not.toContain('Available Items for Test Scanning')
   })
 })
+
+describe('Phase 8 — Camera controls & Law 15 accessibility', () => {
+  it('renders a camera toggle and continuous mode option', async () => {
+    await mount(() => undefined)
+    const cameraBtn = [...(host?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.includes('Camera Scan'))
+    expect(cameraBtn).toBeDefined()
+    expect(text()).toContain('Continuous mode')
+  })
+
+  it('keeps the manual entry input at 44px minHeight (Law 15)', async () => {
+    await mount(() => undefined)
+    const input = host?.querySelector('input[type="text"]') as HTMLInputElement
+    expect(input.style.minHeight).toBe('44px')
+  })
+
+  it('toggles camera state when the camera button is clicked', async () => {
+    await mount(() => undefined)
+    const cameraBtn = [...(host?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.includes('Camera Scan'))
+    await act(async () => {
+      cameraBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const stopBtn = [...(host?.querySelectorAll('button') ?? [])].find((b) => b.textContent?.includes('Stop Camera'))
+    expect(stopBtn).toBeDefined()
+  })
+})

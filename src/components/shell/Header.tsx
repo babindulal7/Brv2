@@ -67,8 +67,8 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
     }
   }
 
-  // Fallback if useAuth has no user
-  const initials = user ? user.name.slice(0, 2).toUpperCase() : 'BR'
+  // Fallback if useAuth has no user or user.name is undefined
+  const initials = (user?.name || 'BR').slice(0, 2).toUpperCase()
 
   return (
     /*
@@ -111,7 +111,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
         zIndex: 20,
       }}
     >
-      <nav aria-label="Breadcrumb" style={{ flexShrink: 0, overflow: 'hidden' }}>
+      <nav aria-label="Breadcrumb" style={{ flex: isPhone ? '1 1 auto' : '0 0 auto', minWidth: 0, overflow: 'hidden' }}>
         <ol style={{ display: 'flex', alignItems: 'center', gap: 7, margin: 0, padding: 0, listStyle: 'none' }}>
           {(isPhone && crumbs.length > 1 ? [crumbs[crumbs.length - 1]!] : crumbs).map((c, i, arr) => {
             const last = i === arr.length - 1
@@ -123,16 +123,20 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                   fontWeight: i === 0 ? 600 : last ? 600 : 500,
                   color: i === 0 ? 'var(--nav-active-accent)' : last ? 'var(--text)' : 'var(--text2)',
                   whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: 'inline-block',
+                  maxWidth: isPhone ? '180px' : 'none',
                 }}
               >
                 {c.label}
               </span>
             )
             return (
-              <li key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                {i > 0 && <Icon name="chevron_right" size={13} style={{ color: 'var(--muted)' }} />}
+              <li key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                {i > 0 && <Icon name="chevron_right" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
                 {c.to && !last ? (
-                  <Link to={c.to} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex' }}>
+                  <Link to={c.to} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', minWidth: 0 }}>
                     {labelEl}
                   </Link>
                 ) : (
@@ -144,17 +148,9 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
         </ol>
       </nav>
 
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0, gap: 'var(--sp-md)' }}>
-        {isPhone ? (
-          <button
-            type="button"
-            onClick={() => openCommandPalette()}
-            aria-label="Search"
-            style={iconBtn}
-          >
-            <Icon name="search" size={17} />
-          </button>
-        ) : (
+      {/* On desktop and tablet, center search input + clock + sync status */}
+      {!isPhone && (
+        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0, gap: 'var(--sp-md)' }}>
           <button
             type="button"
             onClick={() => openCommandPalette()}
@@ -211,10 +207,8 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               </kbd>
             )}
           </button>
-        )}
 
-        {/* Live Clock & Sync Status Badge */}
-        {!isPhone && (
+          {/* Live Clock & Sync Status Badge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <button
               type="button"
@@ -334,36 +328,23 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               Kathmandu HQ
             </span>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 'var(--sp-sm)', flexShrink: 0, marginLeft: isPhone ? 'auto' : 0 }}>
         {actions}
 
-        {/*
-          BUG-002 — both of these were live-looking buttons with no `onClick` on
-          all 56 routes, and the bell carried a **hardcoded unread count of 12**.
+        {isPhone && (
+          <button
+            type="button"
+            onClick={() => openCommandPalette()}
+            aria-label="Search"
+            style={iconBtn}
+          >
+            <Icon name="search" size={17} />
+          </button>
+        )}
 
-          The count was the serious half. `notifications` exists live (12 columns)
-          and holds **zero rows**; nothing in `src/` writes one, and the only
-          inbox UI is `src/archive/notifications/UnifiedInbox.tsx`, which has no
-          route and no importer outside its own test. So the badge advertised
-          twelve pieces of pending work that did not exist and could not be
-          opened — a fabricated figure of exactly the kind the no-fabrication
-          register exists to stop, and it read as urgent because it rendered in
-          the danger pair.
-
-          Building the notification centre is a FEATURE, not this fix: what
-          generates a notification, what "unread" means per user, and where a
-          click lands are all unruled. Until then these follow the house pattern
-          for an unbuilt control — `Unavailable` + `disabled`, the same treatment
-          as RentalsList's "Save View" — which states the reason on hover AND on
-          a long-press, so the warehouse tablet gets the explanation too.
-
-          Deliberately NOT the "absent, not disabled" rule: that one is Law 6,
-          about hiding money from money-blind roles. These are unbuilt for
-          everyone, which is a different fact and is worth saying out loud.
-        */}
         {/* Notifications and Help — unbuilt; hidden on phone to save 88px of horizontal width */}
         {!isPhone && (
           <>
@@ -389,22 +370,26 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               aria-label="User profile"
               aria-expanded={profileOpen}
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: 'var(--r-badge)',
-                background: 'var(--card2)',
-                border: '1px solid var(--border)',
-                display: 'grid',
-                placeItems: 'center',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
+                ...iconBtn,
                 padding: 0,
               }}
             >
-              {initials}
+              <span
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 'var(--r-badge)',
+                  background: 'var(--card2)',
+                  border: '1px solid var(--border)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: 'var(--text)',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 700,
+                }}
+              >
+                {initials}
+              </span>
             </button>
 
             {profileOpen && (

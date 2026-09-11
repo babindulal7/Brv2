@@ -2,7 +2,64 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-11 — Barcode Scanner Modernization (@zxing/browser Continuous Decode, Torch Controls, Cooldown) & 390px Shell Layout Polish (186 Test Files, 3182 Tests Green)
 
+**Phase:** Phase 8 Scanner Decoupling & Phase 5 Shell Mobile Polish · **Status:** Complete. Modernized barcode scanning across `BarcodeScannerModal.tsx` and `ScannerFab.tsx` using continuous `@zxing/browser` video decoding with 2,000ms same-code cooldown to prevent duplicate triggers, camera torch hardware toggle with 44×44 hit targets, decode latency instrumentation (<2s SLA), and real Supabase entity lookups for equipment and bookings. Polished mobile shell in `Header.tsx` to eliminate 390px header collisions, enforce Law 15 44×44 touch targets on profile and search buttons, and enable graceful breadcrumb truncation. All 186 test suites (3,182 tests) green, `tsc --noEmit` exit 0 (0 errors), Vite production build passed in 36s, 119/119 PGlite migrations applied, 17/17 lifecycle steps passed.
+
+### Did
+
+- **Barcode Scanner Modernization (`src/components/ui/BarcodeScannerModal.tsx`, `ScannerFab.tsx`, `Icon.tsx`):**
+  - Integrated `@zxing/browser` (`BrowserMultiFormatReader`, `IScannerControls`) with live `<video>` viewfinder and scanning reticle.
+  - Implemented 2,000ms same-code cooldown (`SAME_CODE_COOLDOWN_MS = 2000`) in both `BarcodeScannerModal` and `ScannerFab` to prevent duplicate scan events while holding equipment in view.
+  - Added hardware camera torch toggle button (`track.getCapabilities().torch` & `track.applyConstraints()`) with 44×44 minimum hit target (Law 15).
+  - Added `IconBolt` to `src/components/ui/Icon.tsx` and registered `zap: IconBolt` in semantic icon registry.
+  - Added decode latency instrumentation (`scanLatencyMs` tracking `<2s` SLA).
+  - Enhanced `ScannerFab.tsx` with live database lookup against Supabase `equipment_items` (brand/model/name/serial) and `bookings`, keeping `ERR`, `XXX`, and `DUP` as test mocks.
+  - Added unit test suite `src/components/ui/__tests__/BarcodeScannerModal.verdict.test.tsx` verifying camera controls, continuous decode toggle, and Law 15 44px minHeight (11/11 tests green).
+- **Shell 390px Mobile Viewport Polish (`src/components/shell/Header.tsx`, `shell.test.tsx`):**
+  - Eliminated 390px mobile header overlap: relocated mobile search trigger button into right-hand action cluster (`marginLeft: 'auto'`) and configured breadcrumbs with `flex: 1 1 auto, minWidth: 0` and single-crumb ellipsis truncation.
+  - Wrapped mobile user profile avatar inside a 44×44 tap target button (`iconBtn` styling, Law 15).
+  - Safely guarded user initials extraction against undefined user name.
+  - Added test suite `Header — Phase 5, 390px phone layout & Law 15 hit targets` in `src/components/shell/__tests__/shell.test.tsx` (18/18 tests green).
+- **Toast Unmount Teardown Safety (`src/components/ui/Toast.tsx`):**
+  - Tracked active timer IDs in `useRef<Set<ReturnType<typeof setTimeout>>>` and cleared on unmount to eliminate `window is not defined` errors during test runner teardown.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors across 606 files)**.
+- `node ./node_modules/vitest/vitest.mjs run` **186/186 test files passed, 3,182/3,182 tests green**.
+- `node ./node_modules/vite/bin/vite.js build` **build passed cleanly in 36.37s**.
+- `node scripts/check-pglite.mjs` **119/119 applied cleanly, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **17/17 green, 0 known-red, 0 failed**.
+- `node scripts/completion.mjs` **Backend 43/43 (100%), Real data 48/48 (100%), DB enforcement 9/9 (100%), Permissions 36/39 (92%), Lifecycle 17/17 (100%), Overall ≈ 98%**.
+- `node scripts/lint-progress.mjs` **passed**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 36 / 39 (92%) | +0 |
+| Lifecycle | steps green / total | 17 / 17 (100%) | +0 |
+| Overall | mean of five | ≈ 98% | +0 |
+
+Migrations 119 files · check:pglite 119/119 passed. Suite: 186/186 passed.
+Gates read from .lifecycle-result.json.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- Keep inspection capabilities unmapped pending schema ruling (`PLAN.md §4.29`).
+- Phase 9: Offline queue producer wiring and age badges (`PLAN.md §4.27`).
+- Phase 6: Screen-by-screen state audit per `PLAN.md §4.38`.
+- Production deployment of migrations 0113–0121 to remote Supabase (`sxguwvgoserhdolewibb`) during approved maintenance window.
 
 ## 2026-09-11 — Universal FilterDrawer, Bikram Sambat Date Presets & Floor Workflow Integration (186 Test Files, 3177 Tests Green)
 

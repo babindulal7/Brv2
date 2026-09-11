@@ -33,6 +33,7 @@ vi.mock('../../../lib/collapse', () => ({ useCollapsed: () => [collapsedPref, ()
 
 const { default: Sidebar } = await import('../Sidebar')
 const { default: BottomBar } = await import('../BottomBar')
+const { default: Header } = await import('../Header')
 
 let container: HTMLDivElement
 let root: Root
@@ -200,5 +201,55 @@ describe('BottomBar — five fixed slots', () => {
        under them rather than five slots spread across the indicator. */
     expect(bar?.style.gridTemplateRows).toBe('58px')
     expect(bar?.style.alignContent).toBe('start')
+  })
+})
+
+describe('Header — Phase 5, 390px phone layout & Law 15 hit targets', () => {
+  it('renders breadcrumb links and desktop search at desktop width', async () => {
+    viewport = 'desktop'
+    await mount(
+      <Header
+        crumbs={[
+          { label: 'Rentals', to: '/rentals' },
+          { label: 'B-715' },
+        ]}
+      />,
+    )
+    const breadcrumb = container.querySelector('nav[aria-label="Breadcrumb"]')
+    expect(breadcrumb).not.toBeNull()
+    const link = breadcrumb?.querySelector('a')
+    expect(link?.getAttribute('href')).toBe('/rentals')
+    expect(breadcrumb?.textContent).toContain('Rentals')
+    expect(breadcrumb?.textContent).toContain('B-715')
+    expect(container.textContent).toContain('⌘K')
+  })
+
+  it('keeps phone header free of overlap at 390px with single crumb and 44px targets', async () => {
+    viewport = 'phone'
+    await mount(
+      <Header
+        crumbs={[
+          { label: 'Rentals', to: '/rentals' },
+          { label: 'Booking B-2026-000492-Equipment-Dispatch' },
+        ]}
+      />,
+    )
+    const breadcrumb = container.querySelector('nav[aria-label="Breadcrumb"]')
+    expect(breadcrumb).not.toBeNull()
+    // Takes only the last crumb on phone
+    expect(breadcrumb?.textContent).not.toContain('Rentals')
+    expect(breadcrumb?.textContent).toContain('Booking B-2026-000492-Equipment-Dispatch')
+
+    // Search button exists on phone and has 44px minimum target (Law 15)
+    const searchBtn = container.querySelector<HTMLButtonElement>('button[aria-label="Search"]')
+    expect(searchBtn).not.toBeNull()
+    expect(searchBtn?.style.minHeight).toBe('44px')
+    expect(searchBtn?.style.minWidth).toBe('44px')
+
+    // User profile avatar button has 44px minimum hit target (Law 15)
+    const profileBtn = container.querySelector<HTMLButtonElement>('button[aria-label="User profile"]')
+    expect(profileBtn).not.toBeNull()
+    expect(profileBtn?.style.minHeight).toBe('44px')
+    expect(profileBtn?.style.minWidth).toBe('44px')
   })
 })

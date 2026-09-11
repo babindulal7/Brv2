@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { BrowserMultiFormatReader, BrowserCodeReader, type IScannerControls } from '@zxing/browser'
 import { Modal } from './Modal'
 import { Button } from './Page'
 import Icon from './Icon'
@@ -83,10 +84,8 @@ export interface BarcodeScannerModalProps {
  */
 const DEFAULT_MATCH_LABEL = 'marked — recorded at session close, nothing saved yet'
 
-/** Why "Enable Camera" cannot claim an active camera scanner: permission is
- *  requested, but no decode pipeline is attached to the stream yet. */
-const REASON_CAMERA_DECODE_NOT_WIRED =
-  'Camera permission granted, but live camera decoding is not wired yet — use a hardware laser or type the code.'
+/** Same-code cooldown: ignore identical consecutive detections within 2s */
+const SAME_CODE_COOLDOWN_MS = 2000
 
 /** Web Audio Beep Feedback */
 function playAudioFeedback(type: 'success' | 'error') {
@@ -136,7 +135,20 @@ export function BarcodeScannerModal({
     Array<{ id: string; time: string; text: string; success: boolean }>
   >([])
 
+  // Camera, torch, and continuous decode states
+  const [cameraActive, setCameraActive] = useState(false)
+  const [continuous, setContinuous] = useState(true)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [hasTorch, setHasTorch] = useState(false)
+  const [torchOn, setTorchOn] = useState(false)
+  const [scanLatencyMs, setScanLatencyMs] = useState<number | null>(null)
+
   const inputRef = useRef<HTMLInputElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const codeReaderRef = useRef<BrowserMultiFormatReader | null>(null)
+  const controlsRef = useRef<IScannerControls | null>(null)
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null)
+  const lastScannedCodeRef = useRef<{ code: string; timestamp: number } | null>(null)
 
   useEffect(() => {
     if (isOpen) {
@@ -144,17 +156,28 @@ export function BarcodeScannerModal({
     }
   }, [isOpen])
 
-  const handleScanSubmit = (e?: React.FormEvent) => {
-    if (e) e.preventDefault()
-    const code = query.trim()
+  const processCode = useCallback((rawCode: string, fromCamera = false) => {
+    const code = rawCode.trim()
     if (!code) return
+
+    const now = Date.now()
+    if (
+      fromCamera &&
+      lastScannedCodeRef.current &&
+      lastScannedCodeRef.current.code.toLowerCase() === code.toLowerCase() &&
+      now - lastScannedCodeRef.current.timestamp < SAME_CODE_COOLDOWN_MS
+    ) {
+      // Cooldown active: skip duplicate scan of same item
+      return
+    }
+
+    lastScannedCodeRef.current = { code, timestamp: now }
+    const startTime = performance.now()
 
     setQuery('')
     const timeStr = new Date().toLocaleTimeString('en-US', { hour12: false })
 
-    // 1. Identity match ONLY — id, serial or asset tag. A barcode is an
-    //    identity; a name substring is not ("battery" must never resolve to
-    //    whichever of four identical batteries sorts first).
+    // 1. Identity match ONLY — id, serial or asset tag
     const matchedItem = items.find(
       (i) =>
         i.id.toLowerCase() === code.toLowerCase() ||
@@ -163,7 +186,6 @@ export function BarcodeScannerModal({
     )
 
     if (!matchedItem) {
-      // Unknown item
       playAudioFeedback('error')
       const msg = bookingId
         ? `"${code}" does not match any scannable item in this booking (${bookingId}).`
@@ -173,21 +195,11 @@ export function BarcodeScannerModal({
         { id: Date.now().toString(), time: timeStr, text: msg, success: false },
         ...prev,
       ])
+      setScanLatencyMs(Math.round(performance.now() - startTime))
       return
     }
 
-    /*
-     * 2. Rows that cannot be scanned.
-     *
-     * The refusal used to read "is a child accessory. Accessories are checklist
-     * items only" — a classification the flag does not carry. All three floor
-     * workspaces set `isAccessory` from `r.serial === null` ("Quantity rows
-     * have no serial to scan — the modal treats them as accessories"), so the
-     * row may be a quantity line, or a unit whose serial and asset tag are both
-     * unrecorded. Neither is an accessory, and telling an operator a camera
-     * body is one sends them looking for a parent item that does not exist.
-     * The refusal now states the fact the flag actually stands for.
-     */
+    // 2. Rows that cannot be scanned
     if (matchedItem.isAccessory) {
       playAudioFeedback('error')
       const msg = `"${matchedItem.name}" has no serial or asset tag to scan — it is a checklist item only. Tick it in the list instead.`
@@ -196,18 +208,11 @@ export function BarcodeScannerModal({
         { id: Date.now().toString(), time: timeStr, text: msg, success: false },
         ...prev,
       ])
+      setScanLatencyMs(Math.round(performance.now() - startTime))
       return
     }
 
-    // 3. Match. Report ONLY what happened: the item was identified and handed
-    //    to the consuming screen, and the CONSUMER says what that changed —
-    //    it may well be nothing (PK-09). No "Successfully packed/handed
-    //    over/returned" — that work has not happened yet — and no domain
-    //    event: the action layer emits INVENTORY_* after the write actually
-    //    lands (see src/actions/inventory/packEquipment.ts).
-    //
-    //    The hand-off runs BEFORE the beep and the banner, because it is what
-    //    decides both.
+    // 3. Match
     const outcome = onItemScanned(matchedItem)
     const identity = `${matchedItem.name} (${matchedItem.serial || matchedItem.id})`
     const ok = outcome ? outcome.ok : true
@@ -225,6 +230,110 @@ export function BarcodeScannerModal({
       { id: Date.now().toString(), time: timeStr, text: resultMsg, success: ok },
       ...prev,
     ])
+
+    setScanLatencyMs(Math.round(performance.now() - startTime))
+
+    if (fromCamera && !continuous) {
+      setCameraActive(false)
+    }
+  }, [items, bookingId, onItemScanned, matchLabel, continuous])
+
+  const handleScanSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    processCode(query, false)
+  }
+
+  // Camera stop and stream release
+  const stopCamera = useCallback(() => {
+    controlsRef.current?.stop()
+    controlsRef.current = null
+    videoTrackRef.current = null
+    setTorchOn(false)
+    setHasTorch(false)
+    BrowserCodeReader.releaseAllStreams()
+  }, [])
+
+  // Manage ZXing camera stream lifecycle
+  useEffect(() => {
+    if (!isOpen || !cameraActive) {
+      stopCamera()
+      codeReaderRef.current = null
+      setCameraError(null)
+      return
+    }
+
+    let isMounted = true
+    setCameraError(null)
+
+    if (!codeReaderRef.current) {
+      codeReaderRef.current = new BrowserMultiFormatReader()
+    }
+
+    if (videoRef.current) {
+      codeReaderRef.current
+        .decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+          if (result && isMounted) {
+            processCode(result.getText(), true)
+          }
+        })
+        .then((controls) => {
+          if (!isMounted) {
+            controls.stop()
+            return
+          }
+          controlsRef.current = controls
+
+          // Probe torch capability
+          try {
+            const stream = (videoRef.current as HTMLVideoElement | null)?.srcObject as MediaStream | undefined
+            const track = stream?.getVideoTracks()[0]
+            if (track) {
+              videoTrackRef.current = track
+              const caps = (track.getCapabilities?.() as { torch?: boolean }) || {}
+              setHasTorch(Boolean(caps.torch))
+            }
+          } catch {
+            // Unsupported capabilities API in mock/headless
+          }
+        })
+        .catch((err) => {
+          if (isMounted) {
+            const errorName = err instanceof Error && err.name ? err.name : 'Error'
+            const detail =
+              errorName === 'NotAllowedError'
+                ? 'Camera access denied by user or device policy.'
+                : `Camera error: ${err instanceof Error && err.message ? err.message : errorName}`
+            setCameraError(detail)
+            playAudioFeedback('error')
+          }
+        })
+    }
+
+    return () => {
+      isMounted = false
+      stopCamera()
+    }
+  }, [isOpen, cameraActive, processCode, stopCamera])
+
+  // Stop camera when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setCameraActive(false)
+      stopCamera()
+    }
+  }, [isOpen, stopCamera])
+
+  const toggleTorch = async () => {
+    if (!videoTrackRef.current || !hasTorch) return
+    const next = !torchOn
+    try {
+      await videoTrackRef.current.applyConstraints({
+        advanced: [{ torch: next } as any],
+      })
+      setTorchOn(next)
+    } catch {
+      // Ignore torch error
+    }
   }
 
   const modeTitle =
@@ -254,70 +363,185 @@ export function BarcodeScannerModal({
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-        {/* Scanner Input Box */}
-        <form onSubmit={handleScanSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
-            {(['Serial', 'Barcode', 'QR'] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setScanType(t)}
-                style={{
-                  // Law 15 — 44×44 at every width.
-                  minHeight: 44,
-                  padding: '0 12px',
-                  borderRadius: 'var(--r-btn)',
-                  border: scanType === t ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
-                  background: scanType === t ? 'var(--nav-active-accent-bg, var(--card2))' : 'var(--card)',
-                  color: scanType === t ? 'var(--nav-active-accent)' : 'var(--text2)',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                {t} Mode
-              </button>
-            ))}
+        {/* Mode Selector & Camera Toggle */}
+        <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
+          {(['Serial', 'Barcode', 'QR'] as const).map((t) => (
             <button
+              key={t}
               type="button"
-              onClick={async () => {
-                try {
-                  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    setLastScanResult({ success: false, message: 'Camera API is not supported in this browser environment.' })
-                    return
-                  }
-                  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                  // No decoder consumes this stream yet — release the camera
-                  // instead of leaving its indicator lit over a dead feed.
-                  stream.getTracks().forEach((t) => t.stop())
-                  setLastScanResult({ success: false, message: REASON_CAMERA_DECODE_NOT_WIRED })
-                } catch (err) {
-                  playAudioFeedback('error')
-                  const errorName = err instanceof Error && err.name ? err.name : 'Error'
-                  const detail = errorName === 'NotAllowedError' ? 'Camera access denied by user or device policy.' : `Camera error: ${err instanceof Error && err.message ? err.message : errorName}`
-                  setLastScanResult({ success: false, message: detail })
-                }
-              }}
+              className="tap"
+              onClick={() => setScanType(t)}
               style={{
                 minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'var(--card)',
-                color: 'var(--text2)',
+                border: scanType === t ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
+                background: scanType === t ? 'var(--nav-active-accent-bg, var(--card2))' : 'var(--card)',
+                color: scanType === t ? 'var(--nav-active-accent)' : 'var(--text2)',
                 fontSize: 'var(--t-meta)',
                 fontWeight: 600,
                 cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 'var(--sp-xs)',
               }}
             >
-              <Icon name="camera" size={13} />
-              Enable Camera
+              {t} Mode
             </button>
-          </div>
+          ))}
 
+          <button
+            type="button"
+            className="tap"
+            onClick={() => setCameraActive((v) => !v)}
+            aria-pressed={cameraActive}
+            style={{
+              minHeight: 44,
+              padding: '0 14px',
+              borderRadius: 'var(--r-btn)',
+              border: `1px solid ${cameraActive ? 'var(--primary)' : 'var(--border)'}`,
+              background: cameraActive ? 'var(--hover-card)' : 'var(--card)',
+              color: cameraActive ? 'var(--primary)' : 'var(--text2)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 'var(--sp-xs)',
+              marginLeft: 'auto',
+            }}
+          >
+            <Icon name="camera" size={15} />
+            <span>{cameraActive ? 'Stop Camera' : 'Camera Scan'}</span>
+          </button>
+
+          {cameraActive && hasTorch && (
+            <button
+              type="button"
+              className="tap"
+              onClick={toggleTorch}
+              aria-label={torchOn ? 'Turn torch off' : 'Turn torch on'}
+              style={{
+                minHeight: 44,
+                minWidth: 44,
+                padding: '0 10px',
+                borderRadius: 'var(--r-btn)',
+                border: `1px solid ${torchOn ? 'var(--primary)' : 'var(--border)'}`,
+                background: torchOn ? 'var(--primary)' : 'var(--card)',
+                color: torchOn ? 'var(--on-brand)' : 'var(--text2)',
+                cursor: 'pointer',
+                display: 'grid',
+                placeItems: 'center',
+              }}
+            >
+              <Icon name="zap" size={16} />
+            </button>
+          )}
+        </div>
+
+        {/* Camera Viewfinder */}
+        {cameraActive && (
+          <div
+            style={{
+              position: 'relative',
+              height: 200,
+              background: '#000',
+              borderRadius: 'var(--r-sm)',
+              overflow: 'hidden',
+              border: lastScanResult
+                ? lastScanResult.success
+                  ? '2px solid var(--success)'
+                  : '2px solid var(--danger)'
+                : '1px solid var(--border)',
+            }}
+          >
+            <video
+              ref={videoRef}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              playsInline
+              muted
+            />
+
+            {cameraError ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 'var(--sp-md)',
+                  textAlign: 'center',
+                  color: 'var(--st-danger-fg)',
+                  fontSize: 'var(--t-meta)',
+                  background: 'rgba(0,0,0,0.85)',
+                }}
+              >
+                <Icon name="alert_triangle" size={22} style={{ marginBottom: 6 }} />
+                <span>{cameraError}</span>
+              </div>
+            ) : (
+              <>
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: '18%',
+                    border: '1.5px dashed rgba(255,255,255,0.6)',
+                    borderRadius: 'var(--r-input)',
+                    pointerEvents: 'none',
+                    boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.35)',
+                  }}
+                />
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 8,
+                    left: 0,
+                    right: 0,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: 6,
+                    color: '#fff',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: 'var(--success)',
+                      display: 'inline-block',
+                      animation: 'pulse 1.5s infinite',
+                    }}
+                  />
+                  <span>Align barcode or QR inside reticle</span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Continuous mode & Latency indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={continuous}
+              onChange={(e) => setContinuous(e.target.checked)}
+            />
+            <span>Continuous mode (keeps scanner ready)</span>
+          </label>
+          {scanLatencyMs !== null && (
+            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'monospace' }}>
+              Latency: {scanLatencyMs}ms (SLA &lt;2s)
+            </span>
+          )}
+        </div>
+
+        {/* Scanner Input Box */}
+        <form onSubmit={handleScanSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
             <div style={{ position: 'relative', flex: 1 }}>
               <input
@@ -332,7 +556,7 @@ export function BarcodeScannerModal({
                 }
                 style={{
                   width: '100%',
-                  height: 42,
+                  minHeight: 44,
                   padding: '0 12px 0 36px',
                   borderRadius: 'var(--r-btn)',
                   border: lastScanResult

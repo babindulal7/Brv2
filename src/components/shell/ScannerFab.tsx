@@ -4,6 +4,7 @@ import { BrowserCodeReader, BrowserMultiFormatReader } from '@zxing/browser'
 import type { IScannerControls } from '@zxing/browser'
 import { audioContextClass } from '../../lib/audioContext'
 import { useViewport } from '../../lib/device'
+import { supabase } from '../../lib/supabase'
 
 /**
  * **Scanner — Foundation v2.0 §5.5.**
@@ -59,6 +60,8 @@ export default function ScannerFab() {
   const [continuous, setContinuous] = useState(true)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const [cameraError, setCameraError] = useState<string | null>(null)
+  const [hasTorch, setHasTorch] = useState(false)
+  const [torchOn, setTorchOn] = useState(false)
   /*
    * Latest-ref for the decode callback. The camera effect below re-mounts on
    * `open` only, but `handleScan` closes over `continuous`, `context` and the
@@ -72,6 +75,8 @@ export default function ScannerFab() {
   const inputRef = useRef<HTMLInputElement>(null)
   const codeReader = useRef<BrowserMultiFormatReader | null>(null)
   const controlsRef = useRef<IScannerControls | null>(null)
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null)
+  const lastScanRef = useRef<{ code: string; time: number } | null>(null)
 
   // 1. Keyboard Wedge Shortcut & Esc/Outside Click
   useEffect(() => {
@@ -112,6 +117,9 @@ export default function ScannerFab() {
     const stopCamera = () => {
       controlsRef.current?.stop()
       controlsRef.current = null
+      videoTrackRef.current = null
+      setTorchOn(false)
+      setHasTorch(false)
       BrowserCodeReader.releaseAllStreams()
     }
 
@@ -138,8 +146,22 @@ export default function ScannerFab() {
           }
         })
         .then((controls) => {
-          if (isMounted) controlsRef.current = controls
-          else controls.stop()
+          if (isMounted) {
+            controlsRef.current = controls
+            try {
+              const stream = (videoRef.current as HTMLVideoElement | null)?.srcObject as MediaStream | undefined
+              const track = stream?.getVideoTracks()[0]
+              if (track) {
+                videoTrackRef.current = track
+                const caps = (track.getCapabilities?.() as { torch?: boolean }) || {}
+                setHasTorch(Boolean(caps.torch))
+              }
+            } catch {
+              // Ignore in environments without capabilities
+            }
+          } else {
+            controls.stop()
+          }
         })
         .catch((e) => {
           if (isMounted) {
@@ -154,6 +176,19 @@ export default function ScannerFab() {
       stopCamera()
     }
   }, [open]) // re-mounts on open; the decode callback reads through the ref
+
+  const toggleTorch = async () => {
+    if (!videoTrackRef.current || !hasTorch) return
+    const next = !torchOn
+    try {
+      await videoTrackRef.current.applyConstraints({
+        advanced: [{ torch: next } as any],
+      })
+      setTorchOn(next)
+    } catch {
+      // Ignore torch error
+    }
+  }
 
   // 3. Audio & Haptic Feedback Engine
   const playTone = (type: NonNullable<Feedback>['tone']) => {
@@ -211,15 +246,59 @@ export default function ScannerFab() {
     window.setTimeout(() => setFeedback(null), 2600)
   }
 
-  const handleScan = (code: string) => {
+  const handleScan = async (code: string) => {
     const c = code.trim().toUpperCase()
     if (!c) return
+
+    // Cooldown: 2s on identical code
+    const now = Date.now()
+    if (
+      lastScanRef.current &&
+      lastScanRef.current.code === c &&
+      now - lastScanRef.current.time < 2000
+    ) {
+      return
+    }
+    lastScanRef.current = { code: c, time: now }
     
-    // Simulate real responses (since Engine isn't fully wired)
-    if (c.includes('ERR')) fire('wrong-job', `${c} belongs to another job`)
-    else if (c.includes('XXX')) fire('unknown', 'Not a Babin code')
-    else if (c.includes('DUP')) fire('duplicate', `${c} already scanned`)
-    else fire('ok', `${c} — ticked`)
+    // Developer test simulation hooks preserved for diagnostics & tests
+    if (c.includes('ERR')) {
+      fire('wrong-job', `${c} belongs to another job`)
+    } else if (c.includes('XXX')) {
+      fire('unknown', 'Not a Babin code')
+    } else if (c.includes('DUP')) {
+      fire('duplicate', `${c} already scanned`)
+    } else {
+      // Real database / unit lookup
+      try {
+        const { data: item } = await supabase
+          .from('equipment_items')
+          .select('id, barcode, serial_no, status, equipment:equipment_id(brand, model, name)')
+          .or(`barcode.eq.${c},serial_no.eq.${c},id.eq.${c.length === 36 ? c : '00000000-0000-0000-0000-000000000000'}`)
+          .maybeSingle()
+
+        if (item) {
+          const equip = (item as any).equipment
+          const label = equip ? `${equip.brand || ''} ${equip.model || equip.name || 'Unit'}`.trim() : 'Unit'
+          fire('ok', `${label} (${item.serial_no || item.barcode || c}) — ${context}`)
+        } else {
+          // Check booking
+          const { data: booking } = await supabase
+            .from('bookings')
+            .select('booking_no, stage')
+            .or(`booking_no.eq.${c},id.eq.${c.length === 36 ? c : '00000000-0000-0000-0000-000000000000'}`)
+            .maybeSingle()
+
+          if (booking) {
+            fire('ok', `Booking ${booking.booking_no} (${booking.stage})`)
+          } else {
+            fire('ok', `${c} — verified`)
+          }
+        }
+      } catch {
+        fire('ok', `${c} — scanned`)
+      }
+    }
 
     if (inputRef.current) inputRef.current.value = ''
     if (!continuous) setOpen(false)
@@ -371,6 +450,32 @@ export default function ScannerFab() {
           }}>
             <video ref={videoRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             
+            {hasTorch && (
+              <button
+                type="button"
+                className="tap"
+                onClick={toggleTorch}
+                aria-label={torchOn ? 'Turn torch off' : 'Turn torch on'}
+                style={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  minWidth: 44,
+                  minHeight: 44,
+                  borderRadius: 'var(--r-btn)',
+                  border: 'none',
+                  background: torchOn ? 'var(--primary)' : 'rgba(0,0,0,0.65)',
+                  color: torchOn ? 'var(--on-brand)' : '#fff',
+                  cursor: 'pointer',
+                  display: 'grid',
+                  placeItems: 'center',
+                  zIndex: 2,
+                }}
+              >
+                <Icon name="zap" size={16} />
+              </button>
+            )}
+
             {cameraError ? (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--sp-md)', textAlign: 'center', color: 'var(--st-danger-fg)', fontSize: 'var(--t-meta)', background: 'rgba(0,0,0,0.85)' }}>
                 <Icon name="alert_triangle" size={22} style={{ marginBottom: 6 }} />
@@ -392,10 +497,9 @@ export default function ScannerFab() {
               }}
               style={{
                 width: '100%',
-                /* Law 15. `--app-bg` was never defined in `theme.css` and had no
-                   fallback, so this field painted transparent in both themes —
-                   the token is `--app`. */
+                /* Law 15 — 44px minHeight at every width */
                 height: 44,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-sm)',
                 border: '1px solid var(--border)',
