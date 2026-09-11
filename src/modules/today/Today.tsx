@@ -1,9 +1,10 @@
-import { useCallback, useState, useMemo } from 'react'
+import { useCallback, useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { PageHeader, Button, FooterNote, KpiStrip, Rail, Card, type Kpi } from '../../components/ui/Page'
 import MovementList from './MovementList'
 import TimelinePanel from './TimelinePanel'
+import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
 import { FastReturnModal } from '../rentals/modals/FastReturnModal'
 import { BarcodeLookupModal } from '../rentals/modals/BarcodeLookupModal'
 import {
@@ -671,6 +672,13 @@ export default function Today() {
   const dayError = pickups.error ?? returns.error
   const dayLoading = pickups.loading || returns.loading
 
+  const [lastLoadedAt, setLastLoadedAt] = useState<number>(() => Date.now())
+  useEffect(() => {
+    if (!dayLoading) {
+      setLastLoadedAt(Date.now())
+    }
+  }, [dayLoading])
+
   /*
    * ⛔ The two badges used to read module constants over the UNFILTERED seed.
    * Filter to one row and the header still said "8 Pending". Both are now
@@ -899,6 +907,7 @@ export default function Today() {
         description="Today's jobs at a glance. Alerts and every other day live in Operation."
         actions={
           <>
+            <DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refetchAll} loading={dayLoading} />
             <DatePill />
             <PeriodControl period={period} setPeriod={setPeriod} />
             <Button icon="plus" variant="primary" aria-label="New Rental" onClick={() => navigate('/rentals/new')}>

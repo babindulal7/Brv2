@@ -2,6 +2,66 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-11 — Phase 9 Offline Gating Reasons, DataAgeBadge & Operational Read Freshness (188 Test Files, 3195 Tests Green)
+
+**Phase:** Phase 9 Offline Robustness · **Status:** Complete. Modernized offline handling in `actions/core.ts` by introducing `ActionOfflineError` so financial operations (payments, refunds, invoice voids) and approval mutations clearly state the offline refusal reason rather than masquerading as role permission violations. Wired automatic network detection (`navigator.onLine`) and passed `online` to `canApproveDailyClosing`. Created `DataAgeBadge` component satisfying Law 11 (icon + label, never color alone) and Law 15 (44×44 hit targets), mounting it in `OperationsQueues.tsx` and `Today.tsx` to display real-time operational data freshness. All 188 test suites (3,195 tests) green, `tsc --noEmit` exit 0 (0 errors across 608 files), Vite production build passed in 41.48s, 119/119 PGlite migrations applied, 17/17 lifecycle steps passed.
+
+### Did
+
+- **Action Dispatcher Offline Gating & Reason Surfacing (`src/actions/core.ts`, `offlineGating.test.ts`):**
+  - Introduced `ActionOfflineError extends Error` stating `"${action}" cannot be performed while offline — requires ${capability} with an active server connection.`.
+  - In `checkCapability`, wired automatic network presence check (`ctx.isOnline ?? (typeof navigator !== 'undefined' ? navigator.onLine : true)`).
+  - Passed `online` argument to `canApproveDailyClosing(ctx.role, online)` (was previously defaulting online).
+  - In `createAction`, differentiated offline denials from role authorization errors: if an action is blocked while offline but the role is authorized online, `ActionOfflineError` is thrown immediately with the explicit offline connection reason (Law 12 / PLAN.md §4.27).
+  - Added unit test suite `src/actions/__tests__/offlineGating.test.ts` asserting offline rejection for payments, invoice void, and daily closings while allowing offline floor operations (5/5 tests green).
+- **Operational Data Age Badge (`src/components/ui/DataAgeBadge.tsx`, `DataAgeBadge.test.tsx`):**
+  - Built `DataAgeBadge` rendering relative age ("Just now", "5m ago", "1h ago") with 30s auto-recalculation.
+  - Implemented multi-state cues complying with Law 11:
+    - Fresh: neutral tone with `timer` / `clock` icon.
+    - Stale (> 15m threshold): warning tone with `alert_triangle` icon and `Stale · Xm ago` text.
+    - Offline: `Offline · Xm ago` with `alert_triangle` icon.
+  - Included 44×44 accessible touch-target refresh button with spinning state (Law 15).
+  - Added unit test suite `src/components/ui/__tests__/DataAgeBadge.test.tsx` (8/8 tests green).
+- **Queue & Dashboard Integration (`src/modules/operations/OperationsQueues.tsx`, `src/modules/today/Today.tsx`):**
+  - Mounted `DataAgeBadge` in the header action clusters of `OperationsQueues.tsx` and `Today.tsx`, tracking timestamp of last fetch and wired to `refreshAll`.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors across 608 files)**.
+- `node ./node_modules/vitest/vitest.mjs run` **188/188 test files passed, 3,195/3,195 tests green**.
+- `node ./node_modules/vite/bin/vite.js build` **build passed cleanly in 41.48s**.
+- `node scripts/check-pglite.mjs` **119/119 applied cleanly, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **17/17 green, 0 known-red, 0 failed**.
+- `node scripts/completion.mjs` **Backend 43/43 (100%), Real data 48/48 (100%), DB enforcement 9/9 (100%), Permissions 36/39 (92%), Lifecycle 17/17 (100%), Overall ≈ 98%**.
+- `node scripts/lint-progress.mjs` **passed**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 36 / 39 (92%) | +0 |
+| Lifecycle | steps green / total | 17 / 17 (100%) | +0 |
+| Overall | mean of five | ≈ 98% | +0 |
+
+Migrations 119 files · check:pglite 119/119 passed. Suite: 188/188 passed.
+Gates read from .lifecycle-result.json.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- Keep inspection capabilities unmapped pending schema ruling (`PLAN.md §4.29`).
+- Phase 10: PWA icons resolution (192, 512, maskable) and app shells (`PLAN.md §4.27` / `PLAN.md Phase 10`).
+- Phase 6: Screen-by-screen state audit per `PLAN.md §4.38`.
+- Production deployment of migrations 0113–0121 to remote Supabase (`sxguwvgoserhdolewibb`) during approved maintenance window.
+
 ## 2026-09-11 — Barcode Scanner Modernization (@zxing/browser Continuous Decode, Torch Controls, Cooldown) & 390px Shell Layout Polish (186 Test Files, 3182 Tests Green)
 
 **Phase:** Phase 8 Scanner Decoupling & Phase 5 Shell Mobile Polish · **Status:** Complete. Modernized barcode scanning across `BarcodeScannerModal.tsx` and `ScannerFab.tsx` using continuous `@zxing/browser` video decoding with 2,000ms same-code cooldown to prevent duplicate triggers, camera torch hardware toggle with 44×44 hit targets, decode latency instrumentation (<2s SLA), and real Supabase entity lookups for equipment and bookings. Polished mobile shell in `Header.tsx` to eliminate 390px header collisions, enforce Law 15 44×44 touch targets on profile and search buttons, and enable graceful breadcrumb truncation. All 186 test suites (3,182 tests) green, `tsc --noEmit` exit 0 (0 errors), Vite production build passed in 36s, 119/119 PGlite migrations applied, 17/17 lifecycle steps passed.

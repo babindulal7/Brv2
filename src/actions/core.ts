@@ -117,13 +117,28 @@ export class ActionPermissionError extends Error {
 }
 
 /**
+ * Thrown when an action is blocked specifically because the device is offline
+ * (e.g. money operations, voiding invoices, closing approvals — Law 6 / PLAN.md §4.27).
+ */
+export class ActionOfflineError extends Error {
+  readonly action: string;
+  readonly capability: string;
+  constructor(action: string, capability: string) {
+    super(`"${action}" cannot be performed while offline — requires ${capability} with an active server connection.`);
+    this.name = 'ActionOfflineError';
+    this.action = action;
+    this.capability = capability;
+  }
+}
+
+/**
  * Maps a capability string to the rule that already exists in `lib/rbac`.
  * Returns `undefined` for a capability with no defined rule, which the
  * dispatcher treats as a denial -- see the TODO(decision) in the header.
  */
 async function checkCapability(capability: string, ctx: ActionContext): Promise<boolean | undefined> {
   const rbac = await import('../lib/rbac');
-  const online = ctx.isOnline ?? true;
+  const online = ctx.isOnline ?? (typeof navigator !== 'undefined' ? navigator.onLine : true);
 
   switch (capability) {
     case 'payment.create':
@@ -230,7 +245,7 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
        Owner/Coordinator/Accounts and `canPerformOperations` is a floor set.
        §4.40(a) records that a narrower Owner/Manager reading is open. */
     case 'closing.approve':
-      return rbac.canApproveDailyClosing(ctx.role);
+      return rbac.canApproveDailyClosing(ctx.role, online);
 
     /*
      * ── Ruled 4 Sep 2026 by `RULINGS-2026-09-04.md`, which is BINDING ────────
@@ -335,9 +350,16 @@ export function createAction<Input, Output>(config: ActionConfig<Input, Output>)
     }
 
     // 3. Permissions, through the rules that already exist.
+    const effectiveOnline = ctx.isOnline ?? (typeof navigator !== 'undefined' ? navigator.onLine : true);
     for (const capability of config.permissions) {
-      const allowed = await checkCapability(capability, ctx);
+      const allowed = await checkCapability(capability, { ...ctx, isOnline: effectiveOnline });
       if (allowed !== true) {
+        if (!effectiveOnline) {
+          const allowedOnline = await checkCapability(capability, { ...ctx, isOnline: true });
+          if (allowedOnline === true) {
+            throw new ActionOfflineError(config.name, capability);
+          }
+        }
         throw new ActionPermissionError(config.name, capability, ctx.role);
       }
     }

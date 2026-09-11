@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
+import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
 import { FastReturnModal } from '../rentals/modals/FastReturnModal'
 import { BarcodeLookupModal } from '../rentals/modals/BarcodeLookupModal'
 import { CasesWorkspace } from './CasesWorkspace'
@@ -534,6 +535,13 @@ export default function OperationsQueues() {
     quotesQ.refetch()
   }
 
+  const [lastLoadedAt, setLastLoadedAt] = useState<number>(() => Date.now())
+  useEffect(() => {
+    if (!list.loading) {
+      setLastLoadedAt(Date.now())
+    }
+  }, [list.loading])
+
   /* Resolved once per render, and passed in, so the row mapping stays pure. */
   const now = Date.now()
   const jobs: JobRow[] = list.rows.flatMap((row) => {
@@ -875,6 +883,7 @@ export default function OperationsQueues() {
         description="One floor list for every day. Queue chips filter it; they never replace it."
         actions={
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+            <DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refreshAll} loading={list.loading} />
             <Button icon="search" onClick={() => setBarcodeModalOpen(true)} aria-label="Scan barcode or QR">
               {viewport === 'phone' ? '' : 'Scan'}
             </Button>
