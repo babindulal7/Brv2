@@ -175,7 +175,7 @@ const TAB_FAMILIES: Array<{ label: string; to: string | null; money: boolean }> 
   { label: 'Finance', to: '/reports/cash-flow', money: true },
   { label: 'Maintenance', to: null, money: false },
   { label: 'Cases', to: null, money: false },
-  { label: 'Staff', to: null, money: false },
+  { label: 'Staff', to: '/reports/staff', money: false },
   { label: 'Custom', to: null, money: false },
 ]
 

@@ -35,7 +35,6 @@ import {
   SUB_RENTAL_PENDING,
   SUB_RENTAL_UNANSWERED,
   chipsFor,
-  filterGroupsFor,
   rentalGlance,
   rentalDetailGroups,
   rentalsQuery,
@@ -587,88 +586,6 @@ function ColumnMenu({
  * `enabled: open` — six `count=exact` HEAD queries are only worth running
  * while the accordion is showing them (the module header's own advice).
  */
-function StatusFilterGroup({
-  icon,
-  selected,
-  toggle,
-  countRows,
-  countBase,
-}: {
-  icon: Parameters<typeof Icon>[0]['name']
-  selected: Set<BookingStatus>
-  toggle: (s: BookingStatus) => void
-  countRows: (filters: ListFilters) => Promise<number | null>
-  countBase: ListFilters
-}) {
-  const [open, setOpen] = useState(false)
-  const { counts, loading: countsLoading } = useFacetCounts(countRows, countBase, 'status', STATUS_ORDER, open)
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 9,
-          width: '100%',
-          height: 34,
-          padding: '0 8px',
-          borderRadius: 'var(--r-sm)',
-          border: 'none',
-          background: open ? 'var(--hover-card)' : 'transparent',
-          color: 'var(--text)',
-          fontSize: 'var(--t-meta)',
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-        }}
-        onMouseEnter={(e) => {
-          if (!open) e.currentTarget.style.background = 'var(--hover-card)'
-        }}
-        onMouseLeave={(e) => {
-          if (!open) e.currentTarget.style.background = 'transparent'
-        }}
-      >
-        <Icon name={icon} size={15} style={{ color: selected.size > 0 ? 'var(--nav-active-accent)' : 'var(--text2)', flexShrink: 0 }} />
-        <span style={{ flex: 1, textAlign: 'left', fontWeight: selected.size > 0 ? 700 : 400 }}>
-          Status{selected.size > 0 ? ` (${selected.size})` : ''}
-        </span>
-        <Icon name={open ? 'chevron_up' : 'chevron_down'} size={13} style={{ color: 'var(--text2)' }} />
-      </button>
-      {open && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 1, padding: '2px 4px 6px 30px' }}>
-          {STATUS_ORDER.map((s) => (
-            <label
-              key={s}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--sp-sm)',
-                height: 30,
-                fontSize: 'var(--t-meta)',
-                color: 'var(--text)',
-                cursor: 'pointer',
-              }}
-            >
-              <input type="checkbox" checked={selected.has(s)} onChange={() => toggle(s)} />
-              <span style={{ flex: 1 }}>{s}</span>
-              {/* §10's rendering rule, same as `FilterOptionList`: a dash while
-                  unknown, never a zero — `0` says "ticking this empties the
-                  list" and must only appear when that is a computed fact. */}
-              <span
-                className="figure"
-                style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}
-              >
-                {countsLoading || counts[s] === undefined || counts[s] === null ? '—' : counts[s]}
-              </span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 /**
  * A figure, or an explicit non-value while it is unknown.
@@ -914,7 +831,6 @@ export default function RentalsList() {
   const tabular = viewport !== 'phone'
 
   const chips = useMemo(() => chipsFor(money), [money])
-  const filterGroups = useMemo(() => filterGroupsFor(money), [money])
 
   /** §8.3 — Deposit is not offerable as a column when money is not visible. */
   const optionalColumns = useMemo(() => OPTIONAL_COLUMNS.filter((c) => c !== 'Deposit' || money), [money])
@@ -1053,6 +969,7 @@ export default function RentalsList() {
     },
     [chip, from, to, subOn, subIds],
   )
+  const { counts: stageCounts } = useFacetCounts(statusCountRows, statusCountBase, 'status', STATUS_ORDER, filtersOpen)
   /* Rebuilt per render, keyed on the day so the three "today" cards move with
      the clock. `useList` keys its effect on the filter set's VALUE, so a fresh
      object with the same content costs nothing. */
@@ -1216,7 +1133,7 @@ export default function RentalsList() {
         await runFloorVerb(
           'Pack',
           { bookingRef: b.bookingNo },
-          { userId: user?.id ?? '00000000-0000-0000-0000-000000000000', role: user?.role ?? 'Staff' }
+          { userId: user?.id ?? '00000000-0000-0000-0000-000000000000', role: role }
         )
       } catch (err) {
         console.error('Failed to pack', b.bookingNo, err)
@@ -1225,7 +1142,7 @@ export default function RentalsList() {
     setBulkProcessing(false)
     setSelectedIds(new Set())
     refreshAll()
-  }, [list.rows, selectedIds, user, refreshAll])
+  }, [list.rows, selectedIds, user, role, refreshAll])
 
   const handleBulkHandover = useCallback(async () => {
     const toHandover = list.rows.filter((r) => selectedIds.has(r.id) && r.status === 'Packed')
@@ -1239,7 +1156,7 @@ export default function RentalsList() {
         await runFloorVerb(
           'Handover',
           { bookingRef: b.bookingNo },
-          { userId: user?.id ?? '00000000-0000-0000-0000-000000000000', role: user?.role ?? 'Staff' }
+          { userId: user?.id ?? '00000000-0000-0000-0000-000000000000', role: role }
         )
       } catch (err) {
         console.error('Failed to handover', b.bookingNo, err)
@@ -1248,7 +1165,7 @@ export default function RentalsList() {
     setBulkProcessing(false)
     setSelectedIds(new Set())
     refreshAll()
-  }, [list.rows, selectedIds, user, refreshAll])
+  }, [list.rows, selectedIds, user, role, refreshAll])
 
   const [availableInvoices, setAvailableInvoices] = useState<
     Array<{ id: string; invoiceNo: string | null; client: string; amount: string; status: string; booking?: string }>
@@ -1353,13 +1270,16 @@ export default function RentalsList() {
                 <Button icon="refresh" onClick={refreshAll}>
                   Refresh
                 </Button>
-                <Button
-                  icon="download"
-                  variant="secondary"
-                  onClick={handleBulkExport}
-                >
-                  Export
-                </Button>
+                {/* Export stays honestly disabled with its reason per wireframe spec §4.1 and PLAN.md §4.22 */}
+                <Unavailable reason="Export is not built yet — nothing settles the file format, or which columns a role may export. A full-column export would also walk around Law 6's money masking, so it needs a role rule before it needs code.">
+                  <Button
+                    icon="download"
+                    variant="secondary"
+                    disabled
+                  >
+                    Export
+                  </Button>
+                </Unavailable>
               </>
             }
           />
@@ -2279,6 +2199,7 @@ export default function RentalsList() {
         subOn={subOn}
         onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
         money={money}
+        stageCounts={stageCounts}
       />
 
       <FloatingBulkActionBar

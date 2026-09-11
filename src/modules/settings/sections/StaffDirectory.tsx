@@ -19,7 +19,29 @@ import {
 } from '../../../lib/queries/staff'
 import type { StaffDirectoryRow } from '../../../lib/queries/staff'
 import type { SystemRole } from '../../../types/database'
+import { parseGateError, formatGateError } from '../../../lib/gates'
 import { ToneChip, td } from './shared'
+
+interface ActionError {
+  title: string
+  message: string
+  howToResolve?: string | undefined
+}
+
+function toActionError(error: unknown): ActionError {
+  const parsed = parseGateError(error)
+  if (parsed.isGate && parsed.definition) {
+    return {
+      title: parsed.definition.title.en,
+      message: parsed.definition.message.en,
+      howToResolve: parsed.definition.howToResolve.en,
+    }
+  }
+  return {
+    title: 'Action Refused',
+    message: formatGateError(error),
+  }
+}
 
 /**
  * **Settings ▸ People ▸ Staff Directory.**
@@ -176,6 +198,7 @@ export function StaffDirectoryCard() {
   const [rows, setRows] = useState<StaffDirectoryRow[]>([])
   const [state, setState] = useState<'loading' | 'ok' | 'unavailable' | 'error'>('loading')
   const [message, setMessage] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<ActionError | null>(null)
 
   const [search, setSearch] = useState('')
   const [role, setRole] = useState<SystemRole | 'All'>('All')
@@ -243,6 +266,7 @@ export function StaffDirectoryCard() {
   const load = useCallback(async () => {
     if (!mayRead) return
     setState('loading')
+    setActionError(null)
     const result = await fetchStaffDirectory()
 
     if (result.kind === 'ok') {
@@ -276,13 +300,13 @@ export function StaffDirectoryCard() {
 
   const sendReset = useCallback(async () => {
     if (!confirming) return
+    setActionError(null)
     setSubmitting(true)
     const { error } = await requestPasswordReset(confirming.email)
     setSubmitting(false)
 
     if (error) {
-      setMessage(error)
-      setState('error')
+      setActionError(toActionError(error))
       setConfirming(null)
       return
     }
@@ -299,11 +323,12 @@ export function StaffDirectoryCard() {
      */
     const { error: auditError } = await recordPasswordResetRequest(confirming.id)
     if (auditError) {
-      setMessage(
-        `The reset link was requested for ${confirming.email}, but it could not be written to the audit ` +
-          `trail: ${auditError}. The link is still on its way; the record of who asked for it is missing.`,
-      )
-      setState('error')
+      const parsed = toActionError(auditError)
+      setActionError({
+        title: parsed.title,
+        message: `The reset link was requested for ${confirming.email}, but it could not be written to the audit trail: ${parsed.message}. The link is still on its way; the record of who asked for it is missing.`,
+        ...(parsed.howToResolve ? { howToResolve: parsed.howToResolve } : {}),
+      })
     }
     /*
      * "Requested", not "sent". See the header — and `auth.tsx`'s comment on
@@ -321,10 +346,10 @@ export function StaffDirectoryCard() {
 
   const revokePin = useCallback(
     async (row: StaffDirectoryRow) => {
+      setActionError(null)
       const { error } = await revokeStaffPinFor(row.id)
       if (error) {
-        setMessage(error)
-        setState('error')
+        setActionError(toActionError(error))
         return
       }
       showSuccessToast('PIN revoked', `${row.fullName || row.email} will need a password to sign in.`)
@@ -352,6 +377,7 @@ export function StaffDirectoryCard() {
 
   const applyPending = useCallback(async () => {
     if (!pending) return
+    setActionError(null)
     setSubmitting(true)
     const { error } =
       pending.kind === 'role'
@@ -360,11 +386,10 @@ export function StaffDirectoryCard() {
     setSubmitting(false)
 
     if (error) {
-      /* Surfaced inline, never as a toast. Law 11: toasts are for successes,
+      /* Surfaced inline, never as a toast. Law 12: toasts are for successes,
          and a refused role change is exactly the case where the operator needs
          the database's own sentence — 0101's refusals name the reason. */
-      setMessage(error)
-      setState('error')
+      setActionError(toActionError(error))
       setPending(null)
       return
     }
@@ -534,6 +559,24 @@ export function StaffDirectoryCard() {
               <option value="all">All</option>
             </select>
           </div>
+
+          {actionError && (
+            <div style={{ marginBottom: 'var(--sp-md)' }}>
+              <ErrorBanner
+                title={actionError.title}
+                message={
+                  <div>
+                    <div>{actionError.message}</div>
+                    {actionError.howToResolve && (
+                      <div style={{ marginTop: 6, fontSize: 'var(--t-meta)', opacity: 0.9 }}>
+                        <strong>Resolution:</strong> {actionError.howToResolve}
+                      </div>
+                    )}
+                  </div>
+                }
+              />
+            </div>
+          )}
 
           {state === 'loading' && <LoadingSkeleton rows={5} />}
 

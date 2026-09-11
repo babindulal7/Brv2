@@ -1834,6 +1834,8 @@ export default function Inventory() {
               id="inventory-filters"
               open={filtersOpen}
               onClose={() => setFiltersOpen(false)}
+              side="right"
+              width={380}
               resultCount={list.loading ? null : (list.total ?? null)}
               noun={list.total === 1 ? 'item' : 'items'}
               activeCount={activeFacetCount}

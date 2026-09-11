@@ -4,6 +4,57 @@
 
 
 
+## 2026-09-11 — Stage 3 Part 2: Staff Directory Gate Error Hardening & Reports Navigation Linking (185 Test Files, 3163 Tests Green)
+
+**Phase:** Stage 3 Implementation · **Status:** Complete. Hardened User Management error handling in `StaffDirectory.tsx` so role assignment, deactivation, and PIN revocation gate exceptions surface inline via `parseGateError` / `formatGateError` (Law 12) without unmounting the staff directory table. Added unit tests in `StaffDirectory.gateError.test.tsx` (2/2 tests green). Updated `Pulse.tsx` navigation families to link the active `/reports/staff` route. All 185 test suites (3,163 tests) green, `tsc --noEmit` exit 0, 119/119 migrations applied in PGlite, 17/17 lifecycle steps passed.
+
+### Did
+
+- **Staff Directory Gate Error Hardening (`src/modules/settings/sections/StaffDirectory.tsx`):**
+  - Refactored `applyPending`, `revokePin`, and `sendReset` to parse gate errors using `parseGateError` / `formatGateError`.
+  - Stored errors in `actionError` state with title, message, and resolution instead of putting the entire card state into `'error'`.
+  - Mounted an inline persistent `<ErrorBanner>` above the staff directory table when `actionError` is active, keeping the directory table and operator controls visible (Law 12).
+  - Added unit test suite `src/modules/settings/sections/__tests__/StaffDirectory.gateError.test.tsx` verifying inline gate error rendering for role ceiling and immutability refusals.
+- **Reports Navigation & Linking (`src/modules/reports/Pulse.tsx`):**
+  - Updated `TAB_FAMILIES` to link `Staff` to `/reports/staff`, ensuring staff performance reporting is reachable from the reports dashboard.
+- **Rentals & Inventory UI Integration:**
+  - Integrated `BooqableRentalFilterDrawer` with dynamic stage counts and right-docked layout.
+  - Clarified disabled export action with explicit wireframe spec rationale (`PLAN.md §4.22`).
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors)**.
+- `node ./node_modules/vitest/vitest.mjs run` **185/185 passed, 3,163/3,163 tests green**.
+- `node scripts/check-pglite.mjs` **119/119 applied cleanly, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **17/17 green, 0 known-red, 0 failed**.
+- `node scripts/completion.mjs` **Backend 43/43 (100%), Real data 48/48 (100%), DB enforcement 9/9 (100%), Permissions 36/39 (92%), Lifecycle 17/17 (100%), Overall ≈ 98%**.
+- `node scripts/lint-progress.mjs` **passed**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 36 / 39 (92%) | +0 |
+| Lifecycle | steps green / total | 17 / 17 (100%) | +0 |
+| Overall | mean of five | ≈ 98% | +0 |
+
+Migrations 119 files · check:pglite 119/119 passed. Suite: 185/185 passed.
+Gates read from .lifecycle-result.json.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- Keep inspection capabilities unmapped pending schema ruling (`PLAN.md §4.29`).
+- Production deployment of migrations 0113–0121 to remote Supabase (`sxguwvgoserhdolewibb`) during approved maintenance window.
+
 ## 2026-09-11 — Stage 3: CancelRentalModal, Modal Dispatch Gaps & Inline Gate Error Wiring (184 Test Files, 3161 Tests Green)
 
 **Phase:** Stage 3 Implementation (`docs/STAGE_3.md`) · **Status:** Complete. Created `CancelRentalModal.tsx` enforcing minimum 10-character reason, manager authority warnings for post-Packed stages, Law 3 inventory allocation release warnings, and inline gate error rendering via `formatGateError` (Law 12). Wired cancellation across `BookingDetail.tsx` (overflow menu + modal) and `RentalsList.tsx` (row operations + modal). Resolved missing payload fields in `AssignCrewModal.tsx` (`dailyRate`, `days`) and `CreateSubRentalModal.tsx` (`bookingId`, `vendorName`, `chargePaisa`). Connected `formatGateError` to `BookingDetail.tsx` stage actions (`confirmBooking`, `closeBooking`). All 184 test suites (3,161 tests) green, `tsc --noEmit` exit 0, 119/119 migrations applied in PGlite, 17/17 lifecycle steps passed.

@@ -2,6 +2,8 @@ import { useId } from 'react'
 import { FilterDrawer } from './FilterDrawer'
 import Icon from './Icon'
 import { Badge } from './Badge'
+import { Button } from './Page'
+import { Unavailable } from './Unavailable'
 import { STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import type { ChipKey } from '../../lib/queries/bookings'
@@ -295,8 +297,13 @@ export function BooqableRentalFilterDrawer({
           </label>
         </section>
 
-        {/* Apply & Show Results button */}
-        <div style={{ paddingTop: 'var(--sp-sm)', borderTop: '1px solid var(--border)' }}>
+        {/* Save as new filter & Apply & Show Results button */}
+        <div style={{ paddingTop: 'var(--sp-sm)', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <Unavailable reason="Saved filters are not built yet — there is nowhere to store one and nothing settles who it is shared with.">
+            <Button icon="flag" disabled>
+              Save as new filter
+            </Button>
+          </Unavailable>
           <button
             type="button"
             className="press tap"
