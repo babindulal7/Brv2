@@ -584,10 +584,12 @@ requires leaving the machine.
 
 PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → store submission.
 
-- [~] **PWA** → manifest + service worker are real and the build emits them (113 precache
-      entries). **Gap: the icons are five renamed copies of one 1024×1024 file** — no true 192,
-      512, maskable-with-safe-zone, or 96 shortcut icon exists.
-- [ ] **install flows** → nothing captures `beforeinstallprompt`; no install control exists.
+- [x] **PWA** → manifest + service worker are real and the build emits them (234 precache
+      entries). True resolution icons generated: 192×192, 512×512, 96×96 shortcut icon,
+      and 512×512 maskable icon with safe-zone padding and #FDEFDC cream background.
+- [x] **install flows** → `usePwaInstall` captures `beforeinstallprompt` and `appinstalled`,
+      detects standalone mode, exposes `promptInstall()`, and mounts install controls in
+      `MoreSheet.tsx` and `Settings.tsx` (System preferences).
 - [ ] **Capacitor Android** → no Capacitor dependency, no `capacitor.config.ts`, no android/.
       Buildable here in principle (scaffolding + Keystore adapter); *shipping* it is not.
       **Pre-flight, from the 30 Aug forensics pack:** (1) re-verify the *wrapped* bundle

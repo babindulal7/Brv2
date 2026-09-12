@@ -2,6 +2,67 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-12 — Phase 10 PWA True Resolution Icons & Install Flows (189 Test Files, 3205 Tests Green)
+
+**Phase:** Phase 10 Shells · **Status:** Complete. Resolved PWA icon sizing gap (`PLAN.md §4.27` / lines 587–590) by generating true-resolution bicubic resampled PNGs (192×192, 512×512, 96×96 shortcut, and 512×512 maskable icon with W3C 80% safe-zone centering and `#FDEFDC` cream background). Built `usePwaInstall` hook capturing browser `beforeinstallprompt` and `appinstalled` events, tracking standalone display mode, and exposing `promptInstall()`. Built `PwaInstallControl` mounted in `Settings ▸ System ▸ Preferences` and integrated 48px touch-target PWA install row in `MoreSheet.tsx` phone navigation. All 189 test files (3,205 tests) green, `tsc --noEmit` exit 0, Vite production build passed in 42.01s (234 precached PWA entries), 119/119 PGlite migrations applied, 17/17 lifecycle steps passed.
+
+### Did
+
+- **PWA Multi-Resolution Icons Generation (`scripts/generate-pwa-icons.ps1`, `public/icons/`):**
+  - Generated true-resolution icons using bicubic resampling on the master 1024×1024 asset:
+    - `public/icons/192.png`: 192×192 px (40.6 KB).
+    - `public/icons/512.png`: 512×512 px (290.6 KB).
+    - `public/icons/scan-96.png`: 96×96 px shortcut icon (12.0 KB).
+    - `public/icons/maskable-512.png`: 512×512 px maskable icon with W3C 80% safe-zone diameter padding on `#FDEFDC` cream canvas (194.7 KB).
+  - Resolved `PLAN.md` Phase 10 gap where five icons were previously duplicate 1024×1024 clones.
+- **PWA Installation Flow Hook (`src/lib/usePwaInstall.ts`, `src/lib/__tests__/usePwaInstall.test.tsx`):**
+  - Created `usePwaInstall` hook with module-level event registration capturing `beforeinstallprompt` early on page load.
+  - Provided `isAppInstalled()` detecting `display-mode: standalone`, iOS `navigator.standalone`, Android TWA referrer, and `?source=pwa` query flag.
+  - Handled `appinstalled` event, clearing deferred prompt and setting `isInstalled: true`.
+  - Implemented `promptPwaInstall()` triggering the browser's native installation prompt.
+  - Added test suite `src/lib/__tests__/usePwaInstall.test.tsx` with 10 unit tests covering prompt capture, user choices (accepted/dismissed), standalone detection, and UI states (10/10 tests green).
+- **Settings & MoreSheet Integration (`src/components/ui/PwaInstallControl.tsx`, `src/modules/settings/sections/System.tsx`, `src/components/shell/MoreSheet.tsx`):**
+  - Built `PwaInstallControl` with multi-state support: Installed badge with checkmark, Install App button with download icon, iOS Safari "Add to Home Screen" guidance, and standard browser fallback.
+  - Mounted `PwaInstallControl` as a custom field row in `Settings ▸ System ▸ Preferences`.
+  - Mounted PWA install action row in phone `MoreSheet.tsx` with 48px hit target (Law 15) and focus trap integration.
+- **PLAN.md Phase 10 Checkpoint (`PLAN.md` lines 587–590):**
+  - Marked `[x] **PWA**` and `[x] **install flows**` as complete.
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors across 610 files)**.
+- `node ./node_modules/vitest/vitest.mjs run` **189/189 test files passed, 3,205/3,205 tests green**.
+- `node ./node_modules/vite/bin/vite.js build` **build passed cleanly in 42.01s, precaching 234 assets**.
+- `node scripts/check-pglite.mjs` **119/119 applied cleanly, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **17/17 green, 0 known-red, 0 failed**.
+- `node scripts/completion.mjs` **Backend 43/43 (100%), Real data 48/48 (100%), DB enforcement 9/9 (100%), Permissions 36/39 (92%), Lifecycle 17/17 (100%), Overall ≈ 98%**.
+- `node scripts/lint-progress.mjs` **passed**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 36 / 39 (92%) | +0 |
+| Lifecycle | steps green / total | 17 / 17 (100%) | +0 |
+| Overall | mean of five | ≈ 98% | +0 |
+
+Migrations 119 files · check:pglite 119/119 passed. Suite: 189/189 passed.
+Gates read from .lifecycle-result.json.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- Keep inspection capabilities unmapped pending schema ruling (`PLAN.md §4.29`).
+- Review Capacitor Android scaffolding feasibility / Keystore adapter requirements (`PLAN.md §10`).
+
 ## 2026-09-11 — Phase 9 Offline Gating Reasons, DataAgeBadge & Operational Read Freshness (188 Test Files, 3195 Tests Green)
 
 **Phase:** Phase 9 Offline Robustness · **Status:** Complete. Modernized offline handling in `actions/core.ts` by introducing `ActionOfflineError` so financial operations (payments, refunds, invoice voids) and approval mutations clearly state the offline refusal reason rather than masquerading as role permission violations. Wired automatic network detection (`navigator.onLine`) and passed `online` to `canApproveDailyClosing`. Created `DataAgeBadge` component satisfying Law 11 (icon + label, never color alone) and Law 15 (44×44 hit targets), mounting it in `OperationsQueues.tsx` and `Today.tsx` to display real-time operational data freshness. All 188 test suites (3,195 tests) green, `tsc --noEmit` exit 0 (0 errors across 608 files), Vite production build passed in 41.48s, 119/119 PGlite migrations applied, 17/17 lifecycle steps passed.

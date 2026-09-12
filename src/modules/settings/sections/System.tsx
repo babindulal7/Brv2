@@ -1,6 +1,7 @@
 import type { Dest } from '../../../lib/queries/settings'
 import type { Field, Section } from './shared'
 import { DevicePinControl } from './DevicePin'
+import { PwaInstallControl } from '../../../components/ui/PwaInstallControl'
 
 /**
  * **Settings ▸ System** — appearance, notifications, preferences, security and
@@ -90,6 +91,11 @@ export const SYSTEM_SECTIONS: Section[] = [
     fields: [
       { label: 'Date format', note: 'AD line under every BS line.', settingKey: 'dateFormat' },
       { label: 'Decimal places', note: 'Whole rupees unless an amount carries paise.', settingKey: 'decimalPlaces' },
+      {
+        label: 'PWA Installation',
+        note: 'Install Babin Rentals OS on this device for offline warehouse access and instant home screen launch.',
+        custom: <PwaInstallControl />,
+      },
       /*
        * The idle lock used to sit here as "Session timeout", and moved to
        * Security ▸ Access on 25 Aug 2026 — it is the duration of the screen
