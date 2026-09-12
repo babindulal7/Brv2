@@ -1419,8 +1419,7 @@ function AvailabilityPanel({ onCheckAvailability }: { onCheckAvailability?: () =
         icon={<Icon name="calendar_event" size={22} />}
         title="Check product availability"
         description="Inspect stock levels, active holds, and future capacity for any equipment item across custom rental windows."
-        actionLabel={onCheckAvailability ? 'Check availability' : undefined}
-        onAction={onCheckAvailability}
+        {...(onCheckAvailability ? { actionLabel: 'Check availability', onAction: onCheckAvailability } : {})}
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', margin: '12px 0 0' }}>
         <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>

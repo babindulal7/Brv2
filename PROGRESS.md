@@ -2,9 +2,9 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
-## 2026-09-12 — Calendar Popover & Availability Range Redesign (190 Test Files, 3211 Tests Green)
+## 2026-09-12 — Calendar Popover, Availability Range & Calendar Screen Parity (191 Test Files, 3214 Tests Green)
 
-**Phase:** Phase 10 Shells / UI Components · **Status:** Complete. Redesigned `CalendarPopover` and date selection pop-up UI across the entire application to match the modern Booqable availability specification. Re-engineered `CalendarPopover` in `src/components/ui/DateField.tsx` with floating card geometry (16px radius, elevation shadow), 44×44 touch-target close button, quantity stepper (`+` / `−` controls), Monday-first weekday columns (`MO TU WE TH FR SA SU`), color-coded circular day cells (green `#48BB78`, amber `#F6AD55`, red `#F56565`), stacked day numbers with subtle 1px divider for Nepali BS date or availability count, and continuous connected capsule pill range selection outlines. Built standalone `CheckAvailabilityModal` in `src/components/ui/CheckAvailabilityModal.tsx` for product-level availability inspection. Added comprehensive test suite `src/components/ui/__tests__/CalendarPopover.test.tsx` (6 tests). All 190 test files (3,211 tests) green, `tsc --noEmit` exit 0, Vite production build passed in 41.57s (234 precached PWA entries), 119/119 PGlite migrations applied, 17/17 lifecycle steps passed.
+**Phase:** Phase 10 Shells / Calendar Workspace · **Status:** Complete. Redesigned `CalendarPopover` and date selection pop-up UI across the entire application to match the modern Booqable availability specification. Re-engineered `CalendarPopover` in `src/components/ui/DateField.tsx` with floating card geometry (16px radius, elevation shadow), 44×44 touch-target close button, quantity stepper (`+` / `−` controls), Monday-first weekday columns (`MO TU WE TH FR SA SU`), color-coded circular day cells (green `#48BB78`, amber `#F6AD55`, red `#F56565`), stacked day numbers with subtle 1px divider for Nepali BS date or availability count, and continuous connected capsule pill range selection outlines. Built standalone `CheckAvailabilityModal` in `src/components/ui/CheckAvailabilityModal.tsx` for product-level availability inspection with dynamic product selection dropdown. Resolved Calendar parity GAP 11 (`docs/booqable/layer-d/calendar.md` and `docs/booqable/REFERENCE_SPEC_v2.5.md §11`) by wiring "Check availability" action in `PageHeader`, Full View header, and `AvailabilityPanel` on `/calendar` loaded with live inventory data (`listInventory()`). Added comprehensive test suites in `src/components/ui/__tests__/CalendarPopover.test.tsx` (7 tests) and `src/modules/calendar/__tests__/CalendarAvailability.test.tsx` (2 tests). All 191 test files (3,214 tests) green, `tsc --noEmit` exit 0, Vite production build passed in 35.77s (234 precached PWA entries), 119/119 PGlite migrations applied, 17/17 lifecycle steps passed.
 
 ### Did
 
@@ -18,16 +18,22 @@
   - Added subtle diagonal hatching pattern (`repeating-linear-gradient(...)`) for inactive / past dates without availability records.
   - Implemented continuous connected blue capsule pill outline (`border: 2px solid var(--primary, #3182ce)`) for date ranges (left-pill for start, top/bottom rails for middle days, right-pill for end), keeping circular day badges visible within.
 - **Created CheckAvailabilityModal (`src/components/ui/CheckAvailabilityModal.tsx`, `src/components/ui/index.ts`):**
-  - Implemented standalone product availability pop-up modal with product title, rate badge, description, stock status pill, embedded calendar popover, quantity stepper, and selected range apply button.
+  - Implemented standalone product availability pop-up modal with product title, rate badge, description, stock status pill, embedded calendar popover, quantity stepper, selected range apply button, and optional catalog product selector (`products` dropdown).
+  - Handled `exactOptionalPropertyTypes` compatibility across optional properties.
   - Exported `CheckAvailabilityModal` from `src/components/ui/index.ts`.
-- **Unit Test Suite (`src/components/ui/__tests__/CalendarPopover.test.tsx`):**
-  - Added 6 dedicated tests verifying title & close button, Monday-first weekdays, quantity stepper interactions, color-coded availability badges, continuous range capsule styling, month navigation, and `CheckAvailabilityModal` rendering (6/6 tests green).
+- **Calendar Workspace Parity GAP 11 Closure (`src/modules/calendar/Calendar.tsx`):**
+  - Wired `Check availability` button directly into `PageHeader.actions` and Full View actions.
+  - Transformed `AvailabilityPanel` from passive text into an actionable screen with "Check availability" action trigger and clear operational guidance.
+  - Loaded live products from `listInventory()` into state and mounted `CheckAvailabilityModal` allowing operators to select any catalog equipment item and test availability against arbitrary date windows and quantities.
+- **Unit Test Suites (`src/components/ui/__tests__/CalendarPopover.test.tsx`, `src/modules/calendar/__tests__/CalendarAvailability.test.tsx`):**
+  - Added 7 tests in `CalendarPopover.test.tsx` asserting title & close buttons, Monday-first weekdays, quantity stepper interactions, color-coded availability badges, continuous range capsule styling, month navigation, and product dropdown selection.
+  - Added 2 tests in `CalendarAvailability.test.tsx` asserting `PageHeader` "Check availability" button modal launch and `AvailabilityPanel` action invocation.
 
 ### Verified
 
-- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors across 611 files)**.
-- `node ./node_modules/vitest/vitest.mjs run` **190/190 test files passed, 3,211/3,211 tests green**.
-- `node ./node_modules/vite/bin/vite.js build` **build passed cleanly in 41.57s, precaching 234 assets**.
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors across 612 files)**.
+- `node ./node_modules/vitest/vitest.mjs run` **191/191 test files passed, 3,214/3,214 tests green**.
+- `node ./node_modules/vite/bin/vite.js build` **build passed cleanly in 35.77s, precaching 234 assets**.
 - `node scripts/check-pglite.mjs` **119/119 applied cleanly, 0 failed**.
 - `node scripts/e2e-lifecycle.mjs` **17/17 green, 0 known-red, 0 failed**.
 - `node scripts/completion.mjs` **Backend 43/43 (100%), Real data 48/48 (100%), DB enforcement 9/9 (100%), Permissions 36/39 (92%), Lifecycle 17/17 (100%), Overall ≈ 98%**.
@@ -44,7 +50,7 @@
 | Lifecycle | steps green / total | 17 / 17 (100%) | +0 |
 | Overall | mean of five | ≈ 98% | +0 |
 
-Migrations 119 files · check:pglite 119/119 passed. Suite: 190/190 passed.
+Migrations 119 files · check:pglite 119/119 passed. Suite: 191/191 passed.
 Gates read from .lifecycle-result.json.
 Counted by `npm run completion`, not typed.
 
