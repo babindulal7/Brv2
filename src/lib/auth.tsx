@@ -697,10 +697,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 }
 
+const FALLBACK_AUTH_CONTEXT: AuthContextType = {
+  user: null,
+  loading: true,
+  signIn: async () => ({ error: 'Auth not initialized' }),
+  requestPasswordReset: async () => ({ error: 'Auth not initialized' }),
+  updatePassword: async () => ({ error: 'Auth not initialized' }),
+  isPasswordRecovery: false,
+  logout: () => {},
+  isLocked: false,
+  setLocked: () => {},
+  lockNow: () => {},
+  hasPin: false,
+  setStaffPin: async () => ({ error: 'Auth not initialized' }),
+  verifyStaffPin: async () => ({ ok: false, reason: 'unavailable', message: 'Auth not initialized' }),
+  staffPinStatus: async () => ({ hasPin: false }),
+  revokeOwnStaffPin: async () => ({ error: 'Auth not initialized' }),
+}
+
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
+    if (import.meta.env.DEV) {
+      console.warn('[useAuth] Called outside AuthProvider or during HMR re-evaluation. Returning fallback loading state.')
+    }
+    return FALLBACK_AUTH_CONTEXT
   }
   return context
 }

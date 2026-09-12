@@ -14,7 +14,7 @@ import {
 } from '../lib/bs'
 import { clockPad } from '../lib/format'
 import { formatMoney, rupees } from '../lib/money'
-import { todaysIncoming, todaysOutgoing, type BookingListRow } from '../lib/queries/bookings'
+import { TODAYS_INCOMING_STAGES, TODAYS_OUTGOING_STAGES, todaysIncoming, todaysOutgoing, type BookingListRow } from '../lib/queries/bookings'
 import type { ListFilters } from '../lib/queries/listQuery'
 
 /*
@@ -1055,12 +1055,9 @@ export function returnsQuery(
  * Incoming's). `narrowStages` reports that emptiness honestly as `impossible`;
  * the chip must be honest one step earlier, before the click.
  */
-/* `TODAY_DAY_AD` is legitimate here and only here: the day picks no rows, it
-   only satisfies the named set's signature so its stage chips can be read back.
-   The answer is the same on every day, so freezing it at import changes nothing. */
 export const LIST_STAGES: Record<'Outgoing' | 'Incoming', readonly BookingStatus[]> = {
-  Outgoing: (todaysOutgoing(TODAY_DAY_AD).chips?.['stage'] ?? []) as readonly BookingStatus[],
-  Incoming: (todaysIncoming(TODAY_DAY_AD).chips?.['stage'] ?? []) as readonly BookingStatus[],
+  Outgoing: TODAYS_OUTGOING_STAGES as readonly BookingStatus[],
+  Incoming: TODAYS_INCOMING_STAGES as readonly BookingStatus[],
 }
 
 /**

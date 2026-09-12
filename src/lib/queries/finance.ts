@@ -5,6 +5,9 @@ import { applyListFilters, type ListFilters } from './listQuery'
 import type { ListQueryResult } from './useList'
 import type { Database } from '../../types/supabase'
 
+/** A bare calendar date, `YYYY-MM-DD` — what a date picker emits. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
 /**
  * # The finance list queries — invoices, payments, expenses
  *
@@ -1570,8 +1573,6 @@ const NPT_OFFSET = `${NPT_OFFSET_MIN < 0 ? '-' : '+'}${String(Math.floor(Math.ab
   '0',
 )}:${String(Math.abs(NPT_OFFSET_MIN) % 60).padStart(2, '0')}`
 
-/** A bare calendar date, `YYYY-MM-DD` — what a date picker emits. */
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 /**
  * The **Nepal** calendar day an argument names.

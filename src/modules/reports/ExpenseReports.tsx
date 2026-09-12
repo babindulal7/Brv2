@@ -268,7 +268,7 @@ export default function ExpenseReports() {
         (r.billNo ?? '').toLowerCase().includes(q)
       )
     })
-  }, [status, method, vendor, branch, query, report.dateRange])
+  }, [expenseList, status, method, vendor, branch, query, report.dateRange])
 
   const rows = useMemo(
     () => (category === 'All' ? scoped : scoped.filter((r) => r.category === category)),

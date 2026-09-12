@@ -1957,7 +1957,7 @@ export default function Calendar() {
   >([])
 
   useEffect(() => {
-    listInventory().then((res) => {
+    listInventory({ withMoney: true }).then((res) => {
       setCatalogProducts(
         res.rows.map((r) => ({
           id: r.id,

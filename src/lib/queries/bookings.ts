@@ -7,6 +7,9 @@ import { applyListFilters, type ListFilters } from './listQuery'
 import type { ListQueryResult } from './useList'
 import type { Database } from '../../types/supabase'
 
+/** A bare calendar date, `YYYY-MM-DD` — what a date picker emits. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
 /**
  * # The bookings list query
  *
@@ -47,6 +50,9 @@ import type { Database } from '../../types/supabase'
 
 type BookingStageDb = Database['public']['Enums']['booking_stage']
 type DeliveryTypeDb = Database['public']['Enums']['delivery_type']
+
+export const TODAYS_OUTGOING_STAGES: readonly BookingStageDb[] = ['Booked', 'Packed'] as const
+export const TODAYS_INCOMING_STAGES: readonly BookingStageDb[] = ['On Rent'] as const
 
 export interface BookingListRow {
   id: string
@@ -542,7 +548,7 @@ export async function listBookings(opts: BookingListOptions = {}): Promise<ListQ
 export function todaysOutgoing(dayAd: string): ListFilters {
   return {
     dateRange: { column: 'pickup_at', fromAd: startOfDay(dayAd), toAd: endOfDay(dayAd) },
-    chips: { stage: ['Booked', 'Packed'] satisfies BookingStageDb[] },
+    chips: { stage: [...TODAYS_OUTGOING_STAGES] },
     presence: { cancelled_at: false },
     sort: { column: 'pickup_at', ascending: true },
   }
@@ -552,7 +558,7 @@ export function todaysOutgoing(dayAd: string): ListFilters {
 export function todaysIncoming(dayAd: string): ListFilters {
   return {
     dateRange: { column: 'return_at', fromAd: startOfDay(dayAd), toAd: endOfDay(dayAd) },
-    chips: { stage: ['On Rent'] satisfies BookingStageDb[] },
+    chips: { stage: [...TODAYS_INCOMING_STAGES] },
     presence: { cancelled_at: false, actual_return_at: false },
     sort: { column: 'return_at', ascending: true },
   }
@@ -790,8 +796,6 @@ function operationalDayStartMinutes(): number {
   return dayStartMinutesFrom(getSetting('operationalDayStart'))
 }
 
-/** A bare calendar date, `YYYY-MM-DD` — what a date picker emits. */
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 /**
  * The **Nepal** calendar day an argument names.

@@ -65,7 +65,7 @@
         function record(kind, msg, where) {
           if (!first) first = { kind: kind, msg: msg, where: where }
           /* Give React its chance first; only an empty #root is a failure. */
-          setTimeout(paintIfDead, 2500)
+          setTimeout(paintIfDead, 6000)
         }
 
         function render(root, e) {
@@ -114,7 +114,7 @@
           setTimeout(function () {
             if (!first) first = { kind: 'The app did not start', msg: 'No error was reported, and nothing rendered.', where: '' }
             paintIfDead()
-          }, 8000)
+          }, 25000)
         })
       })()
     </script>

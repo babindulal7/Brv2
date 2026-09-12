@@ -173,6 +173,18 @@ export default function WorkingCapitalReport() {
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const canSeeMoney = useCanViewMoney()
+  const [, setSummary] = useState<LiquiditySummary | null>(null)
+
+  useEffect(() => {
+    if (!canSeeMoney) return
+    let active = true
+    void getLiquiditySummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [canSeeMoney])
 
   // Law 6 — a balance sheet is money in every line. Shared RESTRICTED state, so
   // the reader is told which roles to ask rather than only that they cannot look.
@@ -190,18 +202,6 @@ export default function WorkingCapitalReport() {
       </>
     )
   }
-
-  const [, setSummary] = useState<LiquiditySummary | null>(null)
-
-  useEffect(() => {
-    let active = true
-    void getLiquiditySummary().then((res) => {
-      if (active) setSummary(res)
-    })
-    return () => {
-      active = false
-    }
-  }, [])
 
   const bs = toBs(PERIOD_END)
   const asAt = bs ? `As at ${formatAd(PERIOD_END)} (${formatBs(bs, { suffix: true })})` : `As at ${formatAd(PERIOD_END)}`

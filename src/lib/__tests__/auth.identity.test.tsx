@@ -160,4 +160,25 @@ describe('loadProfile — a failed read is not an identity', () => {
 
     expect(seen).toEqual({ role: 'Owner', name: 'Babin Dulal' })
   })
+
+  it('provides safe loading fallback without throwing if called outside AuthProvider', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    let fallbackResult: ReturnType<typeof useAuth> | null = null
+
+    function BareConsumer() {
+      fallbackResult = useAuth()
+      return null
+    }
+
+    await act(async () => {
+      root.render(<BareConsumer />)
+    })
+
+    const res = fallbackResult as ReturnType<typeof useAuth> | null
+    expect(res).not.toBeNull()
+    expect(res?.user).toBeNull()
+    expect(res?.loading).toBe(true)
+  })
 })

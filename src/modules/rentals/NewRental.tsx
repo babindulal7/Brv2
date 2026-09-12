@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { ConfirmDialog, Input, Select } from '../../components/ui'
@@ -1974,12 +1974,13 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * call, so the gate is left exactly as it is rather than quietly relaxed.
    */
   const [govId, setGovId] = useState(client?.pan ?? '')
-  /* Dates default to the business day (Kathmandu's, `getBusinessToday`) and the
-     day after — a one-day window, never a hardcoded date. `getBusinessToday`
-     returns midnight UTC of the Kathmandu civil date, so `.toISOString()`'s
-     date part IS the Kathmandu calendar date. */
-  const [pickup, setPickup] = useState(() => getBusinessToday().toISOString().slice(0, 10))
-  const [ret, setRet] = useState(() => new Date(getBusinessToday().getTime() + DAY).toISOString().slice(0, 10))
+  const [searchParams] = useSearchParams()
+  const fromParam = searchParams.get('from')
+  const toParam = searchParams.get('to')
+  /* Dates default to query parameters if present, otherwise the business day
+     (Kathmandu's, `getBusinessToday`) and the day after — a one-day window. */
+  const [pickup, setPickup] = useState(() => (fromParam && !Number.isNaN(Date.parse(fromParam)) ? fromParam : getBusinessToday().toISOString().slice(0, 10)))
+  const [ret, setRet] = useState(() => (toParam && !Number.isNaN(Date.parse(toParam)) ? toParam : new Date(getBusinessToday().getTime() + DAY).toISOString().slice(0, 10)))
   // redesign v1 §4 — the rental day runs 06:00→06:00, so a booking with no
   // time cannot be priced correctly at the boundary. Defaults are 09:00
   // pickup / 18:00 return, editable, never blank. Day-count pricing still

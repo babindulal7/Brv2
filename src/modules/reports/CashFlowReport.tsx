@@ -133,6 +133,18 @@ export default function CashFlowReport() {
      inline column is not squeezed by a rail column that is still there. */
   const railGridColumns = useRailGridColumns()
   const canSeeMoney = useCanViewMoney()
+  const [, setSummary] = useState<LiquiditySummary | null>(null)
+
+  useEffect(() => {
+    if (!canSeeMoney) return
+    let active = true
+    void getLiquiditySummary().then((res) => {
+      if (active) setSummary(res)
+    })
+    return () => {
+      active = false
+    }
+  }, [canSeeMoney])
 
   // Law 6: a money-blind role is not shown a masked figure — the page is not
   // built. The bespoke card that used to say so is now the shared RESTRICTED
@@ -151,18 +163,6 @@ export default function CashFlowReport() {
       </>
     )
   }
-
-  const [, setSummary] = useState<LiquiditySummary | null>(null)
-
-  useEffect(() => {
-    let active = true
-    void getLiquiditySummary().then((res) => {
-      if (active) setSummary(res)
-    })
-    return () => {
-      active = false
-    }
-  }, [])
 
   const bsStart = toBs(PERIOD_START)
   const bsEnd = toBs(PERIOD_END)

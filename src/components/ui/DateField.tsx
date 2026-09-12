@@ -175,6 +175,10 @@ export interface CalendarPopoverProps {
   /** Min and Max allowable selectable dates ('YYYY-MM-DD') */
   minDate?: string | undefined
   maxDate?: string | undefined
+  /** When true, renders inline in normal document flow instead of absolutely positioned popup */
+  embedded?: boolean | undefined
+  /** Controls rendering of the title + close header (default true) */
+  showHeader?: boolean | undefined
 }
 
 /**
@@ -204,6 +208,8 @@ export function CalendarPopover({
   availability,
   minDate,
   maxDate,
+  embedded = false,
+  showHeader = true,
 }: CalendarPopoverProps) {
   const today = todayIso()
   const anchor = (range?.from && !Number.isNaN(Date.parse(range.from)))
@@ -338,51 +344,66 @@ export function CalendarPopover({
       role="dialog"
       aria-label={resolvedTitle}
       style={{
-        ...popoverStyle,
-        ...(align === 'right' ? { right: 0 } : { left: 0 }),
+        ...(embedded
+          ? {
+              position: 'relative',
+              width: '100%',
+              maxWidth: '100%',
+              padding: 0,
+              background: 'transparent',
+              border: 'none',
+              borderRadius: 0,
+              boxShadow: 'none',
+            }
+          : {
+              ...popoverStyle,
+              ...(align === 'right' ? { right: 0 } : { left: 0 }),
+            }),
       }}
     >
       {/* ── Top Header with Title and 44x44 Close '×' button ── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: showQuantity ? 12 : 16,
-        }}
-      >
-        <h3
+      {showHeader && (
+        <div
           style={{
-            margin: 0,
-            fontSize: 'var(--t-ui, 15px)',
-            fontWeight: 700,
-            color: 'var(--text)',
-            letterSpacing: '-0.01em',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: showQuantity ? 12 : 16,
           }}
         >
-          {resolvedTitle}
-        </h3>
-        <button
-          type="button"
-          aria-label="Close calendar"
-          onClick={onDismiss}
-          style={{
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            minWidth: 44,
-            minHeight: 44,
-            display: 'grid',
-            placeItems: 'center',
-            borderRadius: 'var(--r-xs)',
-            marginRight: -10,
-            marginTop: -8,
-          }}
-        >
-          <Icon name="close" size={18} />
-        </button>
-      </div>
+          <h3
+            style={{
+              margin: 0,
+              fontSize: 'var(--t-ui, 15px)',
+              fontWeight: 700,
+              color: 'var(--text)',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            {resolvedTitle}
+          </h3>
+          <button
+            type="button"
+            aria-label="Close calendar"
+            onClick={onDismiss}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              minWidth: 44,
+              minHeight: 44,
+              display: 'grid',
+              placeItems: 'center',
+              borderRadius: 'var(--r-xs)',
+              marginRight: -10,
+              marginTop: -8,
+            }}
+          >
+            <Icon name="close" size={18} />
+          </button>
+        </div>
+      )}
 
       {/* ── Quantity Stepper (when enabled) ── */}
       {showQuantity && (

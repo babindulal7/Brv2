@@ -46,7 +46,7 @@ export function CheckAvailabilityModal({
   if (!open) return null
 
   const activeProduct = products?.find((p) => p.id === (selectedId || selectedProductId))
-  const resolvedTitle = productTitle || activeProduct?.name || 'Check availability'
+  const resolvedProductName = productTitle || activeProduct?.name
   const resolvedRate = productRate || (activeProduct?.dailyRate ? `NPR ${activeProduct.dailyRate.toLocaleString()} / day` : undefined)
   const resolvedDesc = productDescription || activeProduct?.description
   const resolvedStock = stockOnHand !== undefined ? stockOnHand : activeProduct?.totalQuantity
@@ -55,7 +55,7 @@ export function CheckAvailabilityModal({
     <Modal
       isOpen={open}
       onClose={onClose}
-      title={resolvedTitle}
+      title="Check availability"
       size="md"
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -99,6 +99,11 @@ export function CheckAvailabilityModal({
 
         {/* Product meta header */}
         <div>
+          {resolvedProductName && (
+            <h4 style={{ margin: '0 0 6px', fontSize: 'var(--t-ui, 16px)', fontWeight: 700, color: 'var(--text)' }}>
+              {resolvedProductName}
+            </h4>
+          )}
           {resolvedRate && (
             <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
               {resolvedRate}
@@ -129,8 +134,8 @@ export function CheckAvailabilityModal({
           )}
         </div>
 
-        {/* Embedded Calendar Popover with relative positioning */}
-        <div style={{ position: 'relative', width: '100%' }}>
+        {/* Embedded Calendar Popover with full height document flow */}
+        <div style={{ width: '100%' }}>
           <CalendarPopover
             title="Check availability"
             range={range}
@@ -141,6 +146,8 @@ export function CheckAvailabilityModal({
             availability={availability}
             onDismiss={onClose}
             clearable={true}
+            embedded={true}
+            showHeader={false}
           />
         </div>
 

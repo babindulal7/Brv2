@@ -102,14 +102,14 @@ if (REFERENCE_CASE_ERROR) {
   )
 } else {
   createRoot(root).render(
-  <StrictMode>
-    <AuthProvider>
-      <ThemeProvider initial="light">
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </ThemeProvider>
-    </AuthProvider>
-  </StrictMode>,
+    <StrictMode>
+      <AuthProvider>
+        <ThemeProvider initial="light">
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </ThemeProvider>
+      </AuthProvider>
+    </StrictMode>,
   )
 }
