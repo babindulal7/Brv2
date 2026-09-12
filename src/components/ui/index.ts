@@ -27,4 +27,5 @@ export * from './ScannerInput'
 export * from './QuantityChip'
 export * from './EvidenceThumbnail'
 export * from './ReconciliationAssertion'
+export * from './CheckAvailabilityModal'
 

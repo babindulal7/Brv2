@@ -3,8 +3,9 @@ import type { ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input, Select, EmptyState, TouchTarget, PageBody } from '../../components/ui'
+import { Input, Select, EmptyState, TouchTarget, PageBody, CheckAvailabilityModal } from '../../components/ui'
 import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
+import { listInventory } from '../../lib/queries/inventory'
 import { BRAND } from '../../lib/status'
 import {
   getBusinessToday,
@@ -1411,13 +1412,15 @@ function DaySheet({ side, onClose, children }: { side: 'right' | 'bottom'; onClo
  * So this panel does not claim availability is unbuilt, and does not claim it
  * works here either. It says which question is answered where.
  */
-function AvailabilityPanel() {
+function AvailabilityPanel({ onCheckAvailability }: { onCheckAvailability?: () => void }) {
   return (
     <Card bodyStyle={{ padding: 'var(--sp-md)' }}>
       <EmptyState
         icon={<Icon name="calendar_event" size={22} />}
-        title="A free/busy grid needs units, and there are none"
-        description="Availability is answered per booking, not per day: confirming a rental asks the engine whether that booking’s lines can be covered in its window, and where it cannot it names the unit that failed and why — held by another booking, retired, in a state that cannot go out, or still on the reset bench. This tab wants the other shape, a per-day count of free units per product, and that needs a denominator: how many units exist. No unit records exist yet, so every cell would be a count of nothing."
+        title="Check product availability"
+        description="Inspect stock levels, active holds, and future capacity for any equipment item across custom rental windows."
+        actionLabel={onCheckAvailability ? 'Check availability' : undefined}
+        onAction={onCheckAvailability}
       />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', margin: '12px 0 0' }}>
         <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>
@@ -1949,6 +1952,23 @@ export default function Calendar() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [sort, setSort] = useState<SortMode>('group')
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [showCheckAvailability, setShowCheckAvailability] = useState(false)
+  const [catalogProducts, setCatalogProducts] = useState<
+    Array<{ id: string; name: string; totalQuantity?: number | undefined; dailyRate?: number | undefined; description?: string | undefined }>
+  >([])
+
+  useEffect(() => {
+    listInventory().then((res) => {
+      setCatalogProducts(
+        res.rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          totalQuantity: r.totalQuantity,
+          dailyRate: r.dailyRate ? Number(r.dailyRate) / 100 : undefined,
+        }))
+      )
+    }).catch(() => {})
+  }, [])
   /*
    * ⛔ An `overlays` Set lived here, holding the three §5.1 layer names, driven
    * by three chips in the header. It is gone with them — see `layerToggles`
@@ -3083,7 +3103,7 @@ export default function Calendar() {
 
   const centre =
     view === 'Availability' ? (
-      <AvailabilityPanel />
+      <AvailabilityPanel onCheckAvailability={() => setShowCheckAvailability(true)} />
     ) : view === 'Timeline' ? (
       /* Not wrapped in `PageBody`: this view reads nothing. Its rows come from
          `ROWS`, which is empty in the source, so there is no load to fail and no
@@ -3232,6 +3252,7 @@ export default function Calendar() {
               style={{ ...selectStyle, height: 34, width: 300, cursor: 'text' }}
             />
           </span>
+          <Button icon="calendar_event" onClick={() => setShowCheckAvailability(true)}>Check availability</Button>
           <Button icon="settings" onClick={() => setShowFilters((v) => !v)}>{showFilters ? 'Hide Filters' : 'Filters'}</Button>
           <Button icon="close" onClick={() => setFullChoice(false)}>Exit Full View</Button>
         </div>
@@ -3354,6 +3375,15 @@ export default function Calendar() {
           </div>
         )}
 
+        <CheckAvailabilityModal
+          open={showCheckAvailability}
+          onClose={() => setShowCheckAvailability(false)}
+          products={catalogProducts}
+          onApplyRange={(rng, qty) => {
+            navigate(`/rentals/new?from=${rng.from}&to=${rng.to}&qty=${qty}`)
+          }}
+        />
+
         {dayOverlay}
       </div>
     )
@@ -3393,6 +3423,7 @@ export default function Calendar() {
         actions={
           <>
             {navButtons}
+            <Button icon="calendar_event" onClick={() => setShowCheckAvailability(true)}>Check availability</Button>
             <Button icon="settings" onClick={() => setShowFilters((v) => !v)}>{showFilters ? 'Hide Filters' : 'Filters'}</Button>
             {/* Full View drops the app chrome for a wall display — a desktop mode. */}
             {desktop && <Button icon="eye" onClick={() => setFullChoice(true)}>Full View</Button>}
@@ -3497,6 +3528,15 @@ export default function Calendar() {
       )}
 
       <FooterNote extra={['Bookings are cancelled, never deleted']} />
+
+      <CheckAvailabilityModal
+        open={showCheckAvailability}
+        onClose={() => setShowCheckAvailability(false)}
+        products={catalogProducts}
+        onApplyRange={(rng, qty) => {
+          navigate(`/rentals/new?from=${rng.from}&to=${rng.to}&qty=${qty}`)
+        }}
+      />
 
       {dayOverlay}
     </div>

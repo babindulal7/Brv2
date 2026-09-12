@@ -126,11 +126,11 @@ function addMonthsIso(iso: string, months: number): string {
 const iconBtnStyle: CSSProperties = {
   position: 'relative',
   flexShrink: 0,
-  width: 26,
-  height: 26,
+  width: 44,
+  height: 44,
   display: 'grid',
   placeItems: 'center',
-  borderRadius: 'var(--r-xs)',
+  borderRadius: 'var(--r-full)',
   border: 'none',
   background: 'transparent',
   color: 'var(--text2)',
@@ -141,52 +141,104 @@ const popoverStyle: CSSProperties = {
   position: 'absolute',
   zIndex: 40,
   top: 'calc(100% + 6px)',
-  padding: 10,
-  background: 'var(--dropdown)',
+  padding: '16px',
+  background: 'var(--card, #ffffff)',
   border: '1px solid var(--border)',
-  borderRadius: 'var(--r-card)',
-  boxShadow: 'var(--shadow-modal)',
+  borderRadius: '16px',
+  boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
+  width: 'min(360px, calc(100vw - 24px))',
 }
 
 /* ── the calendar ────────────────────────────────────────────────────────── */
 
 export interface CalendarPopoverProps {
   /** 'YYYY-MM-DD', or '' when nothing is chosen. */
-  value: string
-  onSelect: (v: string) => void
+  value?: string | undefined
+  onSelect?: ((v: string) => void) | undefined
   /** Closes without choosing. Escape and a click outside both route here. */
   onDismiss: () => void
   /** Offers "Clear" — a range bound can be unset; a required date cannot. */
-  clearable?: boolean
+  clearable?: boolean | undefined
   /** Anchors the popover to the right edge, for a control near the viewport edge. */
-  align?: 'left' | 'right'
+  align?: ('left' | 'right') | undefined
+  /** Header title, e.g. "Check availability", "Select date" */
+  title?: string | undefined
+  /** Range selection support: { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } */
+  range?: { from: string; to: string } | undefined
+  onSelectRange?: ((range: { from: string; to: string }) => void) | undefined
+  /** Quantity stepper support */
+  quantity?: number | undefined
+  onQuantityChange?: ((qty: number) => void) | undefined
+  showQuantity?: boolean | undefined
+  /** Per-date availability map: { '2026-07-22': 9, '2026-07-26': 0 } */
+  availability?: Record<string, number> | undefined
+  /** Min and Max allowable selectable dates ('YYYY-MM-DD') */
+  minDate?: string | undefined
+  maxDate?: string | undefined
 }
 
 /**
- * A month grid with the BS day under each AD day.
- *
- * **Keyboard.** The grid is a roving-tabindex: one day holds tab focus and the
- * arrows move it (day, week, month via PageUp/PageDown, Home/End for the
- * month's ends). This is the half the previous version did not have — a
- * calendar reachable only by mouse is one a keyboard user cannot use at all,
- * and the day cells were already `<button>`s, so it was 30 lines away.
+ * Modern circular date & availability calendar popup matching the canonical rental design:
+ * - Header with title & accessible 44×44 close button
+ * - Optional Quantity stepper
+ * - Centered bold Month Year with BS Nepali subtitle
+ * - MO TU WE TH FR SA SU 2-letter uppercase headers (Monday-first)
+ * - Circular day cells with top day number, separator line, and sub-metric (available qty or BS day)
+ * - Color-coded availability nodes: Green (available), Amber (low stock), Red (0 available)
+ * - Continuous connected blue rounded pill/capsule outline enclosing selected date ranges
+ * - Muted diagonal hatching for past/inactive dates
+ * - Keyboard navigation (roving tabindex, arrows, PageUp/Down, Home/End)
  */
-export function CalendarPopover({ value, onSelect, onDismiss, clearable, align = 'left' }: CalendarPopoverProps) {
+export function CalendarPopover({
+  value = '',
+  onSelect,
+  onDismiss,
+  clearable,
+  align = 'left',
+  title,
+  range,
+  onSelectRange,
+  quantity,
+  onQuantityChange,
+  showQuantity = false,
+  availability,
+  minDate,
+  maxDate,
+}: CalendarPopoverProps) {
   const today = todayIso()
-  const anchor = value && !Number.isNaN(Date.parse(value)) ? value : today
+  const anchor = (range?.from && !Number.isNaN(Date.parse(range.from)))
+    ? range.from
+    : value && !Number.isNaN(Date.parse(value))
+      ? value
+      : today
+
   const [cursor, setCursor] = useState(anchor)
+  const [localRange, setLocalRange] = useState<{ from: string; to: string }>(() => {
+    if (range) return range
+    if (value) return { from: value, to: value }
+    return { from: '', to: '' }
+  })
+  const [localQty, setLocalQty] = useState<number>(quantity ?? 1)
+  const currentQty = quantity !== undefined ? quantity : localQty
   const gridRef = useRef<HTMLDivElement | null>(null)
-  /* Focus follows the cursor only after a key moves it — opening the popover
-     should not yank focus off the field the operator is typing in. */
   const movedByKey = useRef(false)
+
+  // Sync external range updates
+  useEffect(() => {
+    if (range) setLocalRange(range)
+  }, [range])
 
   const cursorDate = new Date(`${cursor}T00:00:00.000Z`)
   const viewYear = cursorDate.getUTCFullYear()
   const viewMonth = cursorDate.getUTCMonth()
 
-  const cells = useMemo(() => {
+  const startWeekday = useMemo(() => {
     const first = new Date(Date.UTC(viewYear, viewMonth, 1))
-    const startWeekday = first.getUTCDay()
+    // Monday-first: 0 = Mon, ..., 6 = Sun
+    return (first.getUTCDay() + 6) % 7
+  }, [viewYear, viewMonth])
+
+  const cells = useMemo(() => {
     const daysInMonth = new Date(Date.UTC(viewYear, viewMonth + 1, 0)).getUTCDate()
     return [
       ...Array.from({ length: startWeekday }, () => null),
@@ -195,7 +247,7 @@ export function CalendarPopover({ value, onSelect, onDismiss, clearable, align =
         return { ad, iso: isoOf(ad) }
       }),
     ] as Array<{ ad: Date; iso: string } | null>
-  }, [viewYear, viewMonth])
+  }, [viewYear, viewMonth, startWeekday])
 
   useLayoutEffect(() => {
     if (!movedByKey.current) return
@@ -203,28 +255,15 @@ export function CalendarPopover({ value, onSelect, onDismiss, clearable, align =
     gridRef.current?.querySelector<HTMLButtonElement>('button[tabindex="0"]')?.focus()
   }, [cursor])
 
-  /*
-   * The BS month label, derived from the first day in the grid the engine can
-   * actually place.
-   *
-   * This used to probe the 15th, which reads correctly only when a whole AD
-   * month sits inside one BS month — and no AD month does. Driving it on 4 Sep
-   * showed the failure plainly: July 2026 rendered "BS not available" in the
-   * header while sixteen of its own day cells carried a Shrawan 2083 sub-digit.
-   * The header contradicted the grid directly underneath it.
-   *
-   * Taking the first day that resolves means the label describes the BS month
-   * the operator can actually see in the grid, and still says "not available"
-   * only when genuinely no day in view has one.
-   */
-  const monthBs = (() => {
+  const monthBs = useMemo(() => {
     for (const c of cells) {
       if (!c) continue
       const bs = toBs(c.ad)
       if (bs) return bs
     }
     return null
-  })()
+  }, [cells])
+
   const monthLabel = new Date(Date.UTC(viewYear, viewMonth, 1)).toLocaleDateString('en-GB', {
     month: 'long',
     year: 'numeric',
@@ -238,6 +277,28 @@ export function CalendarPopover({ value, onSelect, onDismiss, clearable, align =
   const moveMonths = (months: number) => {
     movedByKey.current = true
     setCursor((c) => addMonthsIso(c, months))
+  }
+
+  const handleSelectDay = (iso: string) => {
+    if (minDate && iso < minDate) return
+    if (maxDate && iso > maxDate) return
+
+    if (onSelectRange) {
+      if (!localRange.from || (localRange.from && localRange.to && localRange.from !== localRange.to)) {
+        const next = { from: iso, to: iso }
+        setLocalRange(next)
+        onSelectRange(next)
+      } else {
+        const next = iso >= localRange.from
+          ? { from: localRange.from, to: iso }
+          : { from: iso, to: localRange.from }
+        setLocalRange(next)
+        onSelectRange(next)
+      }
+    } else {
+      setLocalRange({ from: iso, to: iso })
+      onSelect?.(iso)
+    }
   }
 
   const onGridKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -263,110 +324,408 @@ export function CalendarPopover({ value, onSelect, onDismiss, clearable, align =
       case 'Enter':
       case ' ':
         e.preventDefault()
-        onSelect(cursor)
+        handleSelectDay(cursor)
         break
       default:
         break
     }
   }
 
+  const resolvedTitle = title ?? (availability || showQuantity ? 'Check availability' : 'Select date')
+
   return (
     <div
       role="dialog"
-      aria-label="Choose a date"
-      style={{ ...popoverStyle, width: 268, ...(align === 'right' ? { right: 0 } : { left: 0 }) }}
+      aria-label={resolvedTitle}
+      style={{
+        ...popoverStyle,
+        ...(align === 'right' ? { right: 0 } : { left: 0 }),
+      }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 4 }}>
-        <button type="button" className="press" aria-label="Previous month" onClick={() => moveMonths(-1)} style={iconBtnStyle}>
-          <TouchTarget axis="y" />
-          <Icon name="chevron_left" size={14} />
-        </button>
-        <span style={{ textAlign: 'center', lineHeight: 1.25 }}>
-          <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{monthLabel}</span>
-          {/* Law 9 — the BS month leads, where the engine can vouch for it. */}
-          <span style={{ display: 'block', fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>
-            {monthBs ? `${BS_MONTHS[monthBs.month - 1]} ${monthBs.year} BS` : 'BS not available'}
-          </span>
-        </span>
-        <button type="button" className="press" aria-label="Next month" onClick={() => moveMonths(1)} style={iconBtnStyle}>
-          <TouchTarget axis="y" />
-          <Icon name="chevron_right" size={14} />
+      {/* ── Top Header with Title and 44x44 Close '×' button ── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: showQuantity ? 12 : 16,
+        }}
+      >
+        <h3
+          style={{
+            margin: 0,
+            fontSize: 'var(--t-ui, 15px)',
+            fontWeight: 700,
+            color: 'var(--text)',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {resolvedTitle}
+        </h3>
+        <button
+          type="button"
+          aria-label="Close calendar"
+          onClick={onDismiss}
+          style={{
+            border: 'none',
+            background: 'transparent',
+            color: 'var(--muted)',
+            cursor: 'pointer',
+            minWidth: 44,
+            minHeight: 44,
+            display: 'grid',
+            placeItems: 'center',
+            borderRadius: 'var(--r-xs)',
+            marginRight: -10,
+            marginTop: -8,
+          }}
+        >
+          <Icon name="close" size={18} />
         </button>
       </div>
 
+      {/* ── Quantity Stepper (when enabled) ── */}
+      {showQuantity && (
+        <div style={{ marginBottom: 14 }}>
+          <label
+            htmlFor="calendar-popover-qty"
+            style={{
+              display: 'block',
+              fontSize: 'var(--t-meta, 13px)',
+              fontWeight: 700,
+              color: 'var(--text)',
+              marginBottom: 6,
+            }}
+          >
+            Quantity
+          </label>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              height: 44,
+              borderRadius: 'var(--r-sm, 8px)',
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              overflow: 'hidden',
+            }}
+          >
+            <span
+              id="calendar-popover-qty"
+              style={{
+                paddingLeft: 14,
+                fontSize: 'var(--t-ui, 15px)',
+                fontWeight: 600,
+                color: 'var(--text)',
+              }}
+            >
+              {currentQty}
+            </span>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                width: 38,
+                height: '100%',
+                borderLeft: '1px solid var(--border)',
+              }}
+            >
+              <button
+                type="button"
+                aria-label="Increase quantity"
+                onClick={() => {
+                  const next = currentQty + 1
+                  setLocalQty(next)
+                  onQuantityChange?.(next)
+                }}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--text)',
+                  cursor: 'pointer',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: 13,
+                  lineHeight: 1,
+                  borderBottom: '1px solid var(--border)',
+                }}
+              >
+                +
+              </button>
+              <button
+                type="button"
+                aria-label="Decrease quantity"
+                onClick={() => {
+                  const next = Math.max(1, currentQty - 1)
+                  setLocalQty(next)
+                  onQuantityChange?.(next)
+                }}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--text)',
+                  cursor: 'pointer',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: 13,
+                  lineHeight: 1,
+                }}
+              >
+                −
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Month & Year Navigation ── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 12,
+        }}
+      >
+        <button
+          type="button"
+          className="press"
+          aria-label="Previous month"
+          onClick={() => moveMonths(-1)}
+          style={iconBtnStyle}
+        >
+          <TouchTarget axis="both" />
+          <Icon name="chevron_left" size={16} />
+        </button>
+        <div style={{ textAlign: 'center', lineHeight: 1.25 }}>
+          <span
+            style={{
+              display: 'block',
+              fontSize: 'var(--t-ui, 15px)',
+              fontWeight: 700,
+              color: 'var(--text)',
+            }}
+          >
+            {monthLabel}
+          </span>
+          {monthBs && (
+            <span
+              style={{
+                display: 'block',
+                fontSize: 'var(--t-th, 11px)',
+                fontWeight: 600,
+                color: 'var(--text2)',
+                marginTop: 1,
+              }}
+            >
+              {`${BS_MONTHS[monthBs.month - 1]} ${monthBs.year} BS`}
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          className="press"
+          aria-label="Next month"
+          onClick={() => moveMonths(1)}
+          style={iconBtnStyle}
+        >
+          <TouchTarget axis="both" />
+          <Icon name="chevron_right" size={16} />
+        </button>
+      </div>
+
+      {/* ── Weekday Headers: MO TU WE TH FR SA SU ── */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(7,1fr)',
-          gap: 2,
-          fontSize: 'var(--t-th)',
-          color: 'var(--muted)',
+          gridTemplateColumns: 'repeat(7, 1fr)',
           textAlign: 'center',
-          marginBottom: 3,
+          fontSize: '11px',
+          fontWeight: 700,
+          color: 'var(--muted, #718096)',
+          letterSpacing: '0.04em',
+          marginBottom: 8,
         }}
         aria-hidden="true"
       >
-        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => <span key={d}>{d}</span>)}
+        {['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].map((d) => (
+          <span key={d} style={{ padding: '4px 0' }}>{d}</span>
+        ))}
       </div>
 
-      {/* The key handler sits on the grid rather than on each cell: the arrows
-          move the roving tabindex between cells, so the container is the only
-          element that sees every key regardless of which day holds focus. */}
-      <div ref={gridRef} role="grid" onKeyDown={onGridKeyDown} style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 2 }}>
+      {/* ── Calendar Grid ── */}
+      <div
+        ref={gridRef}
+        role="grid"
+        onKeyDown={onGridKeyDown}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          rowGap: 4,
+          columnGap: 0,
+        }}
+      >
         {cells.map((c, i) => {
-          if (!c) return <span key={`empty-${i}`} role="presentation" />
-          const selected = c.iso === value
-          const isCursor = c.iso === cursor
-          const isToday = c.iso === today
+          if (!c) {
+            return (
+              <div
+                key={`empty-${i}`}
+                role="presentation"
+                style={{ height: 42, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              />
+            )
+          }
+
+          const iso = c.iso
+          const colIndex = (startWeekday + c.ad.getUTCDate() - 1) % 7
+          const isCursor = iso === cursor
+          const isToday = iso === today
+          const isPast = Boolean(minDate ? iso < minDate : iso < today)
           const bs = toBs(c.ad)
+
+          // Range and selection checks
+          const hasRange = Boolean(localRange.from && localRange.to)
+          const inRange = hasRange && iso >= localRange.from && iso <= localRange.to
+          const isStart = localRange.from === iso
+          const isEnd = localRange.to === iso
+          const isSingle = (isStart && isEnd) || (localRange.from === iso && !localRange.to) || (value === iso && !onSelectRange)
+          const isSelected = isSingle || inRange
+
+          // Availability mapping
+          const hasAvail = availability !== undefined && iso in availability
+          const availCount = hasAvail ? availability[iso] : null
+
+          // Badge coloring
+          let circleBg = 'transparent'
+          let circleColor = 'var(--text)'
+
+          if (hasAvail) {
+            if (availCount === 0) {
+              circleBg = '#F56565' // Crimson Red
+              circleColor = '#FFFFFF'
+            } else if (availCount! < currentQty) {
+              circleBg = '#F6AD55' // Warm Amber / Orange
+              circleColor = '#1A202C'
+            } else {
+              circleBg = '#48BB78' // Fresh Green
+              circleColor = '#1A202C'
+            }
+          } else if (isPast) {
+            circleBg = 'var(--card2, #f7fafc)'
+            circleColor = 'var(--muted, #a0aec0)'
+          } else if (isSingle && !inRange) {
+            circleBg = 'var(--btn-primary-bg, #3182ce)'
+            circleColor = 'var(--btn-primary-fg, #ffffff)'
+          }
+
+          // Blue capsule outline calculation
+          const rangeBorderColor = 'var(--primary, #3182ce)'
+          const hasLeftBorder = isStart || (inRange && colIndex === 0) || isSingle
+          const hasRightBorder = isEnd || (inRange && colIndex === 6) || isSingle
+
           return (
-            <button
-              key={c.iso}
-              type="button"
-              role="gridcell"
-              className="press"
-              tabIndex={isCursor ? 0 : -1}
-              aria-selected={selected}
-              {...(isToday ? { 'aria-current': 'date' as const } : {})}
-              aria-label={formatAd(c.ad)}
-              onClick={() => onSelect(c.iso)}
+            <div
+              key={iso}
               style={{
                 position: 'relative',
-                minHeight: 34,
-                padding: '2px 0',
-                borderRadius: 'var(--r-xs)',
-                /* Law 11 — never colour alone. Today carries an outline as well
-                   as its tint, so it is still distinguishable in monochrome and
-                   for a red-green colour-blind operator. */
-                border: isToday && !selected ? '1px solid var(--primary)' : '1px solid transparent',
-                background: selected ? 'var(--btn-primary-bg)' : 'transparent',
-                color: selected ? 'var(--btn-primary-fg)' : 'var(--text)',
-                cursor: 'pointer',
+                height: 42,
                 display: 'flex',
-                flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
+                // Capsule border enclosing the range
+                borderTop: (inRange || isSingle) ? `2px solid ${rangeBorderColor}` : '2px solid transparent',
+                borderBottom: (inRange || isSingle) ? `2px solid ${rangeBorderColor}` : '2px solid transparent',
+                borderLeft: hasLeftBorder ? `2px solid ${rangeBorderColor}` : 'none',
+                borderRight: hasRightBorder ? `2px solid ${rangeBorderColor}` : 'none',
+                borderTopLeftRadius: hasLeftBorder ? 9999 : 0,
+                borderBottomLeftRadius: hasLeftBorder ? 9999 : 0,
+                borderTopRightRadius: hasRightBorder ? 9999 : 0,
+                borderBottomRightRadius: hasRightBorder ? 9999 : 0,
+                background: inRange ? 'rgba(49, 130, 206, 0.08)' : 'transparent',
               }}
             >
-              <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: selected || isToday ? 700 : 500 }}>
-                {c.ad.getUTCDate()}
-              </span>
-              {/* The engine vouches for one month only — an honest blank beats a
-                  fabricated BS day outside it. See the header. */}
-              <span className="figure" style={{ fontSize: 9, opacity: 0.75, minHeight: 11 }}>{bs ? bs.day : ''}</span>
-            </button>
+              <button
+                type="button"
+                role="gridcell"
+                className="press"
+                tabIndex={isCursor ? 0 : -1}
+                aria-selected={isSelected}
+                {...(isToday ? { 'aria-current': 'date' as const } : {})}
+                aria-label={`${formatAd(c.ad)}${hasAvail ? ` (${availCount} available)` : ''}`}
+                onClick={() => handleSelectDay(iso)}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '50%',
+                  border: isToday && !isSelected ? '1px solid var(--primary)' : '1px solid transparent',
+                  background: circleBg,
+                  color: circleColor,
+                  cursor: isPast && minDate && !hasAvail ? 'default' : 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                  ...(isPast && !hasAvail ? {
+                    backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.03), rgba(0,0,0,0.03) 3px, rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 5px)',
+                  } : {}),
+                }}
+              >
+                <span style={{ fontSize: '13px', fontWeight: 700, lineHeight: 1.1 }}>
+                  {c.ad.getUTCDate()}
+                </span>
+                {(hasAvail || bs) && (
+                  <>
+                    <span
+                      style={{
+                        width: 14,
+                        height: 1,
+                        background: 'currentColor',
+                        opacity: 0.35,
+                        margin: '1px 0',
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        opacity: hasAvail ? 1 : 0.8,
+                      }}
+                    >
+                      {hasAvail ? availCount : (bs?.day ?? '')}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
           )
         })}
       </div>
 
-      <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'space-between' }}>
+      {/* ── Footer Quick Actions ── */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginTop: 14,
+          paddingTop: 10,
+          borderTop: '1px solid var(--border)',
+          gap: 8,
+        }}
+      >
         <button
           type="button"
           className="press"
-          onClick={() => onSelect(today)}
+          onClick={() => handleSelectDay(today)}
           style={{
             position: 'relative',
-            padding: '5px 10px',
+            minHeight: 44,
+            padding: '0 12px',
             borderRadius: 'var(--r-xs)',
             border: '1px solid var(--border)',
             background: 'transparent',
@@ -377,51 +736,61 @@ export function CalendarPopover({ value, onSelect, onDismiss, clearable, align =
             cursor: 'pointer',
           }}
         >
-          <TouchTarget axis="y" />
+          <TouchTarget axis="both" />
           Today
         </button>
-        {clearable && (
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {clearable && (
+            <button
+              type="button"
+              className="press"
+              onClick={() => {
+                setLocalRange({ from: '', to: '' })
+                onSelectRange?.({ from: '', to: '' })
+                onSelect?.('')
+              }}
+              style={{
+                position: 'relative',
+                minHeight: 44,
+                padding: '0 12px',
+                borderRadius: 'var(--r-xs)',
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              <TouchTarget axis="both" />
+              Clear
+            </button>
+          )}
+
           <button
             type="button"
             className="press"
-            onClick={() => onSelect('')}
+            onClick={onDismiss}
             style={{
               position: 'relative',
-              padding: '5px 10px',
+              minHeight: 44,
+              padding: '0 16px',
               borderRadius: 'var(--r-xs)',
-              border: '1px solid var(--border)',
-              background: 'transparent',
-              color: 'var(--text2)',
+              border: 'none',
+              background: 'var(--btn-primary-bg, #3182ce)',
+              color: 'var(--btn-primary-fg, #ffffff)',
               fontSize: 'var(--t-meta)',
-              fontWeight: 600,
+              fontWeight: 700,
               fontFamily: 'inherit',
               cursor: 'pointer',
             }}
           >
-            <TouchTarget axis="y" />
-            Clear
+            <TouchTarget axis="both" />
+            Done
           </button>
-        )}
-        <button
-          type="button"
-          className="press"
-          onClick={onDismiss}
-          style={{
-            position: 'relative',
-            padding: '5px 10px',
-            borderRadius: 'var(--r-xs)',
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--text2)',
-            fontSize: 'var(--t-meta)',
-            fontWeight: 600,
-            fontFamily: 'inherit',
-            cursor: 'pointer',
-          }}
-        >
-          <TouchTarget axis="y" />
-          Close
-        </button>
+        </div>
       </div>
     </div>
   )
@@ -538,6 +907,20 @@ export interface DateFieldProps {
   disabled?: boolean
   id?: string
   placeholder?: string
+  /** Header title override for the popover */
+  title?: string
+  /** Range selection support: { from: 'YYYY-MM-DD', to: 'YYYY-MM-DD' } */
+  range?: { from: string; to: string }
+  onSelectRange?: (range: { from: string; to: string }) => void
+  /** Stepper quantity support */
+  quantity?: number
+  onQuantityChange?: (qty: number) => void
+  showQuantity?: boolean
+  /** Per-date availability map: { '2026-07-22': 9, '2026-07-26': 0 } */
+  availability?: Record<string, number>
+  /** Min and Max allowable dates */
+  minDate?: string
+  maxDate?: string
 }
 
 /**
@@ -561,6 +944,15 @@ export function DateField({
   disabled = false,
   id,
   placeholder = 'dd/mm/yyyy',
+  title,
+  range,
+  onSelectRange,
+  quantity,
+  onQuantityChange,
+  showQuantity,
+  availability,
+  minDate,
+  maxDate,
 }: DateFieldProps) {
   const [text, setText] = useState(() => displayDate(value))
   const [open, setOpen] = useState(false)
@@ -684,6 +1076,15 @@ export function DateField({
           value={value}
           clearable={clearable}
           align={align}
+          title={title ?? (label || ariaLabel)}
+          range={range}
+          onSelectRange={onSelectRange}
+          quantity={quantity}
+          onQuantityChange={onQuantityChange}
+          showQuantity={showQuantity}
+          availability={availability}
+          minDate={minDate}
+          maxDate={maxDate}
           onSelect={(v) => {
             onChange(v)
             setOpen(false)

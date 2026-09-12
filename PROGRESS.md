@@ -2,6 +2,62 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-12 — Calendar Popover & Availability Range Redesign (190 Test Files, 3211 Tests Green)
+
+**Phase:** Phase 10 Shells / UI Components · **Status:** Complete. Redesigned `CalendarPopover` and date selection pop-up UI across the entire application to match the modern Booqable availability specification. Re-engineered `CalendarPopover` in `src/components/ui/DateField.tsx` with floating card geometry (16px radius, elevation shadow), 44×44 touch-target close button, quantity stepper (`+` / `−` controls), Monday-first weekday columns (`MO TU WE TH FR SA SU`), color-coded circular day cells (green `#48BB78`, amber `#F6AD55`, red `#F56565`), stacked day numbers with subtle 1px divider for Nepali BS date or availability count, and continuous connected capsule pill range selection outlines. Built standalone `CheckAvailabilityModal` in `src/components/ui/CheckAvailabilityModal.tsx` for product-level availability inspection. Added comprehensive test suite `src/components/ui/__tests__/CalendarPopover.test.tsx` (6 tests). All 190 test files (3,211 tests) green, `tsc --noEmit` exit 0, Vite production build passed in 41.57s (234 precached PWA entries), 119/119 PGlite migrations applied, 17/17 lifecycle steps passed.
+
+### Did
+
+- **Redesigned CalendarPopover (`src/components/ui/DateField.tsx`):**
+  - Upgraded `CalendarPopoverProps` with optional `title`, `range`, `onSelectRange`, `quantity`, `onQuantityChange`, `showQuantity`, `availability`, `minDate`, `maxDate` while preserving full backward compatibility for `DateField`, `DateTimeField`, `DateRangePresets`, and `ReportToolbar`.
+  - Implemented Monday-first weekday ordering (`(first.getUTCDay() + 6) % 7`) with 2-letter uppercase headers (`MO TU WE TH FR SA SU`).
+  - Added modern header with customizable title ("Check availability" or "Select date") and accessible 44×44 touch-target close button (`×`).
+  - Integrated Quantity stepper `[ <qty>  + / − ]` with controlled & uncontrolled support and Law 15 touch targets.
+  - Implemented circular day cell nodes (36–38px diameter) with stacked values (Day number on top, 1px divider, availability count or Nepali BS day on bottom).
+  - Added color-coded availability badges: green (`#48BB78`) for high availability, amber (`#F6AD55`) for low stock (< requested quantity), and red (`#F56565`) for sold out / zero stock.
+  - Added subtle diagonal hatching pattern (`repeating-linear-gradient(...)`) for inactive / past dates without availability records.
+  - Implemented continuous connected blue capsule pill outline (`border: 2px solid var(--primary, #3182ce)`) for date ranges (left-pill for start, top/bottom rails for middle days, right-pill for end), keeping circular day badges visible within.
+- **Created CheckAvailabilityModal (`src/components/ui/CheckAvailabilityModal.tsx`, `src/components/ui/index.ts`):**
+  - Implemented standalone product availability pop-up modal with product title, rate badge, description, stock status pill, embedded calendar popover, quantity stepper, and selected range apply button.
+  - Exported `CheckAvailabilityModal` from `src/components/ui/index.ts`.
+- **Unit Test Suite (`src/components/ui/__tests__/CalendarPopover.test.tsx`):**
+  - Added 6 dedicated tests verifying title & close button, Monday-first weekdays, quantity stepper interactions, color-coded availability badges, continuous range capsule styling, month navigation, and `CheckAvailabilityModal` rendering (6/6 tests green).
+
+### Verified
+
+- `node ./node_modules/typescript/bin/tsc --noEmit` **exit 0 (0 errors across 611 files)**.
+- `node ./node_modules/vitest/vitest.mjs run` **190/190 test files passed, 3,211/3,211 tests green**.
+- `node ./node_modules/vite/bin/vite.js build` **build passed cleanly in 41.57s, precaching 234 assets**.
+- `node scripts/check-pglite.mjs` **119/119 applied cleanly, 0 failed**.
+- `node scripts/e2e-lifecycle.mjs` **17/17 green, 0 known-red, 0 failed**.
+- `node scripts/completion.mjs` **Backend 43/43 (100%), Real data 48/48 (100%), DB enforcement 9/9 (100%), Permissions 36/39 (92%), Lifecycle 17/17 (100%), Overall ≈ 98%**.
+- `node scripts/lint-progress.mjs` **passed**.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 48 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 36 / 39 (92%) | +0 |
+| Lifecycle | steps green / total | 17 / 17 (100%) | +0 |
+| Overall | mean of five | ≈ 98% | +0 |
+
+Migrations 119 files · check:pglite 119/119 passed. Suite: 190/190 passed.
+Gates read from .lifecycle-result.json.
+Counted by `npm run completion`, not typed.
+
+Capabilities declared by an action and NOT answered by the dispatcher (3):
+  inspection.fail
+  inspection.pass
+  inspection.create
+
+### Remaining
+
+- Keep inspection capabilities unmapped pending schema ruling (`PLAN.md §4.29`).
+- Review Capacitor Android scaffolding feasibility / Keystore adapter requirements (`PLAN.md §10`).
+
 ## 2026-09-12 — Phase 10 PWA True Resolution Icons & Install Flows (189 Test Files, 3205 Tests Green)
 
 **Phase:** Phase 10 Shells · **Status:** Complete. Resolved PWA icon sizing gap (`PLAN.md §4.27` / lines 587–590) by generating true-resolution bicubic resampled PNGs (192×192, 512×512, 96×96 shortcut, and 512×512 maskable icon with W3C 80% safe-zone centering and `#FDEFDC` cream background). Built `usePwaInstall` hook capturing browser `beforeinstallprompt` and `appinstalled` events, tracking standalone display mode, and exposing `promptInstall()`. Built `PwaInstallControl` mounted in `Settings ▸ System ▸ Preferences` and integrated 48px touch-target PWA install row in `MoreSheet.tsx` phone navigation. All 189 test files (3,205 tests) green, `tsc --noEmit` exit 0, Vite production build passed in 42.01s (234 precached PWA entries), 119/119 PGlite migrations applied, 17/17 lifecycle steps passed.
