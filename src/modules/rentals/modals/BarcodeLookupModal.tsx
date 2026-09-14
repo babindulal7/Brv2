@@ -4,6 +4,7 @@ import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
 import Icon from '../../../components/ui/Icon'
 import { supabase } from '../../../lib/supabase'
+import { captureError } from '../../../lib/monitoring'
 
 interface BarcodeLookupModalProps {
   isOpen: boolean
@@ -18,12 +19,44 @@ interface LookupResult {
   url: string
 }
 
+interface BookingSearchRow {
+  id: string
+  booking_no?: string | null
+  stage?: string | null
+  clients?: { name?: string | null } | null
+}
+
+interface UnitSearchRow {
+  id: string
+  barcode?: string | null
+  serial_no?: string | null
+  asset_tag?: string | null
+  status?: string | null
+  product?: {
+    id: string
+    name?: string | null
+    asset_code?: string | null
+    brand?: string | null
+    model?: string | null
+  } | null
+}
+
+interface ProductSearchRow {
+  id: string
+  name?: string | null
+  asset_code?: string | null
+  brand?: string | null
+  model?: string | null
+  status?: string | null
+}
+
 export function BarcodeLookupModal({ isOpen, onClose }: BarcodeLookupModalProps) {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState<LookupResult[]>([])
   const [searched, setSearched] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
@@ -32,54 +65,89 @@ export function BarcodeLookupModal({ isOpen, onClose }: BarcodeLookupModalProps)
 
     setSearching(true)
     setSearched(true)
+    setSearchError(null)
     setResults([])
 
     try {
       const hits: LookupResult[] = []
 
       // 1. Search bookings by booking_no or id
-      const { data: bookings } = await supabase
+      const { data: bookings, error: bErr } = await supabase
         .from('bookings')
         .select('id, booking_no, stage, clients:client_id (name)')
         .or(`booking_no.ilike.%${term}%,id.eq.${term.length === 36 ? term : '00000000-0000-0000-0000-000000000000'}`)
         .limit(5)
 
+      if (bErr) throw bErr
+
       if (bookings) {
-        for (const b of bookings as any[]) {
+        for (const b of bookings as unknown as BookingSearchRow[]) {
           hits.push({
             type: 'booking',
             id: b.id,
             title: `Booking ${b.booking_no}`,
             subtitle: `${b.stage} · Client: ${b.clients?.name ?? 'Unknown'}`,
-            url: `/rentals/${b.booking_no || b.id}`,
+            url: `/rentals/${encodeURIComponent(b.booking_no || b.id)}`,
           })
         }
       }
 
-      // 2. Search equipment items/units by barcode or serial_no
-      const { data: units } = await supabase
-        .from('equipment_items')
-        .select('id, barcode, serial_no, status, equipment:equipment_id (name, brand, model)')
-        .or(`barcode.ilike.%${term}%,serial_no.ilike.%${term}%`)
+      // 2. Search canonical inventory units via product_units_v
+      const { data: units, error: uErr } = await supabase
+        .from('product_units_v')
+        .select('id, barcode, serial_no, asset_tag, status, product:products_v (id, name, asset_code, brand, model)')
+        .or(`barcode.ilike.%${term}%,serial_no.ilike.%${term}%,asset_tag.ilike.%${term}%`)
         .limit(5)
 
+      if (uErr) throw uErr
+
+      const matchedProductIds = new Set<string>()
+
       if (units) {
-        for (const u of units as any[]) {
-          const equip = u.equipment
-          const name = equip ? `${equip.brand || ''} ${equip.model || equip.name || 'Equipment'}`.trim() : 'Equipment Unit'
+        for (const u of units as unknown as UnitSearchRow[]) {
+          const equip = u.product
+          if (equip?.id) matchedProductIds.add(equip.id)
+          const name = equip
+            ? `${equip.brand || ''} ${equip.model || equip.name || 'Equipment'}`.trim()
+            : 'Equipment Unit'
+          const navRef = u.asset_tag || u.serial_no || u.barcode || equip?.asset_code || u.id
           hits.push({
             type: 'equipment',
             id: u.id,
-            title: `${name} (${u.barcode || u.serial_no})`,
-            subtitle: `Status: ${u.status} · Serial: ${u.serial_no || 'N/A'}`,
-            url: `/inventory/${u.id}`,
+            title: `${name} (${u.asset_tag || u.serial_no || u.barcode || 'Unit'})`,
+            subtitle: `Status: ${u.status} · Serial: ${u.serial_no || 'N/A'}${u.barcode ? ` · Barcode: ${u.barcode}` : ''}`,
+            url: `/inventory/${encodeURIComponent(navRef)}`,
+          })
+        }
+      }
+
+      // 3. Search catalogue products via products_v (asset_code or name)
+      const { data: products, error: pErr } = await supabase
+        .from('products_v')
+        .select('id, name, asset_code, brand, model, status')
+        .or(`asset_code.ilike.%${term}%,name.ilike.%${term}%`)
+        .limit(5)
+
+      if (pErr) throw pErr
+
+      if (products) {
+        for (const p of products as unknown as ProductSearchRow[]) {
+          if (matchedProductIds.has(p.id)) continue
+          const name = `${p.brand || ''} ${p.model || p.name}`.trim()
+          hits.push({
+            type: 'equipment',
+            id: p.id,
+            title: `${name} (${p.asset_code})`,
+            subtitle: `Product · Status: ${p.status}`,
+            url: `/inventory/${encodeURIComponent(p.asset_code || p.id)}`,
           })
         }
       }
 
       setResults(hits)
-    } catch {
-      // Fallback empty
+    } catch (err: unknown) {
+      captureError(err, { where: 'BarcodeLookupModal.search', query: term })
+      setSearchError('Equipment search failed.')
       setResults([])
     } finally {
       setSearching(false)
@@ -95,25 +163,51 @@ export function BarcodeLookupModal({ isOpen, onClose }: BarcodeLookupModalProps)
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="🔍 Barcode & QR Quick Scan"
+      title="🔍 Find by Barcode or Serial"
       size="md"
     >
       <form onSubmit={handleSearch} style={{ display: 'grid', gap: 'var(--sp-md)' }}>
         <p style={{ margin: 0, fontSize: 'var(--t-body)', color: 'var(--text2)' }}>
-          Scan or paste any barcode, serial number, or booking reference to instantly locate it.
+          Enter or paste any barcode, serial number, asset tag, or booking reference to instantly locate it.
         </p>
+
+        {searchError && (
+          <div
+            role="alert"
+            style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--r-sm)',
+              background: 'var(--danger-bg, #fef2f2)',
+              border: '1px solid var(--danger-border, #f87171)',
+              color: 'var(--danger, #dc2626)',
+              fontSize: 'var(--t-meta)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Icon name="alert_triangle" size={16} />
+              <span>{searchError}</span>
+            </div>
+            <Button type="button" onClick={() => void handleSearch()} style={{ minHeight: 30, padding: '0 10px' }}>
+              Retry
+            </Button>
+          </div>
+        )}
 
         <div style={{ position: 'relative' }}>
           <input
             type="text"
             autoFocus
-            placeholder="Scan barcode or enter serial # / booking #…"
+            placeholder="Enter barcode, serial #, or booking #…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             style={{
               width: '100%',
               minHeight: 'var(--tap)',
-              padding: '0 40px 0 14px',
+              padding: '0 44px 0 14px',
               borderRadius: 'var(--r-input)',
               border: '1px solid var(--input-border)',
               background: 'var(--input-bg)',
@@ -139,7 +233,8 @@ export function BarcodeLookupModal({ isOpen, onClose }: BarcodeLookupModalProps)
               border: 'none',
               background: 'var(--primary)',
               color: 'var(--on-brand)',
-              cursor: 'pointer',
+              cursor: searching || !query.trim() ? 'not-allowed' : 'pointer',
+              opacity: searching || !query.trim() ? 0.6 : 1,
             }}
           >
             <Icon name="search" size={15} />
@@ -153,9 +248,9 @@ export function BarcodeLookupModal({ isOpen, onClose }: BarcodeLookupModalProps)
           </p>
         )}
 
-        {!searching && searched && results.length === 0 && (
+        {!searching && searched && !searchError && results.length === 0 && (
           <p style={{ margin: '8px 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            No bookings or equipment units matched “{query}”.
+            No equipment matches this barcode or serial.
           </p>
         )}
 
@@ -218,3 +313,4 @@ export function BarcodeLookupModal({ isOpen, onClose }: BarcodeLookupModalProps)
     </Modal>
   )
 }
+

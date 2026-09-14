@@ -207,6 +207,7 @@ export function FilterDrawer({
         position: 'fixed',
         inset: 0,
         top: phone ? 0 : 'var(--header-h)',
+        left: !phone && side === 'left' ? 'var(--shell-nav-w, 219px)' : 0,
         zIndex: 60,
         display: 'flex',
         alignItems: phone ? 'flex-end' : 'stretch',
@@ -242,23 +243,21 @@ export function FilterDrawer({
           position: 'relative',
           zIndex: 1,
           pointerEvents: 'auto',
-          width: phone ? '100%' : `min(${width}px, 100vw)`,
+          width: phone ? '100%' : `min(${width}px, calc(100vw - var(--shell-nav-w, 219px)))`,
           maxHeight: phone ? '85vh' : 'none',
           // Full height on desktop so the scroll lives INSIDE the body and the
           // Clear all footer stays pinned rather than scrolling away.
           height: phone ? 'auto' : '100%',
           display: 'flex',
           flexDirection: 'column',
-          /* v4.2 §4 — drawers/sheets are glass at the 16px step. --card is a
-             0.88 tint; without the blur the page shows through it unsoftened. */
-          background: 'var(--card)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
+          background: 'var(--surface)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
           borderLeft: phone || side === 'left' ? 'none' : '1px solid var(--border)',
           borderRight: phone || side === 'right' ? 'none' : '1px solid var(--border)',
           borderTop: phone ? '1px solid var(--border)' : 'none',
           borderRadius: phone ? 'var(--r-modal) var(--r-modal) 0 0' : 0,
-          boxShadow: 'var(--shadow-modal)',
+          boxShadow: phone ? 'var(--shadow-modal)' : '10px 0 28px color-mix(in srgb, var(--text) 8%, transparent)',
           outline: 'none',
           // §20. `both` holds the last frame, so a panel mid-exit stays off the
           // edge for the rest of its timer instead of snapping back into view.
@@ -273,6 +272,7 @@ export function FilterDrawer({
             gap: 'var(--sp-md)',
             padding: '14px 16px',
             borderBottom: '1px solid var(--border)',
+            background: 'var(--surface)',
             flexShrink: 0,
           }}
         >
@@ -339,7 +339,7 @@ export function FilterDrawer({
               padding: phone ? '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))' : '12px 16px',
               borderTop: '1px solid var(--border)',
               flexShrink: 0,
-              background: 'var(--card)',
+              background: 'var(--surface)',
             }}
           >
             <button
@@ -486,9 +486,9 @@ export function FilterButton({
         minHeight: 44,
         padding: '0 13px',
         borderRadius: 'var(--r-btn)',
-        border: `1px solid ${activeCount > 0 ? 'var(--primary)' : 'var(--btn-secondary-border)'}`,
-        background: 'transparent',
-        color: activeCount > 0 ? 'var(--primary)' : 'var(--text)',
+        border: `1px solid ${expanded || activeCount > 0 ? 'var(--primary)' : 'var(--btn-secondary-border)'}`,
+        background: expanded ? 'var(--nav-active-bg)' : 'transparent',
+        color: expanded || activeCount > 0 ? 'var(--primary)' : 'var(--text)',
         fontFamily: 'inherit',
         fontSize: 'var(--t-ui)',
         fontWeight: 600,
@@ -1020,4 +1020,3 @@ export function FilterSection({
     </section>
   )
 }
-

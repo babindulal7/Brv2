@@ -6,6 +6,7 @@ import { ConfirmDialog, Input, Select } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { EmptyState } from '../../components/ui/StateViews'
+import { ScannerInput } from '../../components/ui/ScannerInput'
 import { useToast } from '../../components/ui/Toast'
 import { useViewport } from '../../lib/device'
 import { BAR_BOX } from '../../components/shell/BottomBar'
@@ -27,7 +28,7 @@ import { listInventory, INV_STYLE, type InvStatus } from '../../lib/queries/inve
 import { readProductAvailability } from '../../lib/queries/productAvailability'
 import { planCreationUnits, type CreationUnitPlan } from '../../lib/queries/availability'
 import type { RentalWindow } from '../../lib/availability'
-import { equipmentConflicts, equipmentResultsFrom } from './booking/itemCatalogue'
+import { equipmentConflicts, equipmentLineDraft, equipmentResultsFrom } from './booking/itemCatalogue'
 import type {
   AvailabilityVerdict,
   EquipmentAvailabilitySource,
@@ -173,6 +174,8 @@ const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, 25] as const
 
 interface Line {
   id: string
+  /** Inventory lines omit this legacy-safe default; custom work is explicit. */
+  lineType?: 'Equipment' | 'Service' | 'Manual item'
   name: string
   serial: string
   category: string
@@ -2078,6 +2081,19 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const [vehicle, setVehicle] = useState('')
   const [numberPlate, setNumberPlate] = useState('')
   const [driverContact, setDriverContact] = useState('')
+  /* The creation contract has always carried these booking-level facts. Keep
+     them with dispatch instead of burying a delivery destination in a note. */
+  const [pickupLocation, setPickupLocation] = useState('')
+  const [returnLocation, setReturnLocation] = useState('')
+  const [specialInstructions, setSpecialInstructions] = useState('')
+  const [customLineOpen, setCustomLineOpen] = useState(false)
+  const [customLineType, setCustomLineType] = useState<'Service' | 'Manual item'>('Service')
+  const [customLineName, setCustomLineName] = useState('')
+  const [customLineRate, setCustomLineRate] = useState('')
+  const [customLineQty, setCustomLineQty] = useState(1)
+  const [customLineError, setCustomLineError] = useState<string | null>(null)
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scanNotice, setScanNotice] = useState<{ tone: 'success' | 'warning' | 'danger'; text: string } | null>(null)
   /* 0, not the worked example's 7 — a discount is something someone grants. */
   const [discountPct, setDiscountPct] = useState(0)
   /* `discountReason` / `approver` / `discountPopoverOpen` left with the
@@ -2247,7 +2263,19 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   )
 
   /* ── §10.1 calculation order — via lib/money.ts's canonical price(), not a local re-derivation. ── */
-  const equipmentPaisa = useMemo(() => lines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa, [lines])
+  const equipmentLines = useMemo(
+    () => lines.filter((l) => l.lineType === undefined || l.lineType === 'Equipment'),
+    [lines],
+  )
+  const equipmentPaisa = useMemo(
+    () => equipmentLines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa,
+    [equipmentLines],
+  )
+  const servicePaisa = useMemo(
+    () => lines.filter((l) => l.lineType === 'Service' || l.lineType === 'Manual item').reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa,
+    [lines],
+  )
+  const rentalLinesPaisa = (equipmentPaisa + servicePaisa) as Paisa
   const crewChargesPaisa = useMemo(
     () => crew.reduce((s, c) => s + c.dayRatePaisa * days + c.overtimePaisa + c.accommodationPaisa + c.mealsPaisa, 0) as Paisa,
     [crew, days],
@@ -2259,7 +2287,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const breakdown = useMemo(
     () =>
       price({
-        equipment: equipmentPaisa,
+        equipment: rentalLinesPaisa,
         crew: crewChargesPaisa,
         transport: transportPaisa,
         discountPercent: discountPct,
@@ -2268,7 +2296,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         vatPercent: vatOn ? vatRatePercent : 0,
         payments: advancePaisa,
       }),
-    [equipmentPaisa, crewChargesPaisa, transportPaisa, discountPct, vatOn, vatRatePercent, advancePaisa],
+    [rentalLinesPaisa, crewChargesPaisa, transportPaisa, discountPct, vatOn, vatRatePercent, advancePaisa],
   )
 
   /** §10.4, as ruled: this is the *invoice* state, not a payment status. */
@@ -2295,8 +2323,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * trips.
    */
   const conflictSummary = useMemo(
-    () => equipmentConflicts(lines, availabilitySource),
-    [lines, availabilitySource],
+    () => equipmentConflicts(equipmentLines, availabilitySource),
+    [equipmentLines, availabilitySource],
   )
   const conflictLines = conflictSummary.conflicts
   /**
@@ -2427,7 +2455,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       clientDbId: client?.dbId ?? null,
       clientsAreLive,
       lineCount: lines.length,
-      sampleLineName: lines.find((l) => !PRODUCT_ID_RE.test(l.id))?.name ?? null,
+      sampleLineName: equipmentLines.find((l) => !PRODUCT_ID_RE.test(l.id))?.name ?? null,
       canBookingMoney,
     }),
   ]
@@ -2479,6 +2507,95 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       return fresh.length === 0 ? prev : [...prev, ...fresh]
     })
   }, [])
+
+  /**
+   * A manual line is deliberately not an inventory item: it has no product id,
+   * no serial assignment, and no availability claim. `createRental` already
+   * accepts both Service and Manual item lines, so this only exposes an
+   * existing supported workflow instead of inventing a side ledger.
+   */
+  const addCustomLine = useCallback(() => {
+    const name = customLineName.trim()
+    const rate = Number(customLineRate)
+    if (!name) {
+      setCustomLineError('Enter a description for this line.')
+      return
+    }
+    if (!Number.isFinite(rate) || rate < 0) {
+      setCustomLineError('Enter a rate of Rs 0 or more.')
+      return
+    }
+    setLines((prev) => [
+      ...prev,
+      {
+        id: newClientUuid(),
+        lineType: customLineType,
+        name,
+        serial: '—',
+        category: customLineType === 'Service' ? 'Service' : 'Manual charge',
+        ratePaisa: rupees(rate) as Paisa,
+        days: Math.max(1, days || 1),
+        qty: Math.max(1, Math.round(customLineQty) || 1),
+        discountPct: 0,
+        location: 'Not inventory-tracked',
+        committedTo: '—',
+      },
+    ])
+    setCustomLineError(null)
+    setCustomLineName('')
+    setCustomLineRate('')
+    setCustomLineQty(1)
+    setCustomLineOpen(false)
+  }, [customLineName, customLineRate, customLineQty, customLineType, days])
+
+  /** Resolve a scanned physical-unit code back to its canonical product before
+   * adding it. The booking line remains product-based; the normal creation
+   * planner remains the one source of serial assignment. */
+  const addScannedEquipment = useCallback(async (rawCode: string) => {
+    const code = rawCode.trim()
+    if (!code) return
+    if (!liveEquipment) {
+      setScanNotice({ tone: 'warning', text: 'The live catalogue is still loading. Try the scan again in a moment.' })
+      return
+    }
+    setScanNotice(null)
+    type ScannedUnit = { product?: { id?: string | null } | null }
+    let unit: ScannedUnit | null = null
+    try {
+      for (const field of ['barcode', 'serial_no', 'asset_tag'] as const) {
+        const { data, error } = await supabase
+          .from('product_units_v')
+          .select('product:products_v (id)')
+          .eq(field, code)
+          .maybeSingle()
+        if (error) throw error
+        if (data) {
+          unit = data as ScannedUnit
+          break
+        }
+      }
+    } catch (error: unknown) {
+      setScanNotice({ tone: 'danger', text: `We could not look up that code: ${error instanceof Error ? error.message : String(error)}` })
+      return
+    }
+
+    const productId = unit?.product?.id ?? null
+    const match = productId ? liveEquipment.find((item) => item.id === productId) : undefined
+    if (!match) {
+      setScanNotice({ tone: 'warning', text: 'No rentable catalogue product matches that barcode, serial, or asset tag.' })
+      return
+    }
+    if (lines.some((line) => line.id === match.id)) {
+      setScanNotice({ tone: 'warning', text: `${match.name} is already on this booking.` })
+      return
+    }
+    if (match.availability.level === 'unavailable') {
+      setScanNotice({ tone: 'danger', text: `${match.name} is unavailable for the selected rental period. Choose different dates or another item.` })
+      return
+    }
+    addDrafts([equipmentLineDraft(match, days || 1)], { kind: match.kind, id: match.id, name: match.name })
+    setScanNotice({ tone: 'success', text: `${match.name} was added. Availability remains tied to the selected rental period.` })
+  }, [liveEquipment, lines, addDrafts, days])
 
   const addCrew = (crewId: string) => {
     const m = CREW_ROSTER.find((x) => x.id === crewId)
@@ -2707,7 +2824,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         try {
           creationUnitPlan = await planCreationUnits(
             { fromAd: pickupAt.toISOString(), toAd: returnAt.toISOString() },
-            lines.map((l, i) => ({
+            equipmentLines.map((l, i) => ({
               key: l.id ?? `line-${i}`,
               productId: l.id ?? null,
               qty: l.qty,
@@ -2776,6 +2893,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             ...(clientPickup
               ? {}
               : {
+                  pickupLocation: pickupLocation.trim() || null,
+                  returnLocation: returnLocation.trim() || null,
                   transport: {
                     clientUuid: transportKey.current ?? (transportKey.current = newClientUuid()),
                     deliveryCharge: toRupees(deliveryChargePaisa),
@@ -2786,15 +2905,17 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                     vehicle: vehicle.trim() === '' ? null : vehicle.trim(),
                     numberPlate: numberPlate.trim() === '' ? null : numberPlate.trim(),
                     driverContact: driverContact.trim() === '' ? null : driverContact.trim(),
+                    specialInstructions: specialInstructions.trim() === '' ? null : specialInstructions.trim(),
                   },
                 }),
             lines: lines.map((l, i) => {
+              const inventoryLine = l.lineType === undefined || l.lineType === 'Equipment'
               const lineKey = l.id ?? `line-${i}`
-              const assigned = creationUnitPlan?.unitsByKey.get(lineKey)
+              const assigned = inventoryLine ? creationUnitPlan?.unitsByKey.get(lineKey) : undefined
               return {
                 clientUuid: newClientUuid(),
-                lineType: 'Equipment' as const,
-                productId: l.id,
+                lineType: l.lineType ?? ('Equipment' as const),
+                ...(inventoryLine ? { productId: l.id } : { description: l.name }),
                 qty: l.qty,
                 /* Law 9 — days is mandatory and never defaulted. */
                 days: l.days,
@@ -2864,6 +2985,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     dispatchContext,
     client,
     lines,
+    equipmentLines,
     project,
     /* NR-19 — the two instants, not the four picker strings they came from. */
     pickupAt,
@@ -2882,6 +3004,9 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     vehicle,
     numberPlate,
     driverContact,
+    pickupLocation,
+    returnLocation,
+    specialInstructions,
     days,
     depositRequiredPaisa,
     handleExit,
@@ -3047,9 +3172,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     [client, jumpToSection, navigate],
   )
 
-  // §11 — never all green while a Critical alert is open. Documents has no
-  // body section of its own any more (§6), so it jumps to the rail's own
-  // Documents card rather than a section.
+  // §11 — never all green while a Critical alert is open. Documents are
+  // post-confirm work, so they do not hold a new booking's readiness hostage.
   const reviewItems: ReviewItem[] = [
     { label: 'Client', ok: Boolean(client) && govId.trim().length > 0, targetId: 'section-0' },
     { label: 'Dates', ok: days > 0, targetId: 'section-1' },
@@ -3061,7 +3185,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     { label: 'Delivery', ok: true, targetId: 'section-4' },
     { label: 'Pricing', ok: !discountUnapproved && breakdown.rentalTotal > 0, targetId: 'section-5' },
     { label: 'Payments', ok: breakdown.outstanding <= 0, targetId: 'section-5' },
-    { label: 'Documents', ok: false, targetId: 'rail-documents' },
   ]
   const reviewCompleteCount = reviewItems.filter((r) => r.ok).length
 
@@ -3088,9 +3211,9 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    *  3. The ✉ on the Quote tile opened a client email whose body said the
    *     document was attached. See the `DraftEmailModal` call site below.
    *
-   * What replaces it is the true statement, in the same card, in the same rail
-   * position. `reviewItems`' Documents row is unchanged — it was already
-   * `ok: false`, and it still jumps here.
+   * What replaces it is the true statement, in the same rail position.
+   * Documents are intentionally outside the creation checklist: there is no
+   * persisted booking yet for a document to belong to.
    */
 
   /* ── §36–38 — the equipment table's columns, declared once so the header,
@@ -3150,6 +3273,16 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const linePill = (
     l: Line,
   ): { label: string; title: string; bg: string; fg: string; icon: IconName; rank: number } => {
+    if (l.lineType === 'Service' || l.lineType === 'Manual item') {
+      return {
+        label: 'Not inventory-tracked',
+        title: `${l.lineType} — no serial assignment or availability check applies.`,
+        bg: 'var(--st-neutral-bg)',
+        fg: 'var(--st-neutral-fg)',
+        icon: 'info',
+        rank: 0,
+      }
+    }
     if (l.status) {
       const inv = INV_STYLE[l.status]
       return {
@@ -3211,7 +3344,9 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </span>
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1, fontSize: 'var(--t-th)', color: 'var(--text2)', flexWrap: 'wrap' }}>
-            {l.serial !== '—' ? (
+            {l.lineType === 'Service' || l.lineType === 'Manual item' ? (
+              <span>{l.lineType}</span>
+            ) : l.serial !== '—' ? (
               <Link className="identifier" to={`/inventory/${l.serial}`} style={{ color: 'inherit', textDecoration: 'none' }} title={`Open unit ${l.serial} in Inventory`}>
                 {l.serial}
               </Link>
@@ -3321,7 +3456,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   /**
    * 01_NEW_RENTAL §1.1 — the rail's SUMMARY card, in the spec's own order:
    *
-   *     Gear subtotal / Crew / Delivery
+   *     Equipment / Services / Crew / Delivery
    *     ───────────────────────────────
    *     Discount  chips
    *     VAT {rate}%  [on ▢]
@@ -3339,7 +3474,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    */
   const summaryCard = canBookingMoney ? (
     <Card id="rail-booking-summary" title="Summary">
-      <MoneyRow label="Gear subtotal" value={formatMoney(equipmentPaisa)} />
+      <MoneyRow label="Equipment" value={formatMoney(equipmentPaisa)} />
+      {servicePaisa > 0 && <MoneyRow label="Services & custom lines" value={formatMoney(servicePaisa)} />}
       {canCrewMoney && <MoneyRow label="Crew" value={formatMoney(crewChargesPaisa)} />}
       <MoneyRow label="Delivery" value={formatMoney(transportPaisa)} />
 
@@ -4027,6 +4163,83 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               />
             </div>
 
+            <div style={{ margin: '0 0 12px', paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
+              <button
+                type="button"
+                className="press"
+                onClick={() => setScannerOpen((open) => !open)}
+                aria-expanded={scannerOpen}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 34, padding: '0 10px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer' }}
+              >
+                <Icon name="barcode" size={15} />
+                Scan barcode or serial
+                <Icon name={scannerOpen ? 'chevron_up' : 'chevron_down'} size={14} />
+              </button>
+              {scannerOpen && (
+                <div style={{ marginTop: 9, maxWidth: 620 }}>
+                  <ScannerInput
+                    autoFocus
+                    placeholder="Scan or enter barcode, serial, or asset tag…"
+                    onScan={(code) => void addScannedEquipment(code)}
+                  />
+                  <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
+                    The scan finds its canonical product, then checks availability for this rental period before adding it.
+                  </p>
+                </div>
+              )}
+              {scanNotice && (
+                <p
+                  role="status"
+                  style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', lineHeight: 1.45, color: scanNotice.tone === 'danger' ? 'var(--st-danger-fg)' : scanNotice.tone === 'warning' ? 'var(--warn-text)' : 'var(--st-in-fg)' }}
+                >
+                  {scanNotice.text}
+                </p>
+              )}
+            </div>
+
+            {canBookingMoney && (
+              <div style={{ margin: '0 0 12px', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                  <div>
+                    <strong style={{ fontSize: 'var(--t-ui)' }}>Services & custom charges</strong>
+                    <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                      Add non-inventory work without claiming stock availability or a serial number.
+                    </p>
+                  </div>
+                  <Button icon="plus" variant="secondary" onClick={() => setCustomLineOpen((open) => !open)}>
+                    {customLineOpen ? 'Close custom line' : 'Add custom line'}
+                  </Button>
+                </div>
+
+                {customLineOpen && (
+                  <div style={{ marginTop: 10, padding: 12, borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(0,1.6fr) minmax(150px,0.7fr) minmax(100px,0.45fr) minmax(130px,0.6fr)', gap: 9, alignItems: 'end' }}>
+                      <Field label="Line type">
+                        <Select value={customLineType} onChange={(e) => setCustomLineType(e.target.value as typeof customLineType)} style={inputStyle}>
+                          <option value="Service">Service</option>
+                          <option value="Manual item">Manual charge</option>
+                        </Select>
+                      </Field>
+                      <Field label="Description">
+                        <Input value={customLineName} onChange={(e) => setCustomLineName(e.target.value)} placeholder="e.g. Operator overtime" style={inputStyle} />
+                      </Field>
+                      <Field label="Qty">
+                        <Input type="number" min={1} value={customLineQty} onChange={(e) => setCustomLineQty(Math.max(1, Number(e.target.value) || 1))} style={inputStyle} />
+                      </Field>
+                      <Field label="Rate / day (Rs)">
+                        <Input type="number" min={0} value={customLineRate} onChange={(e) => setCustomLineRate(e.target.value)} placeholder="0" style={inputStyle} />
+                      </Field>
+                    </div>
+                    {customLineError && <p role="alert" style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)' }}>{customLineError}</p>}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+                      <Button variant="ghost" onClick={() => { setCustomLineOpen(false); setCustomLineError(null) }}>Cancel</Button>
+                      <Button icon="plus" onClick={addCustomLine}>Add line</Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* §8.5 — the inline conflict check, re-run on every change to the
                 dates or the items. NR-09: it now reports the WINDOWED answer,
                 including the two states that are not answers at all, rather
@@ -4221,7 +4434,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               </table>
             </div>
 
-            {/* §39 — items / bundles / rental days / Equipment Subtotal. Packed,
+            {/* §39 — items / bundles / rental days / line subtotal. Packed,
                 Missing, Cases and Weight are Packing's fields, not booking
                 creation's; they were reporting an em dash on every draft here.
                 §8.6 — an unset value is still an em dash, never a zero. */}
@@ -4238,8 +4451,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               ))}
               {canBookingMoney && (
                 <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 7, alignItems: 'baseline' }}>
-                  <span style={{ color: 'var(--text2)' }}>Equipment Subtotal</span>
-                  <span className="figure" style={{ fontWeight: 700, fontSize: 'var(--t-ui)' }}>{formatMoney(equipmentPaisa)}</span>
+                  <span style={{ color: 'var(--text2)' }}>Line Subtotal</span>
+                  <span className="figure" style={{ fontWeight: 700, fontSize: 'var(--t-ui)' }}>{formatMoney(rentalLinesPaisa)}</span>
                 </span>
               )}
             </div>
@@ -4503,6 +4716,33 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                         />
                       </Field>
                     </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 9 }}>
+                      <Field label="Delivery location">
+                        <Input
+                          value={pickupLocation}
+                          onChange={(e) => setPickupLocation(e.target.value)}
+                          placeholder="Address or venue for delivery"
+                          style={inputStyle}
+                        />
+                      </Field>
+                      <Field label="Collection location">
+                        <Input
+                          value={returnLocation}
+                          onChange={(e) => setReturnLocation(e.target.value)}
+                          placeholder="Address or venue for collection"
+                          style={inputStyle}
+                        />
+                      </Field>
+                    </div>
+                    <Field label="Driver instructions">
+                      <textarea
+                        value={specialInstructions}
+                        onChange={(e) => setSpecialInstructions(e.target.value)}
+                        placeholder="Access, contact, parking, timing, or loading instructions"
+                        rows={3}
+                        style={{ ...inputStyle, minHeight: 76, padding: '9px 11px', resize: 'vertical', lineHeight: 1.45 }}
+                      />
+                    </Field>
                   </div>
                 )}
               </div>
@@ -4582,7 +4822,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                   {[
                     { l: 'Equipment Rental', v: formatMoney(equipmentPaisa) },
                     { l: 'Sub-Rental', v: '—' },
-                    { l: 'Services', v: '—' },
+                    { l: 'Services & custom lines', v: servicePaisa > 0 ? formatMoney(servicePaisa) : '—' },
                     ...(canCrewMoney ? [{ l: 'Crew Charges', v: formatMoney(crewChargesPaisa) }] : []),
                     { l: 'Transport', v: formatMoney(transportPaisa) },
                   ].map((r) => (

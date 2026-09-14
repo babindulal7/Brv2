@@ -11,8 +11,8 @@
  *  - **BD-03** — a cancelled booking carried no mark and every verb stayed
  *    live, although `confirmRental` / `floorVerb` / `closeRental` each refuse
  *    a `cancelled_at` booking before they write (Law 3, Law 1).
- *  - **BD-04** — "Open Operations" in the rail was live on a Quote while the
- *    header launcher beside it was disabled: two answers to one question.
+ *  - **BD-04** — Operations is one booking-scoped dropdown, so the page cannot
+ *    present conflicting launchers for the same booking.
  *  - **BD-05** — every line row ended in a bare `more_vert` glyph with no
  *    button and no menu behind it.
  *  - **BD-08** — a failed `getClient` was swallowed to `null`, so a network or
@@ -315,6 +315,13 @@ async function openOverflow() {
 const menuItem = (label: string) =>
   [...container.querySelectorAll('[role="menuitem"]')].find((el) => (el.textContent ?? '').trim().startsWith(label))
 
+async function openOperationsMenu() {
+  const trigger = button('Operations')
+  await act(async () => {
+    trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
 /** The WhatsApp entries live in a nested group that renders only once expanded. */
 async function expandMessageClient() {
   await openOverflow()
@@ -414,31 +421,43 @@ describe('BD-03 — a cancelled booking is marked, and its verbs are refused', (
     expect(hasReason('is cancelled — no operation runs on it')).toBe(true)
   })
 
-  it('refuses both operations launchers on a cancelled booking', async () => {
+  it('keeps the four operation choices visible and refuses them on a cancelled booking', async () => {
     cancelled = true
     stage = 'On Rent'
     await mount()
-    expect(button('Operations')?.disabled).toBe(true)
-    expect(button('Open Operations')?.disabled).toBe(true)
+    await openOperationsMenu()
+    const items = [...container.querySelectorAll('[role="menuitem"]')]
+    expect(items.map((item) => item.textContent?.trim())).toEqual([
+      'Packing',
+      'Handover',
+      'Return & Inspection',
+      'Cleaning & Reset',
+    ])
+    expect(items.every((item) => item.getAttribute('aria-disabled') === 'true')).toBe(true)
+    expect(items.every((item) => item.getAttribute('aria-label')?.includes('is cancelled'))).toBe(true)
   })
 })
 
 /* ── BD-04 ───────────────────────────────────────────────────────────────── */
 
-describe('BD-04 — one predicate, so the two launchers cannot disagree', () => {
-  it('disables BOTH at Quote', async () => {
+describe('BD-04 — one booking-scoped Operations dropdown', () => {
+  it('keeps every operation visible but unavailable at Quote', async () => {
     stage = 'Quote'
     await mount()
-    expect(button('Operations')?.disabled).toBe(true)
-    expect(button('Open Operations')?.disabled).toBe(true)
-    expect(hasReason('Operations open once this booking is Booked')).toBe(true)
+    expect(allButtons().filter((item) => item.textContent?.trim() === 'Operations')).toHaveLength(1)
+    await openOperationsMenu()
+    const items = [...container.querySelectorAll('[role="menuitem"]')]
+    expect(items).toHaveLength(4)
+    expect(items.every((item) => item.getAttribute('aria-disabled') === 'true')).toBe(true)
+    expect(items.every((item) => item.getAttribute('aria-label')?.includes('Operations open once this booking is Booked'))).toBe(true)
   })
 
-  it('enables BOTH at Booked', async () => {
+  it('offers Packing at Booked without adding another launcher', async () => {
     stage = 'Booked'
     await mount()
-    expect(button('Operations')?.disabled).toBe(false)
-    expect(button('Open Operations')?.disabled).toBe(false)
+    expect(allButtons().filter((item) => item.textContent?.trim() === 'Operations')).toHaveLength(1)
+    await openOperationsMenu()
+    expect(menuItem('Packing')?.getAttribute('aria-disabled')).toBe('false')
   })
 })
 

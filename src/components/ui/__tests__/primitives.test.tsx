@@ -79,6 +79,46 @@ describe('Ported Design System UI Primitives', () => {
       expect(onSort).toHaveBeenCalledWith('id')
     })
 
+    it('exposes sortable headers as keyboard controls with sort state', async () => {
+      const el = await mount(<Table columns={columns} data={data} onSort={vi.fn()} sortColumn="id" sortDirection="desc" />)
+      const header = el.querySelectorAll('th')[0]
+      const button = header?.querySelector('button')
+      expect(header?.getAttribute('aria-sort')).toBe('descending')
+      expect(button?.getAttribute('aria-label')).toContain('Sort by ID')
+    })
+
+    it('opens clickable rows from the keyboard without hijacking nested controls', async () => {
+      const onRowClick = vi.fn()
+      const onNestedClick = vi.fn()
+      const actionColumns = [
+        { key: 'name', header: 'Name' },
+        { key: 'actions', header: 'Actions', render: () => <button type="button" onClick={onNestedClick}>Open menu</button> },
+      ]
+      const el = await mount(
+        <Table
+          columns={actionColumns}
+          data={[data[0]!]}
+          onRowClick={onRowClick}
+          rowLabel={(row) => `Open ${row.name}`}
+        />,
+      )
+      const row = el.querySelector('tbody tr')
+      expect(row?.getAttribute('tabindex')).toBe('0')
+      expect(row?.getAttribute('aria-label')).toBe('Open Item A')
+
+      await act(async () => {
+        row?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      })
+      expect(onRowClick).toHaveBeenCalledTimes(1)
+
+      const nested = el.querySelector('tbody button')
+      await act(async () => {
+        nested?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      expect(onNestedClick).toHaveBeenCalledTimes(1)
+      expect(onRowClick).toHaveBeenCalledTimes(1)
+    })
+
     it('renders empty message when data is empty', async () => {
       const el = await mount(<Table columns={columns} data={[]} emptyMessage="No records in database" />)
       expect(el.textContent).toContain('No records in database')

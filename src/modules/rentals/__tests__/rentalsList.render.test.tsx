@@ -25,6 +25,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { BookingListRow } from '../../../lib/queries/bookings'
+import type { SystemRole } from '../../../types/database'
 
 /**
  * The sub-rented lines the mocked `booking_lines_v` returns.
@@ -34,7 +35,10 @@ import type { BookingListRow } from '../../../lib/queries/bookings'
  * what lets a test say "this booking has a sub-rented line" and then assert the
  * gold outline — the whole point of a derived flag is that it follows the lines.
  */
-const lines = vi.hoisted(() => ({ rows: [] as { booking_id: string; line_type: string }[] }))
+const lines = vi.hoisted(() => ({
+  rows: [] as { booking_id: string; line_type: string }[],
+  shouldFail: false,
+}))
 
 /* `data/rentals.ts` reaches `queries/bookings.ts` for its named filter sets,
    and that module holds the supabase client. Replaced wholesale, exactly as the
@@ -54,7 +58,13 @@ vi.mock('../../../lib/supabase', () => {
   const build = () => {
     const chain: Record<string, unknown> = {}
     for (const method of ['select', 'in', 'is', 'eq', 'order', 'range']) chain[method] = () => chain
-    chain['then'] = (resolve: (value: unknown) => unknown) => resolve({ data: lines.rows, error: null })
+    chain['then'] = (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => {
+      if (lines.shouldFail) {
+        if (reject) return reject(new Error('Subrental query failed'))
+        return Promise.reject(new Error('Subrental query failed'))
+      }
+      return resolve({ data: lines.rows, error: null })
+    }
     return chain
   }
   return {
@@ -88,6 +98,7 @@ const ROW: BookingListRow = {
    because a `vi.mock` factory is hoisted above ordinary consts and cannot close
    over one. Reset in `afterEach`. */
 const stub = vi.hoisted(() => ({ total: 1 }))
+const authStub = vi.hoisted(() => ({ role: 'Owner' as SystemRole }))
 
 /* The real named filter sets are kept (the screen builds its four KPI queries
    from them); only the fetch is replaced, so rows actually arrive and the table
@@ -100,7 +111,7 @@ vi.mock('../../../lib/queries/bookings', async (importOriginal) => {
 vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => true }))
 vi.mock('../../../lib/auth', () => ({
   useAuth: () => ({
-    user: { id: 'u-1', name: 'Babin Shrestha', role: 'Owner', isSharedDevice: false },
+    user: { id: 'u-1', name: 'Babin Shrestha', role: authStub.role, isSharedDevice: false },
     loading: false,
     isLocked: false,
   }),
@@ -155,6 +166,8 @@ afterEach(async () => {
   container?.remove()
   stub.total = 1
   lines.rows = []
+  lines.shouldFail = false
+  authStub.role = 'Owner'
 })
 
 const text = () => container.textContent ?? ''
@@ -184,9 +197,10 @@ describe('§4.1 — one list, no tabs', () => {
     expect(quote?.querySelector('svg')).not.toBeNull()
   })
 
-  it('keeps the KPI strip and the pager, which no prose removes (rulings §1)', async () => {
+  it('keeps the list and pager as the primary V2 workspace', async () => {
     await mount(1280)
-    expect(text()).toContain('Active Rentals')
+    expect(text()).not.toContain('Active Rentals')
+    expect(text()).toContain('1 Rental found')
     expect(text()).toContain('Rows per page')
   })
 })
@@ -390,3 +404,154 @@ describe('the three layouts, from one width reading (Law 14)', () => {
     expect(text()).toContain('B-715')
   })
 })
+
+describe('§Step 6 — cross-page and filter selection state', () => {
+  it('clears selection when a filter changes', async () => {
+    await mount(1280)
+    const rowCheckbox = container.querySelector('tbody input[type="checkbox"]') as HTMLInputElement
+    expect(rowCheckbox).not.toBeNull()
+    await act(async () => {
+      rowCheckbox.click()
+    })
+    expect(text()).toContain('1 rental selected')
+
+    // Changing filter drops selection immediately
+    const booked = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Booked')!
+    await act(async () => {
+      booked.click()
+    })
+    expect(text()).not.toContain('1 rental selected')
+  })
+})
+
+describe('§Step 7 — CSV Export selection behavior', () => {
+  it('triggers CSV download with selected rows and respects selection', async () => {
+    const createObjectURLMock = vi.fn().mockReturnValue('blob:mock-url')
+    const revokeObjectURLMock = vi.fn()
+    window.URL.createObjectURL = createObjectURLMock
+    window.URL.revokeObjectURL = revokeObjectURLMock
+
+    await mount(1280)
+    const rowCheckbox = container.querySelector('tbody input[type="checkbox"]') as HTMLInputElement
+    await act(async () => {
+      rowCheckbox.click()
+    })
+
+    const exportBtn = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('Export CSV'))
+    expect(exportBtn).toBeDefined()
+
+    await act(async () => {
+      exportBtn?.click()
+    })
+
+    expect(createObjectURLMock).toHaveBeenCalled()
+    expect(revokeObjectURLMock).toHaveBeenCalled()
+  })
+})
+
+describe('§Step 8 & 9 — quick action permissions and mobile card parity', () => {
+  it('renders New Rental, Fast Return, and Record Payment for Owner', async () => {
+    authStub.role = 'Owner'
+    await mount(1280)
+    expect(button('New Rental')).toBeDefined()
+    expect(button('⚡ Fast Return')).toBeDefined()
+    expect(button('Record Payment')).toBeDefined()
+    expect(button('Scan Barcode')).toBeDefined()
+  })
+
+  it('hides New Rental and Record Payment for Technician, keeps Fast Return', async () => {
+    authStub.role = 'Technician'
+    await mount(1280)
+    expect(button('New Rental')).toBeUndefined()
+    expect(button('Record Payment')).toBeUndefined()
+    expect(button('⚡ Fast Return')).toBeDefined()
+  })
+
+  it('hides Fast Return for Accounts, keeps Record Payment', async () => {
+    authStub.role = 'Accounts'
+    await mount(1280)
+    expect(button('⚡ Fast Return')).toBeUndefined()
+    expect(button('Record Payment')).toBeDefined()
+  })
+
+  it('provides Cancel Booking in both Desktop and Mobile views for desk writers', async () => {
+    // Desktop view
+    authStub.role = 'Owner'
+    await mount(1280)
+    const deskOpsBtn = container.querySelector('button[aria-label="Operations for B-715"]') as HTMLButtonElement
+    expect(deskOpsBtn).not.toBeNull()
+    await act(async () => {
+      deskOpsBtn.click()
+    })
+    expect(text()).toContain('Cancel Booking')
+
+    // Mobile view (Step 9 parity)
+    await mount(420)
+    const mobOpsBtn = container.querySelector('button[aria-label="Operations for B-715"]') as HTMLButtonElement
+    expect(mobOpsBtn).not.toBeNull()
+    await act(async () => {
+      mobOpsBtn.click()
+    })
+    expect(text()).toContain('Cancel Booking')
+  })
+
+  it('hides Cancel Booking for Technician in both views', async () => {
+    authStub.role = 'Technician'
+    await mount(1280)
+    const deskOpsBtn = container.querySelector('button[aria-label="Operations for B-715"]') as HTMLButtonElement
+    await act(async () => {
+      deskOpsBtn.click()
+    })
+    expect(text()).not.toContain('Cancel Booking')
+  })
+})
+
+describe('§Step 10 & 11 — Sub-Rental refresh and retry', () => {
+  it('re-queries sub-rentals when Refresh is clicked', async () => {
+    lines.rows = []
+    await mount(1280)
+    expect(text()).not.toContain('Sub-rented')
+
+    // Data changes in database
+    lines.rows = [{ booking_id: ROW.id, line_type: 'Sub-rental' }]
+
+    // Click Refresh
+    const refreshBtn = button('Refresh')
+    expect(refreshBtn).toBeDefined()
+    await act(async () => {
+      refreshBtn?.click()
+    })
+
+    expect(text()).toContain('Sub-rented')
+  })
+
+  it('renders retry button on sub-rental failure and heals upon retry', async () => {
+    lines.shouldFail = true
+    await mount(1280)
+
+    // Sub-Rental is disabled / unavailable
+    const subBtn = container.querySelector('button[aria-label^="Sub-Rental — unavailable"]') as HTMLButtonElement
+    expect(subBtn).not.toBeNull()
+    expect(subBtn.disabled).toBe(true)
+
+    // Retry button is available
+    const retryBtn = container.querySelector('button[aria-label="Retry loading sub-rentals"]') as HTMLButtonElement
+    expect(retryBtn).not.toBeNull()
+
+    // Network recovers
+    lines.shouldFail = false
+
+    await act(async () => {
+      retryBtn.click()
+    })
+
+    // Sub-Rental is now live and enabled
+    const liveSubBtn = button('Sub-Rental')
+    expect(liveSubBtn).toBeDefined()
+    expect(liveSubBtn?.disabled).toBe(false)
+  })
+})
+
+
+
+

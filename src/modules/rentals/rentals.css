@@ -1,0 +1,10 @@
+.rentals-v2 { gap: 18px; }
+.rentals-v2 .page-header { padding: 2px 2px 0; }
+.rentals-v2 .page-header__description { font-size: 14px !important; }
+.rentals-v2 [data-table-scroll] { border-radius: var(--r-card); }
+.rentals-v2 .operations-table > thead > tr > th { height: 50px; font-size: 12px; letter-spacing: 0; text-transform: none; }
+.rentals-v2 .operations-table > tbody > tr { transition: background-color var(--dur-fast) var(--ease); }
+.rentals-v2 .operations-table > tbody > tr:hover { background: color-mix(in srgb, var(--nav-active-bg) 36%, transparent); }
+.rentals-v2 .operations-table > thead > tr > th { position: sticky; top: 0; z-index: 2; }
+.rentals-v2 .page-toolbar { margin-top: 0; }
+@media (max-width: 720px) { .rentals-v2 { gap: 14px; } }

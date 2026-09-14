@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import Sidebar from './components/shell/Sidebar'
 import BottomBar, { BAR_BOX } from './components/shell/BottomBar'
@@ -20,6 +20,7 @@ import ScreenLock from './modules/auth/ScreenLock'
 import { useAuth } from './lib/auth'
 import { useViewport } from './lib/device'
 import { canViewMoney, isStaff } from './lib/rbac'
+import { installRoutePreload } from './lib/routePreload'
 
 /* ── lazy-loaded route pages (code-splitting) ─────────────────────────── */
 const Today             = lazy(() => import('./modules/today/Today'))
@@ -99,6 +100,7 @@ void Warehouses
 
 export default function App() {
   const { user } = useAuth()
+  useEffect(() => installRoutePreload(), [])
   return (
     <ToastProvider>
       <SyncProvider>
@@ -985,7 +987,7 @@ function Shell({
     <div
       style={{
         display: 'flex',
-        minHeight: '100vh',
+        minHeight: '100dvh',
         /* v4.2 §3 — the shell is TRANSPARENT so <body>'s fixed canvas gradient
            is the app's backdrop. Painting --app here was hiding the canvas
            behind an opaque flat fill, which also left the glass surfaces
@@ -993,12 +995,15 @@ function Shell({
         background: 'transparent',
       }}
     >
+      <a className="skip-to-content" href="#main-content">Skip to content</a>
       {!phone && <Sidebar active={pathname + query} />}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <MockBanner />
         <OfflineBanner />
         <HeaderBar crumbs={crumbs} {...(search ? { searchPlaceholder: search } : {})} />
         <main
+          id="main-content"
+          tabIndex={-1}
           data-floor={isFloor ? 'true' : undefined}
           style={{
             flex: 1,
@@ -1007,8 +1012,8 @@ function Shell({
                row of content under the bar on a notched phone. Floor routes add
                another 64px on phone for StickyFloorBar. */
             padding: phone
-              ? `16px 20px calc(${hasElevatedStickyBar ? '88px' : '24px'} + ${BAR_BOX})`
-              : '16px 20px 24px',
+              ? `var(--page-padding) var(--page-padding) calc(${hasElevatedStickyBar ? '88px' : '24px'} + ${BAR_BOX})`
+              : 'var(--page-padding)',
           }}
         >
           {isForbidden ? (

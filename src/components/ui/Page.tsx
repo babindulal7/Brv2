@@ -6,6 +6,8 @@ import type { BrandKey } from '../../lib/status'
 import { FOOTER_NOTE } from '../../data/nav'
 import { CollapsibleAside } from './CollapsibleAside'
 import { useViewport } from '../../lib/device'
+import { Button as SharedButton, type ButtonProps } from './Button'
+import { Card as SharedCard } from './Card'
 
 /**
  * Page furniture shared by every Generation C screen.
@@ -43,23 +45,17 @@ export function Card({
   bodyStyle?: CSSProperties
 }) {
   return (
-    <section id={id} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', minWidth: 0, ...style }}>
-      {title && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--sp-sm)',
-            padding: '12px 14px',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
-          {action && <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>{action}</div>}
-        </div>
-      )}
-      <div style={{ padding: 14, flex: 1, minWidth: 0, ...bodyStyle }}>{children}</div>
-    </section>
+    <SharedCard
+      as="section"
+      headingLevel="h2"
+      padding="sm"
+      {...(id !== undefined ? { id } : {})}
+      {...(title !== undefined ? { title, action } : {})}
+      {...(style !== undefined ? { style } : {})}
+      {...(bodyStyle !== undefined ? { bodyStyle } : {})}
+    >
+      {children}
+    </SharedCard>
   )
 }
 
@@ -70,16 +66,21 @@ export function PageHeader({
   title,
   description,
   actions,
+  breadcrumb,
+  status,
 }: {
   icon?: IconName
   title: string
   description?: string
   actions?: ReactNode
+  breadcrumb?: ReactNode
+  status?: ReactNode
 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+    <header className="page-header" style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
+      <div className="page-header__copy" style={{ minWidth: 0, flex: '1 1 16rem' }}>
+        {breadcrumb && <div style={{ marginBottom: 'var(--space-2)' }}>{breadcrumb}</div>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
           {icon && (
             <span
               style={{
@@ -99,13 +100,14 @@ export function PageHeader({
           <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
             {title}
           </h1>
+          {status}
         </div>
         {description && (
-          <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{description}</p>
+          <p className="page-header__description" style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{description}</p>
         )}
       </div>
-      {actions && <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>{actions}</div>}
-    </div>
+      {actions && <div className="page-header__actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap', maxWidth: '100%' }}>{actions}</div>}
+    </header>
   )
 }
 
@@ -123,51 +125,21 @@ export function Button({
   children,
   icon,
   variant = 'secondary',
-  onClick,
-  className,
-  disabled,
-}: {
+  ...props
+}: Omit<ButtonProps, 'icon'> & {
   children: ReactNode
   icon?: IconName
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
-  onClick?: () => void
-  className?: string
-  disabled?: boolean
 }) {
-  const skin =
-    variant === 'primary'
-      ? { background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)', border: '1px solid transparent' }
-      : variant === 'danger'
-        ? { background: 'var(--btn-danger-bg)', color: 'var(--btn-danger-fg)', border: '1px solid transparent' }
-        : variant === 'ghost'
-          ? { background: 'transparent', color: 'var(--text2)', border: '1px solid transparent' }
-          : { background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }
-
   return (
-    <button
+    <SharedButton
       type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={['press', className].filter(Boolean).join(' ')}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        minHeight: 44,
-        padding: '0 12px',
-        borderRadius: 'var(--r-btn)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: 600,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.6 : 1,
-        fontFamily: 'inherit',
-        whiteSpace: 'nowrap',
-        ...skin,
-      }}
+      size="sm"
+      variant={variant}
+      icon={icon ? <Icon name={icon} size={16} /> : undefined}
+      {...props}
     >
-      {icon && <Icon name={icon} size={14} />}
       {children}
-    </button>
+    </SharedButton>
   )
 }
 
@@ -224,7 +196,7 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
       {items.map((k) => {
         const isZero = k.value === '0' || k.value === 'Rs 0' || k.value === 'Rs. 0' || k.value === 'Rs 0.00' || k.value === '—'
         return (
-          <article key={k.label} className="lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
+          <article key={k.label} className="surface-card kpi-tile lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <span
                 style={{
@@ -250,6 +222,7 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
                 }}
               >
                 <span
+                  className="kpi-tile__label"
                   style={{
                     fontSize: 'var(--t-meta)',
                     fontWeight: 600,
@@ -491,6 +464,7 @@ export function FooterNote({ extra }: { extra?: string[] }) {
   const parts = [FOOTER_NOTE.dates, FOOTER_NOTE.timezone, ...(extra ?? [])]
   return (
     <div
+      className="footer-note"
       style={{
         display: 'flex',
         alignItems: 'center',

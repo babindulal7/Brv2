@@ -438,10 +438,30 @@ interface Sig {
  * the route for ANY booking — resolved by `fetchFloorBooking`, not compared
  * against a seed.
  */
-export default function ReturnWorkspace() {
+export interface ReturnWorkspaceProps {
+  bookingNo?: string
+  embedded?: boolean
+  onConfirmSuccess?: () => void
+  onCancel?: () => void
+  onRegisterActions?: (actions: {
+    canComplete: boolean
+    dispatching: boolean
+    complete: () => void
+    isDirty: boolean
+    label?: string
+  }) => void
+}
+
+export default function ReturnWorkspace({
+  bookingNo: bookingNoProp,
+  embedded = false,
+  onConfirmSuccess,
+  onCancel,
+  onRegisterActions,
+}: ReturnWorkspaceProps = {}) {
   const navigate = useNavigate()
-  const { bookingNo } = useParams()
-  const id = bookingNo ?? ''
+  const { bookingNo: bookingNoParam } = useParams()
+  const id = bookingNoProp ?? bookingNoParam ?? ''
   /** The one identity every dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
@@ -762,13 +782,30 @@ export default function ReturnWorkspace() {
           { userId: user.id, role: user.role },
         ),
       )
-      .then(() => navigate(`/rentals/${id}`))
+      .then(() => {
+        if (onConfirmSuccess) {
+          onConfirmSuccess()
+        } else {
+          navigate(`/rentals/${id}`)
+        }
+      })
       .catch((err: unknown) => {
         captureError(err, { where: 'ReturnWorkspace.return', bookingId: id })
         setDispatchError(formatGateError(err))
         setDispatching(false)
       })
   }
+
+  const isDirty = Object.keys(marks).length > 0 || sessionNotes.trim().length > 0 || sigReturning !== null || sigWarehouse !== null
+  useEffect(() => {
+    onRegisterActions?.({
+      canComplete,
+      dispatching,
+      complete: completeSession,
+      isDirty,
+      label: 'Confirm & Next →',
+    })
+  }, [onRegisterActions, canComplete, dispatching, isDirty])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
 
@@ -847,64 +884,66 @@ export default function ReturnWorkspace() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
             {/* ── header ─────────────────────────────────────────────────── */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                  <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
-                    Return &amp; Inspection Workspace
-                  </h1>
-                  {/*
-                    ⭐ RULED (Rulings §7): the badge shows the CANONICAL stage —
-                    never a seventh name, and never the seed build's
-                    unconditional "Equipment In" chip. The mid-return signal is
-                    the *job* chip beside it. Two axes, two chips. Law 11 on
-                    both: icon + label + colour.
-                  */}
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 'var(--sp-xs)',
-                      height: 22,
-                      padding: '0 9px',
-                      // §3.3 — a status is --r-chip; --r-badge (999) is for
-                      // numeric count badges only.
-                      borderRadius: 'var(--r-chip)',
-                      background: STATUS[statusToken(stage)].bg,
-                      color: STATUS[statusToken(stage)].fg,
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 700,
-                    }}
-                  >
-                    <Icon name="dot" size={9} />
-                    {stage}
-                  </span>
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 'var(--sp-xs)',
-                      height: 22,
-                      padding: '0 9px',
-                      borderRadius: 'var(--r-badge)',
-                      border: '1px solid var(--border)',
-                      background: 'var(--card2)',
-                      color: jobChip.tone,
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 700,
-                    }}
-                  >
-                    <Icon name={jobChip.icon} size={11} />
-                    Return job: {jobChip.label}
-                  </span>
+              {!embedded && (
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                    <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
+                      Return &amp; Inspection Workspace
+                    </h1>
+                    {/*
+                      ⭐ RULED (Rulings §7): the badge shows the CANONICAL stage —
+                      never a seventh name, and never the seed build's
+                      unconditional "Equipment In" chip. The mid-return signal is
+                      the *job* chip beside it. Two axes, two chips. Law 11 on
+                      both: icon + label + colour.
+                    */}
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 'var(--sp-xs)',
+                        height: 22,
+                        padding: '0 9px',
+                        // §3.3 — a status is --r-chip; --r-badge (999) is for
+                        // numeric count badges only.
+                        borderRadius: 'var(--r-chip)',
+                        background: STATUS[statusToken(stage)].bg,
+                        color: STATUS[statusToken(stage)].fg,
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 700,
+                      }}
+                    >
+                      <Icon name="dot" size={9} />
+                      {stage}
+                    </span>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 'var(--sp-xs)',
+                        height: 22,
+                        padding: '0 9px',
+                        borderRadius: 'var(--r-badge)',
+                        border: '1px solid var(--border)',
+                        background: 'var(--card2)',
+                        color: jobChip.tone,
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 700,
+                      }}
+                    >
+                      <Icon name={jobChip.icon} size={11} />
+                      Return job: {jobChip.label}
+                    </span>
+                  </div>
+                  <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                    <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
+                      {floor.bookingNo}
+                    </Link>
+                    {floor.project ? ` · ${floor.project}` : ''}
+                    {floor.clientName ? ` · ${floor.clientName}` : ''}
+                  </p>
                 </div>
-                <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
-                    {floor.bookingNo}
-                  </Link>
-                  {floor.project ? ` · ${floor.project}` : ''}
-                  {floor.clientName ? ` · ${floor.clientName}` : ''}
-                </p>
-              </div>
+              )}
 
               <div style={{ minWidth: 260, flex: 1 }}>
                 <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -1568,27 +1607,29 @@ export default function ReturnWorkspace() {
             {/* §11 — footer. The single EXIT, and nothing else: the completion
                 gate lives in the rail beside its blockers (spec 03 — exactly
                 one primary per workspace). */}
-            <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => navigate(`/rentals/${id}`)}
-                style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                Cancel Return
-              </button>
-              {/* Was "Saving is automatic". Nothing on this screen autosaves —
-                  triage lives in React state until the session dispatches —
-                  and a false persistence claim beside a completion gate is the
-                  worst place for one. */}
-              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                {/* Same correction as the header strip: this counts marks, not
-                    finished lines (RT-03). */}
-                {outstandingRows.length
-                  ? `${outstandingRows.length} item${outstandingRows.length > 1 ? 's' : ''} outstanding`
-                  : 'Every item triaged'}
-                {' · Nothing is saved until the session completes — cancelling discards this triage'}
-              </span>
-            </div>
+            {!embedded && (
+              <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => (onCancel ? onCancel() : navigate(`/rentals/${id}`))}
+                  style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  Cancel Return
+                </button>
+                {/* Was "Saving is automatic". Nothing on this screen autosaves —
+                    triage lives in React state until the session dispatches —
+                    and a false persistence claim beside a completion gate is the
+                    worst place for one. */}
+                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                  {/* Same correction as the header strip: this counts marks, not
+                      finished lines (RT-03). */}
+                  {outstandingRows.length
+                    ? `${outstandingRows.length} item${outstandingRows.length > 1 ? 's' : ''} outstanding`
+                    : 'Every item triaged'}
+                  {' · Nothing is saved until the session completes — cancelling discards this triage'}
+                </span>
+              </div>
+            )}
 
             <BarcodeScannerModal
               isOpen={showScanner}
@@ -1601,7 +1642,7 @@ export default function ReturnWorkspace() {
               }}
             />
 
-            {phone && (
+            {phone && !embedded && (
               <StickyFloorBar
                 progress={{
                   current: backUnits,

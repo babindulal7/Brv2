@@ -461,10 +461,30 @@ function bsLabel(iso: string | null): string {
  * the route for ANY booking — resolved by `fetchFloorBooking`, not compared
  * against a seed.
  */
-export default function PackingWorkspace() {
+export interface PackingWorkspaceProps {
+  bookingNo?: string
+  embedded?: boolean
+  onConfirmSuccess?: () => void
+  onCancel?: () => void
+  onRegisterActions?: (actions: {
+    canComplete: boolean
+    dispatching: boolean
+    complete: () => void
+    isDirty: boolean
+    label?: string
+  }) => void
+}
+
+export default function PackingWorkspace({
+  bookingNo: bookingNoProp,
+  embedded = false,
+  onConfirmSuccess,
+  onCancel,
+  onRegisterActions,
+}: PackingWorkspaceProps = {}) {
   const navigate = useNavigate()
-  const { bookingNo } = useParams()
-  const id = bookingNo ?? ''
+  const { bookingNo: bookingNoParam } = useParams()
+  const id = bookingNoProp ?? bookingNoParam ?? ''
   /** The one identity every dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
@@ -852,7 +872,11 @@ export default function PackingWorkspace() {
       )
       .then((result) => {
         if (result.stage !== null) {
-          navigate(`/rentals/${id}`)
+          if (onConfirmSuccess) {
+            onConfirmSuccess()
+          } else {
+            navigate(`/rentals/${id}`)
+          }
           return
         }
         setStageHeld({ lines: result.lines, movements: result.movements, heldBy: result.stageHeldBy })
@@ -864,6 +888,17 @@ export default function PackingWorkspace() {
         setDispatching(false)
       })
   }
+
+  const isDirty = Object.keys(marks).length > 0 || sessionNotes.trim().length > 0 || photoCount > 0
+  useEffect(() => {
+    onRegisterActions?.({
+      canComplete,
+      dispatching,
+      complete: completePacking,
+      isDirty,
+      label: 'Confirm & Next →',
+    })
+  }, [onRegisterActions, canComplete, dispatching, isDirty])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
 
@@ -937,63 +972,65 @@ export default function PackingWorkspace() {
                 Rulings §4: the shell's breadcrumb trail is the upward affordance
                 and `Cancel Packing` in the footer is the single exit.
               */}
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                  <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
-                    Packing Workspace
-                  </h1>
-                  {/*
-                    ⭐ RULED (Rulings §7): the badge shows the CANONICAL stage —
-                    never "Preparing", never a seventh name. The mid-pack signal
-                    is the *job* chip beside it. Two axes, two chips.
-                    Law 11 on both: icon + label + colour.
-                  */}
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 'var(--sp-xs)',
-                      height: 22,
-                      padding: '0 9px',
-                      // §3.3 — a status is --r-chip; --r-badge (999) is for
-                      // numeric count badges only.
-                      borderRadius: 'var(--r-chip)',
-                      background: STATUS[statusToken(stage)].bg,
-                      color: STATUS[statusToken(stage)].fg,
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 700,
-                    }}
-                  >
-                    <Icon name="dot" size={9} />
-                    {stage}
-                  </span>
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 'var(--sp-xs)',
-                      height: 22,
-                      padding: '0 9px',
-                      borderRadius: 'var(--r-badge)',
-                      border: '1px solid var(--border)',
-                      background: 'var(--card2)',
-                      color: jobChip.tone,
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 700,
-                    }}
-                  >
-                    <Icon name={jobChip.icon} size={11} />
-                    Pack job: {jobChip.label}
-                  </span>
+              {!embedded && (
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                    <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
+                      Packing Workspace
+                    </h1>
+                    {/*
+                      ⭐ RULED (Rulings §7): the badge shows the CANONICAL stage —
+                      never "Preparing", never a seventh name. The mid-pack signal
+                      is the *job* chip beside it. Two axes, two chips.
+                      Law 11 on both: icon + label + colour.
+                    */}
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 'var(--sp-xs)',
+                        height: 22,
+                        padding: '0 9px',
+                        // §3.3 — a status is --r-chip; --r-badge (999) is for
+                        // numeric count badges only.
+                        borderRadius: 'var(--r-chip)',
+                        background: STATUS[statusToken(stage)].bg,
+                        color: STATUS[statusToken(stage)].fg,
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 700,
+                      }}
+                    >
+                      <Icon name="dot" size={9} />
+                      {stage}
+                    </span>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 'var(--sp-xs)',
+                        height: 22,
+                        padding: '0 9px',
+                        borderRadius: 'var(--r-badge)',
+                        border: '1px solid var(--border)',
+                        background: 'var(--card2)',
+                        color: jobChip.tone,
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 700,
+                      }}
+                    >
+                      <Icon name={jobChip.icon} size={11} />
+                      Pack job: {jobChip.label}
+                    </span>
+                  </div>
+                  <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                    <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
+                      {floor.bookingNo}
+                    </Link>
+                    {floor.project ? ` · ${floor.project}` : ''}
+                    {floor.clientName ? ` · ${floor.clientName}` : ''}
+                  </p>
                 </div>
-                <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
-                    {floor.bookingNo}
-                  </Link>
-                  {floor.project ? ` · ${floor.project}` : ''}
-                  {floor.clientName ? ` · ${floor.clientName}` : ''}
-                </p>
-              </div>
+              )}
 
               {/* §3 centre — progress with a message. */}
               <div style={{ minWidth: 260, flex: 1 }}>
@@ -1714,21 +1751,23 @@ export default function PackingWorkspace() {
             </div>
 
             {/* §11 — footer. The single EXIT, and nothing else. */}
-            <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => navigate(`/rentals/${id}`)}
-                style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                Cancel Packing
-              </button>
-              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                {pendingRows.length
-                  ? `${pendingRows.length} item${pendingRows.length > 1 ? 's' : ''} pending`
-                  : 'All items resolved'}
-                {' · Nothing is saved until Complete Packing — cancelling discards this session'}
-              </span>
-            </div>
+            {!embedded && (
+              <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => (onCancel ? onCancel() : navigate(`/rentals/${id}`))}
+                  style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  Cancel Packing
+                </button>
+                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                  {pendingRows.length
+                    ? `${pendingRows.length} item${pendingRows.length > 1 ? 's' : ''} pending`
+                    : 'All items resolved'}
+                  {' · Nothing is saved until Complete Packing — cancelling discards this session'}
+                </span>
+              </div>
+            )}
 
             <BarcodeScannerModal
               isOpen={showScanner}
@@ -1743,7 +1782,7 @@ export default function PackingWorkspace() {
               onItemScanned={(item) => pack(item.id, 'scan')}
             />
 
-            {phone && !stageHeld && (
+            {phone && !stageHeld && !embedded && (
               <StickyFloorBar
                 progress={{
                   current: packedUnits,

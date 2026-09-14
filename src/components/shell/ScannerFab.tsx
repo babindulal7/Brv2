@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import Icon from '../ui/Icon'
-import { BrowserCodeReader, BrowserMultiFormatReader } from '@zxing/browser'
+import type { BrowserMultiFormatReader } from '@zxing/browser'
 import type { IScannerControls } from '@zxing/browser'
 import { audioContextClass } from '../../lib/audioContext'
 import { useViewport } from '../../lib/device'
@@ -110,8 +110,8 @@ export default function ScannerFab() {
    * `@zxing/browser` 0.2 has no `reset()` on the reader. The old
    * `(codeReader.current as any)?.reset()` was a no-op behind a cast, so the
    * camera stayed live after the panel closed. `decodeFromVideoDevice`
-   * resolves to the scan's own controls; stopping those, then releasing the
-   * streams, is the API (A13).
+   * resolves to the scan's own controls; stopping those releases its stream.
+   * Late startup also stops its own controls if the panel has already closed.
    */
   useEffect(() => {
     const stopCamera = () => {
@@ -120,7 +120,6 @@ export default function ScannerFab() {
       videoTrackRef.current = null
       setTorchOn(false)
       setHasTorch(false)
-      BrowserCodeReader.releaseAllStreams()
     }
 
     if (!open) {
@@ -130,22 +129,23 @@ export default function ScannerFab() {
       return
     }
 
-    if (!codeReader.current) {
-      codeReader.current = new BrowserMultiFormatReader()
-    }
-
     let isMounted = true
     setCameraError(null)
 
     if (videoRef.current) {
       // Decode from default video device
-      codeReader.current
-        .decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+      // Load the decoder only when requested, not with every app launch.
+      import('@zxing/browser').then(({ BrowserMultiFormatReader }) => {
+        if (!isMounted || !videoRef.current) return
+        codeReader.current = new BrowserMultiFormatReader()
+        return codeReader.current.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
           if (result && isMounted) {
             handleScanRef.current(result.getText())
           }
         })
+      })
         .then((controls) => {
+          if (!controls) return
           if (isMounted) {
             controlsRef.current = controls
             try {

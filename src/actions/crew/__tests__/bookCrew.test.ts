@@ -1,242 +1,84 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { ActionContext } from '../../core';
-import { bookCrewConfig, type BookCrewInput } from '../bookCrew';
-import { EVENT_TYPES } from '../../../events/eventBus';
-
-const db = vi.hoisted(() => {
-  const state = {
-    bookings: [
-      {
-        id: '11111111-1111-4111-8111-111111111111',
-        booking_no: 'BK-2026-0001',
-        pickup_at: '2026-09-10T09:00:00Z',
-        return_at: '2026-09-12T18:00:00Z',
-        duration_days: 3,
-      },
-    ],
-    crewProfiles: [
-      {
-        id: '22222222-2222-4222-8222-222222222222',
-        crew_code: 'CRW-0001',
-        full_name: 'Babin Sound Specialist',
-        primary_role: 'Sound Recordist',
-        daily_rate: 6500,
-      },
-      {
-        id: '33333333-3333-4333-8333-333333333333',
-        crew_code: 'CRW-0002',
-        full_name: 'Grip Master',
-        primary_role: 'Grip',
-        daily_rate: 4500,
-      },
-    ],
-    insertCalls: [] as Array<{ table: string; row: Record<string, unknown>; options?: unknown }>,
-  };
-
-  const queryMock = () => {
-    let currentTable = '';
-    let orFilter = '';
-    let eqField = '';
-    let eqValue: unknown = '';
-
-    const chain: Record<string, any> = {
-      from: (table: string) => {
-        currentTable = table;
-        return chain;
-      },
-      select: () => chain,
-      or: (condition: string) => {
-        orFilter = condition;
-        return chain;
-      },
-      eq: (field: string, val: unknown) => {
-        eqField = field;
-        eqValue = val;
-        return chain;
-      },
-      order: () => chain,
-      limit: () => chain,
-      maybeSingle: async () => {
-        if (currentTable === 'bookings') {
-          const match = state.bookings.find((b) =>
-            (orFilter && (orFilter.includes(b.id) || orFilter.includes(b.booking_no))) ||
-            (eqField === 'booking_no' && b.booking_no === eqValue) ||
-            (eqField === 'id' && b.id === eqValue)
-          );
-          return { data: match || null, error: null };
-        }
-        if (currentTable === 'crew_profiles_v2') {
-          const match = state.crewProfiles.find((c) =>
-            (orFilter && (orFilter.includes(c.id) || orFilter.includes(c.crew_code))) ||
-            (eqField === 'crew_code' && c.crew_code === eqValue) ||
-            (eqField === 'id' && c.id === eqValue)
-          );
-          return { data: match || null, error: null };
-        }
-        return { data: null, error: null };
-      },
-    };
-    return chain;
-  };
-
-  return {
-    state,
-    supabase: {
-      from: (table: string) => queryMock().from(table),
-    },
-  };
-});
-
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { bookCrewConfig } from '../bookCrew'
+const state = vi.hoisted(() => ({
+  booking: { id: '11111111-1111-4111-8111-111111111111', booking_no: 'B-1', pickup_at: '2026-09-13T04:15:00Z', return_at: '2026-09-15T04:15:00Z', stage: 'Booked', cancelled_at: null as string | null, closed_at: null },
+  people: [{ id: '22222222-2222-4222-8222-222222222222', crew_code: 'CR-1', primary_role: 'Sound', full_name: 'Crew One', daily_rate: 6500, is_active: true }],
+  inserted: [] as Record<string, unknown>[], missingBooking: false, bookingError: false, insertError: false, duplicate: false,
+}))
 vi.mock('../../../lib/supabase', () => ({
-  supabase: db.supabase,
-}));
-
-vi.mock('../../../lib/dataAccess', () => ({
-  idempotentInsert: async (table: string, row: Record<string, unknown>, options?: unknown) => {
-    db.state.insertCalls.push({ table, row, options });
-    return { id: (row.client_uuid as string) || 'generated-crew-assign-id', ...row };
-  },
-  generateClientUuid: () => 'mocked-client-uuid',
-}));
-
-describe('bookCrew', () => {
-  const context: ActionContext = {
-    userId: 'user-coordinator-1',
-    role: 'Coordinator',
-  };
-
-  beforeEach(() => {
-    db.state.insertCalls = [];
-  });
-
-  describe('validation', () => {
-    it('throws when crewIds is missing or empty', () => {
-      expect(() =>
-        bookCrewConfig.validate!({ crewIds: [] } as unknown as BookCrewInput)
-      ).toThrow(/At least one crew ID must be selected/);
-
-      expect(() =>
-        bookCrewConfig.validate!({} as unknown as BookCrewInput)
-      ).toThrow(/At least one crew ID must be selected/);
-    });
-
-    it('throws when days is less than 1', () => {
-      expect(() =>
-        bookCrewConfig.validate!({ crewIds: ['CRW-0001'], days: 0 })
-      ).toThrow(/Days must be a positive integer greater than or equal to 1/);
-    });
-
-    it('throws when dailyRate is negative', () => {
-      expect(() =>
-        bookCrewConfig.validate!({ crewIds: ['CRW-0001'], dailyRate: -500 })
-      ).toThrow(/Daily rate must be a non-negative number/);
-    });
-
-    it('passes on valid input', () => {
-      expect(() =>
-        bookCrewConfig.validate!({ crewIds: ['CRW-0001'], days: 2, dailyRate: 5000 })
-      ).not.toThrow();
-    });
-  });
-
-  describe('execute', () => {
-    it('successfully assigns a crew member to a booking by booking_no and crew_code', async () => {
-      const input: BookCrewInput = {
-        bookingId: 'BK-2026-0001',
-        crewIds: ['CRW-0001'],
-        role: 'Lead Sound Specialist',
-        dailyRate: 7000,
-        days: 3,
-        notes: 'Includes wireless kit',
-        clientUuid: 'assign-uuid-1',
-      };
-
-      const { result, events } = await bookCrewConfig.execute!(input, context);
-
-      expect(result.success).toBe(true);
-      expect(result.count).toBe(1);
-      expect(result.assignmentIds).toHaveLength(1);
-
-      expect(db.state.insertCalls).toHaveLength(1);
-      const insert = db.state.insertCalls[0]!;
-      expect(insert.table).toBe('crew_assignments');
-      expect(insert.options).toEqual({ returnRow: false });
-      expect(insert.row).toMatchObject({
-        client_uuid: 'assign-uuid-1',
-        booking_id: '11111111-1111-4111-8111-111111111111',
-        crew_id: '22222222-2222-4222-8222-222222222222',
-        role_on_shoot: 'Lead Sound Specialist',
-        call_time: '2026-09-10T09:00:00Z',
-        wrap_time: '2026-09-12T18:00:00Z',
-        daily_rate: 7000,
-        days: 3,
-        line_total: 21000,
-        notes: 'Includes wireless kit',
-        created_by: 'user-coordinator-1',
-        updated_by: 'user-coordinator-1',
-      });
-
-      expect(events).toHaveLength(1);
-      expect(events![0]!.type).toBe(EVENT_TYPES.CREW_ASSIGNED);
-      expect(events![0]!.payload).toMatchObject({
-        bookingId: '11111111-1111-4111-8111-111111111111',
-        bookingNo: 'BK-2026-0001',
-        crewIds: ['22222222-2222-4222-8222-222222222222'],
-        role: 'Lead Sound Specialist',
-        days: 3,
-        dailyRate: 7000,
-        userId: 'user-coordinator-1',
-      });
-    });
-
-    it('defaults daily rate and role from crew profile when not overridden', async () => {
-      const input: BookCrewInput = {
-        bookingId: '11111111-1111-4111-8111-111111111111',
-        crewIds: ['22222222-2222-4222-8222-222222222222'],
-      };
-
-      const { result } = await bookCrewConfig.execute!(input, context);
-
-      expect(result.success).toBe(true);
-      expect(db.state.insertCalls).toHaveLength(1);
-      const insert = db.state.insertCalls[0]!;
-      expect(insert.row.role_on_shoot).toBe('Sound Recordist');
-      expect(insert.row.daily_rate).toBe(6500);
-      expect(insert.row.days).toBe(3); // from booking duration_days
-      expect(insert.row.line_total).toBe(19500);
-    });
-
-    it('supports batch booking multiple crew members', async () => {
-      const input: BookCrewInput = {
-        bookingId: 'BK-2026-0001',
-        crewIds: ['CRW-0001', 'CRW-0002'],
-        days: 2,
-      };
-
-      const { result, events } = await bookCrewConfig.execute!(input, context);
-
-      expect(result.success).toBe(true);
-      expect(result.count).toBe(2);
-      expect(db.state.insertCalls).toHaveLength(2);
-      expect((events![0]!.payload as { crewIds: string[] }).crewIds).toHaveLength(2);
-    });
-
-    it('throws error when booking cannot be found', async () => {
-      const origBookings = db.state.bookings;
-      db.state.bookings = [];
-
-      try {
-        const input: BookCrewInput = {
-          bookingId: 'NON-EXISTENT-BOOKING',
-          crewIds: ['CRW-0001'],
-        };
-
-        await expect(bookCrewConfig.execute!(input, context)).rejects.toThrow(
-          /Booking "NON-EXISTENT-BOOKING" not found/
-        );
-      } finally {
-        db.state.bookings = origBookings;
-      }
-    });
-  });
-});
+  newClientUuid: () => 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  supabase: { from: (table: string) => {
+    let field = '', value: unknown, row: Record<string, unknown>
+    const query = {
+      select: vi.fn(() => query),
+      eq: (key: string, val: unknown) => { field = key; value = val; return query },
+      insert: (data: Record<string, unknown>) => { row = data; return query },
+      maybeSingle: async () => {
+        if (table === 'bookings') return { data: state.missingBooking ? null : state.booking, error: state.bookingError ? { message: 'Connection failed' } : null }
+        if (table === 'crew_profiles_v2_v') return { data: state.people.find((p) => p[field as 'id' | 'crew_code'] === value) ?? null, error: null }
+        return { data: state.duplicate ? { ...state.inserted[state.inserted.length - 1], id: 'saved' } : null, error: null }
+      },
+      single: async () => {
+        state.inserted.push(row)
+        return { data: state.insertError || state.duplicate ? null : { id: `saved-${state.inserted.length}` }, error: state.insertError ? { code: '408', message: 'Network failed' } : state.duplicate ? { code: '23505', message: 'duplicate client_uuid' } : null }
+      },
+    }
+    return query
+  } },
+}))
+const ctx = { userId: 'operator', role: 'Owner' as const }
+const input = () => ({ bookingId: state.booking.id, crewIds: [state.people[0]!.id], clientUuid: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' })
+beforeEach(() => { state.inserted = []; state.missingBooking = false; state.bookingError = false; state.insertError = false; state.duplicate = false; state.booking.cancelled_at = null; state.booking.stage = 'Booked'; state.people[0]!.is_active = true })
+describe('bookCrew confirmed writes', () => {
+  it('saves the chosen booking and person with real default dates and rate', async () => {
+    const { result, events } = await bookCrewConfig.execute(input(), ctx)
+    expect(result).toEqual({ success: true, count: 1, assignmentIds: ['saved-1'] })
+    expect(state.inserted[0]).toMatchObject({ booking_id: state.booking.id, crew_id: state.people[0]!.id, days: 2, daily_rate: 6500, line_total: 13000, call_time: state.booking.pickup_at, client_uuid: input().clientUuid })
+    expect(events).toHaveLength(1)
+  })
+  it('persists supplied role, times, rate, days and notes', async () => {
+    await bookCrewConfig.execute({ ...input(), role: 'Audio lead', callTime: '2026-09-13T05:00:00Z', wrapTime: '2026-09-13T10:00:00Z', days: 1, dailyRate: 0, notes: '  Stage A  ' }, ctx)
+    expect(state.inserted[0]).toMatchObject({ role_on_shoot: 'Audio lead', days: 1, daily_rate: 0, line_total: 0, notes: 'Stage A', wrap_time: '2026-09-13T10:00:00Z' })
+  })
+  it('never falls back to another booking when the target is missing', async () => {
+    state.missingBooking = true
+    await expect(bookCrewConfig.execute(input(), ctx)).rejects.toThrow('not found')
+    expect(state.inserted).toHaveLength(0)
+  })
+  it('propagates booking read failure without writing', async () => {
+    state.bookingError = true
+    await expect(bookCrewConfig.execute(input(), ctx)).rejects.toThrow('Connection failed')
+    expect(state.inserted).toHaveLength(0)
+  })
+  it.each(['Closed', 'cancelled'])('refuses terminal booking %s', async (stage) => {
+    if (stage === 'Closed') state.booking.stage = stage
+    else state.booking.cancelled_at = '2026-09-13T00:00:00Z'
+    await expect(bookCrewConfig.execute(input(), ctx)).rejects.toThrow('cancelled or closed')
+  })
+  it('refuses inactive crew', async () => {
+    state.people[0]!.is_active = false
+    await expect(bookCrewConfig.execute(input(), ctx)).rejects.toThrow('inactive')
+    expect(state.inserted).toHaveLength(0)
+  })
+  it('preflights every crew member before writing a batch', async () => {
+    await expect(bookCrewConfig.execute({ ...input(), crewIds: [state.people[0]!.id, 'missing'] }, ctx)).rejects.toThrow('unavailable')
+    expect(state.inserted).toHaveLength(0)
+  })
+  it('does not report a network failure as a saved or queued assignment', async () => {
+    state.insertError = true
+    await expect(bookCrewConfig.execute(input(), ctx)).rejects.toThrow('not saved')
+  })
+  it('confirms duplicate requests by reading the existing row', async () => {
+    state.duplicate = true
+    const { result } = await bookCrewConfig.execute(input(), ctx)
+    expect(result.assignmentIds).toEqual(['saved'])
+  })
+  it('refuses a priced assignment for Coordinator', async () => {
+    await expect(bookCrewConfig.execute(input(), { ...ctx, role: 'Coordinator' })).rejects.toThrow('Owner, Admin, or Manager')
+    expect(state.inserted).toHaveLength(0)
+  })
+  it.each([{ days: 1.5 }, { days: NaN }, { dailyRate: Infinity }, { dailyRate: -1 }, { clientUuid: 'bad-key' }, { bookingId: '' }, { callTime: 'bad date' }, { wrapTime: '2026-09-12T00:00:00Z' }])('refuses invalid input %j', async (override) => {
+    await expect(bookCrewConfig.execute({ ...input(), ...override }, ctx)).rejects.toThrow()
+    expect(state.inserted).toHaveLength(0)
+  })
+})

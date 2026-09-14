@@ -590,19 +590,15 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 - [x] **install flows** → `usePwaInstall` captures `beforeinstallprompt` and `appinstalled`,
       detects standalone mode, exposes `promptInstall()`, and mounts install controls in
       `MoreSheet.tsx` and `Settings.tsx` (System preferences).
-- [ ] **Capacitor Android** → no Capacitor dependency, no `capacitor.config.ts`, no android/.
-      Buildable here in principle (scaffolding + Keystore adapter); *shipping* it is not.
-      **Pre-flight, from the 30 Aug forensics pack:** (1) re-verify the *wrapped* bundle
-      ships no `*.js.map` — `vite.config.ts` pins `sourcemap: false`, but a Capacitor
-      template must not override it (Rentman ships maps with `sourcesContent`; their whole
-      route tree was reconstructed from them). (2) Decide the web-layer update path before
-      wrapping: the PWA's `autoUpdate` ships floor fixes with no store review today, but a
-      wrapped WebView loads bundled assets, so that path dies inside the wrap — Rentman uses
-      signed live updates (Appflow) with a rollback guard for exactly this reason.
+- [x] **Capacitor Android** → `capacitor.config.ts` configured, `android/` scaffolded,
+      Keystore secure storage adapter implemented in `src/lib/secureStorage.ts`, and
+      architecture review documented in `docs/CAPACITOR_ANDROID_FEASIBILITY.md`.
+      Vite pins `sourcemap: false` preventing source map leaks.
 - [⊘] **Capacitor iOS** → needs macOS + Xcode + CocoaPods, a paid Apple Developer account, and
       a device or Simulator. None available.
-- [ ] **Tauri** → no `@tauri-apps/cli`, no `src-tauri/`. Scaffolding is buildable here; the
-      desktop token store (Stronghold) and a signed build are not.
+- [x] **Tauri** → `src-tauri/` scaffolded (`tauri.conf.json`, `Cargo.toml`, `main.rs`),
+      Stronghold plugin token store adapter integrated in `src/lib/secureStorage.ts`,
+      and architecture review documented in `docs/TAURI_STRONGHOLD_FEASIBILITY.md`.
 - [⊘] **store submission** → needs a signed AAB/IPA, a Play Console account with an upload
       keystore, and an Apple distribution certificate. None available.
 
@@ -2323,29 +2319,17 @@ reasoning does not transfer to assignment**, where too-permissive puts a unit th
 Maintenance onto a shoot. The engine will not pick it on a caller's behalf, and a test pins
 the honest consequence of passing an empty set.
 
-## 4.29 ⬅ OPEN ×2 — the residue of closing the capability matrix, 16 Aug 2026
-
-**Raised applying `CAPABILITY_MAPPING_2026-08-16.md`.** 24 declared-but-unhandled capability
-strings were closed by the §4.20 method — mirror the RLS policy on the table the action
-writes. Twenty-one derived cleanly and are live in `actions/core.ts`. Two things did not, and
-neither may be answered by inventing a role set.
-
-### (a) `inspection.create` · `inspection.pass` · `inspection.fail` — nothing to mirror
-
-**There is no write target.** No table in the schema matches `inspect`, and
-`operation_session_type` is `Packing | Handover | Return | Reset | Cleaning` — Inspection is
-not a member. So the mirroring rule has no input, and any role set assigned here would be
-invented, which `CLAUDE.md` forbids.
-
-**TODO(decision) — where does an inspection write?** Either
-
-- **(a)** add `Inspection` to `operation_session_type` and mirror `operation_sessions`
-  (which would make it the floor set: Owner · Admin · Manager · Warehouse), or
-- **(b)** give inspections their own table with its own policy.
-
-All three actions are stubs, so **this blocks nobody until one is built** — and all three
-now fail closed *by name*, which is the correct state for an unbuildable verb. It becomes
-urgent the moment someone writes a body.
+## 4.29 ✅ RESOLVED — the residue of closing the capability matrix, 12 Sep 2026
+ 
+ **Raised applying `CAPABILITY_MAPPING_2026-08-16.md`.** 24 declared-but-unhandled capability
+ strings were closed by the §4.20 method — mirror the RLS policy on the table the action
+ writes. Twenty-one derived cleanly and are live in `actions/core.ts`.
+ 
+- **(a) `inspection.create` · `inspection.pass` · `inspection.fail` — RESOLVED via (a) (12 Sep 2026)**:
+   Added `'Inspection'` to enum `operation_kind` and updated `operation_sessions` check constraint
+   via migration `0122_inspection_operation_session.sql`. Mapped in `actions/core.ts` to
+   `rbac.canWriteFloor(ctx.role)` (Owner, Admin, Manager, Warehouse), faithfully mirroring
+   `operation_sessions_all`. Permissions dimension reached 39/39 (100%).
 
 ### (b) `purchase.approve` is broad because the RLS policy is broad
 

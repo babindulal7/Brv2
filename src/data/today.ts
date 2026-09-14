@@ -14,8 +14,11 @@ import {
 } from '../lib/bs'
 import { clockPad } from '../lib/format'
 import { formatMoney, rupees } from '../lib/money'
-import { TODAYS_INCOMING_STAGES, TODAYS_OUTGOING_STAGES, todaysIncoming, todaysOutgoing, type BookingListRow } from '../lib/queries/bookings'
+import { todaysIncoming, todaysOutgoing, type BookingListRow } from '../lib/queries/bookings'
 import type { ListFilters } from '../lib/queries/listQuery'
+
+export const TODAYS_OUTGOING_STAGES: readonly BookingStatus[] = ['Booked', 'Packed'] as const
+export const TODAYS_INCOMING_STAGES: readonly BookingStatus[] = ['On Rent'] as const
 
 /*
  * The operating day, resolved once when this module loads, from the real

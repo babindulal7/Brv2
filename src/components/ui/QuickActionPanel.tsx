@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import Icon from './Icon'
 import type { IconName } from './Icon'
+import { Button } from './Button'
 
 export interface QuickActionItem {
   id: string
@@ -25,7 +26,7 @@ export interface QuickActionBarProps {
 export function QuickActionBar({ actions, extra }: QuickActionBarProps) {
   return (
     <div
-      role="toolbar"
+      role="group"
       aria-label="Quick operations"
       style={{
         display: 'flex',
@@ -38,53 +39,25 @@ export function QuickActionBar({ actions, extra }: QuickActionBarProps) {
         const isPrimary = act.variant === 'primary'
         const isAccent = act.variant === 'accent'
         return (
-          <button
+          <Button
             key={act.id}
             type="button"
-            className="press tap"
+            variant={isPrimary ? 'primary' : 'secondary'}
             onClick={act.onClick}
             disabled={act.disabled}
             title={act.title ?? act.label}
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 7,
-              minHeight: 44,
-              padding: '0 14px',
-              borderRadius: 'var(--r-btn)',
-              border: isPrimary
-                ? '1px solid transparent'
-                : isAccent
-                  ? '1px solid var(--accent, #f59e0b)'
-                  : '1px solid var(--btn-secondary-border)',
-              background: isPrimary
-                ? 'var(--primary)'
-                : isAccent
-                  ? 'var(--hover-card)'
-                  : 'var(--card)',
-              color: isPrimary
-                ? 'var(--on-brand)'
-                : isAccent
-                  ? 'var(--text)'
-                  : 'var(--text)',
-              fontFamily: 'inherit',
-              fontSize: 'var(--t-ui)',
-              fontWeight: 600,
-              cursor: act.disabled ? 'not-allowed' : 'pointer',
-              opacity: act.disabled ? 0.5 : 1,
-              whiteSpace: 'nowrap',
-              boxShadow: isPrimary ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
-              transition: 'background 120ms ease, border-color 120ms ease, transform 80ms ease',
+              ...(isAccent ? { borderColor: 'var(--brand-text)' } : {}),
             }}
-          >
-            <Icon
+            icon={<Icon
               name={act.icon}
               size={15}
               style={{
-                color: isPrimary ? 'var(--on-brand)' : isAccent ? 'var(--accent, #f59e0b)' : 'var(--muted)',
+                color: isPrimary ? 'inherit' : isAccent ? 'var(--brand-text)' : 'var(--muted)',
                 flexShrink: 0,
               }}
-            />
+            />}
+          >
             <span>{act.label}</span>
             {act.shortcut && (
               <kbd
@@ -103,7 +76,7 @@ export function QuickActionBar({ actions, extra }: QuickActionBarProps) {
                 {act.shortcut}
               </kbd>
             )}
-          </button>
+          </Button>
         )
       })}
       {extra}

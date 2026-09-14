@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useId } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../ui/Icon'
 import type { IconName } from '../ui/Icon'
@@ -6,6 +6,7 @@ import { permittedNav } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
 import { useTheme } from '../../lib/theme'
 import { toggleScanner } from './ScannerFab'
+import { quickCreateActions } from './QuickCreateMenu'
 
 /**
  * The global ⌘K / Ctrl-K palette.
@@ -60,8 +61,11 @@ export const CommandPalette: React.FC = () => {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const navigate = useNavigate()
   const { user } = useAuth()
+  const hasUser = Boolean(user)
   const { theme, toggle } = useTheme()
   const inputRef = useRef<HTMLInputElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const resultsId = useId()
 
   // Listen for ⌘K or Ctrl+K or custom open command
   useEffect(() => {
@@ -86,12 +90,22 @@ export const CommandPalette: React.FC = () => {
   }, [isOpen])
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && hasUser) {
+      const opener = document.activeElement as HTMLElement | null
       setSearch('')
       setSelectedIndex(0)
-      setTimeout(() => inputRef.current?.focus(), 50)
+      inputRef.current?.focus()
+      return () => {
+        if (opener?.isConnected) opener.focus()
+      }
     }
-  }, [isOpen])
+  }, [isOpen, hasUser])
+
+  useEffect(() => {
+    if (isOpen) {
+      document.getElementById(`${resultsId}-${selectedIndex}`)?.scrollIntoView?.({ block: 'nearest' })
+    }
+  }, [isOpen, selectedIndex, resultsId])
 
   if (!user || !isOpen) return null
 
@@ -107,6 +121,16 @@ export const CommandPalette: React.FC = () => {
         category: 'Navigation',
         icon: s.icon,
         onSelect: () => navigate(s.to),
+      }),
+    ),
+    ...quickCreateActions(user.role).map(
+      (action): PaletteAction => ({
+        id: `create-${action.id}`,
+        title: action.label,
+        subtitle: action.detail,
+        category: 'Actions',
+        icon: action.icon,
+        onSelect: () => navigate(action.to),
       }),
     ),
     {
@@ -138,12 +162,13 @@ export const CommandPalette: React.FC = () => {
   )
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setSelectedIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1))
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : Math.max(0, filtered.length - 1)))
     } else if (e.key === 'Enter' && filtered[selectedIndex]) {
       e.preventDefault()
       filtered[selectedIndex].onSelect()
@@ -171,6 +196,12 @@ export const CommandPalette: React.FC = () => {
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
+        onKeyDown={(e) => {
+          if (e.key !== 'Tab') return
+          e.preventDefault()
+          if (document.activeElement === inputRef.current) closeRef.current?.focus()
+          else inputRef.current?.focus()
+        }}
         style={{
           position: 'relative',
           zIndex: 1,
@@ -207,6 +238,12 @@ export const CommandPalette: React.FC = () => {
           <input
             ref={inputRef}
             type="text"
+            role="combobox"
+            aria-label="Search commands and destinations"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-controls={resultsId}
+            aria-activedescendant={filtered[selectedIndex] ? `${resultsId}-${selectedIndex}` : undefined}
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -228,6 +265,7 @@ export const CommandPalette: React.FC = () => {
             }}
           />
           <button
+            ref={closeRef}
             type="button"
             onClick={() => setIsOpen(false)}
             aria-label="Close command palette"
@@ -249,7 +287,7 @@ export const CommandPalette: React.FC = () => {
         </div>
 
         {/* Results list */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-sm)' }}>
+        <div id={resultsId} role="listbox" aria-label="Commands and destinations" style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-sm)' }}>
           {filtered.length === 0 ? (
             <div
               style={{
@@ -267,7 +305,9 @@ export const CommandPalette: React.FC = () => {
               return (
                 <div
                   key={item.id}
-                  role="button"
+                  id={`${resultsId}-${idx}`}
+                  role="option"
+                  aria-selected={isSelected}
                   tabIndex={-1}
                   onClick={() => {
                     item.onSelect()

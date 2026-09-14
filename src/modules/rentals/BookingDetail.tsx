@@ -13,7 +13,7 @@ import { STATUS, STATUS_ICON, BRAND, BRAND_ON, BRAND_TEXT, PAYMENT_STATUS_TONE }
 import type { BrandKey } from '../../lib/status'
 import { BOOKING_STATUS, STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
-import OperationsShell from '../operations/OperationsShell'
+import BookingOperationsMenu from './BookingOperationsMenu'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useAuth } from '../../lib/auth'
 import { newClientUuid } from '../../lib/supabase'
@@ -32,6 +32,8 @@ import type { Paisa } from '../../lib/money'
 import { formatAdDateTime, toBs, formatBs } from '../../lib/bs'
 import { ExtendRentalModal } from './modals/ExtendRentalModal'
 import { AssignCrewModal } from './modals/AssignCrewModal'
+import { BookingCrewList } from './BookingCrewList'
+import { canAssignPricedCrew } from '../../lib/crewAssignment'
 import { CreateSubRentalModal } from './modals/CreateSubRentalModal'
 import { CancelRentalModal } from './modals/CancelRentalModal'
 import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
@@ -89,7 +91,7 @@ import { rentalDaysBetween, formatRentalDays } from '../../lib/rentalDays'
  *
  * ## What is honestly NOT live yet (rendered as stated gaps, never invented)
  *
- * crew (`booking_crew_lines` has no query module) · transport detail
+ * transport detail
  * (`booking_transport` has none) · documents (`document_registry` has none) ·
  * alerts (no alerts engine) · activity timeline (`booking_stage_transitions`
  * has none) · deposit received/pending (`security_deposits` is deliberately
@@ -362,43 +364,6 @@ function dotTone(stage: BookingStatus, current: BookingStatus): BrandKey {
     case 'Closed':
       return 'neutral'
   }
-}
-
-/**
- * Operations launcher — opens the operations shell, which navigates to the
- * four workspace routes.
- *
- * ⚠ It takes the ANSWER, not the question. This used to compute
- * `status === 'Quote'` for itself, which is how the page ended up giving two
- * answers to one question on one screen: the header launcher was disabled with
- * "Operations open once this booking is Booked" while the rail's Quick Actions
- * rendered its own live `Open Operations` button beside it, on the same Quote
- * booking (BD-04). Both call sites now render this component and both are
- * handed the one `operationsUnavailable` predicate, so they cannot disagree —
- * whatever it comes to include (Quote today, cancellation since BD-03).
- */
-function OperationsLauncher({
-  label,
-  icon,
-  primary,
-  unavailable,
-  onOpen,
-}: {
-  label: string
-  icon: IconName
-  primary: boolean
-  /** The reason this is refused, or `null` when it is offered. */
-  unavailable: string | null
-  onOpen: () => void
-}) {
-  const button = (
-    <Button icon={icon} variant={primary ? 'primary' : 'secondary'} onClick={onOpen} disabled={unavailable !== null}>
-      {label}
-    </Button>
-  )
-
-  if (unavailable === null) return button
-  return <Unavailable reason={unavailable}>{button}</Unavailable>
 }
 
 /**
@@ -1015,7 +980,6 @@ const NO_INVOICE_PAYMENT_UNAVAILABLE =
   'Use Create Invoice to raise the Draft first — it stays a Draft, so an advance can be taken against it.'
 const ITEM_EDIT_UNAVAILABLE =
   'Adding, searching or filtering booking lines is not wired yet — booking_lines has no write path from this screen.'
-const CREW_ADD_UNAVAILABLE = 'Crew assignment writes are not wired — the crew.assign action is still a stub.'
 const TRANSPORT_EDIT_UNAVAILABLE =
   'Transport details are read-only: booking_transport has no query or write path from this screen yet.'
 const ADD_DOCUMENT_UNAVAILABLE = 'Document uploads are not wired — document_registry has no write path from this screen.'
@@ -1085,9 +1049,9 @@ function bsOrDash(iso: string): string {
 export default function BookingDetail() {
   const { bookingNo } = useParams()
   const id = bookingNo ?? ''
-  const [shellOpen, setShellOpen] = useState(false)
   const [showExtendModal, setShowExtendModal] = useState(false)
   const [showCrewModal, setShowCrewModal] = useState(false)
+  const [crewVersion, setCrewVersion] = useState(0)
   const [showSubRentalModal, setShowSubRentalModal] = useState(false)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showCreateInvoice, setShowCreateInvoice] = useState(false)
@@ -1682,15 +1646,9 @@ export default function BookingDetail() {
    * refuses too (citing PLAN.md §4.16, which leaves whether a cancelled booking
    * may still be walked to Closed unruled).
    *
-   * Be exact about the other three, because an earlier draft of this comment was
-   * not: `extendRental.ts`, `crew/bookCrew.ts` and `subrentals/createSubRental.ts`
-   * contain no `cancelled_at` check at all. They refuse for a different reason —
-   * each is `implemented: false`, so `createAction` turns them away before any
-   * body runs (BD-09/BD-10/BD-11 are the open TODOs for that). The conclusion is
-   * the same for all six — every press could only ever fail — but only half of it
-   * is the cancellation rule. **When those three are built they must check
-   * `cancelled_at` themselves**; this screen's guard is not a substitute, because
-   * the list and the API can both reach them by another route.
+   * `crew/bookCrew.ts` also checks cancellation and closure before writing.
+   * Each action must enforce its own terminal-state rule: this screen's guard
+   * cannot protect calls made from another route.
    *
    * Law 3 wants the terminal action VISIBLE, not merely obeyed — so the mark
    * goes on the header and on the Rental Days fact beside the stage block,
@@ -1705,13 +1663,12 @@ export default function BookingDetail() {
   const cancelledReason: string | null = booking.isCancelled
     ? `${booking.bookingNo} is cancelled — no operation runs on it`
     : null
+  const crewUnavailableReason = cancelledReason ?? (booking.stage === 'Closed' ? 'Crew cannot be assigned to a closed booking.' : null)
 
   /**
-   * ONE predicate for "may operations be opened", read by BOTH launchers
-   * (BD-04). The Quote clause keeps the wording the header launcher already
-   * carried, so nothing a user has read changes; the cancelled clause is
-   * BD-03's, and it comes first because a cancelled Quote is refused for the
-   * more fundamental reason.
+   * The booking-level refusal shared by every row in the one Operations
+   * dropdown. Cancellation comes first because it is more fundamental than
+   * the booking's current stage.
    */
   const operationsUnavailable: string | null =
     cancelledReason ?? (stage === 'Quote' ? 'Operations open once this booking is Booked' : null)
@@ -1890,17 +1847,6 @@ export default function BookingDetail() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               {canBookingMoney && canRaiseInvoice && createInvoiceButton('Create Invoice')}
               {canBookingMoney && canTakePayment && recordPaymentButton('Receive Payment')}
-              {/* BD-04 — the SAME `operationsUnavailable` the header launcher
-                  reads, through the same component. This was a bare live
-                  <Button> and gave the opposite answer to the header's disabled
-                  one on the very same Quote booking. */}
-              <OperationsLauncher
-                label="Open Operations"
-                icon="queues"
-                primary={false}
-                unavailable={operationsUnavailable}
-                onOpen={() => setShellOpen(true)}
-              />
               {canBookingMoney &&
                 canOperate &&
                 (cancelledReason ? (
@@ -1914,10 +1860,9 @@ export default function BookingDetail() {
                     Extend Rental
                   </Button>
                 ))}
-              {canCrewMoney &&
-                canOperate &&
-                (cancelledReason ? (
-                  <Unavailable reason={cancelledReason}>
+              {user && canAssignPricedCrew(user.role) &&
+                (crewUnavailableReason ? (
+                  <Unavailable reason={crewUnavailableReason}>
                     <Button icon="users" disabled>
                       Assign Crew
                     </Button>
@@ -2036,12 +1981,11 @@ export default function BookingDetail() {
                 )}
               </>
             )}
-            <OperationsLauncher
-              label="Operations"
-              icon="external_link"
-              primary={!['Quote', 'Closed'].includes(stage)}
+            <BookingOperationsMenu
+              bookingNo={id}
+              bookingStatus={stage}
               unavailable={operationsUnavailable}
-              onOpen={() => setShellOpen(true)}
+              primary={!['Quote', 'Closed'].includes(stage)}
             />
             {/* Two gates, both required: money visibility ("may this role see
                 this figure") AND capability ("may this role do this").
@@ -2077,13 +2021,13 @@ export default function BookingDetail() {
                       },
                     ]
                   : []),
-                ...(canCrewMoney && canOperate
+                ...(user && canAssignPricedCrew(user.role)
                   ? [
                       {
                         label: 'Assign crew',
                         icon: 'users' as const,
                         onClick: () => setShowCrewModal(true),
-                        ...(cancelledReason ? { unavailable: cancelledReason } : {}),
+                        ...(crewUnavailableReason ? { unavailable: crewUnavailableReason } : {}),
                       },
                     ]
                   : []),
@@ -2536,20 +2480,13 @@ export default function BookingDetail() {
                 no="3"
                 title="Crew & Transport"
                 action={
-                  <Unavailable reason={CREW_ADD_UNAVAILABLE}>
-                    <Button icon="plus" disabled>
+                  user && canAssignPricedCrew(user.role) && !booking.isCancelled && booking.stage !== 'Closed' ?
+                    <Button icon="plus" onClick={() => setShowCrewModal(true)}>
                       Add Member
-                    </Button>
-                  </Unavailable>
+                    </Button> : undefined
                 }
               >
-                {/* `booking_crew_lines` has no query module. The seed printed
-                    three invented crew members with invented day rates to every
-                    booking — absence stated beats a fabricated roster. */}
-                <NotWiredNote>
-                  Crew assignments live in booking_crew_lines, which has no query module yet — this booking&apos;s
-                  crew cannot be read from here, so none is shown.
-                </NotWiredNote>
+                <BookingCrewList key={`${booking.id}:${user?.id}:${canCrewMoney}`} bookingId={booking.id} includeMoney={canCrewMoney} version={crewVersion} />
               </Block>
 
               <Card
@@ -2930,8 +2867,6 @@ export default function BookingDetail() {
 
       <FooterNote extra={['Deposits are liabilities and never offset Rental Outstanding']} />
 
-      <OperationsShell bookingNo={id} bookingStatus={stage} isOpen={shellOpen} onClose={() => setShellOpen(false)} />
-
       {/*
         Create Invoice — R-01's second entry point, which this screen did not
         have. The modal is a read-only PREVIEW of the lines `createInvoice` will
@@ -3100,10 +3035,16 @@ export default function BookingDetail() {
       />
 
       <AssignCrewModal
+        key={`${booking.id}:${user?.id}`}
         isOpen={showCrewModal}
         onClose={() => setShowCrewModal(false)}
-        bookingId={id}
+        bookingId={booking.id}
+        bookingNo={booking.bookingNo}
+        pickupAt={booking.pickupAtAd}
+        returnAt={booking.returnAtAd}
+        defaultDays={days}
         onSuccess={(crew) => {
+          setCrewVersion((value) => value + 1)
           showSuccessToast('Crew Assigned', `${crew.name} — ${crew.role}`)
         }}
       />

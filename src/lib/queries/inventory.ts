@@ -948,7 +948,7 @@ export async function getAssetDetail(
   // only speaks ilike — and a lookup that silently skipped a clause there
   // would resolve links in production that 404 in every demo.
   if (!product) {
-    for (const column of ['serial_no', 'asset_tag'] as const) {
+    for (const column of ['serial_no', 'asset_tag', 'barcode'] as const) {
       const { data, error } = (await supabase
         .from('product_units_v')
         .select('id, product_id')

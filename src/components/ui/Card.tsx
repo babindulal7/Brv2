@@ -20,13 +20,16 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   action?: React.ReactNode
   footer?: React.ReactNode
   padding?: 'none' | 'sm' | 'md' | 'lg'
+  as?: 'div' | 'section'
+  headingLevel?: 'h2' | 'h3'
+  bodyStyle?: CSSProperties
 }
 
 const PADDING: Record<NonNullable<CardProps['padding']>, number | string> = {
   none: 0,
-  sm: 'var(--sp-md)',
-  md: 20,
-  lg: 'var(--sp-xl)',
+  sm: 'var(--space-4)',
+  md: 'var(--space-4)',
+  lg: 'var(--space-6)',
 }
 
 export function Card({
@@ -35,8 +38,12 @@ export function Card({
   action,
   footer,
   padding = 'md',
+  as: Element = 'div',
+  headingLevel: Heading = 'h3',
+  bodyStyle,
   children,
   style,
+  className,
   ...props
 }: CardProps) {
   const rootStyle: CSSProperties = {
@@ -49,26 +56,28 @@ export function Card({
     color: 'var(--text)',
     display: 'flex',
     flexDirection: 'column',
+    minWidth: 0,
     transition: 'transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur-theme) var(--ease), border-color var(--dur-theme) var(--ease)',
     ...style,
   }
 
   return (
-    <div style={rootStyle} {...props}>
+    <Element className={['surface-card', className].filter(Boolean).join(' ')} style={rootStyle} {...props}>
       {(title || subtitle || action) && (
         <div
+          className="surface-card__header"
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 'var(--sp-md)',
-            padding: '16px 20px',
+            padding: 'var(--space-3) var(--space-4)',
             borderBottom: '1px solid var(--border)',
           }}
         >
           <div>
             {title && (
-              <h3 style={{ margin: 0, fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>{title}</h3>
+              <Heading style={{ margin: 0, fontSize: 'var(--t-h3)', fontWeight: 600, color: 'var(--text)' }}>{title}</Heading>
             )}
             {subtitle && (
               <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{subtitle}</p>
@@ -78,7 +87,7 @@ export function Card({
         </div>
       )}
 
-      <div style={{ flex: 1, minWidth: 0, padding: PADDING[padding] }}>{children}</div>
+      <div className="surface-card__body" style={{ flex: 1, minWidth: 0, padding: PADDING[padding], ...bodyStyle }}>{children}</div>
 
       {footer && (
         <div
@@ -93,7 +102,7 @@ export function Card({
           {footer}
         </div>
       )}
-    </div>
+    </Element>
   )
 }
 
@@ -113,7 +122,16 @@ export function KpiCard({ label, value, subtext, trend, icon, onClick }: KpiCard
   return (
     <div
       onClick={onClick}
-      className={onClick ? 'lift' : undefined}
+      onKeyDown={onClick ? (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onClick()
+        }
+      } : undefined}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      aria-label={onClick ? `${label}: ${value}` : undefined}
+      className={['surface-card', 'kpi-card', onClick ? 'lift' : ''].filter(Boolean).join(' ')}
       style={{
         background: 'var(--card)',
         border: '1px solid var(--border)',

@@ -29,6 +29,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { ToastProvider } from '../../../components/ui/Toast'
 
 vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => true }))
+vi.mock('../../../lib/queries/bookingCrew', () => ({ listBookingCrew: async () => [], listAssignableCrew: async () => [] }))
 vi.mock('../../../lib/auth', () => ({
   useAuth: () => ({
     user: { id: 'u-1', name: 'Babin Shrestha', role: 'Owner', isSharedDevice: false },
@@ -301,9 +302,9 @@ describe('Law 16 — no fake affordances over missing reads', () => {
     expect(container.querySelector('[id^="edit-"]')).toBeNull()
   })
 
-  it('states the crew and transport-detail gaps instead of inventing a roster', async () => {
+  it('shows an empty queried crew list and the remaining transport gap', async () => {
     await mount('B-715')
-    expect(text()).toContain('booking_crew_lines')
+    expect(text()).toContain('No crew assigned to this booking yet.')
     expect(text()).toContain('booking_transport')
     // The seed's invented crew never render.
     expect(text()).not.toContain('Bikash Thapa')

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { mockSupabase } from './mock/client'
 import { mockStorage } from './mock/storage'
+import { getSecureAuthStorage } from './secureStorage'
 
 /**
  * Supabase client.
@@ -54,6 +55,7 @@ function createLiveClient() {
 
   return createClient(url, anonKey, {
     auth: {
+      storage: getSecureAuthStorage(),
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,

@@ -7,6 +7,7 @@ import { useViewport } from '../../lib/device'
 import { openCommandPalette } from './CommandPalette'
 import HandoverSheet from '../../modules/auth/HandoverSheet'
 import { useSync } from '../../lib/syncContext'
+import { QuickCreateMenu } from './QuickCreateMenu'
 
 export interface Crumb {
   label: string
@@ -333,6 +334,8 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
 
       <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 'var(--sp-sm)', flexShrink: 0, marginLeft: isPhone ? 'auto' : 0 }}>
         {actions}
+
+        <QuickCreateMenu role={user?.role} compact={isPhone} />
 
         {isPhone && (
           <button

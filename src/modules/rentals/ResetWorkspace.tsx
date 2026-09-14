@@ -274,10 +274,30 @@ function bsLabel(iso: string | null): string {
  * against a seed. `BookingNotLoaded`'s own copy said the missing piece was
  * this read; the read exists now, so the honest states below replace it.
  */
-export default function ResetWorkspace() {
+export interface ResetWorkspaceProps {
+  bookingNo?: string
+  embedded?: boolean
+  onConfirmSuccess?: () => void
+  onCancel?: () => void
+  onRegisterActions?: (actions: {
+    canComplete: boolean
+    dispatching: boolean
+    complete: () => void
+    isDirty: boolean
+    label?: string
+  }) => void
+}
+
+export default function ResetWorkspace({
+  bookingNo: bookingNoProp,
+  embedded = false,
+  onConfirmSuccess,
+  onCancel,
+  onRegisterActions,
+}: ResetWorkspaceProps = {}) {
   const navigate = useNavigate()
-  const { bookingNo } = useParams()
-  const id = bookingNo ?? ''
+  const { bookingNo: bookingNoParam } = useParams()
+  const id = bookingNoProp ?? bookingNoParam ?? ''
   /** The one identity every attribution on this screen may act as. No fallback. */
   const { user } = useAuth()
   const actor = actorName(user)
@@ -717,13 +737,30 @@ export default function ResetWorkspace() {
           { userId: user.id, role: user.role },
         ),
       )
-      .then(() => navigate(`/rentals/${id}`))
+      .then(() => {
+        if (onConfirmSuccess) {
+          onConfirmSuccess()
+        } else {
+          navigate(`/rentals/${id}`)
+        }
+      })
       .catch((err) => {
         captureError(err, { where: 'ResetWorkspace.reset', bookingId: id })
         setDispatchError(formatGateError(err))
         setDispatching(false)
       })
   }
+
+  const isDirty = !untouched
+  useEffect(() => {
+    onRegisterActions?.({
+      canComplete,
+      dispatching,
+      complete: completeResetJob,
+      isDirty,
+      label: 'Confirm & Complete',
+    })
+  }, [onRegisterActions, canComplete, dispatching, isDirty])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
 
@@ -796,41 +833,43 @@ export default function ResetWorkspace() {
                  chips (Rulings §7); no `←`, the shell breadcrumb is the upward
                  affordance (Rulings §4). ── */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                  <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
-                    Reset Workspace
-                  </h1>
-                  <span
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px',
-                      borderRadius: 'var(--r-chip)', background: STATUS[statusToken(stage)].bg, color: STATUS[statusToken(stage)].fg,
-                      fontSize: 'var(--t-meta)', fontWeight: 700,
-                    }}
-                  >
-                    <Icon name="dot" size={9} />
-                    {stage}
-                  </span>
-                  <span
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px',
-                      borderRadius: 'var(--r-badge)', border: '1px solid var(--border)', background: 'var(--card2)',
-                      color: jobState === 'Complete' ? 'var(--success-text)' : jobState === 'In Progress' ? 'var(--progress-text)' : 'var(--text2)',
-                      fontSize: 'var(--t-meta)', fontWeight: 700,
-                    }}
-                  >
-                    <Icon name={jobState === 'Complete' ? 'checklist' : jobState === 'In Progress' ? 'refresh' : 'dot'} size={11} />
-                    Reset job: {jobState}
-                  </span>
+              {!embedded && (
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                    <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
+                      Reset Workspace
+                    </h1>
+                    <span
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px',
+                        borderRadius: 'var(--r-chip)', background: STATUS[statusToken(stage)].bg, color: STATUS[statusToken(stage)].fg,
+                        fontSize: 'var(--t-meta)', fontWeight: 700,
+                      }}
+                    >
+                      <Icon name="dot" size={9} />
+                      {stage}
+                    </span>
+                    <span
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px',
+                        borderRadius: 'var(--r-badge)', border: '1px solid var(--border)', background: 'var(--card2)',
+                        color: jobState === 'Complete' ? 'var(--success-text)' : jobState === 'In Progress' ? 'var(--progress-text)' : 'var(--text2)',
+                        fontSize: 'var(--t-meta)', fontWeight: 700,
+                      }}
+                    >
+                      <Icon name={jobState === 'Complete' ? 'checklist' : jobState === 'In Progress' ? 'refresh' : 'dot'} size={11} />
+                      Reset job: {jobState}
+                    </span>
+                  </div>
+                  <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                    <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
+                      {floor.bookingNo}
+                    </Link>
+                    {floor.project ? ` · ${floor.project}` : ''}
+                    {floor.clientName ? ` · ${floor.clientName}` : ''}
+                  </p>
                 </div>
-                <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
-                    {floor.bookingNo}
-                  </Link>
-                  {floor.project ? ` · ${floor.project}` : ''}
-                  {floor.clientName ? ` · ${floor.clientName}` : ''}
-                </p>
-              </div>
+              )}
 
               <div style={{ minWidth: 240, flex: 1 }}>
                 <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -1393,36 +1432,38 @@ export default function ResetWorkspace() {
 
             {/* footer — job-level completion. Ungated by money or any booking
                 condition (§1.7). One EXIT and one primary, nothing else. */}
-            <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={() => navigate(`/rentals/${id}`)}
-                style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                Back to Booking
-              </button>
-              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                {`Reset job: ${jobState} — does not change ${runsAt} booking status.`}
-                {' Nothing is saved until Complete Reset — ticks, QC and exceptions live in this session only.'}
-              </span>
-              {/* The disabled reason is inline below (Law 12) — never a `title`
-                  tooltip, which is inert on touch and for keyboard users. */}
-              <span style={{ marginLeft: 'auto' }}>
+            {!embedded && (
+              <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
-                  disabled={!canComplete}
-                  onClick={completeResetJob}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 44, padding: '0 16px', borderRadius: 'var(--r-btn)',
-                    fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit', cursor: canComplete ? 'pointer' : 'not-allowed',
-                    ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
-                  }}
+                  onClick={() => (onCancel ? onCancel() : navigate(`/rentals/${id}`))}
+                  style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
                 >
-                  <Icon name="checklist" size={15} />
-                  {dispatching ? 'Recording…' : 'Complete Reset'}
+                  Back to Booking
                 </button>
-              </span>
-            </div>
+                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                  {`Reset job: ${jobState} — does not change ${runsAt} booking status.`}
+                  {' Nothing is saved until Complete Reset — ticks, QC and exceptions live in this session only.'}
+                </span>
+                {/* The disabled reason is inline below (Law 12) — never a `title`
+                    tooltip, which is inert on touch and for keyboard users. */}
+                <span style={{ marginLeft: 'auto' }}>
+                  <button
+                    type="button"
+                    disabled={!canComplete}
+                    onClick={completeResetJob}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 44, padding: '0 16px', borderRadius: 'var(--r-btn)',
+                      fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit', cursor: canComplete ? 'pointer' : 'not-allowed',
+                      ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+                    }}
+                  >
+                    <Icon name="checklist" size={15} />
+                    {dispatching ? 'Recording…' : 'Complete Reset'}
+                  </button>
+                </span>
+              </div>
+            )}
             {completeReason && (
               <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600 }}>{completeReason}</p>
             )}

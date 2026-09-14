@@ -85,10 +85,10 @@ const WAREHOUSES: Row[] = [
 ]
 
 /**
- * Verbatim from migration `0012_seed_data.sql:117-122`, ids included — the six
- * codes `seed.ts` actually emits are lowercase (`camera`, `lens`, …), not the
- * three-letter shorthand used elsewhere in the product. Reusing 0012's real
- * uuids means a row minted here has the same `category_id` it would have live.
+ * Verbatim from migration `0012_seed_data.sql:117-122` and `0123_categorize_equipment_inventory.sql`,
+ * ids included — all seventeen categories from the `product_category` enum.
+ * Reusing the migrations' real uuids means a row minted here has the same
+ * `category_id` it would have live.
  */
 const CATEGORIES: Row[] = [
   ['camera', 'Camera', 'Cinema & Mirrorless Cameras'],
@@ -97,16 +97,30 @@ const CATEGORIES: Row[] = [
   ['audio', 'Audio', 'Wireless Mics, Boom, Field Recorders'],
   ['grip', 'Grip', 'C-Stands, Jibs, Heavy Grip'],
   ['support', 'Support', 'Tripods, Gimbals, Sliders'],
-].map(([code, name, description], i) => ({
-  id: `00000000-0000-0000-0000-00000000050${i + 1}`,
-  client_uuid: `20000000-0000-0000-0000-00000000050${i + 1}`,
-  code,
-  name,
-  description,
-  sort_order: i + 1,
-  display_order: i + 1,
-  is_active: true,
-}))
+  ['drone', 'Drone', 'Drones & Aerial Systems'],
+  ['monitor', 'Monitor', 'Production, Director & On-Camera Monitors'],
+  ['power', 'Power', 'V-Mount Batteries, Chargers & Power Stations'],
+  ['media', 'Media', 'Memory Cards, SSDs & Card Readers'],
+  ['computing', 'Computing', 'DIT Stations, Laptops & Video Switchers'],
+  ['case', 'Case', 'Hard Cases & Flight Cases'],
+  ['bag', 'Bag', 'Soft Bags, Backpacks & Pouches'],
+  ['accessory', 'Accessory', 'Cables, Adapters, Matte Boxes, Follow Focus & Rigging'],
+  ['consumable', 'Consumable', 'Gaffer Tape, Gels & Expendables'],
+  ['vehicle', 'Vehicle', 'Production Vans, Trucks & Vehicles'],
+  ['other', 'Other', 'Crew Services & Miscellaneous Equipment'],
+].map(([code, name, description], i) => {
+  const hex = String(501 + i).padStart(12, '0')
+  return {
+    id: `00000000-0000-0000-0000-${hex}`,
+    client_uuid: `20000000-0000-0000-0000-${hex}`,
+    code,
+    name,
+    description,
+    sort_order: i + 1,
+    display_order: i + 1,
+    is_active: true,
+  }
+})
 
 const CATEGORY_ID_BY_CODE = new Map(CATEGORIES.map((c) => [c['code'] as string, c['id'] as string]))
 

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
-import type { Kpi } from '../../components/ui/Page'
+import { Card, PageHeader, Button, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
+import { PageShell } from '../../components/ui/PageShell'
+import { ContextDrawer } from '../../components/ui/ContextDrawer'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { ActiveFilterChips, FilterButton } from '../../components/ui/FilterDrawer'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { supabase } from '../../lib/supabase'
@@ -14,7 +16,12 @@ import type { StatusKey, BrandKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
 import { formatAd, getBusinessToday } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import type { Role as SystemRole } from '../../lib/rbac'
+import {
+  canWriteBookingDesk,
+  canPerformOperations,
+  canRecordPayment,
+  type Role as SystemRole,
+} from '../../lib/rbac'
 import { STATUS_ORDER, statusToken } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import { useAuth } from '../../lib/auth'
@@ -30,7 +37,6 @@ import {
   OPTIONAL_COLUMNS,
   CHIP_MEANS,
   RENTAL_DEPOSIT_NOTE,
-  rentalKpiFilters,
   SUB_RENTAL_NOTE,
   SUB_RENTAL_PENDING,
   SUB_RENTAL_UNANSWERED,
@@ -41,7 +47,6 @@ import {
   subRentalBookingIds,
   toRentalListRow,
   withSubRental,
-  type BookingListRow,
   type ChipKey,
   type OptionalColumn,
   type RentalListRow,
@@ -51,14 +56,17 @@ import { useFilters } from '../../lib/queries/useFilters'
 import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { DateField } from '../../components/ui/DateField'
-import NewRental from './NewRental'
+import { LoadingSkeleton } from '../../components/ui/StateViews'
+const NewRental = lazy(() => import('./NewRental'))
 import { CancelRentalModal } from './modals/CancelRentalModal'
 import { QuickActionBar, FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
 import { BooqableRentalFilterDrawer } from '../../components/ui/BooqableRentalFilterDrawer'
 import { FastReturnModal } from './modals/FastReturnModal'
 import { BarcodeLookupModal } from './modals/BarcodeLookupModal'
 import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
-import { runFloorVerb } from '../../actions/rentals/floorVerb'
+import { captureError } from '../../lib/monitoring'
+import { TouchTarget } from '../../components/ui/TouchTarget'
+import './rentals.css'
 /**
  * ## No tabs, and no Productions — `04_RENTALS.md` line 3
  *
@@ -84,10 +92,9 @@ import { runFloorVerb } from '../../actions/rentals/floorVerb'
  *    lines, never stored. The chip narrows on that derivation, server-side —
  *    see `data/rentals.ts`'s `subRentalBookingIds`.
  *
- * **Kept**, because no prose removes them (rulings §1): the KPI strip, the
- * pagination footer, the Filters rail (ten of eleven groups inert) and the
- * disabled Timeline toggle. The last two are the register's own named deletion
- * candidates; they are flagged there, not deleted here.
+ * The legacy KPI strip is intentionally absent from the V2 list shell: the
+ * operational table is the primary surface. Pagination, filter state and the
+ * disabled Timeline affordance remain wired to their existing behaviour.
  */
 
 /**
@@ -370,9 +377,11 @@ const OPS_MENU_H = 245
 function RowOperations({
   row,
   onCancel,
+  onInspect,
 }: {
   row: RentalListRow
-  onCancel?: (row: RentalListRow) => void
+  onCancel?: ((row: RentalListRow) => void) | undefined
+  onInspect?: ((row: RentalListRow) => void) | undefined
 }) {
   const [open, setOpen] = useState(false)
   const [up, setUp] = useState(false)
@@ -406,6 +415,7 @@ function RowOperations({
           background: open ? 'var(--hover-card)' : 'transparent',
           color: 'var(--muted)',
           cursor: 'pointer',
+          position: 'relative',
           width: 26,
           height: 26,
           borderRadius: 'var(--r-xs)',
@@ -413,11 +423,39 @@ function RowOperations({
           placeItems: 'center',
         }}
       >
+        <TouchTarget />
         <Icon name="more_vert" size={15} />
       </button>
 
       {open && (
         <div role="menu" style={up ? { ...menuStyle, top: 'auto', bottom: 30 } : menuStyle}>
+          {onInspect && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false)
+                onInspect(row)
+              }}
+              style={{
+                ...menuItemStyle,
+                width: '100%',
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--text)',
+                cursor: 'pointer',
+                textAlign: 'left',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              <Icon name="eye" size={15} style={{ color: 'var(--text2)' }} />
+              <span style={{ flex: 1 }}>Quick view</span>
+            </button>
+          )}
           <Link
             to={`/rentals/${row.bookingNo}`}
             role="menuitem"
@@ -533,6 +571,7 @@ function ColumnMenu({
           background: open ? 'var(--hover-card)' : 'transparent',
           color: 'var(--muted)',
           cursor: 'pointer',
+          position: 'relative',
           width: 24,
           height: 24,
           borderRadius: 'var(--r-xs)',
@@ -540,6 +579,7 @@ function ColumnMenu({
           placeItems: 'center',
         }}
       >
+        <TouchTarget />
         <Icon name="settings" size={15} />
       </button>
       {open && (
@@ -588,17 +628,6 @@ function ColumnMenu({
  */
 
 /**
- * A figure, or an explicit non-value while it is unknown.
- *
- * A KPI reading `0` during the first load, or after the query failed, is a
- * WRONG figure rather than a missing one — and "0 overdue" is a sentence the
- * floor would act on. Same helper, same reasoning, as `Today.tsx`.
- */
-function countOf(list: { loading: boolean; error: string | null }, value: number | null): string {
-  return list.loading || list.error !== null || value === null ? '—' : String(value)
-}
-
-/**
  * The pager's visible page numbers.
  *
  * ⛔ This used to be `Array.from({ length: pageCount })` — every page number,
@@ -639,6 +668,9 @@ function pageWindow(current: number, pageCount: number, span = 5): number[] {
 export default function RentalsList() {
   const { user } = useAuth()
   const role: SystemRole = user ? user.role : 'Client'
+  const canWriteDesk = canWriteBookingDesk(role)
+  const canOperate = canPerformOperations(role)
+  const canRecord = canRecordPayment(role)
   /** The single money gate. Mirrors `auth_can_view_money()` — see Law 6 above. */
   const money = useCanViewMoney()
   /**
@@ -651,11 +683,12 @@ export default function RentalsList() {
   const [view, setView] = useState<(typeof VIEWS)[number]>('Table')
   const [hiddenCols, setHiddenCols] = useState<Set<OptionalColumn>>(new Set())
   const [cancellingRental, setCancellingRental] = useState<RentalListRow | null>(null)
+  const [inspectingRental, setInspectingRental] = useState<RentalListRow | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [fastReturnOpen, setFastReturnOpen] = useState(false)
   const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
-  const [bulkProcessing, setBulkProcessing] = useState(false)
+  const bulkProcessing = false
 
   /**
    * Rows-per-page rides the URL, but NOT through `useFilters`.
@@ -769,26 +802,21 @@ export default function RentalsList() {
   const [subIds, setSubIds] = useState<readonly string[] | null>(null)
   const [subPending, setSubPending] = useState(true)
 
-  useEffect(() => {
-    let live = true
+  const refreshSubRentals = useCallback(async () => {
     setSubPending(true)
-    void subRentalBookingIds()
-      .then((ids) => {
-        if (!live) return
-        setSubIds(ids)
-      })
-      /* A rejected promise must not leave the chip spinning forever: `null` and
-         `pending: false` is the error state, and the chip says so (Law 12). */
-      .catch(() => {
-        if (live) setSubIds(null)
-      })
-      .finally(() => {
-        if (live) setSubPending(false)
-      })
-    return () => {
-      live = false
+    try {
+      const ids = await subRentalBookingIds()
+      setSubIds(ids)
+    } catch {
+      setSubIds(null)
+    } finally {
+      setSubPending(false)
     }
   }, [])
+
+  useEffect(() => {
+    void refreshSubRentals()
+  }, [refreshSubRentals])
 
   /** The same answer as a set, for the per-row marking. */
   const subIdSet = useMemo(() => (subIds === null ? null : new Set(subIds)), [subIds])
@@ -806,6 +834,12 @@ export default function RentalsList() {
 
   const from = f.filters.dateRange?.fromAd ?? ''
   const to = f.filters.dateRange?.toAd ?? ''
+
+  // §Step 6 — Selection is strictly scoped to the current page/filter view.
+  // Changing page, rows per page, or any filter criteria invalidates and resets selection.
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [page, perPage, chip, subOn, statusKey, from, to])
   /**
    * The filter panel is now an overlay, not a column.
    *
@@ -932,8 +966,6 @@ export default function RentalsList() {
    *
    * NONE of them passes `withDeposit`.
    */
-  const countFetcher = useCallback((filters: ListFilters) => listBookings({ ...filters, withCount: true }), [])
-
   /*
    * §10 facet counts for the Status accordion — see `StatusFilterGroup`'s
    * header for why the probe travels under `status` rather than `stage`.
@@ -970,80 +1002,13 @@ export default function RentalsList() {
     [chip, from, to, subOn, subIds],
   )
   const { counts: stageCounts } = useFacetCounts(statusCountRows, statusCountBase, 'status', STATUS_ORDER, filtersOpen)
-  /* Rebuilt per render, keyed on the day so the three "today" cards move with
-     the clock. `useList` keys its effect on the filter set's VALUE, so a fresh
-     object with the same content costs nothing. */
-  const kpiFilters = useMemo(() => rentalKpiFilters(anchor), [anchor])
-  const activeKpi = useList<BookingListRow>(countFetcher, kpiFilters.active, { isFilteredOverride: false })
-  const pickupsKpi = useList<BookingListRow>(countFetcher, kpiFilters.pickups, { isFilteredOverride: false })
-  const returnsKpi = useList<BookingListRow>(countFetcher, kpiFilters.returns, { isFilteredOverride: false })
-  const overdueKpi = useList<BookingListRow>(countFetcher, kpiFilters.overdue, { isFilteredOverride: false })
-
-  /* `useList` memoises `refetch`; naming them keeps the callback keyed on
-     the functions rather than on the whole list objects, which are fresh
-     literals every render (react-hooks/exhaustive-deps, TODO_SWEEP A13). */
+  /* `useList` memoises `refetch`; naming it keeps refresh stable while the
+     table remains the only default data surface on this list. */
   const { refetch: refetchList } = list
-  const { refetch: refetchActive } = activeKpi
-  const { refetch: refetchPickups } = pickupsKpi
-  const { refetch: refetchReturns } = returnsKpi
-  const { refetch: refetchOverdue } = overdueKpi
   const refreshAll = useCallback(() => {
     refetchList()
-    refetchActive()
-    refetchPickups()
-    refetchReturns()
-    refetchOverdue()
-  }, [refetchList, refetchActive, refetchPickups, refetchReturns, refetchOverdue])
-
-  /*
-   * ⛔ Six hardcoded cards became four counted ones.
-   *
-   * `Payment Due` (Rs 142,000) and `Utilization` (84%) are ABSENT rather than
-   * dashed: no query in `lib/queries/` produces either, and a card whose value
-   * can only ever be a dash is a promise the screen cannot keep. Both already
-   * live in Reports ▸ Pulse. The hand-typed sub-lines ("8 Pending • 6
-   * Completed", "4 Overdue • 7 Expected") and the "6 since yesterday" delta are
-   * gone for the same reason — each note now states the card's own predicate,
-   * which is a fact about the query rather than a second figure.
-   */
-  const kpis: Kpi[] = [
-    {
-      label: 'Active Rentals',
-      value: countOf(activeKpi, activeKpi.total),
-      icon: 'briefcase',
-      accent: 'primary',
-      note: 'On Rent now',
-      definition: 'Bookings currently in On Rent stage across all clients',
-      zeroExplanation: 'Rule: On Rent stage only. 0 gear currently dispatched to clients.',
-    },
-    {
-      label: 'Today Pickups',
-      value: countOf(pickupsKpi, pickupsKpi.total),
-      icon: 'truck',
-      accent: 'primary',
-      note: 'Booked and Packed',
-      definition: "Bookings with pickup scheduled inside today's operational day (Booked or Packed)",
-      zeroExplanation: "Rule: Today's operational day. 0 pickups scheduled for departure.",
-    },
-    {
-      label: 'Today Returns',
-      value: countOf(returnsKpi, returnsKpi.total),
-      icon: 'return_arrow',
-      accent: 'progress',
-      note: 'Due back today, still out',
-      definition: "Bookings due for return inside today's operational day, not yet returned",
-      zeroExplanation: 'Rule: Due today, On Rent. 0 bookings due back today.',
-    },
-    {
-      label: 'Overdue',
-      value: countOf(overdueKpi, overdueKpi.total),
-      icon: 'alert_triangle',
-      accent: 'danger',
-      note: 'Past due, never returned',
-      definition: 'Bookings past return deadline where actual return date is unrecorded',
-      zeroExplanation: 'Rule: return_at < now and unreturned. All bookings returned on time.',
-    },
-  ]
+    void refreshSubRentals()
+  }, [refetchList, refreshSubRentals])
 
   /*
    * §11.1 — the derived sub-rental answer is applied HERE rather than in
@@ -1129,9 +1094,21 @@ export default function RentalsList() {
   }, [])
 
   const handleBulkExport = useCallback(() => {
-    const rowsToExport = list.rows.filter((r) => selectedIds.has(r.id))
-    const rows = rowsToExport.length > 0 ? rowsToExport : list.rows
-    const csvHeaders = ['Booking No', 'Client', 'Project', 'Status', 'Pickup Date', 'Return Date', 'Items']
+    const rows = selectedIds.size > 0
+      ? list.rows.filter((r) => selectedIds.has(r.id))
+      : list.rows
+    if (rows.length === 0) return
+
+    const csvHeaders = [
+      'Booking No',
+      'Client',
+      'Project',
+      'Status',
+      'Pickup Date',
+      'Return Date',
+      'Items',
+      ...(money ? ['Deposit'] : []),
+    ]
     const csvLines = rows.map((r) => [
       `"${r.bookingNo}"`,
       `"${(r.client || '').replace(/"/g, '""')}"`,
@@ -1140,6 +1117,7 @@ export default function RentalsList() {
       `"${r.pickup?.date || ''}"`,
       `"${r.ret?.date || ''}"`,
       r.itemCount,
+      ...(money ? [r.deposit != null ? `"${r.deposit}"` : '""'] : []),
     ])
     const csv = [csvHeaders.join(','), ...csvLines.map((l) => l.join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -1151,85 +1129,55 @@ export default function RentalsList() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }, [list.rows, selectedIds])
+  }, [list.rows, selectedIds, money])
 
-  const handleBulkPack = useCallback(async () => {
-    const toPack = list.rows.filter((r) => selectedIds.has(r.id) && r.status === 'Booked')
-    if (toPack.length === 0) {
-      alert('None of the selected bookings are in "Booked" stage awaiting packing.')
-      return
-    }
-    setBulkProcessing(true)
-    for (const b of toPack) {
-      try {
-        await runFloorVerb(
-          'Pack',
-          { bookingRef: b.bookingNo },
-          { userId: user?.id ?? '00000000-0000-0000-0000-000000000000', role: role }
-        )
-      } catch (err) {
-        console.error('Failed to pack', b.bookingNo, err)
-      }
-    }
-    setBulkProcessing(false)
-    setSelectedIds(new Set())
-    refreshAll()
-  }, [list.rows, selectedIds, user, role, refreshAll])
-
-  const handleBulkHandover = useCallback(async () => {
-    const toHandover = list.rows.filter((r) => selectedIds.has(r.id) && r.status === 'Packed')
-    if (toHandover.length === 0) {
-      alert('None of the selected bookings are in "Packed" stage ready for handover.')
-      return
-    }
-    setBulkProcessing(true)
-    for (const b of toHandover) {
-      try {
-        await runFloorVerb(
-          'Handover',
-          { bookingRef: b.bookingNo },
-          { userId: user?.id ?? '00000000-0000-0000-0000-000000000000', role: role }
-        )
-      } catch (err) {
-        console.error('Failed to handover', b.bookingNo, err)
-      }
-    }
-    setBulkProcessing(false)
-    setSelectedIds(new Set())
-    refreshAll()
-  }, [list.rows, selectedIds, user, role, refreshAll])
+  // Bulk Pack & Bulk Handover removed per Steps 2 & 3: packing and handover are
+  // physical floor operations requiring equipment resolution and stage gates in
+  // PackingWorkspace / HandoverWorkspace, never blind row selection.
 
   const [availableInvoices, setAvailableInvoices] = useState<
     Array<{ id: string; invoiceNo: string | null; client: string; amount: string; status: string; booking?: string }>
   >([])
+  const fetchAvailableInvoices = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('invoices')
+        .select('id, invoice_no, total_amount, status, client_id, clients:client_id(name), booking_id, bookings:booking_id(booking_no)')
+        .neq('status', 'Paid')
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (error) throw error
+      if (data) {
+        setAvailableInvoices(
+          data.map((inv) => {
+            const raw = inv as Record<string, unknown>
+            const clients = raw['clients'] as { name?: string } | { name?: string }[] | null
+            const bookings = raw['bookings'] as { booking_no?: string } | { booking_no?: string }[] | null
+            const clientName = Array.isArray(clients) ? clients[0]?.name : clients?.name
+            const bookingNo = Array.isArray(bookings) ? bookings[0]?.booking_no : bookings?.booking_no
+
+            return {
+              id: String(raw['id']),
+              invoiceNo: (raw['invoice_no'] as string) ?? null,
+              client: clientName ?? 'Client',
+              amount: String(raw['total_amount'] ?? 0),
+              status: (raw['status'] as string) ?? 'Draft',
+              ...(bookingNo ? { booking: bookingNo } : {}),
+            }
+          })
+        )
+      }
+    } catch (err: unknown) {
+      captureError(err, { where: 'RentalsList.fetchAvailableInvoices' })
+      setAvailableInvoices([])
+    }
+  }, [])
 
   useEffect(() => {
     if (!paymentModalOpen) return
-    let cancelled = false
-    supabase
-      .from('invoices')
-      .select('id, invoice_no, total_amount, status, client_id, clients:client_id(name), booking_id, bookings:booking_id(booking_no)')
-      .neq('status', 'Paid')
-      .limit(20)
-      .then(({ data }) => {
-        if (cancelled) return
-        if (data) {
-          setAvailableInvoices(
-            data.map((inv: any) => ({
-              id: inv.id,
-              invoiceNo: inv.invoice_no,
-              client: inv.clients?.name ?? 'Client',
-              amount: String(inv.total_amount ?? 0),
-              status: inv.status ?? 'Draft',
-              booking: inv.bookings?.booking_no,
-            }))
-          )
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [paymentModalOpen])
+    void fetchAvailableInvoices()
+  }, [paymentModalOpen, fetchAvailableInvoices])
 
   const firstOnPage = (page - 1) * perPage + 1
   const lastOnPage = firstOnPage + list.rows.length - 1
@@ -1237,50 +1185,60 @@ export default function RentalsList() {
 
   if (isNew) {
     return (
-      <NewRental
-        embedded
-        onDone={() => {
-          setRawParams((prev) => {
-            const next = new URLSearchParams(prev)
-            next.delete('action')
-            next.delete('tab')
-            return next
-          })
-          refreshAll()
-        }}
-      />
+      <Suspense fallback={<LoadingSkeleton type="card" label="Loading new rental…" />}>
+        <NewRental
+          embedded
+          onDone={() => {
+            setRawParams((prev) => {
+              const next = new URLSearchParams(prev)
+              next.delete('action')
+              next.delete('tab')
+              return next
+            })
+            refreshAll()
+          }}
+        />
+        </Suspense>
     )
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell className="rentals-v2">
       <PageHeader
         title="Rentals"
-        description="Manage all bookings and their current status"
+        description="Manage bookings and rental lifecycle."
         actions={
           <QuickActionBar
             actions={[
-              {
-                id: 'new-booking',
-                label: 'New Rental',
-                icon: 'plus',
-                variant: 'primary',
-                onClick: () => {
-                  setRawParams((prev) => {
-                    const next = new URLSearchParams(prev)
-                    next.set('action', 'new')
-                    return next
-                  })
-                },
-              },
-              {
-                id: 'fast-return',
-                label: '⚡ Fast Return',
-                icon: 'return_arrow',
-                variant: 'accent',
-                onClick: () => setFastReturnOpen(true),
-              },
-              ...(money
+              ...(canWriteDesk
+                ? [
+                    {
+                      id: 'new-booking',
+                      label: 'New Rental',
+                      icon: 'plus' as const,
+                      variant: 'primary' as const,
+                      onClick: () => {
+                        setRawParams((prev) => {
+                          const next = new URLSearchParams(prev)
+                          next.set('action', 'new')
+                          return next
+                        })
+                      },
+                    },
+                  ]
+                : []),
+              ...(canOperate
+                ? [
+                    {
+                      id: 'fast-return',
+                      label: '⚡ Fast Return',
+                      icon: 'return_arrow' as const,
+                      variant: 'accent' as const,
+                      onClick: () => setFastReturnOpen(true),
+                    },
+                  ]
+                : []),
+              ...(canRecord
                 ? [
                     {
                       id: 'record-payment',
@@ -1317,10 +1275,6 @@ export default function RentalsList() {
           />
         }
       />
-
-      {/* §4.1 — "one list, no tabs". The strip that used to sit here is gone
-          with Productions; see the file header. */}
-      <KpiStrip items={kpis} columns={kpis.length} />
 
       {/*
         ## The chip row — §4.1's two lines
@@ -1409,18 +1363,40 @@ export default function RentalsList() {
           "none" — see `subIds`.
         */}
         {subIds === null ? (
-          <Unavailable reason={subPending ? SUB_RENTAL_PENDING : SUB_RENTAL_UNANSWERED}>
-            <button
-              type="button"
-              disabled
-              aria-busy={subPending}
-              aria-label={`Sub-Rental — unavailable. ${subPending ? SUB_RENTAL_PENDING : SUB_RENTAL_UNANSWERED}`}
-              style={{ ...stageChipStyle(false), color: 'var(--muted)', cursor: 'not-allowed', opacity: 0.65 }}
-            >
-              <Icon name="external_link" size={13} style={{ color: 'var(--disabled)' }} />
-              Sub-Rental
-            </button>
-          </Unavailable>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <Unavailable reason={subPending ? SUB_RENTAL_PENDING : SUB_RENTAL_UNANSWERED}>
+              <button
+                type="button"
+                disabled
+                aria-busy={subPending}
+                aria-label={`Sub-Rental — unavailable. ${subPending ? SUB_RENTAL_PENDING : SUB_RENTAL_UNANSWERED}`}
+                style={{ ...stageChipStyle(false), color: 'var(--muted)', cursor: 'not-allowed', opacity: 0.65 }}
+              >
+                <Icon name="external_link" size={13} style={{ color: 'var(--disabled)' }} />
+                Sub-Rental
+              </button>
+            </Unavailable>
+            {!subPending && (
+              <button
+                type="button"
+                onClick={() => void refreshSubRentals()}
+                title="Retry loading sub-rentals"
+                aria-label="Retry loading sub-rentals"
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--link)',
+                  cursor: 'pointer',
+                  padding: '2px 4px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  fontSize: 'var(--t-meta)',
+                }}
+              >
+                <Icon name="refresh" size={12} />
+              </button>
+            )}
+          </span>
         ) : (
           <button
             type="button"
@@ -1823,7 +1799,7 @@ export default function RentalsList() {
                           Open Booking
                         </Link>
                         <span style={{ flexShrink: 0 }}>
-                          <RowOperations row={r} />
+                          <RowOperations row={r} onCancel={canWriteDesk ? setCancellingRental : undefined} onInspect={setInspectingRental} />
                         </span>
                       </span>
                     </div>
@@ -1852,8 +1828,10 @@ export default function RentalsList() {
                   `minWidth` narrows at tablet because two columns are
                   dropped there (see `NARROW_COLUMNS`).
                 */
-                <div data-table-scroll style={{ overflowX: 'auto' }}>
+                <DataTableShell ariaLabel="Rentals" data-table-scroll style={{ overflowX: 'auto' }}>
                   <table
+                    className="data-table operations-table"
+                    aria-label="Rentals"
                     style={{
                       width: '100%',
                       borderCollapse: 'collapse',
@@ -1863,16 +1841,18 @@ export default function RentalsList() {
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
                         <th style={{ ...th, width: 44, paddingLeft: 12 }}>
-                          <input
-                            type="checkbox"
-                            checked={allSelected}
-                            ref={(el) => {
-                              if (el) el.indeterminate = !allSelected && someSelected
-                            }}
-                            onChange={toggleSelectAll}
-                            aria-label="Select all bookings on this page"
-                            style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
-                          />
+                          <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, minHeight: 36, cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={allSelected}
+                              ref={(el) => {
+                                if (el) el.indeterminate = !allSelected && someSelected
+                              }}
+                              onChange={toggleSelectAll}
+                              aria-label="Select all bookings on this page"
+                              style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                            />
+                          </label>
                         </th>
                         {headers.map((h) => (
                           <th key={h} style={th}>
@@ -1909,13 +1889,15 @@ export default function RentalsList() {
                           }}
                         >
                           <td style={{ ...td, width: 44, paddingLeft: 12 }}>
-                            <input
-                              type="checkbox"
-                              checked={selectedIds.has(r.id)}
-                              onChange={() => toggleSelectRow(r.id)}
-                              aria-label={`Select booking ${r.bookingNo}`}
-                              style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
-                            />
+                            <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, minHeight: 44, cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(r.id)}
+                                onChange={() => toggleSelectRow(r.id)}
+                                aria-label={`Select booking ${r.bookingNo}`}
+                                style={{ width: 16, height: 16, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                              />
+                            </label>
                           </td>
                           <td style={td}>
                             <IntelCard
@@ -2144,13 +2126,13 @@ export default function RentalsList() {
 
                           {/* §4.1 — stays visible while the table scrolls. */}
                           <td style={stickyTd}>
-                            <RowOperations row={r} onCancel={setCancellingRental} />
+                            <RowOperations row={r} onCancel={canWriteDesk ? setCancellingRental : undefined} onInspect={setInspectingRental} />
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               )}
             </PageBody>
 
@@ -2216,6 +2198,44 @@ export default function RentalsList() {
 
       </div>
 
+      <ContextDrawer
+        id="rental-quick-view"
+        open={Boolean(inspectingRental)}
+        onClose={() => setInspectingRental(null)}
+        title={inspectingRental?.bookingNo ?? 'Rental'}
+        subtitle={inspectingRental ? `${inspectingRental.client}${inspectingRental.project ? ` · ${inspectingRental.project}` : ''}` : undefined}
+        status={inspectingRental ? <Badge status={inspectingRental.status} size="sm" /> : undefined}
+        actions={inspectingRental ? (
+          <Link to={`/rentals/${inspectingRental.bookingNo}`} className="ui-button ui-button--secondary" onClick={() => setInspectingRental(null)}>
+            Open rental
+          </Link>
+        ) : undefined}
+      >
+        {inspectingRental && (
+          <div style={{ display: 'grid', gap: 'var(--space-6)' }}>
+            <section aria-labelledby="rental-quick-view-schedule">
+              <h3 id="rental-quick-view-schedule" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Schedule</h3>
+              <dl style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 'var(--space-2) var(--space-4)', margin: 'var(--space-3) 0 0' }}>
+                <dt style={{ color: 'var(--muted)' }}>Pickup</dt><dd className="figure" style={{ margin: 0 }}>{inspectingRental.pickup.date} · {inspectingRental.pickup.time}</dd>
+                <dt style={{ color: 'var(--muted)' }}>Return</dt><dd className="figure" style={{ margin: 0 }}>{inspectingRental.ret.date} · {inspectingRental.ret.time}</dd>
+                <dt style={{ color: 'var(--muted)' }}>Equipment</dt><dd style={{ margin: 0 }}>{inspectingRental.itemCount} item{inspectingRental.itemCount === 1 ? '' : 's'}</dd>
+              </dl>
+            </section>
+            <section aria-labelledby="rental-quick-view-client">
+              <h3 id="rental-quick-view-client" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Client</h3>
+              <p style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 600 }}>{inspectingRental.client}</p>
+              <p style={{ margin: 'var(--space-1) 0 0', color: 'var(--text2)' }}>{inspectingRental.pickupLocation ?? 'Pickup location not set'}</p>
+            </section>
+            {money && (
+              <section aria-labelledby="rental-quick-view-finance">
+                <h3 id="rental-quick-view-finance" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Deposit</h3>
+                <p className="figure" style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 700 }}>{inspectingRental.deposit === null ? '—' : formatMoney(inspectingRental.deposit)}</p>
+              </section>
+            )}
+          </div>
+        )}
+      </ContextDrawer>
+
       {cancellingRental && (
         <CancelRentalModal
           isOpen={Boolean(cancellingRental)}
@@ -2272,28 +2292,17 @@ export default function RentalsList() {
             onClick: handleBulkExport,
             disabled: bulkProcessing,
           },
-          {
-            id: 'bulk-pack',
-            label: 'Pack Selected',
-            icon: 'box',
-            onClick: handleBulkPack,
-            variant: 'primary',
-            disabled: bulkProcessing,
-          },
-          {
-            id: 'bulk-handover',
-            label: 'Handover',
-            icon: 'truck',
-            onClick: handleBulkHandover,
-            disabled: bulkProcessing,
-          },
-          {
-            id: 'bulk-return',
-            label: 'Fast Return',
-            icon: 'return_arrow',
-            onClick: () => setFastReturnOpen(true),
-            disabled: bulkProcessing,
-          },
+          ...(canOperate
+            ? [
+                {
+                  id: 'bulk-return',
+                  label: 'Fast Return',
+                  icon: 'return_arrow' as const,
+                  onClick: () => setFastReturnOpen(true),
+                  disabled: bulkProcessing,
+                },
+              ]
+            : []),
         ]}
       />
 
@@ -2310,7 +2319,7 @@ export default function RentalsList() {
         onClose={() => setBarcodeModalOpen(false)}
       />
 
-      {money && (
+      {canRecord && (
         <RecordPaymentModal
           isOpen={paymentModalOpen}
           onClose={() => setPaymentModalOpen(false)}
@@ -2336,7 +2345,7 @@ export default function RentalsList() {
           ...(money ? [RENTAL_DEPOSIT_NOTE] : []),
         ]}
       />
-    </div>
+    </PageShell>
   )
 }
 
@@ -2359,6 +2368,7 @@ function PageBtn({
       disabled={disabled}
       aria-current={active ? 'page' : undefined}
       style={{
+        position: 'relative',
         minWidth: 26,
         height: 26,
         borderRadius: 7,
@@ -2372,6 +2382,7 @@ function PageBtn({
         fontFamily: 'inherit',
       }}
     >
+      <TouchTarget axis="y" />
       {label}
     </button>
   )

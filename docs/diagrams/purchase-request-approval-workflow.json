@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Purchase request approval workflow",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "requester", "label": "Requesting team" },
+    { "id": "approver", "label": "Owner or Manager" },
+    { "id": "procurement", "label": "Procurement" },
+    { "id": "outcome", "label": "Exception outcome", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "prepare", "label": "Prepare", "fromCol": 0, "toCol": 1, "variant": "emphasis" },
+    { "id": "decision", "label": "Decide", "fromCol": 2, "toCol": 3 },
+    { "id": "fulfil", "label": "Order and receive", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["draft", "submitted", "review", "approved", "ordered", "received"],
+  "nodes": [
+    { "id": "draft", "lane": "requester", "col": 0, "type": "frontend", "label": "Draft request", "sublabel": "Need, quantity and priority", "width": 136 },
+    { "id": "submitted", "lane": "requester", "col": 1, "type": "backend", "label": "Submit request", "sublabel": "Await a decision", "width": 136 },
+    { "id": "review", "lane": "approver", "col": 2, "type": "security", "label": "Approval review", "sublabel": "Spend-authorising decision", "width": 136 },
+    { "id": "approved", "lane": "approver", "col": 3, "type": "backend", "label": "Approved", "sublabel": "Approver identity recorded", "width": 136 },
+    { "id": "ordered", "lane": "procurement", "col": 4, "type": "frontend", "label": "Mark as ordered", "sublabel": "Supplier work in progress", "width": 136 },
+    { "id": "received", "lane": "procurement", "col": 5, "type": "database", "label": "Received", "sublabel": "Terminal stock outcome", "width": 136 },
+    { "id": "rejected", "lane": "outcome", "col": 3, "type": "security", "label": "Rejected", "sublabel": "Spend not authorised", "width": 136 }
+  ],
+  "edges": [
+    { "id": "draft-submit", "from": "draft", "to": "submitted", "label": "submit", "variant": "emphasis", "role": "main" },
+    { "id": "submit-review", "from": "submitted", "to": "review", "label": "route for decision", "role": "main" },
+    { "id": "review-approve", "from": "review", "to": "approved", "label": "approve", "variant": "emphasis", "role": "main" },
+    { "id": "approve-order", "from": "approved", "to": "ordered", "label": "place order", "role": "main" },
+    { "id": "order-receive", "from": "ordered", "to": "received", "label": "receive goods", "variant": "emphasis", "role": "main" },
+    { "id": "review-reject", "from": "review", "to": "rejected", "label": "reject", "variant": "dashed", "role": "branch" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Decision authority", "items": ["Only Owner and Manager roles can approve or reject a submitted purchase request.", "The approval records the approver identity before procurement begins."] },
+    { "dot": "amber", "title": "Operational follow-through", "items": ["Ordered is only reachable after approval.", "Receiving completes the procurement path; rejected requests do not enter it."] }
+  ]
+}

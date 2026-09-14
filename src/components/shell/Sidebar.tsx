@@ -65,6 +65,14 @@ export default function Sidebar({ active }: SidebarProps) {
   /* Tablet is always a rail. Desktop is a rail only if the user asked for one. */
   const rail = viewport === 'tablet' || (viewport === 'desktop' && collapsed)
 
+  /* Page-level filter drawers begin after the app navigation, matching the
+     two-rail Booqable layout instead of covering the primary navigation. */
+  useEffect(() => {
+    const root = document.documentElement
+    root.style.setProperty('--shell-nav-w', `${rail ? RAIL_W : SIDEBAR_W}px`)
+    return () => root.style.removeProperty('--shell-nav-w')
+  }, [rail])
+
   const allowedNav = permittedNav(user?.role)
   /* `data/nav.ts` — most specific match wins, so exactly one row can be
      `aria-current="page"`. The phone bar reads the same function. */

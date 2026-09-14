@@ -1,0 +1,33 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace "com.babinrentals.os"
+    compileSdkVersion 34
+    defaultConfig {
+        applicationId "com.babinrentals.os"
+        minSdkVersion 26
+        targetSdkVersion 34
+        versionCode 1
+        versionName "0.1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.coordinatorlayout:coordinatorlayout:1.2.0'
+    implementation 'androidx.core:core-splashscreen:1.0.1'
+    // Hardware-backed Android Keystore & EncryptedSharedPreferences (PLAN.md §10)
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+}

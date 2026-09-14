@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -20,7 +20,8 @@ import { IntelCard } from '../../components/ui/IntelCard'
 import { Bundles } from './Bundles'
 import { Maintenance } from './Maintenance'
 import StockCheck from './StockCheck'
-import AddEquipment from './AddEquipment'
+import { LoadingSkeleton } from '../../components/ui/StateViews'
+const AddEquipment = lazy(() => import('./AddEquipment'))
 import { FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
 import { BarcodeLookupModal } from '../rentals/modals/BarcodeLookupModal'
 import {
@@ -1653,14 +1654,16 @@ export default function Inventory() {
       </div>
 
       {isNew ? (
-        <AddEquipment
-          embedded
-          onDone={() => {
-            const p = new URLSearchParams(params)
-            p.delete('tab')
-            setParams(p, { replace: true })
-          }}
-        />
+        <Suspense fallback={<LoadingSkeleton type="card" label="Loading equipment form…" />}>
+          <AddEquipment
+            embedded
+            onDone={() => {
+              const p = new URLSearchParams(params)
+              p.delete('tab')
+              setParams(p, { replace: true })
+            }}
+          />
+          </Suspense>
       ) : tab === 'Bundles' ? (
         <Bundles />
       ) : tab === 'Maintenance' ? (
@@ -2096,7 +2099,7 @@ export default function Inventory() {
                   </div>
                 ) : (
                   <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1060 }}>
+                    <table className="operations-table" aria-label="Equipment inventory" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1060 }}>
                       <thead>
                         <tr style={{ background: 'var(--th-bg)' }}>
                           <th style={{ ...th, width: 26 }}>

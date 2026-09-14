@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, useId } from 'react'
 import type { InputHTMLAttributes, ReactNode } from 'react'
 import Icon from './Icon'
 
@@ -20,10 +20,13 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, error, helperText, icon, iconRight, onClear, className, style, id, value, ...props },
+  { label, error, helperText, icon, iconRight, onClear, className, style, id, value, 'aria-describedby': describedBy, ...props },
   ref
 ) {
-  const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined)
+  const generatedId = useId()
+  const inputId = id ?? generatedId
+  const messageId = `${inputId}-message`
+  const descriptionIds = [describedBy, error || helperText ? messageId : undefined].filter(Boolean).join(' ') || undefined
   const showClear = Boolean(onClear && value)
   const showRightIcon = !onClear && Boolean(iconRight)
 
@@ -33,11 +36,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         <label
           htmlFor={inputId}
           style={{
-            fontSize: 'var(--t-th)',
+            fontSize: 'var(--t-ui)',
             fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.04em',
-            color: 'var(--muted)',
+            color: 'var(--text2)',
           }}
         >
           {label}
@@ -71,7 +72,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             minHeight: 44,
             padding: '8px 14px',
             paddingLeft: icon ? 38 : 14,
-            paddingRight: showClear || showRightIcon ? 38 : 14,
+            paddingRight: showClear ? 52 : showRightIcon ? 38 : 14,
             fontSize: 'var(--t-body)',
             borderRadius: 'var(--r-input)',
             background: 'var(--input-bg)',
@@ -81,16 +82,21 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             ...style,
           }}
           {...props}
+          aria-invalid={error ? true : props['aria-invalid']}
+          aria-describedby={descriptionIds}
         />
 
         {showClear ? (
           <button
             type="button"
             onClick={onClear}
-            aria-label="Clear"
+            aria-label={label ? `Clear ${label}` : 'Clear'}
+            disabled={props.disabled || props.readOnly}
             style={{
               position: 'absolute',
-              right: 8,
+              right: 4,
+              minWidth: 44,
+              minHeight: 44,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -122,6 +128,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
 
       {error ? (
         <div
+          id={messageId}
+          role="alert"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -134,7 +142,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           <span>{error}</span>
         </div>
       ) : helperText ? (
-        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{helperText}</span>
+        <span id={messageId} style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{helperText}</span>
       ) : null}
     </div>
   )

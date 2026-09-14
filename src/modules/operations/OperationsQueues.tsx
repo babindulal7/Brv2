@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
 import { FastReturnModal } from '../rentals/modals/FastReturnModal'
@@ -15,7 +15,6 @@ import type { ListFilters } from '../../lib/queries/listQuery'
 import {
   QUEUES,
   GROUP_LABEL,
-  NO_MONEY_NOTE,
   URL_KEY,
   formatDueAt,
   groupFromParam,
@@ -36,7 +35,8 @@ import {
 import AlertsPanel from '../today/AlertsPanel'
 import { useViewport } from '../../lib/device'
 import { kathmanduCivil, NPT_OFFSET_MIN, getBusinessToday } from '../../lib/bs'
-import { DateField } from '../../components/ui/DateField'
+import { CalendarPopover, DateField } from '../../components/ui/DateField'
+import './operations.css'
 
 
 const th = {
@@ -191,7 +191,8 @@ const SCOPE_LABEL: Record<DayScope, string> = {
   next7: 'Next 7 Days',
   custom: 'Custom',
 }
-const SCOPE_ORDER: DayScope[] = ['today', 'tomorrow', 'week', 'next7', 'custom']
+/** The compact Operations picker intentionally keeps the four operational presets. */
+const DISPLAY_SCOPE_ORDER: DayScope[] = ['today', 'tomorrow', 'next7', 'custom']
 
 function scopeFromParam(param: string | null): DayScope {
   return param === 'tomorrow' || param === 'week' || param === 'next7' || param === 'custom' ? param : 'today'
@@ -412,10 +413,23 @@ export default function OperationsQueues() {
   const navigate = useNavigate()
   const [fastReturnOpen, setFastReturnOpen] = useState(false)
   const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const [clientFilter, setClientFilter] = useState('all')
+  const [projectFilter, setProjectFilter] = useState('all')
+  const [showDateMenu, setShowDateMenu] = useState(false)
+  const [showMoreFilters, setShowMoreFilters] = useState(false)
+  const [showActionMenu, setShowActionMenu] = useState(false)
+  const [selectedBookingNos, setSelectedBookingNos] = useState<Set<string>>(() => new Set())
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(20)
+  const queueSearchRef = useRef<HTMLInputElement | null>(null)
+  const dateMenuRef = useRef<HTMLDivElement | null>(null)
+  const filtersMenuRef = useRef<HTMLDivElement | null>(null)
+  const actionMenuRef = useRef<HTMLDivElement | null>(null)
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const tabular = viewport !== 'phone'
-  const railBesideList = viewport === 'desktop'
 
   /* The URL is the state (§5.1). `?queue=packing` and `?quick=pickup` are
      mutually exclusive — setting either clears the other — so a queue is
@@ -448,6 +462,42 @@ export default function OperationsQueues() {
   const setQuick = (q: 'pickup' | 'return') => patch({ quick: group === q ? null : q, queue: null, exception: null })
   const setScope = (s: DayScope) => patch({ day: s, ...(s === 'custom' ? {} : { from: null, to: null }) })
   const clearAllFilters = () => setParams(new URLSearchParams())
+
+  /* Queue search stays local to the already server-filtered operation set and
+     waits briefly between keystrokes, so scanning a booking number does not
+     cause a render for every physical key press. */
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setSearch(searchInput), 250)
+    return () => window.clearTimeout(timeout)
+  }, [searchInput])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowDateMenu(false)
+        setShowMoreFilters(false)
+        setShowActionMenu(false)
+      }
+      if (event.key === '/' && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement)) {
+        event.preventDefault()
+        queueSearchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
+  useEffect(() => {
+    if (!showDateMenu && !showMoreFilters && !showActionMenu) return
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (!dateMenuRef.current?.contains(target)) setShowDateMenu(false)
+      if (!filtersMenuRef.current?.contains(target)) setShowMoreFilters(false)
+      if (!actionMenuRef.current?.contains(target)) setShowActionMenu(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    return () => document.removeEventListener('mousedown', onPointerDown)
+  }, [showDateMenu, showMoreFilters, showActionMenu])
 
   const nowAd = businessNowAd()
   const todayNepal = dayOffsetFromToday(0)
@@ -548,6 +598,46 @@ export default function OperationsQueues() {
     const j = toJobRow(row, now)
     return j ? [j] : []
   })
+  const visibleJobs = useMemo(() => {
+    const term = search.trim().toLocaleLowerCase()
+    return jobs.filter((job) =>
+      (clientFilter === 'all' || job.clientId === clientFilter) &&
+      (projectFilter === 'all' || job.project === projectFilter) &&
+      (!term || [job.bookingNo, job.clientName, job.project ?? '', job.stage, job.job].some((value) => value.toLocaleLowerCase().includes(term))),
+    )
+  }, [jobs, search, clientFilter, projectFilter])
+  const clients = useMemo(() => Array.from(new Map(jobs.map((job) => [job.clientId, job.clientName])).entries()), [jobs])
+  const projects = useMemo(() => Array.from(new Set(jobs.flatMap((job) => job.project ? [job.project] : []))).sort(), [jobs])
+  const pageCount = Math.max(1, Math.ceil(visibleJobs.length / pageSize))
+  const currentPage = Math.min(page, pageCount - 1)
+  const pagedJobs = visibleJobs.slice(currentPage * pageSize, currentPage * pageSize + pageSize)
+  const allVisibleSelected = pagedJobs.length > 0 && pagedJobs.every((job) => selectedBookingNos.has(job.bookingNo))
+  const resultStart = visibleJobs.length === 0 ? 0 : currentPage * pageSize + 1
+  const resultEnd = Math.min((currentPage + 1) * pageSize, visibleJobs.length)
+  const pageNumbers = Array.from({ length: Math.min(pageCount, 5) }, (_, index) => {
+    if (pageCount <= 5) return index
+    const start = Math.min(Math.max(currentPage - 2, 0), pageCount - 5)
+    return start + index
+  })
+  useEffect(() => {
+    setPage(0)
+  }, [search, clientFilter, projectFilter, selected, group, exception, scope, pageSize])
+  const toggleBooking = (bookingNo: string) => {
+    setSelectedBookingNos((current) => {
+      const next = new Set(current)
+      if (next.has(bookingNo)) next.delete(bookingNo)
+      else next.add(bookingNo)
+      return next
+    })
+  }
+  const toggleVisibleBookings = () => {
+    setSelectedBookingNos((current) => {
+      const next = new Set(current)
+      if (allVisibleSelected) pagedJobs.forEach((job) => next.delete(job.bookingNo))
+      else pagedJobs.forEach((job) => next.add(job.bookingNo))
+      return next
+    })
+  }
 
   const listLabel = exception
     ? (EXCEPTION_FACETS.find((ef) => ef.key === exception)?.label ?? exception)
@@ -557,10 +647,6 @@ export default function OperationsQueues() {
         ? GROUP_LABEL[group]
         : 'All jobs'
   const scopeLabel = scope === 'custom' && !range ? 'all days' : SCOPE_LABEL[scope].toLowerCase()
-  /* No count until one has arrived: `total` is null on a first load, and
-     "— 0 jobs" over a skeleton is a claim, not a placeholder. */
-  const countSuffix = list.total === null ? '' : ` — ${list.total} ${list.total === 1 ? 'job' : 'jobs'}`
-
   const emptyTitle = isFiltered ? `Nothing in ${listLabel} for ${scopeLabel}` : 'No jobs right now'
   const emptyMessage = activeJob
     ? 'This queue is clear for the selected days — widen the day scope or check back once the next booking reaches this stage.'
@@ -568,618 +654,88 @@ export default function OperationsQueues() {
       ? 'Both queues on this side are clear for the selected days.'
       : 'No booking is sitting at a stage that has floor work in this range.'
 
-  const railContent = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-      {/*
-        The Alerts panel, moved here from the Dashboard 30 Aug — the floor's
-        exceptions belong beside the floor's queue. It replaced the "Crew Load"
-        empty-state card: rulings §8's "not tracked yet" treatment kept that
-        card honest, but a panel whose only content is an explanation of why it
-        has no content earns its slot only until something real needs the space.
-        The crew-load gap it named is now recorded where it belongs, in
-        `data/operations.ts` beside the retired `CREW_LOAD` constant.
-      */}
-      <AlertsPanel alerts={alertRows} loading={alertsQ.loading || quotesQ.loading} error={alertsQ.error ?? quotesQ.error} onRetry={retryAlerts} />
-
-      <div
-        style={{
-          ...cardStyle,
-          padding: 'var(--sp-md)',
-          display: 'flex',
-          gap: 7,
-          alignItems: 'flex-start',
-          fontSize: 'var(--t-meta)',
-          color: 'var(--muted)',
-          lineHeight: 1.5,
-        }}
-      >
-        <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-        {NO_MONEY_NOTE}
-      </div>
-    </div>
-  )
-
-  /*
-   * The left filter column (30 Aug, Booqable-shape rework) — `SideRail`, the
-   * same collapsible column ClientsDirectory already runs. Day scope and the
-   * two side groups moved here from the header and the body; the QUEUE chips
-   * did NOT — they are this page's primary tabs, and Booqable itself keeps
-   * status tabs on the table while filters live in the column.
-   *
-   * Everything here still writes the same URL params (?day, ?quick, from, to),
-   * so deep links and the back button behave exactly as before the move.
-   */
-  const filtersPanel = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-      <Card title="Day">
-        <div role="group" aria-label="Day scope" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {SCOPE_ORDER.map((sc) => (
-            <button
-              key={sc}
-              type="button"
-              onClick={() => setScope(sc)}
-              aria-pressed={scope === sc}
-              style={{ ...chipStyle(scope === sc), justifyContent: 'flex-start', width: '100%' }}
-            >
-              {SCOPE_LABEL[sc]}
-            </button>
-          ))}
-        </div>
-        {scope === 'custom' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', marginTop: 'var(--sp-sm)' }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              From
-              <DateField
-                ariaLabel="Queue from this day"
-                value={customFrom}
-                onChange={(v) => patch({ from: v || null })}
-                showBs={false}
-                clearable
-                style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-              />
-            </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              To
-              <DateField
-                ariaLabel="Queue up to this day"
-                value={customTo}
-                onChange={(v) => patch({ to: v || null })}
-                showBs={false}
-                clearable
-                align="right"
-                style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-              />
-            </label>
-            <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              {range ? 'Kathmandu civil days; stored instants are UTC.' : 'No dates picked — showing every day.'}
-            </span>
-          </div>
-        )}
-      </Card>
-      {/* Law L3: Attention required 4-way exception facets */}
-      <Card title="Attention Required">
-        <div role="group" aria-label="Exception facets" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {EXCEPTION_FACETS.map((ef) => {
-            const count =
-              ef.key === 'starting_today'
-                ? startingTodayCount.total
-                : ef.key === 'ending_today'
-                ? endingTodayCount.total
-                : ef.key === 'overdue_start'
-                ? overdueStartCount.total
-                : overdueEndCount.total
-            const isSelected = exception === ef.key
-            return (
-              <button
-                key={ef.key}
-                type="button"
-                className="tap"
-                onClick={() => patch({ exception: isSelected ? null : ef.key, queue: null, quick: null })}
-                aria-pressed={isSelected}
-                style={{
-                  ...chipStyle(isSelected),
-                  justifyContent: 'space-between',
-                  width: '100%',
-                }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Icon name={ef.icon} size={15} />
-                  <span>{ef.label}</span>
-                </span>
-                {count !== null && (
-                  <span
-                    className="figure"
-                    style={{
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 700,
-                      padding: '1px 6px',
-                      borderRadius: 'var(--r-badge)',
-                      background: isSelected ? 'var(--primary)' : 'var(--chip-neutral-bg, rgba(0,0,0,0.06))',
-                      color: isSelected ? 'var(--on-brand)' : ef.key.startsWith('overdue') && count > 0 ? 'var(--danger-text)' : 'var(--muted)',
-                    }}
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </Card>
-      <Card title="Side">
-        {/* Pickup Today = Pack + Handover (gear out), Return Today = Return +
-            Reset (gear back). NOT a date filter despite the labels — a stage
-            union, sent to the server as one. */}
-        <div role="group" aria-label="Group queues by pickup or return side" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {(['pickup', 'return'] as const).map((q) => (
-            <button
-              key={q}
-              type="button"
-              onClick={() => setQuick(q)}
-              aria-pressed={group === q}
-              style={{ ...chipStyle(group === q), justifyContent: 'flex-start', width: '100%' }}
-            >
-              {GROUP_LABEL[q]}
-            </button>
-          ))}
-        </div>
-      </Card>
-      {isFiltered && (
-        <Button icon="close" onClick={clearAllFilters}>
-          Clear all filters
-        </Button>
-      )}
-    </div>
-  )
-
-  /*
-   * Below desktop the SAME filters render as compact horizontal rows instead of
-   * the column — ClientsDirectory's precedent, and rulings §7's rule that
-   * "collapse below 1280 means reflow, not hide": the floor tablet is THE
-   * device, and a day scope behind a 44px handle is a hidden filter.
-   */
-  const filtersInline = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-      {/* Two labelled groups, matching the SideRail variant — the side chips
-          are a stage union, not part of the day scope, and their group label
-          must say so on the tablet too. */}
-      <div
-        className="rsp-chip-scroll"
-        style={{
-          display: 'flex',
-          gap: 6,
-          flexWrap: tabular ? 'wrap' : 'nowrap',
-          overflowX: tabular ? 'visible' : 'auto',
-          alignItems: 'center',
-          paddingBottom: tabular ? 0 : 4,
-        }}
-      >
-        <div
-          role="group"
-          aria-label="Day scope"
-          className="rsp-chip-scroll"
-          style={{
-            display: 'flex',
-            gap: 6,
-            flexWrap: tabular ? 'wrap' : 'nowrap',
-            overflowX: tabular ? 'visible' : 'auto',
-            paddingBottom: tabular ? 0 : 4,
-          }}
-        >
-          {SCOPE_ORDER.map((sc) => (
-            <button key={sc} type="button" onClick={() => setScope(sc)} aria-pressed={scope === sc} style={chipStyle(scope === sc)}>
-              {SCOPE_LABEL[sc]}
-            </button>
-          ))}
-        </div>
-        <div
-          role="group"
-          aria-label="Group queues by pickup or return side"
-          className="rsp-chip-scroll"
-          style={{
-            display: 'flex',
-            gap: 6,
-            flexWrap: tabular ? 'wrap' : 'nowrap',
-            overflowX: tabular ? 'visible' : 'auto',
-            paddingBottom: tabular ? 0 : 4,
-          }}
-        >
-          {(['pickup', 'return'] as const).map((q) => (
-            <button key={q} type="button" onClick={() => setQuick(q)} aria-pressed={group === q} style={chipStyle(group === q)}>
-              {GROUP_LABEL[q]}
-            </button>
-          ))}
-        </div>
-        <div
-          role="group"
-          aria-label="Attention required"
-          className="rsp-chip-scroll"
-          style={{
-            display: 'flex',
-            gap: 6,
-            flexWrap: tabular ? 'wrap' : 'nowrap',
-            overflowX: tabular ? 'visible' : 'auto',
-            paddingBottom: tabular ? 0 : 4,
-          }}
-        >
-          {EXCEPTION_FACETS.map((ef) => {
-            const count =
-              ef.key === 'starting_today'
-                ? startingTodayCount.total
-                : ef.key === 'ending_today'
-                ? endingTodayCount.total
-                : ef.key === 'overdue_start'
-                ? overdueStartCount.total
-                : overdueEndCount.total
-            const isSelected = exception === ef.key
-            return (
-              <button
-                key={ef.key}
-                type="button"
-                onClick={() => patch({ exception: isSelected ? null : ef.key, queue: null, quick: null })}
-                aria-pressed={isSelected}
-                style={chipStyle(isSelected)}
-              >
-                <Icon name={ef.icon} size={14} />
-                <span>{ef.label}</span>
-                {count !== null && (
-                  <span
-                    className="figure"
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      padding: '1px 5px',
-                      borderRadius: 'var(--r-badge)',
-                      background: isSelected ? 'var(--primary)' : 'var(--chip-neutral-bg, rgba(0,0,0,0.06))',
-                      color: isSelected ? 'var(--on-brand)' : ef.key.startsWith('overdue') && count > 0 ? 'var(--danger-text)' : 'var(--muted)',
-                    }}
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-      {scope === 'custom' && (
-        <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            From
-            <DateField
-              ariaLabel="Queue from this day"
-              value={customFrom}
-              onChange={(v) => patch({ from: v || null })}
-              showBs={false}
-              clearable
-              style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-            />
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            To
-            <DateField
-              ariaLabel="Queue up to this day"
-              value={customTo}
-              onChange={(v) => patch({ to: v || null })}
-              showBs={false}
-              clearable
-              align="right"
-              style={{ minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-            />
-          </label>
-          <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            {range ? 'Kathmandu civil days; stored instants are UTC.' : 'No dates picked — showing every day.'}
-          </span>
-        </div>
-      )}
-    </div>
-  )
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div className="operations-v2" style={{ display: 'flex', flexDirection: 'column' }}>
       <PageHeader
         icon="queues"
-        title="Operation"
-        description="One floor list for every day. Queue chips filter it; they never replace it."
-        actions={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
-            <DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refreshAll} loading={list.loading} />
-            <Button icon="search" onClick={() => setBarcodeModalOpen(true)} aria-label="Scan barcode or QR">
-              {viewport === 'phone' ? '' : 'Scan'}
-            </Button>
-            <Button icon="return_arrow" onClick={() => setFastReturnOpen(true)} aria-label="Fast return check-in">
-              {viewport === 'phone' ? '' : 'Fast Return'}
-            </Button>
-            <Button icon="refresh" onClick={refreshAll}>
-              Refresh
-            </Button>
-          </div>
-        }
+        title="Operations"
+        description="Track and manage daily workflow. One floor list for every day."
+        actions={<DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refreshAll} loading={list.loading} />}
       />
 
-      {!railBesideList && filtersInline}
+      <div className="operations-v2__topline">
+        <div ref={dateMenuRef} className="operations-v2__date-wrap">
+          <Button variant="outline" icon="calendar" iconRight={<Icon name={showDateMenu ? 'chevron_up' : 'chevron_down'} size={14} />} onClick={() => setShowDateMenu((open) => !open)} aria-expanded={showDateMenu} aria-controls="operations-date-menu">
+            {scope === 'custom' ? 'Custom range' : `${SCOPE_LABEL[scope]} · ${todayNepal}`}
+          </Button>
+          {showDateMenu && (
+            <div id="operations-date-menu" className="operations-v2__popover operations-v2__date-popover">
+              <div className="operations-v2__date-options" role="group" aria-label="Date range">
+                {DISPLAY_SCOPE_ORDER.map((item) => <Button key={item} variant={scope === item ? 'secondary' : 'ghost'} size="sm" className="operations-v2__date-option" onClick={() => { setScope(item); setShowDateMenu(item === 'custom') }}>{SCOPE_LABEL[item]}</Button>)}
+              </div>
+              <div className="operations-v2__calendar-range">
+                {scope === 'custom' ? <>
+                  <CalendarPopover embedded showHeader={false} title="Custom range" range={{ from: customFrom, to: customTo }} onSelectRange={({ from, to }) => patch({ from: from || null, to: to || null })} onDismiss={() => setShowDateMenu(false)} />
+                  <div className="operations-v2__custom-range">
+                    <label>From<DateField ariaLabel="Queue from this day" value={customFrom} onChange={(value) => patch({ from: value || null })} showBs={false} clearable /></label>
+                    <label>To<DateField ariaLabel="Queue up to this day" value={customTo} onChange={(value) => patch({ to: value || null })} showBs={false} clearable align="right" /></label>
+                  </div>
+                </> : <CalendarPopover embedded showHeader={false} title="Select a day" value={todayNepal} onSelect={(value) => patch({ day: 'custom', from: value, to: value })} onDismiss={() => setShowDateMenu(false)} />}
+              </div>
+            </div>
+          )}
+        </div>
+        <Button variant="outline" icon="search" onClick={() => setBarcodeModalOpen(true)}>Scan</Button>
+        <Button variant="outline" icon="refresh" onClick={refreshAll}>Refresh</Button>
+        <div ref={actionMenuRef} className="operations-v2__more-wrap">
+          <Button variant="outline" icon="more_vert" onClick={() => setShowActionMenu((open) => !open)} aria-expanded={showActionMenu} aria-label="More Operations actions">More</Button>
+          {showActionMenu && <div className="operations-v2__popover operations-v2__action-popover" role="menu" aria-label="More Operations actions">
+            <Button variant="ghost" icon="return_arrow" onClick={() => { setFastReturnOpen(true); setShowActionMenu(false) }}>Fast Return</Button>
+          </div>}
+        </div>
+      </div>
 
-      {/* §3.1 — the chip row. One list below it, always. */}
-      <div
-        role="group"
-        aria-label="Queues"
-        className="rsp-chip-scroll"
-        style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: tabular ? 'wrap' : 'nowrap', overflowX: tabular ? 'visible' : 'auto', paddingBottom: tabular ? 0 : 4 }}
-      >
-        {CHIPS.map((q) => (
-          <QueueChip
-            key={q.job}
-            queue={q}
-            active={selected === q.job}
-            total={counts[q.job].total}
-            loading={counts[q.job].loading}
-            error={counts[q.job].error}
-            onToggle={() => setActive(selected === q.job ? null : q.job)}
-          />
-        ))}
-        {/*
-          Cases is a queue with its own owner and its own route — see the CASES
-          note above. Restyled 30 Aug to match the four verb chips: same shape,
-          same count badge, still a LINK (it navigates to /inventory/cases; it
-          never filters this list, because a case is not a booking row).
-
-          ⚠ The count is `data/cases.ts`'s seed, filtered by `isOpenStatus` —
-          the SAME array and the same predicate the Cases page itself lists, so
-          the chip cannot disagree with the page it opens. It is however a seed
-          figure beside four database figures; when Cases moves to the `cases`
-          table, this count and that page move together.
-        */}
-        <Link
-          to="/inventory/cases"
-          onClick={(e) => {
-            e.preventDefault()
-            patch({ queue: selected === 'Cases' ? null : 'cases', quick: null })
-          }}
-          aria-pressed={selected === 'Cases'}
-          style={{
-            ...chipStyle(selected === 'Cases'),
-            border: `1px solid ${selected === 'Cases' ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-            cursor: 'pointer',
-            textDecoration: 'none',
-          }}
-          aria-label={`Cases: ${openCases} open`}
-        >
-          <Icon name="eye" size={15} style={{ color: STATUS.danger.fg, flexShrink: 0 }} />
-          Cases
-          <span
-            className="figure"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              minWidth: 22,
-              height: 20,
-              padding: '0 6px',
-              borderRadius: 'var(--r-badge)',
-              background: STATUS.danger.bg,
-              color: STATUS.danger.fg,
-              fontSize: 'var(--t-meta)',
-              fontWeight: 700,
-            }}
-          >
-            {openCases}
-          </span>
+      <div className="operations-v2__queues" role="group" aria-label="Operational queues">
+        {CHIPS.map((q) => <QueueChip key={q.job} queue={q} active={selected === q.job} total={counts[q.job].total} loading={counts[q.job].loading} error={counts[q.job].error} onToggle={() => setActive(selected === q.job ? null : q.job)} />)}
+        <Link to="/inventory/cases" onClick={(event) => { event.preventDefault(); patch({ queue: selected === 'Cases' ? null : 'cases', quick: null }) }} aria-pressed={selected === 'Cases'} className="operations-v2__queue" style={{ ...chipStyle(selected === 'Cases'), textDecoration: 'none' }}>
+          <Icon name="eye" size={15} style={{ color: STATUS.danger.fg }} /> Cases
+          <span className="figure" style={{ minWidth: 22, padding: '1px 6px', borderRadius: 'var(--r-badge)', background: STATUS.danger.bg, color: STATUS.danger.fg, textAlign: 'center' }}>{openCases}</span>
         </Link>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: railBesideList ? 'auto minmax(0,1fr) auto' : '1fr',
-          gap: 'var(--sp-md)',
-          alignItems: 'start',
-        }}
-      >
-        {railBesideList && (
-          <SideRail label="Filters" width={224}>
-            {filtersPanel}
-          </SideRail>
-        )}
+      <div className="operations-v2__filters" aria-label="Operations filters">
+        <div className="operations-v2__date-wrap">
+          <Button variant="outline" onClick={() => setShowDateMenu(true)} iconRight={<Icon name="chevron_down" size={14} />}>{SCOPE_LABEL[scope]}</Button>
+        </div>
+        <select className="operations-v2__filter-select" aria-label="Staff filter" defaultValue="all"><option value="all">All staff</option></select>
+        <select className="operations-v2__filter-select" aria-label="Client filter" value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}><option value="all">All clients</option>{clients.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
+        <select className="operations-v2__filter-select" aria-label="Project filter" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}><option value="all">All projects</option>{projects.map((project) => <option key={project} value={project}>{project}</option>)}</select>
+        <input ref={queueSearchRef} className="operations-v2__search" type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search ID, client, project…" aria-label="Search ID, client, project" />
+        <div ref={filtersMenuRef} className="operations-v2__more-wrap">
+          <Button variant="outline" onClick={() => setShowMoreFilters((open) => !open)} aria-expanded={showMoreFilters}>More filters</Button>
+          {showMoreFilters && <div className="operations-v2__popover">
+            <div className="operations-v2__more-sections">
+              <section><p className="operations-v2__more-heading">Queue side</p><div className="operations-v2__facet-grid">{(['pickup', 'return'] as const).map((item) => <Button key={item} variant={group === item ? 'secondary' : 'ghost'} size="sm" className="operations-v2__facet" onClick={() => setQuick(item)}>{GROUP_LABEL[item]}</Button>)}</div></section>
+              <section><p className="operations-v2__more-heading">Attention required</p><div className="operations-v2__facet-grid">{EXCEPTION_FACETS.map((facet) => { const isActive = exception === facet.key; return <Button key={facet.key} variant={isActive ? 'secondary' : 'ghost'} size="sm" className="operations-v2__facet" icon={facet.icon} onClick={() => patch({ exception: isActive ? null : facet.key, queue: null, quick: null })}>{facet.label}</Button> })}</div></section>
+              <section><p className="operations-v2__more-heading">Alerts</p><AlertsPanel alerts={alertRows} loading={alertsQ.loading || quotesQ.loading} error={alertsQ.error ?? quotesQ.error} onRetry={retryAlerts} /></section>
+            </div>
+          </div>}
+        </div>
+        {(isFiltered || search || clientFilter !== 'all' || projectFilter !== 'all') && <Button variant="ghost" onClick={() => { clearAllFilters(); setSearch(''); setClientFilter('all'); setProjectFilter('all'); setSelectedBookingNos(new Set()) }}>Clear filters</Button>}
+      </div>
 
-        {selected === 'Cases' ? (
-          <CasesWorkspace embedded />
-        ) : (
-          <Card
-            title={`${listLabel}${countSuffix}`}
-            action={isFiltered ? <Button onClick={clearAllFilters}>Clear filter</Button> : undefined}
-            bodyStyle={{ padding: tabular ? 0 : 10 }}
-          >
-          {/*
-            Fixed ladder: restricted → error → loading → empty → children.
-
-            `hasRows` is what keeps a failed REFRESH from blanking a queue
-            someone is working: with rows on screen the banner renders above
-            them instead of replacing them.
-          */}
-          <PageBody
-            loading={list.loading}
-            error={list.error}
-            onRetry={refreshAll}
-            hasRows={jobs.length > 0}
-            empty={list.isEmpty}
-            emptyIsFiltered={list.isFiltered}
-            onClearFilters={clearAllFilters}
-            noun="jobs"
-            skeleton="table"
-            skeletonRows={5}
-            emptyTitle={emptyTitle}
-            emptyMessage={emptyMessage}
-          >
-            {/* PHONE <768 — the table becomes card rows, one primary action each. */}
-            {!tabular && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-                {jobs.map((j) => (
-                  <article
-                    key={j.id}
-                    style={{
-                      ...cardStyle,
-                      padding: 'var(--sp-md)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 6,
-                      borderLeft: j.isPastDue ? '2px solid var(--danger)' : '1px solid var(--border)',
-                    }}
-                  >
-                    {/* §3.1 phone card — time, then BR#, then client, then badge + action. */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
-                      <span
-                        className="figure"
-                        style={{ fontWeight: 700, color: j.isPastDue ? 'var(--danger-text)' : 'var(--text)' }}
-                      >
-                        {formatDueAt(j.dueAtAd)}
-                      </span>
-                      {/* The verb, not a second identifier. Ruling §2.1 — the booking's
-                          own number is the only number this card carries. */}
-                      <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>{j.job}</span>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)' }}>
-                      <Link to={`/rentals/${j.bookingNo}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}>
-                        {j.bookingNo}
-                      </Link>
-                      <span style={{ color: 'var(--muted)' }}>·</span>
-                      {/* The client id comes off the booking row itself, so the link is
-                          the booking's own client rather than a lookup that can miss. */}
-                      <Link to={`/clients/${j.clientId}`} style={{ color: 'inherit', textDecoration: 'none', minWidth: 0 }}>
-                        <span style={{ color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {j.clientName}
-                        </span>
-                      </Link>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                      <StageBadge stage={j.stage} />
-                      <span style={{ color: 'var(--muted)' }}>
-                        {j.itemCount} {j.itemCount === 1 ? 'item' : 'items'}
-                      </span>
-                      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.project ?? '—'}</span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => navigate(jobRoute(j.bookingNo, j.job))}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: '100%',
-                        minHeight: 44,
-                        marginTop: 2,
-                        borderRadius: 'var(--r-btn)',
-                        border: '1px solid transparent',
-                        background: 'var(--btn-primary-bg)',
-                        color: 'var(--btn-primary-fg)',
-                        fontSize: 'var(--t-meta)',
-                        fontWeight: 600,
-                        fontFamily: 'inherit',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {j.job}
-                    </button>
-                  </article>
-                ))}
-              </div>
-            )}
-
-            {/* DESKTOP + TABLET — time │ BR# │ client │ items │ stage badge │ [verb] ⋮ */}
-            {tabular && (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
-                  <thead>
-                    <tr style={{ background: 'var(--th-bg)' }}>
-                      {['Time', 'Booking', 'Client', 'Project', 'Items', 'Stage', 'Action', ''].map((h, i) => (
-                        <th key={h || i} style={th}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {jobs.map((j) => (
-                      <tr
-                        key={j.id}
-                        style={{
-                          borderBottom: '1px solid var(--border)',
-                          borderLeft: j.isPastDue ? '2px solid var(--danger)' : '2px solid transparent',
-                        }}
-                      >
-                        <td
-                          className="figure"
-                          style={{ ...td, color: j.isPastDue ? 'var(--danger-text)' : 'var(--text)', fontWeight: j.isPastDue ? 700 : 600 }}
-                        >
-                          {formatDueAt(j.dueAtAd)}
-                        </td>
-                        <td style={td}>
-                          <Link to={`/rentals/${j.bookingNo}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--t-meta)' }}>
-                            {j.bookingNo}
-                          </Link>
-                        </td>
-                        <td style={td}>
-                          <Link to={`/clients/${j.clientId}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                            {j.clientName}
-                          </Link>
-                        </td>
-                        {/* `project` is nullable (0002:28). A null renders as an explicit
-                            non-value — never as a kit name, which is what this column
-                            used to invent. */}
-                        <td style={{ ...td, color: 'var(--text2)' }}>{j.project ?? '—'}</td>
-                        <td className="figure" style={{ ...td, color: 'var(--text2)' }}>{j.itemCount}</td>
-                        <td style={td}>
-                          <StageBadge stage={j.stage} />
-                        </td>
-                        <td style={td}>
-                          <Button variant="primary" onClick={() => navigate(jobRoute(j.bookingNo, j.job))}>
-                            {j.job}
-                          </Button>
-                        </td>
-                        <td style={{ ...td, width: 44 }}>
-                          <Link
-                            to={`/rentals/${j.bookingNo}`}
-                            aria-label={`More for booking ${j.bookingNo}`}
-                            style={{ display: 'inline-grid', placeItems: 'center', width: 44, height: 44, color: 'var(--muted)' }}
-                          >
-                            <Icon name="more_vert" size={16} />
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+      {selected === 'Cases' ? <CasesWorkspace embedded /> : (
+        <Card style={{ overflow: 'hidden' }} bodyStyle={{ padding: 0 }}>
+          <PageBody loading={list.loading} error={list.error} onRetry={refreshAll} hasRows={jobs.length > 0} empty={list.isEmpty} emptyIsFiltered={list.isFiltered} onClearFilters={clearAllFilters} noun="jobs" skeleton="table" skeletonRows={6} emptyTitle={emptyTitle} emptyMessage={emptyMessage}>
+            {!tabular && <div style={{ padding: 10, display: 'grid', gap: 8 }}>{pagedJobs.map((job) => <article key={job.id} style={{ ...cardStyle, padding: 14, display: 'grid', gap: 8 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><Link to={`/rentals/${job.bookingNo}`} className="identifier">{job.bookingNo}</Link><StageBadge stage={job.stage} /></div><div>{job.clientName} · {job.project ?? '—'}</div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span>{formatDueAt(job.dueAtAd)} · {job.itemCount} items</span><Button size="sm" onClick={() => navigate(jobRoute(job.bookingNo, job.job))}>{job.job}</Button></div></article>)}</div>}
+            {tabular && <div style={{ overflowX: 'auto' }}><table className="operations-v2__table"><thead><tr><th style={{ ...th, width: 44 }}><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleBookings} aria-label="Select visible bookings" /></th>{['Booking', 'Client', 'Project', 'Items', 'Stage', 'Time', 'Action', ''].map((heading, index) => <th key={heading || index} style={th}>{heading}</th>)}</tr></thead><tbody>{pagedJobs.map((job) => <tr key={job.id} style={{ borderLeft: job.isPastDue ? '2px solid var(--danger)' : '2px solid transparent' }}><td style={{ ...td, width: 44 }}><input type="checkbox" checked={selectedBookingNos.has(job.bookingNo)} onChange={() => toggleBooking(job.bookingNo)} aria-label={`Select ${job.bookingNo}`} /></td><td style={td}><Link to={`/rentals/${job.bookingNo}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 700, textDecoration: 'none' }}>{job.bookingNo}</Link></td><td style={td}><Link to={`/clients/${job.clientId}`} style={{ color: 'inherit', textDecoration: 'none' }}>{job.clientName}</Link></td><td style={{ ...td, color: 'var(--text2)' }}>{job.project ?? '—'}</td><td className="figure" style={td}>{job.itemCount}</td><td style={td}><StageBadge stage={job.stage} /></td><td className="figure" style={{ ...td, fontWeight: job.isPastDue ? 700 : 500, color: job.isPastDue ? 'var(--danger-text)' : 'var(--text)' }}>{formatDueAt(job.dueAtAd)}</td><td style={td}><Button size="sm" variant="secondary" onClick={() => navigate(jobRoute(job.bookingNo, job.job))}>{job.job}</Button></td><td style={{ ...td, width: 44 }}><Link to={`/rentals/${job.bookingNo}`} aria-label={`More for booking ${job.bookingNo}`} style={{ color: 'var(--muted)' }}><Icon name="chevron_right" size={18} /></Link></td></tr>)}</tbody></table>{jobs.length > 0 && visibleJobs.length === 0 && <div className="operations-v2__empty-search">No jobs match “{search}”.</div>}</div>}
           </PageBody>
+          <div className="operations-v2__resultbar"><span>{list.total === null ? 'Loading results…' : `Showing ${resultStart}–${resultEnd} of ${visibleJobs.length} ${visibleJobs.length === 1 ? 'job' : 'jobs'}`}{selectedBookingNos.size > 0 ? ` · ${selectedBookingNos.size} selected` : ''}</span><div className="operations-v2__pagination"><label>Rows per page <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>{[20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>{pageCount > 1 && <><Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={currentPage === 0} aria-label="Previous page" icon="chevron_left"> </Button>{pageNumbers.map((number) => <Button key={number} variant={number === currentPage ? 'secondary' : 'outline'} size="sm" onClick={() => setPage(number)} aria-current={number === currentPage ? 'page' : undefined}>{number + 1}</Button>)}<Button variant="outline" size="sm" onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={currentPage === pageCount - 1} aria-label="Next page" icon="chevron_right"> </Button></>}</div></div>
         </Card>
       )}
 
-        {/* Rulings §7 — below 1280 the rail REFLOWS beneath the list; it does not
-            hide behind `CollapsibleAside`'s handle. */}
-        {railBesideList ? (
-          /* Named for what it now holds — collapsed, the handle's accessible
-             name is all a screen reader gets, and "Page summary" would hide
-             that the panel behind it is the Alerts list. */
-          <Rail label="Alerts">{railContent}</Rail>
-        ) : (
-          railContent
-        )}
-      </div>
-
-      <FastReturnModal
-        isOpen={fastReturnOpen}
-        onClose={() => setFastReturnOpen(false)}
-        onSuccess={refreshAll}
-      />
-
-      <BarcodeLookupModal
-        isOpen={barcodeModalOpen}
-        onClose={() => setBarcodeModalOpen(false)}
-      />
-
+      <FastReturnModal isOpen={fastReturnOpen} onClose={() => setFastReturnOpen(false)} onSuccess={refreshAll} />
+      <BarcodeLookupModal isOpen={barcodeModalOpen} onClose={() => setBarcodeModalOpen(false)} />
       <FooterNote extra={['Queues are stages — no page defines its own status names']} />
     </div>
   )

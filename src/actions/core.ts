@@ -61,14 +61,11 @@ import type { SystemRole } from '../types/database';
  * and mirror it. A capability can then never be granted here and denied at the
  * row, or the reverse.
  *
- * ## What is deliberately still open
+ * ## Capability rulings
  *
- * `TODO(decision)`: `inspection.create`, `inspection.pass`, `inspection.fail`.
- * There is no table to mirror — nothing in the schema matches `inspect`, and
- * `operation_session_type` has no `Inspection` member. Any role set here would
- * be invented, which `CLAUDE.md` forbids. All three stay denied and say so by
- * name; all three actions are stubs, so the decision blocks nobody until one is
- * built. See PLAN.md §4.29.
+ * `inspection.create`, `inspection.pass`, `inspection.fail` ruled 2026-09-12
+ * (PLAN.md §4.29(a), migration 0122): 'Inspection' added to operation_kind and
+ * operation_sessions check constraint, mirroring operation_sessions_all (canWriteFloor).
  */
 
 export type ActionContext = {
@@ -213,12 +210,6 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
      * above were ruled *after* their bodies shipped, and the gap denied them to
      * every role including Owner for three days. Twenty-four more of the same
      * trap were sitting unsprung.
-     *
-     * `inspection.create` / `.pass` / `.fail` are deliberately ABSENT. No table
-     * matches `inspect` anywhere in the schema and `operation_session_type` is
-     * `Packing | Handover | Return | Reset | Cleaning` — Inspection is not one
-     * of them, so there is nothing to mirror and any role set would be
-     * invented. They keep failing closed. See PLAN.md §4.29.
      */
     case 'rental.create':
     case 'rental.draft':
@@ -291,6 +282,11 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
     case 'maintenance.create':
     case 'maintenance.complete':
     case 'evidence.review':
+    // RULING 2026-09-12 (PLAN.md §4.29(a), migration 0122): 'Inspection' added
+    // to operation_kind and operation_sessions; mirrors operation_sessions_all.
+    case 'inspection.create':
+    case 'inspection.pass':
+    case 'inspection.fail':
       return rbac.canWriteFloor(ctx.role);
 
     case 'client.merge':

@@ -446,10 +446,30 @@ function bsLabel(iso: string | null): string {
  * the route for ANY booking — resolved by `fetchFloorBooking`, not compared
  * against a seed.
  */
-export default function HandoverWorkspace() {
+export interface HandoverWorkspaceProps {
+  bookingNo?: string
+  embedded?: boolean
+  onConfirmSuccess?: () => void
+  onCancel?: () => void
+  onRegisterActions?: (actions: {
+    canComplete: boolean
+    dispatching: boolean
+    complete: () => void
+    isDirty: boolean
+    label?: string
+  }) => void
+}
+
+export default function HandoverWorkspace({
+  bookingNo: bookingNoProp,
+  embedded = false,
+  onConfirmSuccess,
+  onCancel,
+  onRegisterActions,
+}: HandoverWorkspaceProps = {}) {
   const navigate = useNavigate()
-  const { bookingNo } = useParams()
-  const id = bookingNo ?? ''
+  const { bookingNo: bookingNoParam } = useParams()
+  const id = bookingNoProp ?? bookingNoParam ?? ''
   /** The one identity every dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
@@ -982,7 +1002,11 @@ export default function HandoverWorkspace() {
         if (!stillHere()) return
         // HO-05 — leave only when the stage moved; a held stage stays here and says so.
         if (result.stage !== null) {
-          navigate(`/rentals/${dispatchedRoute}`)
+          if (onConfirmSuccess) {
+            onConfirmSuccess()
+          } else {
+            navigate(`/rentals/${dispatchedRoute}`)
+          }
           return
         }
         setStageHeld({ lines: result.lines, movements: result.movements, heldBy: result.stageHeldBy })
@@ -998,6 +1022,17 @@ export default function HandoverWorkspace() {
         setDispatching(false)
       })
   }
+
+  const isDirty = Object.keys(marks).length > 0 || sessionNotes.trim().length > 0 || signatures.receiver !== null || signatures.warehouse !== null
+  useEffect(() => {
+    onRegisterActions?.({
+      canComplete,
+      dispatching,
+      complete: completeSession,
+      isDirty,
+      label: 'Confirm & Next →',
+    })
+  }, [onRegisterActions, canComplete, dispatching, isDirty])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
 
@@ -1071,44 +1106,46 @@ export default function HandoverWorkspace() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
             {/* ── header. Rulings §4 — breadcrumbs via the shell, no `←`. ── */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-                  <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
-                    Handover Workspace
-                  </h1>
-                  {/*
-                    ⭐ RULED (Rulings §7): the badge shows the CANONICAL stage —
-                    a partial handover stays Packed, never a seventh name. The
-                    mid-handover signal is the *job* chip beside it, and the
-                    Partial Pickup FLAG carries the staggered-collection fact.
-                  */}
-                  <span
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-chip)', background: STATUS[statusToken(stage)].bg, color: STATUS[statusToken(stage)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}
-                  >
-                    <Icon name="dot" size={9} />
-                    {stage}
-                  </span>
-                  <span
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-badge)', border: '1px solid var(--border)', background: 'var(--card2)', color: jobState === 'Complete' ? 'var(--success-text)' : jobState === 'In Progress' ? 'var(--progress-text)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 700 }}
-                  >
-                    <Icon name={jobState === 'Complete' ? 'checklist' : jobState === 'In Progress' ? 'refresh' : 'dot'} size={11} />
-                    Handover job: {jobState}
-                  </span>
-                  {outUnits > 0 && !allResolved && (
-                    <span title={FLAGS['Partial Pickup'].effect} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-chip)', background: STATUS.progress.bg, color: STATUS.progress.fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}>
-                      <Icon name="alert_triangle" size={11} />
-                      Partial Pickup
+              {!embedded && (
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                    <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
+                      Handover Workspace
+                    </h1>
+                    {/*
+                      ⭐ RULED (Rulings §7): the badge shows the CANONICAL stage —
+                      a partial handover stays Packed, never a seventh name. The
+                      mid-handover signal is the *job* chip beside it, and the
+                      Partial Pickup FLAG carries the staggered-collection fact.
+                    */}
+                    <span
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-chip)', background: STATUS[statusToken(stage)].bg, color: STATUS[statusToken(stage)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}
+                    >
+                      <Icon name="dot" size={9} />
+                      {stage}
                     </span>
-                  )}
+                    <span
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-badge)', border: '1px solid var(--border)', background: 'var(--card2)', color: jobState === 'Complete' ? 'var(--success-text)' : jobState === 'In Progress' ? 'var(--progress-text)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 700 }}
+                    >
+                      <Icon name={jobState === 'Complete' ? 'checklist' : jobState === 'In Progress' ? 'refresh' : 'dot'} size={11} />
+                      Handover job: {jobState}
+                    </span>
+                    {outUnits > 0 && !allResolved && (
+                      <span title={FLAGS['Partial Pickup'].effect} style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', height: 22, padding: '0 9px', borderRadius: 'var(--r-chip)', background: STATUS.progress.bg, color: STATUS.progress.fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                        <Icon name="alert_triangle" size={11} />
+                        Partial Pickup
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                    <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
+                      {floor.bookingNo}
+                    </Link>
+                    {floor.project ? ` · ${floor.project}` : ''}
+                    {floor.clientName ? ` · ${floor.clientName}` : ''}
+                  </p>
                 </div>
-                <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
-                    {floor.bookingNo}
-                  </Link>
-                  {floor.project ? ` · ${floor.project}` : ''}
-                  {floor.clientName ? ` · ${floor.clientName}` : ''}
-                </p>
-              </div>
+              )}
 
               <div style={{ minWidth: 260, flex: 1 }}>
                 <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -1765,46 +1802,49 @@ export default function HandoverWorkspace() {
                 build's `Saving is automatic` was false (audit :1094): every
                 mark, checkbox and signature here is local until the dispatch
                 lands, and the footer now says exactly that. ── */}
-            <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
-              {/* HO-12 — asks before discarding, and only when there is something to
-                  discard; an untouched session leaves straight away. See `discardable`. */}
-              <button
-                type="button"
-                onClick={() => {
-                  if (discardable.length > 0) setConfirmingCancel(true)
-                  else navigate(`/rentals/${id}`)
-                }}
-                style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-              >
-                Cancel Handover
-              </button>
-              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                Nothing is saved until {primaryLabel} — cancelling discards this session
-              </span>
-              <span style={{ marginLeft: 'auto' }} title={gateSummary ?? undefined}>
+            {!embedded && (
+              <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
+                {/* HO-12 — asks before discarding, and only when there is something to
+                    discard; an untouched session leaves straight away. See `discardable`. */}
                 <button
                   type="button"
-                  disabled={!canComplete}
-                  onClick={completeSession}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    minHeight: 44,
-                    padding: '0 16px',
-                    borderRadius: 'var(--r-btn)',
-                    fontSize: 'var(--t-ui)',
-                    fontWeight: 600,
-                    fontFamily: 'inherit',
-                    cursor: canComplete ? 'pointer' : 'not-allowed',
-                    ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+                  onClick={() => {
+                    if (discardable.length > 0) setConfirmingCancel(true)
+                    else if (onCancel) onCancel()
+                    else navigate(`/rentals/${id}`)
                   }}
+                  style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
                 >
-                  <Icon name="checklist" size={15} />
-                  {dispatching ? 'Recording…' : primaryLabel}
+                  Cancel Handover
                 </button>
-              </span>
-            </div>
+                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                  Nothing is saved until {primaryLabel} — cancelling discards this session
+                </span>
+                <span style={{ marginLeft: 'auto' }} title={gateSummary ?? undefined}>
+                  <button
+                    type="button"
+                    disabled={!canComplete}
+                    onClick={completeSession}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 7,
+                      minHeight: 44,
+                      padding: '0 16px',
+                      borderRadius: 'var(--r-btn)',
+                      fontSize: 'var(--t-ui)',
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      cursor: canComplete ? 'pointer' : 'not-allowed',
+                      ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+                    }}
+                  >
+                    <Icon name="checklist" size={15} />
+                    {dispatching ? 'Recording…' : primaryLabel}
+                  </button>
+                </span>
+              </div>
+            )}
             {/* §5.6 — the disabled button's one-line summary of what is blocking it. */}
             {gateSummary && (
               <p style={{ margin: '-4px 2px 0', textAlign: 'right', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600 }}>{gateSummary}</p>
@@ -1864,7 +1904,7 @@ export default function HandoverWorkspace() {
               variant="danger"
             />
 
-            {phone && !stageHeld && (
+            {phone && !stageHeld && !embedded && (
               <StickyFloorBar
                 progress={{
                   current: outUnits,

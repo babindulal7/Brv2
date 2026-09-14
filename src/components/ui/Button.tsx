@@ -1,3 +1,4 @@
+import { forwardRef } from 'react'
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
 import Icon from './Icon'
 
@@ -69,7 +70,7 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
   }
 }
 
-export function Button({
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   children,
   variant = 'primary',
   size = 'md',
@@ -80,15 +81,16 @@ export function Button({
   style,
   className,
   ...props
-}: ButtonProps) {
+}, ref) {
   const sizing = SIZE_STYLES[size]
   const isDisabled = disabled || loading
 
   return (
     <button
+      ref={ref}
       disabled={isDisabled}
       aria-busy={loading || undefined}
-      className={['press', className].filter(Boolean).join(' ')}
+      className={['ui-button', `ui-button--${variant}`, `ui-button--${size}`, 'press', className].filter(Boolean).join(' ')}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -98,13 +100,14 @@ export function Button({
         whiteSpace: 'nowrap',
         userSelect: 'none',
         borderRadius: 'var(--r-btn)',
-        transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+        transition: 'background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease)',
         cursor: isDisabled ? 'not-allowed' : 'pointer',
         // Containing block for the loading spinner overlay below.
         position: 'relative',
         // §5 — disabled is opacity 0.45, never a colour change. Was 0.5.
         opacity: isDisabled ? 0.45 : 1,
         minHeight: sizing.minHeight,
+        minWidth: 'var(--control-height, 44px)',
         padding: sizing.padding,
         fontSize: sizing.fontSize,
         gap: sizing.gap,
@@ -124,8 +127,8 @@ export function Button({
         the spinner is absolutely positioned over it: the button occupies the
         exact same rectangle loading or not.
 
-        `visibility` rather than `opacity` on the label so a screen reader does
-        not announce a value that is mid-flight; `aria-busy` carries the state.
+        Opacity retains the accessible name. Both icon slots keep their boxes
+        during loading, including icon-only buttons with an aria-label.
       */}
       {loading && (
         <Icon
@@ -140,9 +143,11 @@ export function Button({
           }}
         />
       )}
-      {!loading && icon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>}
-      {children && <span style={loading ? { visibility: 'hidden' } : undefined}>{children}</span>}
-      {!loading && iconRight && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{iconRight}</span>}
+      {icon && <span className="ui-button__slot" style={{ display: 'inline-flex', flexShrink: 0, opacity: loading ? 0 : 1 }}>{icon}</span>}
+      {children !== undefined && <span className="ui-button__label" style={{ opacity: loading ? 0 : 1 }}>{children}</span>}
+      {iconRight && <span className="ui-button__slot" style={{ display: 'inline-flex', flexShrink: 0, opacity: loading ? 0 : 1 }}>{iconRight}</span>}
     </button>
   )
-}
+})
+
+Button.displayName = 'Button'

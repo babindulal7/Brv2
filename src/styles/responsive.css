@@ -45,6 +45,45 @@
    §16 of CLAUDE.md: do not simply shrink the desktop interface. Below 768 the
    decisions are what disappears, what stacks, and what becomes a sheet. */
 @media (max-width: 767px) {
+  .page-header__copy,
+  .page-header__actions {
+    flex-basis: 100%;
+  }
+
+  .page-header__actions {
+    justify-content: flex-start;
+  }
+
+  .surface-card__header {
+    align-items: flex-start !important;
+    flex-wrap: wrap;
+  }
+
+  .kpi-tile__label {
+    display: -webkit-box !important;
+    min-height: 2.7em;
+    white-space: normal !important;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .footer-note {
+    align-items: flex-start !important;
+    gap: 6px 10px !important;
+  }
+
+  .footer-note > span {
+    flex-basis: calc(100% - 24px);
+  }
+
+  .footer-note > span:last-child {
+    margin-left: 24px !important;
+  }
+
+  .data-table {
+    min-width: max(100%, 42rem);
+  }
+
   /* A wide table below 768 is not a table — it is a horizontal scrollbar
      hiding the columns that matter. `useTabularLayout()` already returns false
      here so screens can render card rows instead; this is the CSS backstop for
@@ -127,6 +166,10 @@
 
 /* ══ BELOW DESKTOP — anything under 1280 ═══════════════════════════════════ */
 @media (max-width: 1279px) {
+  :root { --page-padding: var(--space-4); }
+
+  .page-toolbar__actions { margin-left: 0; }
+
   .rsp-hide-below-desktop {
     display: none !important;
   }

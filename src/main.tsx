@@ -42,6 +42,7 @@ import '@fontsource-variable/jetbrains-mono'
  * Replaces the capsule-era index.css.
  */
 import './styles/theme.css'
+import './styles/ui-v2.css'
 /*
  * v4.1 §7.7 — the shared responsive layer. AFTER theme.css so its layout
  * rules can override token-level defaults, and imported here rather than from

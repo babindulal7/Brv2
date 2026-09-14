@@ -126,9 +126,8 @@ export default defineConfig({
     alias: { '@': path.resolve(__dirname, './src') },
   },
   server: {
-    // Honour an assigned PORT so more than one session can run a dev server;
-    // falls back to Vite's default when unset.
-    ...(process.env['PORT'] ? { port: Number(process.env['PORT']) } : {}),
+    port: process.env['PORT'] ? Number(process.env['PORT']) : 3000,
+    host: true,
     allowedHosts: [
       '.ngrok-free.app', '.ngrok-free.dev', '.ngrok.app', '.ngrok.io',
       /* Pinggy hands out a different suffix per tunnel type — a free tunnel

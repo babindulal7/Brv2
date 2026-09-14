@@ -296,11 +296,22 @@ describe('createAction — fails closed', () => {
       }
     })
 
-    it('still denies inspection.* to Owner — nothing in the schema to mirror', async () => {
+    it('allows inspection.* to floor roles and denies to non-floor roles (PLAN.md §4.29)', async () => {
+      const floorRoles = ['Owner', 'Admin', 'Manager', 'Warehouse'] as const
+      const nonFloorRoles = ['Driver', 'Technician', 'Accounts', 'Coordinator'] as const
+
       for (const capability of ['inspection.create', 'inspection.pass', 'inspection.fail']) {
-        const { run, execute } = probe(capability, 'Owner')
-        await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
-        expect(execute).not.toHaveBeenCalled()
+        for (const role of floorRoles) {
+          const { run, execute } = probe(capability, role)
+          await expect(run()).resolves.toEqual({ ok: true })
+          expect(execute).toHaveBeenCalledTimes(1)
+        }
+
+        for (const role of nonFloorRoles) {
+          const { run, execute } = probe(capability, role)
+          await expect(run()).rejects.toBeInstanceOf(ActionPermissionError)
+          expect(execute).not.toHaveBeenCalled()
+        }
       }
     })
   })
@@ -360,15 +371,10 @@ describe('every declared capability resolves to a rule', () => {
   const actionSources = Object.entries(sources).filter(([path]) => !path.includes('__tests__'))
 
   /**
-   * Deliberately open, and each must stay open until its question is answered.
-   * There is no `inspections` table anywhere in the schema and
-   * `operation_session_type` is `Packing | Handover | Return | Reset |
-   * Cleaning` — Inspection is not a member — so there is no policy to mirror
-   * and any role set would be invented (CLAUDE.md forbids it). PLAN.md §4.29.
-   *
-   * **Shrinking this list is the point.** Adding to it needs a ruling.
+   * Closed 2026-09-12 per PLAN.md §4.29(a) and migration 0122.
+   * All declared capabilities under src/actions now resolve to an RBAC rule.
    */
-  const KNOWN_OPEN = ['inspection.create', 'inspection.pass', 'inspection.fail']
+  const KNOWN_OPEN: string[] = []
 
   /**
    * Comments must come out before either scan.

@@ -22,6 +22,10 @@ export interface TableProps<T> {
   sortDirection?: 'asc' | 'desc'
   onSort?: (key: string) => void
   onRowClick?: (row: T) => void
+  /** Accessible name for the table when no visible caption is present. */
+  ariaLabel?: string
+  /** Optional concise name announced when a clickable row receives focus. */
+  rowLabel?: (row: T, index: number) => string
   className?: string
 }
 
@@ -37,6 +41,8 @@ export function Table<T extends Record<string, unknown>>({
   sortDirection,
   onSort,
   onRowClick,
+  ariaLabel,
+  rowLabel,
   className = '',
 }: TableProps<T>) {
   const getRowKey = (row: T, idx: number): string => {
@@ -45,9 +51,19 @@ export function Table<T extends Record<string, unknown>>({
     return String(idx)
   }
 
+  const activateRow = (row: T, event: React.SyntheticEvent) => {
+    if (!onRowClick) return
+    const target = event.target
+    if (target instanceof Element) {
+      const nestedControl = target.closest('a, button, input, select, textarea, [role="button"], [role="link"]')
+      if (nestedControl && nestedControl !== event.currentTarget) return
+    }
+    onRowClick(row)
+  }
+
   return (
     <div
-      className={className || undefined}
+      className={['data-table-shell', 'rsp-table-scroll', className].filter(Boolean).join(' ')}
       style={{
         width: '100%',
         overflowX: 'auto',
@@ -57,8 +73,13 @@ export function Table<T extends Record<string, unknown>>({
         boxShadow: 'var(--shadow-card)',
       }}
     >
-      <table style={{ width: '100%', textAlign: 'left', fontSize: 'var(--t-ui)', color: 'var(--text)', borderCollapse: 'collapse' }}>
+      <table
+        className="data-table operations-table"
+        aria-label={ariaLabel}
+        style={{ width: '100%', textAlign: 'left', fontSize: 'var(--t-ui)', color: 'var(--text)', borderCollapse: 'collapse' }}
+      >
         <thead
+          className="data-table__head"
           style={{
             background: 'var(--card2)',
             fontSize: 'var(--t-th)',
@@ -80,26 +101,27 @@ export function Table<T extends Record<string, unknown>>({
               return (
                 <th
                   key={col.key}
+                  scope="col"
+                  aria-sort={col.sortable ? (isSorted ? (sortDirection === 'desc' ? 'descending' : 'ascending') : 'none') : undefined}
                   style={{
                     width: col.width,
                     padding: '12px 14px',
                     userSelect: 'none',
                     textAlign: col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : 'left',
-                    cursor: col.sortable ? 'pointer' : 'default',
                   }}
-                  onClick={() => col.sortable && onSort && onSort(col.key)}
+                  onClick={() => col.sortable && onSort?.(col.key)}
                 >
-                  <div
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      justifyContent: col.align === 'right' ? 'flex-end' : col.align === 'center' ? 'center' : 'flex-start',
-                      width: col.align ? '100%' : 'auto',
-                    }}
-                  >
-                    <span>{col.header}</span>
-                    {col.sortable && (
+                  {col.sortable ? (
+                    <button
+                      type="button"
+                      className="data-table__sort"
+                      aria-label={`Sort by ${col.header}${isSorted ? `, currently ${sortDirection === 'desc' ? 'descending' : 'ascending'}` : ''}`}
+                      style={{
+                        justifyContent: col.align === 'right' ? 'flex-end' : col.align === 'center' ? 'center' : 'flex-start',
+                        width: col.align ? '100%' : 'auto',
+                      }}
+                    >
+                      <span>{col.header}</span>
                       <span style={{ color: isSorted ? 'var(--nav-active-accent)' : 'var(--muted)', display: 'inline-flex' }}>
                         {isSorted ? (
                           sortDirection === 'asc' ? (
@@ -111,8 +133,10 @@ export function Table<T extends Record<string, unknown>>({
                           <span style={{ opacity: 0.35, fontSize: 12 }}>↕</span>
                         )}
                       </span>
-                    )}
-                  </div>
+                    </button>
+                  ) : (
+                    <span>{col.header}</span>
+                  )}
                 </th>
               )
             })}
@@ -126,6 +150,7 @@ export function Table<T extends Record<string, unknown>>({
                 {columns.map((col) => (
                   <td key={col.key} style={{ padding: '12px 14px' }}>
                     <div
+                      className="data-table__skeleton"
                       style={{
                         height: 14,
                         background: 'var(--border)',
@@ -152,17 +177,21 @@ export function Table<T extends Record<string, unknown>>({
             data.map((row, idx) => (
               <tr
                 key={getRowKey(row, idx)}
-                onClick={() => onRowClick && onRowClick(row)}
+                className={onRowClick ? 'data-table__row data-table__row--interactive' : 'data-table__row'}
+                tabIndex={onRowClick ? 0 : undefined}
+                aria-label={onRowClick && rowLabel ? rowLabel(row, idx) : undefined}
+                onClick={(event) => activateRow(row, event)}
+                onKeyDown={(event) => {
+                  if (!onRowClick || event.target !== event.currentTarget) return
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    activateRow(row, event)
+                  }
+                }}
                 style={{
                   borderBottom: idx < data.length - 1 ? '1px solid var(--border)' : 'none',
                   cursor: onRowClick ? 'pointer' : 'default',
                   transition: 'background-color var(--dur) var(--ease)',
-                }}
-                onMouseEnter={(e) => {
-                  if (onRowClick) e.currentTarget.style.background = 'var(--nav-hover-bg)'
-                }}
-                onMouseLeave={(e) => {
-                  if (onRowClick) e.currentTarget.style.background = 'transparent'
                 }}
               >
                 {columns.map((col) => (
