@@ -68,7 +68,8 @@ begin
   -- Check if any unit lines are picked up
   if exists (
     select 1 from booking_line_units blu
-     where blu.booking_id = v_booking_id
+     join booking_lines bl on bl.id = blu.booking_line_id
+     where bl.booking_id = v_booking_id
        and blu.unit_state = 'Picked Up'
   ) then
     raise exception 'cancel_booking: booking % has units already picked up and cannot be cancelled.', v_booking.booking_no;
