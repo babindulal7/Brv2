@@ -6,6 +6,8 @@ import type { Paisa } from '../../../lib/money'
 import { DomainEvents, EVENT_TYPES } from '../../../events/eventBus'
 import { useAuth } from '../../../lib/auth'
 import { useCanViewMoney } from '../../../lib/moneyVisibility'
+import { createMaintenanceJob } from '../../../actions/maintenance/createMaintenanceJob'
+import { generateClientUuid } from '../../../lib/dataAccess'
 
 export type MaintenanceType = 'Repair' | 'Service' | 'Calibration' | 'Inspection'
 export type MaintenancePriority = 'Low' | 'Medium' | 'High' | 'Critical'
@@ -69,7 +71,30 @@ export function LogMaintenanceModal({
     setError(null)
 
     try {
-      const jobId = `MJ-2026-${Math.floor(1000 + Math.random() * 9000)}`
+      let jobId = `MJ-2026-${Math.floor(1000 + Math.random() * 9000)}`
+      if (user) {
+        try {
+          const res = await createMaintenanceJob(
+            {
+              serialNo: serial.trim() || undefined,
+              description: notes.trim() || `${jobType} for ${equipment.trim()}`,
+              maintenanceType: jobType === 'Service' ? 'Preventive Service' : jobType,
+              priority: priority === 'Medium' ? 'Normal' : priority === 'Critical' ? 'Urgent' : priority,
+              vendorName: vendor.trim() || undefined,
+              cost: money && costRupees ? costRupees : undefined,
+              performedBy: user.id,
+              clientUuid: generateClientUuid(),
+            },
+            { userId: user.id, role: user.role },
+          )
+          if (res?.recordNo) {
+            jobId = res.recordNo
+          }
+        } catch (actionErr) {
+          console.warn('createMaintenanceJob action note:', actionErr)
+        }
+      }
+
       const estCompletion = new Date()
       estCompletion.setDate(estCompletion.getDate() + (daysToComplete || 1))
 

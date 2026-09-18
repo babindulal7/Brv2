@@ -223,6 +223,50 @@ export function crewBilling(i: CrewBillingInput): CrewBillingBreakdown {
   return { coordinationFeePaisa, billedPaisa, costPaisa, marginPaisa }
 }
 
+/* ── booking profit & subrental margin · AUD-019 ────────────────────────── */
+
+export interface BookingProfitInput {
+  revenuePaisa: Paisa
+  equipmentCostPaisa?: Paisa
+  subRentalCostPaisa?: Paisa
+  crewCostPaisa?: Paisa
+  transportCostPaisa?: Paisa
+  expensesPaisa?: Paisa
+}
+
+export interface BookingProfitBreakdown {
+  revenuePaisa: Paisa
+  totalCostPaisa: Paisa
+  grossProfitPaisa: Paisa
+  grossMarginPercent: number
+}
+
+/**
+ * Calculates gross profit and margin % for a booking, factoring in equipment,
+ * sub-rental costs, crew costs, transport, and direct expenses (AUD-019).
+ */
+export function calculateBookingProfit(i: BookingProfitInput): BookingProfitBreakdown {
+  const totalCostPaisa = (
+    (i.equipmentCostPaisa ?? 0) +
+    (i.subRentalCostPaisa ?? 0) +
+    (i.crewCostPaisa ?? 0) +
+    (i.transportCostPaisa ?? 0) +
+    (i.expensesPaisa ?? 0)
+  ) as Paisa
+
+  const grossProfitPaisa = (i.revenuePaisa - totalCostPaisa) as Paisa
+  const grossMarginPercent = i.revenuePaisa > 0
+    ? roundHalfUp((grossProfitPaisa / i.revenuePaisa) * 100 * 100) / 100
+    : 0
+
+  return {
+    revenuePaisa: i.revenuePaisa,
+    totalCostPaisa,
+    grossProfitPaisa,
+    grossMarginPercent,
+  }
+}
+
 /* ── late fee · Decisions — 8 Aug 2026 §3 Q2 ───────────────────────────── */
 
 /**

@@ -173,6 +173,12 @@
   .rsp-hide-below-desktop {
     display: none !important;
   }
+
+  /* Table horizontal scroll wrapper on tablet and phone to prevent clipping */
+  .rsp-table-scroll:not(.no-shrink) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 /* ══ DESKTOP — 1280 and up ═════════════════════════════════════════════════ */

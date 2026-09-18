@@ -39,6 +39,7 @@ import {
 import { useBundleRecords } from '../../lib/queries/useBundles'
 import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
 import { DateField } from '../../components/ui/DateField'
+import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 
 /**
  * **Bundles** — Inventory's second tab (Foundation §5.1 makes it a tab, never a
@@ -1623,7 +1624,7 @@ function PricingCard({ bundle, facts }: { bundle: BundleRecord; facts: BundleFac
 
 /** §5 of the render — exactly three tiles. Every one states what it does or why it cannot. */
 function QuickActionsCard({ bundle, money }: { bundle: BundleRecord; money: boolean }) {
-  const navigate = useNavigate()
+  const { openOperations } = useOperationsWorkspace()
   const tile: CSSProperties = {
     flex: 1,
     minWidth: 0,
@@ -1647,7 +1648,7 @@ function QuickActionsCard({ bundle, money }: { bundle: BundleRecord; money: bool
         {bundle.booking ? (
           <button
             type="button"
-            onClick={() => navigate(`/rentals/${bundle.booking?.id}/packing`)}
+            onClick={() => bundle.booking && openOperations(bundle.booking.id, bundle.booking.state === 'reserved' ? 'Booked' : 'On Rent', 'Pack')}
             style={{ ...tile, cursor: 'pointer' }}
           >
             <Icon name="checklist" size={17} style={{ color: 'var(--text2)' }} />

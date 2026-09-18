@@ -16,7 +16,6 @@ import {
   COMPARISON_ROWS,
   STACK_NOTE,
   GRACE_NOTE,
-  MEMBERS,
   LEGEND,
   BUCKET_TONE,
   MEMBER_ROWS_PER_PAGE,
@@ -341,12 +340,12 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
   const [perPage, setPerPage] = useState<number>(MEMBER_ROWS_PER_PAGE[1])
   const [page, setPage] = useState(1)
 
-  const [memberList, setMemberList] = useState<MemberRow[]>(MEMBERS)
+  const [memberList, setMemberList] = useState<MemberRow[]>([])
 
   useEffect(() => {
     let active = true
     listMembers().then((res) => {
-      if (active && res.rows.length > 0) {
+      if (active) {
         setMemberList(res.rows)
       }
     }).catch(() => {})

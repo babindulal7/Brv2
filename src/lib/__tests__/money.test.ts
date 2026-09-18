@@ -18,6 +18,7 @@ import {
   DISCOUNT_CAP,
   crewBilling,
   lateFee,
+  calculateBookingProfit,
   REFERENCE_CASE,
   REFERENCE_CASE_ERROR,
 } from '../money'
@@ -473,3 +474,43 @@ describe('lateFee — the three tier boundaries', () => {
     expect(r.feePaisa).toBe(0)
   })
 })
+
+/* ── calculateBookingProfit — AUD-019 Subrental & AUD-030 Integer Paisa ──── */
+
+describe('calculateBookingProfit — subrental cost integration (AUD-019)', () => {
+  it('includes external vendor subrental costs in booking profit and margin calculation', () => {
+    const revenue = rupees(50000)
+
+    // Base booking with equipment cost only
+    const base = calculateBookingProfit({
+      revenuePaisa: revenue,
+      equipmentCostPaisa: rupees(10000),
+    })
+    expect(base.totalCostPaisa).toBe(rupees(10000))
+    expect(base.grossProfitPaisa).toBe(rupees(40000))
+    expect(base.grossMarginPercent).toBe(80)
+
+    // Adding 10k subrental cost reduces gross profit by 10k and decreases gross margin
+    const withSubRental = calculateBookingProfit({
+      revenuePaisa: revenue,
+      equipmentCostPaisa: rupees(10000),
+      subRentalCostPaisa: rupees(10000),
+    })
+    expect(withSubRental.totalCostPaisa).toBe(rupees(20000))
+    expect(withSubRental.grossProfitPaisa).toBe(rupees(30000))
+    expect(withSubRental.grossMarginPercent).toBe(60)
+  })
+
+  it('standardizes on integer paisa with zero rounding discrepancy on odd rates (AUD-030)', () => {
+    const result = calculateBookingProfit({
+      revenuePaisa: rupees(33333),
+      subRentalCostPaisa: rupees(11111),
+      crewCostPaisa: rupees(7777),
+    })
+    expect(Number.isInteger(result.totalCostPaisa)).toBe(true)
+    expect(Number.isInteger(result.grossProfitPaisa)).toBe(true)
+    expect(result.totalCostPaisa).toBe(rupees(18888))
+    expect(result.grossProfitPaisa).toBe(rupees(14445))
+  })
+})
+

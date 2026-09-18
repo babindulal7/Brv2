@@ -10,7 +10,6 @@ import {
   straightLineSchedule,
   DEPRECIATION_DEFAULTS_UNAVAILABLE_REASON,
   IRD_POOL_BLOCKED_REASON,
-  PRICED_ASSETS,
   getDepreciableAssets,
   type DepreciationYear,
   type DepreciableAsset,
@@ -75,7 +74,7 @@ const WHOLE_FLEET = '__fleet__'
 export default function DepreciationCalculator() {
   const viewport = useViewport()
   const [tab, setTab] = useState<Tab>('book')
-  const [assets, setAssets] = useState<DepreciableAsset[]>(PRICED_ASSETS)
+  const [assets, setAssets] = useState<DepreciableAsset[]>([])
 
   useEffect(() => {
     let active = true

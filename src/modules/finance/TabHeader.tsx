@@ -39,12 +39,14 @@ import { PageHeader } from '../../components/ui/Page'
  */
 export function ScreenHeader({
   embedded,
+  leading,
   icon,
   title,
   description,
   actions,
 }: {
   embedded: boolean
+  leading?: ReactNode
   icon?: IconName
   title: string
   description?: string
@@ -57,6 +59,7 @@ export function ScreenHeader({
     return (
       <PageHeader
         title={title}
+        {...(leading ? { leading } : {})}
         {...(icon ? { icon } : {})}
         {...(description ? { description } : {})}
         {...(actions ? { actions } : {})}
@@ -67,7 +70,7 @@ export function ScreenHeader({
   /* Nothing to draw at all: no description and no action means the tab strip
      above is the whole header, and an empty flex row would still take the gap
      its parent puts between children. */
-  if (!description && !actions) return null
+  if (!description && !actions && !leading) return null
 
   return (
     <div
@@ -79,13 +82,16 @@ export function ScreenHeader({
         flexWrap: 'wrap',
       }}
     >
-      {description ? (
-        <p style={{ margin: 0, minWidth: 0, flex: '1 1 260px', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
-          {description}
-        </p>
-      ) : (
-        <span />
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0, flex: '1 1 260px' }}>
+        {leading}
+        {description ? (
+          <p style={{ margin: 0, minWidth: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
+            {description}
+          </p>
+        ) : (
+          <span />
+        )}
+      </div>
       {actions && <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>{actions}</div>}
     </div>
   )

@@ -10,6 +10,7 @@ import type { ChipKey } from '../../lib/queries/bookings'
 import { DateRangePresets } from './DateRangePresets'
 
 export interface BooqableRentalFilterDrawerProps {
+  id?: string
   open: boolean
   onClose: () => void
   resultCount: number | null
@@ -51,6 +52,7 @@ const BOOQABLE_PRESETS: PresetOption[] = [
 ]
 
 export function BooqableRentalFilterDrawer({
+  id,
   open,
   onClose,
   resultCount,
@@ -67,7 +69,8 @@ export function BooqableRentalFilterDrawer({
   money = false,
   stageCounts = {},
 }: BooqableRentalFilterDrawerProps) {
-  const drawerId = useId()
+  const generatedDrawerId = useId()
+  const drawerId = id ?? generatedDrawerId
 
   return (
     <FilterDrawer
@@ -75,6 +78,7 @@ export function BooqableRentalFilterDrawer({
       open={open}
       onClose={onClose}
       side="left"
+      desktopMode="rail"
       width={400}
       resultCount={resultCount}
       noun={resultCount === 1 ? 'rental' : 'rentals'}

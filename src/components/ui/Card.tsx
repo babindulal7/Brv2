@@ -52,7 +52,7 @@ export function Card({
     WebkitBackdropFilter: 'blur(14px)',
     border: '1px solid var(--border)',
     borderRadius: 'var(--r-card)',
-    boxShadow: 'var(--shadow-card)',
+    boxShadow: 'var(--shadow-card), var(--specular-rim)',
     color: 'var(--text)',
     display: 'flex',
     flexDirection: 'column',
@@ -136,8 +136,8 @@ export function KpiCard({ label, value, subtext, trend, icon, onClick }: KpiCard
         background: 'var(--card)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--r-card)',
-        boxShadow: 'var(--shadow-card)',
-        padding: '16px 20px',
+        boxShadow: 'var(--shadow-card), var(--specular-rim)',
+        padding: '18px 22px',
         display: 'flex',
         flexDirection: 'column',
         gap: 'var(--sp-sm)',
@@ -146,13 +146,27 @@ export function KpiCard({ label, value, subtext, trend, icon, onClick }: KpiCard
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: 'var(--muted)' }}>
-        <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+        <span style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.14em', color: 'var(--muted)' }}>
           {label}
         </span>
-        {icon && <span style={{ color: 'var(--muted)', display: 'flex', alignItems: 'center' }}>{icon}</span>}
+        {icon && (
+          <span
+            style={{
+              color: 'var(--nav-active-accent)',
+              display: 'grid',
+              placeItems: 'center',
+              width: 28,
+              height: 28,
+              borderRadius: 'var(--r-sm)',
+              background: 'var(--nav-active-bg)',
+            }}
+          >
+            {icon}
+          </span>
+        )}
       </div>
 
-      <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+      <div style={{ fontSize: '26px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-display)' }}>
         {value}
       </div>
 
@@ -161,7 +175,16 @@ export function KpiCard({ label, value, subtext, trend, icon, onClick }: KpiCard
           {/* *-text tokens, not st-*-fg: the fg pair is ink for a SOLID status
               fill — white in light theme, invisible on this white card. */}
           {trend && (
-            <span style={{ fontWeight: 700, color: trend.isPositive ? 'var(--success-text)' : 'var(--ready-text)', fontVariantNumeric: 'tabular-nums' }}>
+            <span
+              style={{
+                fontWeight: 700,
+                color: trend.isPositive ? 'var(--success-text)' : 'var(--ready-text)',
+                fontVariantNumeric: 'tabular-nums',
+                padding: '1px 6px',
+                borderRadius: 'var(--r-xs)',
+                background: trend.isPositive ? 'rgba(30, 134, 74, 0.1)' : 'rgba(237, 190, 42, 0.12)',
+              }}
+            >
               {trend.value}
             </span>
           )}

@@ -1,7 +1,7 @@
 package com.babinrentals.os;
 
 import android.os.Bundle;
-import androidx.appcompat.app.AppCompatActivity;
+import com.getcapacitor.BridgeActivity;
 
 /**
  * Main Activity for Babin Rentals OS Android Native Shell.
@@ -10,7 +10,7 @@ import androidx.appcompat.app.AppCompatActivity;
  * Android Keystore MasterKey provides hardware-backed AES-256-GCM
  * key wrapping for EncryptedSharedPreferences (PLAN.md §10).
  */
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);

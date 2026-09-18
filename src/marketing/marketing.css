@@ -59,6 +59,25 @@ body {
   animation: marquee 42s linear infinite;
 }
 
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes quoteFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.quote-enter {
+  animation: quoteFadeIn 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @keyframes marquee {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(-50%, 0, 0); }

@@ -12833,7 +12833,7 @@ export type Database = {
         | "timeout"
         | "insufficient balance"
       delivery_method:
-        | "Customer Pickup"
+        | "Client Pickup"
         | "Babin Delivery"
         | "Courier"
         | "Third Party"
@@ -14291,7 +14291,7 @@ export const Constants = {
         "insufficient balance",
       ],
       delivery_method: [
-        "Customer Pickup",
+        "Client Pickup",
         "Babin Delivery",
         "Courier",
         "Third Party",

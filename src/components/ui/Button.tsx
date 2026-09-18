@@ -40,7 +40,7 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
         background: 'var(--btn-primary-bg)',
         color: 'var(--btn-primary-fg)',
         border: '1px solid transparent',
-        boxShadow: 'var(--shadow-card)',
+        boxShadow: 'var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.25)',
       }
     case 'secondary':
       return {
@@ -145,7 +145,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       )}
       {icon && <span className="ui-button__slot" style={{ display: 'inline-flex', flexShrink: 0, opacity: loading ? 0 : 1 }}>{icon}</span>}
       {children !== undefined && <span className="ui-button__label" style={{ opacity: loading ? 0 : 1 }}>{children}</span>}
-      {iconRight && <span className="ui-button__slot" style={{ display: 'inline-flex', flexShrink: 0, opacity: loading ? 0 : 1 }}>{iconRight}</span>}
+      {iconRight && <span className="ui-button__slot ui-button__trailing-bubble" style={{ opacity: loading ? 0 : 1 }}>{iconRight}</span>}
     </button>
   )
 })

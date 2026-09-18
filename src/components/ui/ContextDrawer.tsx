@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
+const DRAWER_MS = 200
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 export interface ContextDrawerProps {
   id: string
   open: boolean
@@ -30,7 +33,17 @@ export function ContextDrawer({
 }: ContextDrawerProps) {
   const panelRef = useRef<HTMLElement | null>(null)
   const priorFocus = useRef<HTMLElement | null>(null)
+  const onCloseRef = useRef(onClose)
   const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768)
+  const [reducedMotion, setReducedMotion] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false,
+  )
+  const [mounted, setMounted] = useState(open)
+  const [closing, setClosing] = useState(false)
+
+  onCloseRef.current = onClose
 
   useEffect(() => {
     const update = () => setPhone(window.innerWidth < 768)
@@ -39,30 +52,80 @@ export function ContextDrawer({
   }, [])
 
   useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = () => setReducedMotion(query.matches)
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true)
+      setClosing(false)
+      return
+    }
+    if (!mounted) return
+    setClosing(true)
+    const timer = window.setTimeout(() => {
+      setMounted(false)
+      setClosing(false)
+    }, reducedMotion ? 0 : DRAWER_MS)
+    return () => window.clearTimeout(timer)
+  }, [mounted, open, reducedMotion])
+
+  useEffect(() => {
     if (!open) return
-    priorFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const closeOnEscape = (event: KeyboardEvent) => {
+    if (priorFocus.current === null && document.activeElement instanceof HTMLElement && !panelRef.current?.contains(document.activeElement)) {
+      priorFocus.current = document.activeElement
+    }
+    const handleKeyboard = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation()
-        onClose()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab' || !phone || !panelRef.current) return
+      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE))
+        .filter((element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true')
+      if (focusable.length === 0) {
+        event.preventDefault()
+        panelRef.current.focus()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last?.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first?.focus()
       }
     }
-    window.addEventListener('keydown', closeOnEscape)
+    window.addEventListener('keydown', handleKeyboard)
     if (phone) document.body.style.overflow = 'hidden'
     const frame = window.requestAnimationFrame(() => panelRef.current?.focus())
     return () => {
-      window.removeEventListener('keydown', closeOnEscape)
+      window.removeEventListener('keydown', handleKeyboard)
       if (phone) document.body.style.overflow = ''
       window.cancelAnimationFrame(frame)
-      priorFocus.current?.focus()
     }
-  }, [open, onClose, phone])
+  }, [open, phone])
 
-  if (!open) return null
+  useEffect(() => {
+    if (open || priorFocus.current === null) return
+    priorFocus.current.focus()
+    priorFocus.current = null
+  }, [open])
+
+  useEffect(() => () => priorFocus.current?.focus(), [])
+
+  if (!mounted) return null
   const titleId = `${id}-title`
 
   return (
-    <div className={`context-drawer${phone ? ' context-drawer--phone' : ''}`}>
+    <div className={`context-drawer${phone ? ' context-drawer--phone' : ''}${closing ? ' context-drawer--closing' : ''}`} aria-hidden={closing || undefined}>
       {phone && <button className="context-drawer__scrim" type="button" onClick={onClose} aria-label="Close record details" />}
       <aside
         ref={panelRef}

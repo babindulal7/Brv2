@@ -82,6 +82,25 @@ describe('FilterDrawer — what it costs the page', () => {
   })
 })
 
+describe('FilterDrawer — Booqable desktop rail mode', () => {
+  it('participates in layout as a sticky labelled region', () => {
+    mount(<FilterDrawer id="f" open onClose={() => {}} desktopMode="rail" width={280}><p>facets</p></FilterDrawer>)
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.className).toBe('filter-rail')
+    expect(wrapper.style.position).toBe('sticky')
+    expect(wrapper.style.width).toBe('280px')
+    expect(container.querySelector('[role="region"]')).not.toBeNull()
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('falls back to the modal sheet on phone', () => {
+    setWidth(420)
+    mount(<FilterDrawer id="f" open onClose={() => {}} desktopMode="rail"><p>facets</p></FilterDrawer>)
+    expect((container.firstElementChild as HTMLElement).style.position).toBe('fixed')
+    expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-modal')).toBe('true')
+  })
+})
+
 describe('FilterDrawer — desktop is non-modal, deliberately', () => {
   it('draws no scrim and does not lock the page scroll', () => {
     mount(<FilterDrawer id="f" open onClose={() => {}}><p>facets</p></FilterDrawer>)
@@ -365,4 +384,3 @@ describe('FilterSection — Collapsible Filter Group', () => {
     expect(actionFired).toBe(true)
   })
 })
-

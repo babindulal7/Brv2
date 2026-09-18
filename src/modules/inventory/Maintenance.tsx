@@ -32,14 +32,6 @@ import { IntelCard } from '../../components/ui/IntelCard'
 import { LogMaintenanceModal, type MaintenanceJobPayload } from './modals/LogMaintenanceModal'
 import { DueForService } from './components/DueForService'
 
-/**
- * RS-08 — `LogMaintenanceModal` mints `MJ-2026-${random}` (the registered
- * sequence is `MT-`), emits MAINTENANCE_STARTED directly and reports success
- * with no write; `createMaintenanceJob` in src/actions/maintenance is still
- * `implemented: false`. Unbuilt renders as Unavailable, never as a fake success.
- */
-const MAINTENANCE_JOB_CREATE_UNAVAILABLE_REASON =
-  'Maintenance job creation is not built yet — the modal would report a job that was never written.'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
 
@@ -599,6 +591,7 @@ export function Maintenance() {
   const [activeFilter, setActiveFilter] = useState<FilterKey>('All')
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [isLogMaintenanceOpen, setIsLogMaintenanceOpen] = useState(false)
+  const [prefill, setPrefill] = useState<{ equipment: string; serial: string } | null>(null)
   const [recordsList, setRecordsList] = useState<MaintenanceRecord[]>(() => [...MAINTENANCE_DATA])
 
   /**
@@ -852,7 +845,15 @@ export function Maintenance() {
       {/* RULING 2026-09-08 (R-28): the saved view. Renders nothing at all when
           nothing is due, which is the normal state of a catalogue where no model
           has a preventive plan yet. */}
-      <DueForService />
+      <DueForService
+        onCreateJob={(row) => {
+          setPrefill({
+            equipment: row.productId ?? '',
+            serial: row.unitId ?? '',
+          })
+          setIsLogMaintenanceOpen(true)
+        }}
+      />
 
       <div
         className="rsp-chip-scroll"
@@ -925,11 +926,16 @@ export function Maintenance() {
             {phone ? '' : 'Export'}
           </Button>
           {!phone && (
-            <Unavailable reason={MAINTENANCE_JOB_CREATE_UNAVAILABLE_REASON}>
-              <Button icon="plus" variant="primary" disabled onClick={() => setIsLogMaintenanceOpen(true)}>
-                Log Maintenance
-              </Button>
-            </Unavailable>
+            <Button
+              icon="plus"
+              variant="primary"
+              onClick={() => {
+                setPrefill(null)
+                setIsLogMaintenanceOpen(true)
+              }}
+            >
+              Log Maintenance
+            </Button>
           )}
         </span>
       </div>
@@ -1161,7 +1167,12 @@ export function Maintenance() {
 
       <LogMaintenanceModal
         isOpen={isLogMaintenanceOpen}
-        onClose={() => setIsLogMaintenanceOpen(false)}
+        onClose={() => {
+          setIsLogMaintenanceOpen(false)
+          setPrefill(null)
+        }}
+        initialEquipment={prefill?.equipment ?? ''}
+        initialSerial={prefill?.serial ?? ''}
         onSuccess={(job: MaintenanceJobPayload) => upsertRecord(recordFromStartedJob(job))}
       />
     </div>

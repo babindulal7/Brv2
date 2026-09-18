@@ -192,9 +192,10 @@ export function Modal({
   const viewport = useViewport()
   const phone = viewport === 'phone'
   const tablet = viewport === 'tablet'
-  const maxWidth = phone ? '100%' : tablet && sheet ? '60vw' : SIZE_MAX_WIDTH[size]
-  const surfaceMaxHeight = phone ? '100dvh' : sheet ? '90vh' : '85vh'
-  const surfaceRadius = phone ? 0 : sheet ? '16px 16px 0 0' : 16
+  const maxWidth = phone ? (sheet ? '100%' : 'calc(100% - 24px)') : tablet && sheet ? '60vw' : SIZE_MAX_WIDTH[size]
+  /* AUD-016: Constrain to 85dvh on phone & sheet to prevent virtual keyboard modal overflow */
+  const surfaceMaxHeight = phone ? '85dvh' : sheet ? '85dvh' : '85vh'
+  const surfaceRadius = phone ? (sheet ? '16px 16px 0 0' : 16) : sheet ? '16px 16px 0 0' : 16
 
   // After every hook: `useViewport` is one, so the early return cannot precede it.
   if (!shouldRender) return null
@@ -211,9 +212,9 @@ export function Modal({
            they painted OVER an open modal. Toasts sit at --z-system, above. */
         zIndex: 'var(--z-modal)' as unknown as number,
         display: 'flex',
-        alignItems: phone || sheet ? 'flex-end' : 'center',
+        alignItems: sheet ? 'flex-end' : 'center',
         justifyContent: 'center',
-        padding: phone || sheet ? 0 : 'var(--sp-lg)',
+        padding: sheet ? 0 : 'var(--sp-md)',
         background: 'rgba(0, 0, 0, 0.65)',
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
@@ -240,7 +241,6 @@ export function Modal({
           width: '100%',
           maxWidth,
           maxHeight: surfaceMaxHeight,
-          ...(phone ? { height: '100dvh' } : {}),
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--card)',

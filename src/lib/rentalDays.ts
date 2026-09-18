@@ -93,25 +93,24 @@ const DAY_MS = 86_400_000
 export const RENTAL_DAYS_MIN = 1
 
 /**
- * The length of a booking in whole rental days, or `null` when it cannot be
- * computed.
- *
- * `null` — not `1` — is the answer for a missing or unparseable instant. The
- * four page copies this replaces all returned `1` there, which renders "1 Day"
- * for a booking whose dates the screen does not have: a fabricated fact
- * (Law 12), and one the reader cannot tell from a genuine one-day hire. The
- * nullable parameters are what `FloorBooking` actually carries
- * (`queries/bookings.ts` — `pickupAtAd: string | null`), so the guard belongs
- * here rather than being re-written at each call site.
+ * Kathmandu (+05:45) shift offset: 06:00 local time minus +05:45 offset = 15 minutes (900,000 ms).
+ * A timestamp minus 900,000 ms aligns exact 06:00 Kathmandu time to UTC midnight.
  */
+const KATHMANDU_SHIFT_OFFSET_MS = 900_000
+
 export function rentalDaysBetween(
   pickupIso: string | null | undefined,
   returnIso: string | null | undefined,
 ): number | null {
   if (!pickupIso || !returnIso) return null
-  const ms = Date.parse(returnIso) - Date.parse(pickupIso)
-  if (!Number.isFinite(ms)) return null
-  return Math.max(RENTAL_DAYS_MIN, Math.round(ms / DAY_MS))
+  const p = Date.parse(pickupIso)
+  const r = Date.parse(returnIso)
+  if (!Number.isFinite(p) || !Number.isFinite(r)) return null
+  if (r <= p) return null
+
+  const pickupShift = Math.floor((p - KATHMANDU_SHIFT_OFFSET_MS) / DAY_MS)
+  const returnShift = Math.floor((r - 1 - KATHMANDU_SHIFT_OFFSET_MS) / DAY_MS)
+  return Math.max(RENTAL_DAYS_MIN, returnShift - pickupShift + 1)
 }
 
 /** `2` → `"2 Days"`, `1` → `"1 Day"`, `null` → the caller's fallback. */

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../../components/ui/Page'
-import { Unavailable } from '../../../components/ui/Unavailable'
 import { ErrorBanner } from '../../../components/ui/StateViews'
 import { ServiceDueBadge } from '../../../components/ui/ServiceDueBadge'
 import { readUnitsDueForService } from '../../../lib/queries/serviceDue'
@@ -37,7 +36,11 @@ import { serviceStatus, type ServiceRow } from '../../../lib/serviceDue'
  * carries no overdue count at all (`0103` — "overdue by N days" has no meaning
  * against a rental-day threshold) and sits below them rather than above.
  */
-export function DueForService() {
+export interface DueForServiceProps {
+  onCreateJob?: (row: ServiceRow) => void
+}
+
+export function DueForService({ onCreateJob }: DueForServiceProps = {}) {
   const [rows, setRows] = useState<readonly ServiceRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -117,23 +120,23 @@ export function DueForService() {
                     </td>
                     <td style={{ ...cell, color: 'var(--text2)', whiteSpace: 'normal' }}>{status.detail}</td>
                     <td style={{ ...cell, textAlign: 'right' }}>
-                      <Unavailable reason={CREATE_JOB_UNAVAILABLE}>
-                        <button
-                          type="button"
-                          disabled
-                          style={{
-                            border: '1px solid var(--border)',
-                            background: 'transparent',
-                            color: 'var(--muted)',
-                            borderRadius: 'var(--r-chip)',
-                            padding: '4px 10px',
-                            fontSize: 'var(--t-meta)',
-                            minHeight: 32,
-                          }}
-                        >
-                          Create job
-                        </button>
-                      </Unavailable>
+                      <button
+                        type="button"
+                        onClick={() => onCreateJob?.(row)}
+                        style={{
+                          border: '1px solid var(--border)',
+                          background: 'var(--btn-secondary-bg)',
+                          color: 'var(--text)',
+                          borderRadius: 'var(--r-chip)',
+                          padding: '4px 10px',
+                          fontSize: 'var(--t-meta)',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          minHeight: 32,
+                        }}
+                      >
+                        Create job
+                      </button>
                     </td>
                   </tr>
                 )
@@ -145,9 +148,6 @@ export function DueForService() {
     </Card>
   )
 }
-
-const CREATE_JOB_UNAVAILABLE =
-  'Creating a maintenance job is not built yet — createMaintenanceJob is implemented: false, so this would report a job that was never written.'
 
 const th = {
   textAlign: 'left' as const,

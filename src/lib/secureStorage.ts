@@ -46,27 +46,6 @@ export function detectPlatform(): PlatformType {
   return 'web';
 }
 
-/** In-memory fallback storage when persistent native storage is initializing or web storage is blocked. */
-class MemoryStorage implements SupportedStorage {
-  private memory = new Map<string, string>();
-
-  getItem(key: string): string | null {
-    return this.memory.get(key) ?? null;
-  }
-
-  setItem(key: string, value: string): void {
-    this.memory.set(key, value);
-  }
-
-  removeItem(key: string): void {
-    this.memory.delete(key);
-  }
-
-  clear(): void {
-    this.memory.clear();
-  }
-}
-
 /** Web / PWA storage adapter backed by localStorage with memory fallback. */
 export class WebLocalStorageAdapter implements SupportedStorage {
   // Failed writes must override readable but stale persistent values. A null
@@ -118,7 +97,9 @@ export class WebLocalStorageAdapter implements SupportedStorage {
  * Refuses unencrypted localStorage.
  */
 export class CapacitorKeystoreAdapter implements SupportedStorage {
-  private memory = new MemoryStorage();
+  // Failed writes must override readable but stale persistent values. A null
+  // tombstone also prevents a failed removal from restoring a signed-out session.
+  private pending = new Map<string, string | null>();
 
   private getPlugin(): {
     get: (opts: { key: string }) => Promise<{ value: string | null }>;
@@ -141,6 +122,7 @@ export class CapacitorKeystoreAdapter implements SupportedStorage {
   }
 
   async getItem(key: string): Promise<string | null> {
+    if (this.pending.has(key)) return this.pending.get(key) ?? null;
     const plugin = this.getPlugin();
     if (plugin) {
       try {
@@ -152,7 +134,7 @@ export class CapacitorKeystoreAdapter implements SupportedStorage {
     }
     // Secure in-memory fallback in native shell when plugin is not linked yet;
     // NEVER reads unencrypted localStorage in native shell.
-    return this.memory.getItem(key);
+    return null;
   }
 
   async setItem(key: string, value: string): Promise<void> {
@@ -160,13 +142,14 @@ export class CapacitorKeystoreAdapter implements SupportedStorage {
     if (plugin) {
       try {
         await plugin.set({ key, value });
+        this.pending.delete(key);
         return;
       } catch (err) {
         console.error('[CapacitorKeystoreAdapter] Failed to store in hardware keystore:', err);
       }
     }
     // Secure in-memory fallback
-    this.memory.setItem(key, value);
+    this.pending.set(key, value);
   }
 
   async removeItem(key: string): Promise<void> {
@@ -174,12 +157,13 @@ export class CapacitorKeystoreAdapter implements SupportedStorage {
     if (plugin) {
       try {
         await plugin.remove({ key });
+        this.pending.delete(key);
         return;
-      } catch {
-        // Ignore removal error
+      } catch (err) {
+        console.error('[CapacitorKeystoreAdapter] Failed to remove from hardware keystore:', err);
       }
     }
-    this.memory.removeItem(key);
+    this.pending.set(key, null);
   }
 }
 
@@ -189,7 +173,9 @@ export class CapacitorKeystoreAdapter implements SupportedStorage {
  * Refuses unencrypted localStorage.
  */
 export class TauriStrongholdAdapter implements SupportedStorage {
-  private memory = new MemoryStorage();
+  // Failed writes must override readable but stale persistent values. A null
+  // tombstone also prevents a failed removal from restoring a signed-out session.
+  private pending = new Map<string, string | null>();
 
   private getTauriInvoke(): ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null {
     if (typeof window === 'undefined') return null;
@@ -207,6 +193,7 @@ export class TauriStrongholdAdapter implements SupportedStorage {
   }
 
   async getItem(key: string): Promise<string | null> {
+    if (this.pending.has(key)) return this.pending.get(key) ?? null;
     const invoke = this.getTauriInvoke();
     if (invoke) {
       try {
@@ -216,7 +203,7 @@ export class TauriStrongholdAdapter implements SupportedStorage {
         return null;
       }
     }
-    return this.memory.getItem(key);
+    return null;
   }
 
   async setItem(key: string, value: string): Promise<void> {
@@ -224,12 +211,13 @@ export class TauriStrongholdAdapter implements SupportedStorage {
     if (invoke) {
       try {
         await invoke('plugin:stronghold|set_record', { key, value });
+        this.pending.delete(key);
         return;
       } catch (err) {
         console.error('[TauriStrongholdAdapter] Failed to store in Stronghold vault:', err);
       }
     }
-    this.memory.setItem(key, value);
+    this.pending.set(key, value);
   }
 
   async removeItem(key: string): Promise<void> {
@@ -237,12 +225,13 @@ export class TauriStrongholdAdapter implements SupportedStorage {
     if (invoke) {
       try {
         await invoke('plugin:stronghold|remove_record', { key });
+        this.pending.delete(key);
         return;
-      } catch {
-        // Ignore
+      } catch (err) {
+        console.error('[TauriStrongholdAdapter] Failed to remove from Stronghold vault:', err);
       }
     }
-    this.memory.removeItem(key);
+    this.pending.set(key, null);
   }
 }
 

@@ -58,16 +58,20 @@
   --bg: #f5f7fb;
   --surface: #ffffff;
   --surface-2: #edf3fa;
-  --border: #dbe5f0;
-  --border2: #e7eef6;
-  --divider: #e7eef6;
+  --border: #cbd5e1;
+  --border2: #d8e2ee;
+  --divider: #cbd5e1;
 
   /* Shared cool canvas, matched to the Pickup & Return dashboard. */
   --bg-gradient-1: #f5f7fb;
-  --bg-gradient-2: #f5f7fb;
+  --bg-gradient-2: #edf2f9;
+  --bg-radial-mesh: radial-gradient(ellipse at 15% 0%, rgba(36, 86, 214, 0.05) 0px, transparent 65%), radial-gradient(ellipse at 85% 10%, rgba(30, 134, 74, 0.03) 0px, transparent 55%);
   --surface-card: rgba(255, 255, 255, 0.88);
-  --surface-card-hover: rgba(255, 255, 255, 0.95);
+  --surface-card-hover: rgba(255, 255, 255, 0.96);
   --glass-tint: 0.88;
+  --specular-rim: inset 0 1px 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.02);
+  --bezel-outer-ring: 0 0 0 1px rgba(16, 32, 59, 0.06);
+  --bezel-outer-bg: rgba(16, 32, 59, 0.025);
 
   --text: #1c1e22;
   --text2: #4b4e54;
@@ -186,10 +190,14 @@
 
   /* DESIGN_DIRECTION_SPEC v4.2 §3 Canvas Gradients (Navy Dark) */
   --bg-gradient-1: #050B12;
-  --bg-gradient-2: #0B1622;
-  --surface-card: rgba(11, 22, 34, 0.85);
-  --surface-card-hover: rgba(16, 30, 46, 0.92);
-  --glass-tint: 0.85;
+  --bg-gradient-2: #07111C;
+  --bg-radial-mesh: radial-gradient(ellipse at 20% 0%, rgba(56, 106, 247, 0.12) 0px, transparent 65%), radial-gradient(ellipse at 80% 20%, rgba(56, 106, 247, 0.05) 0px, transparent 55%);
+  --surface-card: rgba(11, 22, 34, 0.88);
+  --surface-card-hover: rgba(16, 30, 46, 0.95);
+  --glass-tint: 0.88;
+  --specular-rim: inset 0 1px 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.4);
+  --bezel-outer-ring: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --bezel-outer-bg: rgba(255, 255, 255, 0.03);
 
   --text: #e6e7ea;
   --text2: #a9acb4;
@@ -262,16 +270,16 @@
   --tr-hover: #122337;
   --tr-alt: #101e2d;
 
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.2);
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
-  --shadow-card: var(--shadow);
-  --shadow-kpi: var(--shadow);
-  --shadow-md: 0 8px 20px -3px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.35), 0 4px 6px -2px rgba(0, 0, 0, 0.25);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.45), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
-  --shadow-modal: 0 20px 48px rgba(0, 0, 0, 0.7);
-  --shadow-primary-glow: 0 8px 20px -4px rgba(56, 106, 247, 0.35);
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
+  --shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.5), 0 2px 6px -1px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 2px 8px 0 rgba(0, 0, 0, 0.4), 0 8px 24px -4px rgba(0, 0, 0, 0.55);
+  --shadow-kpi: var(--shadow-card);
+  --shadow-md: 0 14px 28px -4px rgba(0, 0, 0, 0.6), 0 6px 12px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 20px 36px -6px rgba(0, 0, 0, 0.65), 0 8px 14px -3px rgba(0, 0, 0, 0.45);
+  --shadow-xl: 0 28px 56px -8px rgba(0, 0, 0, 0.75), 0 12px 18px -4px rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 28px 72px -12px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-primary-glow: 0 8px 28px -4px rgba(56, 106, 247, 0.45);
 
   /* DESIGN_DIRECTION_SPEC v4.2 §6 Soft-tint non-status chips */
   --chip-blue-bg: rgba(59, 130, 246, 0.18);
@@ -679,7 +687,8 @@ html {
 
 body {
   margin: 0;
-  background: linear-gradient(160deg, var(--bg-gradient-1), var(--bg-gradient-2));
+  background-color: var(--app);
+  background-image: var(--bg-radial-mesh), linear-gradient(160deg, var(--bg-gradient-1), var(--bg-gradient-2));
   background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-body);
@@ -1193,6 +1202,8 @@ p {
 }
 
 .data-table-shell {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   overscroll-behavior-inline: contain;
   background: var(--surface) !important;
 }

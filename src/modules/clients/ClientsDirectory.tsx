@@ -6,7 +6,6 @@ import { Card, Button, KpiStrip, cardStyle, Rail } from '../../components/ui/Pag
 import type { Kpi } from '../../components/ui/Page'
 import {
   ActiveFilterChips,
-  FilterButton,
   FilterDrawer,
   FilterOptionList,
   filterGroupStyle,
@@ -396,6 +395,8 @@ export function ClientsDirectory({
   clients,
   onRequestAdd,
   onBlockChanged,
+  filtersOpen: controlledFiltersOpen,
+  onFiltersOpenChange,
 }: {
   clients: ClientRecord[]
   onRequestAdd: () => void
@@ -411,6 +412,8 @@ export function ClientsDirectory({
    * `useClients().refresh`.
    */
   onBlockChanged: () => void
+  filtersOpen?: boolean
+  onFiltersOpenChange?: (open: boolean) => void
 }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
@@ -426,7 +429,12 @@ export function ClientsDirectory({
    * keep their param behaviour; the panel is a working surface.
    */
   const [facetSel, setFacetSel] = useState<FacetSelection>({})
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [internalFiltersOpen, setInternalFiltersOpen] = useState(false)
+  const filtersOpen = controlledFiltersOpen ?? internalFiltersOpen
+  const setFiltersOpen = (open: boolean) => {
+    setInternalFiltersOpen(open)
+    onFiltersOpenChange?.(open)
+  }
   const facets = useMemo(() => clientFacetsFor(money), [money])
 
   const toggleFacet = useCallback((key: string, value: string) => {
@@ -503,6 +511,22 @@ export function ClientsDirectory({
    */
   const activeFilter = filterFromParam(params.get('filter'), money)
   const searchQuery = params.get('q') ?? ''
+  const [searchInput, setSearchInput] = useState(searchQuery)
+
+  useEffect(() => {
+    setSearchInput(searchQuery)
+  }, [searchQuery])
+
+  useEffect(() => {
+    if (searchInput === searchQuery) return
+    const timer = setTimeout(() => {
+      const midBurst = Boolean(searchQuery) && Boolean(searchInput)
+      patchParams({ q: searchInput || null }, midBurst)
+    }, 250)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounced search sync to URL
+  }, [searchInput, searchQuery])
+
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [view, setView] = useState<ViewKey>('Table')
@@ -755,16 +779,6 @@ export function ClientsDirectory({
     setActiveSavedView(null)
   }
 
-  const setSearch = (term: string) => {
-    /* The first keystroke pushes; the rest of the burst replaces — the same
-       rule `useFilters` keeps for RentalsList. Replacing every keystroke
-       would overwrite the entry BEFORE the search (a chip, usually), so Back
-       would skip past that decision too; pushing every one buries the page
-       the user came from. Starting to type and clearing the box are both
-       discrete decisions, so both push. */
-    const midBurst = Boolean(searchQuery) && Boolean(term)
-    patchParams({ q: term || null }, midBurst)
-  }
 
   const clearAll = () => {
     /* Every owned param in ONE write — two navigations would make "Clear all"
@@ -1230,8 +1244,14 @@ export function ClientsDirectory({
             <Icon name="search" size={15} style={{ color: 'var(--muted)', position: 'absolute', left: 9 }} />
             <input
               type="search"
-              value={searchQuery}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const midBurst = Boolean(searchQuery) && Boolean(searchInput)
+                  patchParams({ q: searchInput || null }, midBurst)
+                }
+              }}
               /* No "company". `ClientRecord.company` has no source in
                  `client_directory_v` — the live view's 31 columns carry no
                  company field and `toClientRecord` never sets one — so this
@@ -1272,12 +1292,6 @@ export function ClientsDirectory({
               built yet". They are now — `clientFacets.ts` carries the options,
               the predicates and the counts, so the control does the thing its
               label always claimed. */}
-          <FilterButton
-            onClick={() => setFiltersOpen((v) => !v)}
-            activeCount={selectionCount(facetSel)}
-            controls="clients-filters"
-            expanded={filtersOpen}
-          />
         </span>
       </div>
 
@@ -1309,7 +1323,7 @@ export function ClientsDirectory({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'minmax(0,1fr)',
+          gridTemplateColumns: filtersOpen && !phone ? 'minmax(230px, 280px) minmax(0,1fr)' : 'minmax(0,1fr)',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
@@ -1449,6 +1463,7 @@ export function ClientsDirectory({
               id="clients-filters"
               open={filtersOpen}
               onClose={() => setFiltersOpen(false)}
+              desktopMode="rail"
               /* No `null` branch: `clients` arrives as a prop already resolved
                  by `Clients.tsx`, so this screen has no in-flight state of its
                  own to report — unlike RentalsList, which pages server-side. */

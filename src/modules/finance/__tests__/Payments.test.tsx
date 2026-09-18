@@ -229,6 +229,10 @@ describe('day filter → payment_date bounds', () => {
   it('leaves dateRange off entirely when no day is picked', () => {
     expect(paymentFilters('All', '', '').dateRange).toBeUndefined()
   })
+
+  it('binds page pagination onto filters', () => {
+    expect(paymentFilters('All', '', '', 3).page).toEqual({ index: 2, size: 25 })
+  })
 })
 
 describe('row → cell', () => {
@@ -572,9 +576,9 @@ describe('the ledger rows', () => {
 })
 
 describe('nav — Payments is a Finance TAB, not a twelfth nav item', () => {
-  it('records where the tab goes without touching the fixed eleven', async () => {
+  it('records where the tab goes without touching primary nav', async () => {
     const { NAV, SPEC_TABS, FINANCE_TAB_ROUTES } = await import('../../../data/nav')
-    expect(NAV).toHaveLength(11)
+    expect(NAV).toHaveLength(7)
     expect(NAV.map((s) => s.to)).not.toContain('/finance/payments')
     expect(SPEC_TABS['/finance']).toContain('Payments')
     expect(FINANCE_TAB_ROUTES['Payments']).toBe('/finance/payments')

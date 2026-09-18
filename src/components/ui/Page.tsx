@@ -25,7 +25,7 @@ export const cardStyle = {
   WebkitBackdropFilter: 'blur(14px)',
   border: '1px solid var(--border)',
   borderRadius: 'var(--r-card)',
-  boxShadow: 'var(--shadow-card)',
+  boxShadow: 'var(--shadow-card), var(--specular-rim)',
   transition: 'transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background-color var(--dur-theme) var(--ease), border-color var(--dur-theme) var(--ease)',
 } as const
 
@@ -61,49 +61,92 @@ export function Card({
 
 /* ── page title block ──────────────────────────────────────────────────── */
 
+const DEFAULT_EYEBROWS: Record<string, string> = {
+  Dashboard: 'Operations HQ',
+  Today: 'Operations HQ',
+  Rentals: 'Rentals & Dispatch',
+  'Rentals List': 'Rentals & Dispatch',
+  Bookings: 'Rentals & Dispatch',
+  Operations: 'Floor Logistics',
+  Inventory: 'Fleet & Asset Registry',
+  Clients: 'Directory & Accounts',
+  Finance: 'Treasury & Ledger',
+  Payments: 'Treasury & Ledger',
+  Expenses: 'Treasury & Ledger',
+  'Daily Closing': 'Cash Audit & Reconcile',
+  Calendar: 'Schedule & Allocations',
+  Documents: 'Contracts & Invoices',
+  Settings: 'System & Preferences',
+  Reports: 'Analytics & Intelligence',
+  Pulse: 'Operations Intelligence',
+  'Expense Reports': 'Cost Accounting',
+  'Audit Log': 'Compliance & Security',
+  'Activity Log': 'System Audit',
+  Numbering: 'System Sequences',
+  Tools: 'Calculators & Utilities',
+  Cases: 'Service & Resolution',
+  Crew: 'Crew & Transport',
+  'Sub-Rental': 'External Sourcing',
+  'Stock Check': 'Asset Audit',
+  Warehouses: 'Storage & Locations',
+}
+
 export function PageHeader({
+  leading,
   icon,
   title,
+  eyebrow,
   description,
   actions,
   breadcrumb,
   status,
 }: {
+  leading?: ReactNode
   icon?: IconName
   title: string
+  eyebrow?: ReactNode
   description?: string
   actions?: ReactNode
   breadcrumb?: ReactNode
   status?: ReactNode
 }) {
+  const resolvedEyebrow = eyebrow !== undefined ? eyebrow : DEFAULT_EYEBROWS[title]
+
   return (
-    <header className="page-header" style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
+    <header className="page-header animate-entrance" style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
       <div className="page-header__copy" style={{ minWidth: 0, flex: '1 1 16rem' }}>
         {breadcrumb && <div style={{ marginBottom: 'var(--space-2)' }}>{breadcrumb}</div>}
+        {resolvedEyebrow && (
+          <div style={{ marginBottom: 'var(--space-2)' }}>
+            {typeof resolvedEyebrow === 'string' ? <span className="eyebrow-pill">{resolvedEyebrow}</span> : resolvedEyebrow}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+          {leading}
           {icon && (
             <span
               style={{
-                width: 30,
-                height: 30,
+                width: 32,
+                height: 32,
                 borderRadius: 'var(--r-sm)',
                 display: 'grid',
                 placeItems: 'center',
                 background: 'var(--nav-active-bg)',
                 color: 'var(--nav-active-accent)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.15)',
                 flexShrink: 0,
               }}
             >
               <Icon name={icon} size={17} fill />
             </span>
           )}
-          <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.015em' }}>
+          <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', fontFamily: 'var(--font-display)' }}>
             {title}
           </h1>
           {status}
         </div>
         {description && (
-          <p className="page-header__description" style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{description}</p>
+          <p className="page-header__description" style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>{description}</p>
         )}
       </div>
       {actions && <div className="page-header__actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap', maxWidth: '100%' }}>{actions}</div>}
@@ -224,9 +267,11 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
                 <span
                   className="kpi-tile__label"
                   style={{
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 600,
-                    color: 'var(--text2)',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.12em',
+                    color: 'var(--muted)',
                     minWidth: 0,
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
@@ -273,14 +318,16 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
                 marginTop: 9,
                 fontSize: k.value.length > 8 ? 'clamp(16px, 1.05vw, var(--t-kpi, 22px))' : 'clamp(16px, 1.5vw, var(--t-kpi, 22px))',
                 fontWeight: 700,
+                fontFamily: 'var(--font-display)',
                 color: 'var(--text)',
                 lineHeight: 1.15,
-                letterSpacing: '-0.02em',
+                letterSpacing: '-0.025em',
                 whiteSpace: 'nowrap',
                 // A figure longer than the card degrades to an ellipsis rather
                 // than bleeding past the border.
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
+                fontVariantNumeric: 'tabular-nums',
               }}
             >
               {k.value}
@@ -436,7 +483,7 @@ export function SideRail({
 }
 
 /** Label/value rows — the shape every "… Summary" card in the renders uses. */
-export function SummaryRows({ rows }: { rows: Array<{ label: string; value: string; tone?: BrandKey }> }) {
+export function SummaryRows({ rows }: { rows: Array<{ label: string; value: React.ReactNode; tone?: BrandKey }> }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
       {rows.map((r) => (

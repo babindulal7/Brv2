@@ -130,6 +130,64 @@ describe('secureStorage', () => {
       delete (window as any).Capacitor;
     });
 
+    it('reads the refreshed session when native writes fail but reads still return stale data', async () => {
+      const mockPlugin = {
+        get: vi.fn().mockResolvedValue({ value: 'stale_token' }),
+        set: vi.fn().mockRejectedValue(new Error('Keystore locked')),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+      (window as any).Capacitor = { Plugins: { SecureStoragePlugin: mockPlugin } };
+
+      const adapter = new CapacitorKeystoreAdapter();
+      await adapter.setItem('sb-token', 'refreshed_token');
+      expect(await adapter.getItem('sb-token')).toBe('refreshed_token');
+
+      delete (window as any).Capacitor;
+    });
+
+    it('does not restore a signed-out session when native removal fails', async () => {
+      const mockPlugin = {
+        get: vi.fn().mockResolvedValue({ value: 'old_persisted_token' }),
+        set: vi.fn().mockResolvedValue(undefined),
+        remove: vi.fn().mockRejectedValue(new Error('Keystore error')),
+      };
+      (window as any).Capacitor = { Plugins: { SecureStoragePlugin: mockPlugin } };
+
+      const adapter = new CapacitorKeystoreAdapter();
+      await adapter.removeItem('sb-token');
+      expect(await adapter.getItem('sb-token')).toBeNull();
+
+      delete (window as any).Capacitor;
+    });
+
+    it('clears fallback values after native storage recovers and the session is removed', async () => {
+      let failWrite = true;
+      const mockPlugin = {
+        get: vi.fn().mockResolvedValue({ value: null }),
+        set: vi.fn().mockImplementation(async () => {
+          if (failWrite) throw new Error('Write failed');
+        }),
+        remove: vi.fn().mockResolvedValue(undefined),
+      };
+      (window as any).Capacitor = { Plugins: { SecureStoragePlugin: mockPlugin } };
+
+      const adapter = new CapacitorKeystoreAdapter();
+      await adapter.setItem('session', 'temporary');
+      expect(await adapter.getItem('session')).toBe('temporary');
+
+      // Native storage recovers
+      failWrite = false;
+      mockPlugin.get.mockResolvedValue({ value: 'persisted' });
+      await adapter.setItem('session', 'persisted');
+      expect(await adapter.getItem('session')).toBe('persisted');
+
+      await adapter.removeItem('session');
+      mockPlugin.get.mockResolvedValue({ value: null });
+      expect(await adapter.getItem('session')).toBeNull();
+
+      delete (window as any).Capacitor;
+    });
+
     it('uses in-memory fallback without touching unencrypted localStorage when native plugin is unlinked', async () => {
       delete (window as any).Capacitor;
       const adapter = new CapacitorKeystoreAdapter();
@@ -166,6 +224,86 @@ describe('secureStorage', () => {
 
       await adapter.removeItem('sb-token');
       expect(mockInvoke).toHaveBeenCalledWith('plugin:stronghold|remove_record', { key: 'sb-token' });
+
+      delete (window as any).__TAURI__;
+    });
+
+    it('reads the refreshed session when Tauri writes fail but reads still return stale data', async () => {
+      const mockInvoke = vi.fn().mockImplementation(async (cmd, _args) => {
+        if (cmd === 'plugin:stronghold|get_record') {
+          return { value: 'stale_token' };
+        }
+        if (cmd === 'plugin:stronghold|set_record') {
+          throw new Error('Vault locked');
+        }
+        return undefined;
+      });
+
+      (window as any).__TAURI__ = {
+        core: { invoke: mockInvoke },
+      };
+
+      const adapter = new TauriStrongholdAdapter();
+      await adapter.setItem('sb-token', 'refreshed_token');
+      expect(await adapter.getItem('sb-token')).toBe('refreshed_token');
+
+      delete (window as any).__TAURI__;
+    });
+
+    it('does not restore a signed-out session when Tauri removal fails', async () => {
+      const mockInvoke = vi.fn().mockImplementation(async (cmd, _args) => {
+        if (cmd === 'plugin:stronghold|get_record') {
+          return { value: 'old_persisted_token' };
+        }
+        if (cmd === 'plugin:stronghold|remove_record') {
+          throw new Error('Vault error');
+        }
+        return undefined;
+      });
+
+      (window as any).__TAURI__ = {
+        core: { invoke: mockInvoke },
+      };
+
+      const adapter = new TauriStrongholdAdapter();
+      await adapter.removeItem('sb-token');
+      expect(await adapter.getItem('sb-token')).toBeNull();
+
+      delete (window as any).__TAURI__;
+    });
+
+    it('clears fallback values after Tauri storage recovers and the session is removed', async () => {
+      let failWrite = true;
+      const mockInvoke = vi.fn().mockImplementation(async (cmd, _args) => {
+        if (cmd === 'plugin:stronghold|set_record') {
+          if (failWrite) throw new Error('Write failed');
+          return undefined;
+        }
+        if (cmd === 'plugin:stronghold|get_record') {
+          return failWrite ? { value: null } : { value: 'persisted' };
+        }
+        return undefined;
+      });
+
+      (window as any).__TAURI__ = {
+        core: { invoke: mockInvoke },
+      };
+
+      const adapter = new TauriStrongholdAdapter();
+      await adapter.setItem('session', 'temporary');
+      expect(await adapter.getItem('session')).toBe('temporary');
+
+      // Stronghold recovers
+      failWrite = false;
+      await adapter.setItem('session', 'persisted');
+      expect(await adapter.getItem('session')).toBe('persisted');
+
+      await adapter.removeItem('session');
+      mockInvoke.mockImplementation(async (cmd) => {
+        if (cmd === 'plugin:stronghold|get_record') return { value: null };
+        return undefined;
+      });
+      expect(await adapter.getItem('session')).toBeNull();
 
       delete (window as any).__TAURI__;
     });

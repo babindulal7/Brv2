@@ -368,7 +368,7 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
     }
   }
 
-  const bookingNo = nextDocumentNumber('booking')
+  const bookingNo = (payload['booking_no'] as string | undefined) || nextDocumentNumber('booking')
   const bookingId = crypto.randomUUID()
   const now = new Date().toISOString()
 

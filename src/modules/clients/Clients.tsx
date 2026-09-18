@@ -19,6 +19,7 @@ import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { TIER_TONE, type ClientRecord, STACK_NOTE } from '../../lib/queries/clients'
 import { STATUS } from '../../lib/status'
+import { FilterButton } from '../../components/ui/FilterDrawer'
 
 /**
  * Clients — directory, memberships, referrals, credit, imports, and duplicates.
@@ -57,6 +58,7 @@ export default function Clients() {
   const money = useCanViewMoney()
   const { showSuccessToast } = useToast()
   const [params, setParams] = useSearchParams()
+  const [directoryFiltersOpen, setDirectoryFiltersOpen] = useState(false)
 
   /**
    * Every panel on this screen now reads the database. The directory comes from
@@ -140,6 +142,17 @@ export default function Clients() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
+        {...(activeTab === 'clients'
+          ? {
+              leading: (
+                <FilterButton
+                  onClick={() => setDirectoryFiltersOpen((open) => !open)}
+                  controls="clients-filters"
+                  expanded={directoryFiltersOpen}
+                />
+              ),
+            }
+          : {})}
         title="Clients"
         description="Manage your clients, memberships, referrals, imports, duplicates and credit"
         actions={
@@ -219,7 +232,13 @@ export default function Clients() {
             noun="clients"
             skeleton="table"
           >
-            <ClientsDirectory clients={clients} onRequestAdd={() => setTab('new')} onBlockChanged={refresh} />
+            <ClientsDirectory
+              clients={clients}
+              onRequestAdd={() => setTab('new')}
+              onBlockChanged={refresh}
+              filtersOpen={directoryFiltersOpen}
+              onFiltersOpenChange={setDirectoryFiltersOpen}
+            />
           </PageBody>
         </>
       )}

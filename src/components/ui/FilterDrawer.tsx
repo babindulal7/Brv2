@@ -88,6 +88,10 @@ export interface FilterDrawerProps {
   onClearAll?: () => void
   /** Panel width on desktop and tablet. */
   width?: number
+  /** Desktop/tablet can be a Booqable-style in-flow rail; phone always remains a sheet. */
+  desktopMode?: 'overlay' | 'rail'
+  /** Optional grid placement when the rail participates in a page workspace. */
+  railStyle?: CSSProperties
   /**
    * Which edge the panel comes from.
    *
@@ -123,6 +127,8 @@ export function FilterDrawer({
   activeCount = 0,
   onClearAll,
   width = 360,
+  desktopMode = 'overlay',
+  railStyle,
   side = 'left',
   apply,
   standardFooter,
@@ -131,6 +137,7 @@ export function FilterDrawer({
 }: FilterDrawerProps) {
   const viewport = useViewport()
   const phone = viewport === 'phone'
+  const rail = !phone && desktopMode === 'rail'
   // See the note above prefersReducedMotion's former home: the exit timer needs
   // this in JS, and useCapability keeps it reactive.
   const { reducedMotion } = useCapability()
@@ -203,18 +210,31 @@ export function FilterDrawer({
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        top: phone ? 0 : 'var(--header-h)',
-        left: !phone && side === 'left' ? 'var(--shell-nav-w, 219px)' : 0,
-        zIndex: 60,
-        display: 'flex',
-        alignItems: phone ? 'flex-end' : 'stretch',
-        justifyContent: phone ? 'center' : side === 'left' ? 'flex-start' : 'flex-end',
-        // Desktop: the wrapper must not swallow clicks meant for the list.
-        pointerEvents: phone ? 'auto' : 'none',
-      }}
+      className={rail ? 'filter-rail' : 'filter-overlay'}
+      style={rail
+        ? {
+            position: 'sticky',
+            top: 'calc(var(--header-h) + var(--sp-md))',
+            width,
+            maxWidth: '30vw',
+            height: 'calc(100dvh - var(--header-h) - (2 * var(--sp-md)))',
+            minHeight: 360,
+            alignSelf: 'start',
+            zIndex: 10,
+            overflow: 'hidden',
+            ...railStyle,
+          }
+        : {
+            position: 'fixed',
+            inset: 0,
+            top: phone ? 0 : 'var(--header-h)',
+            left: !phone && side === 'left' ? 'var(--shell-nav-w, 219px)' : 0,
+            zIndex: 60,
+            display: 'flex',
+            alignItems: phone ? 'flex-end' : 'stretch',
+            justifyContent: phone ? 'center' : side === 'left' ? 'flex-start' : 'flex-end',
+            pointerEvents: phone ? 'auto' : 'none',
+          }}
     >
       {/* Scrim on phone only — see the header note. */}
       {phone && (
@@ -232,7 +252,7 @@ export function FilterDrawer({
 
       <div
         ref={panelRef}
-        role="dialog"
+        role={rail ? 'region' : 'dialog'}
         // Not `aria-modal` on desktop: the page behind genuinely stays usable,
         // and claiming otherwise would tell a screen reader the opposite.
         {...(phone ? { 'aria-modal': true } : {})}
@@ -243,21 +263,21 @@ export function FilterDrawer({
           position: 'relative',
           zIndex: 1,
           pointerEvents: 'auto',
-          width: phone ? '100%' : `min(${width}px, calc(100vw - var(--shell-nav-w, 219px)))`,
+          width: rail ? '100%' : phone ? '100%' : `min(${width}px, calc(100vw - var(--shell-nav-w, 219px)))`,
           maxHeight: phone ? '85vh' : 'none',
           // Full height on desktop so the scroll lives INSIDE the body and the
           // Clear all footer stays pinned rather than scrolling away.
-          height: phone ? 'auto' : '100%',
+          height: rail ? '100%' : phone ? 'auto' : '100%',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--surface)',
           backdropFilter: 'none',
           WebkitBackdropFilter: 'none',
           borderLeft: phone || side === 'left' ? 'none' : '1px solid var(--border)',
-          borderRight: phone || side === 'right' ? 'none' : '1px solid var(--border)',
+          borderRight: rail ? '1px solid var(--border)' : phone || side === 'right' ? 'none' : '1px solid var(--border)',
           borderTop: phone ? '1px solid var(--border)' : 'none',
           borderRadius: phone ? 'var(--r-modal) var(--r-modal) 0 0' : 0,
-          boxShadow: phone ? 'var(--shadow-modal)' : '10px 0 28px color-mix(in srgb, var(--text) 8%, transparent)',
+          boxShadow: rail ? 'none' : phone ? 'var(--shadow-modal)' : '10px 0 28px color-mix(in srgb, var(--text) 8%, transparent)',
           outline: 'none',
           // §20. `both` holds the last frame, so a panel mid-exit stays off the
           // edge for the rest of its timer instead of snapping back into view.
@@ -479,12 +499,15 @@ export function FilterButton({
       onClick={onClick}
       aria-controls={controls}
       aria-expanded={expanded}
+      aria-label={`${expanded ? 'Hide' : 'Show'} ${label.toLowerCase()} panel${activeCount > 0 ? `, ${activeCount} active` : ''}`}
+      title={`${expanded ? 'Hide' : 'Show'} ${label.toLowerCase()} panel`}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 7,
-        minHeight: 44,
-        padding: '0 13px',
+        position: 'relative',
+        display: 'inline-grid',
+        placeItems: 'center',
+        width: 40,
+        height: 40,
+        padding: 0,
         borderRadius: 'var(--r-btn)',
         border: `1px solid ${expanded || activeCount > 0 ? 'var(--primary)' : 'var(--btn-secondary-border)'}`,
         background: expanded ? 'var(--nav-active-bg)' : 'transparent',
@@ -495,20 +518,20 @@ export function FilterButton({
         cursor: 'pointer',
       }}
     >
-      {/* The registry has no `filter` glyph (Icon.tsx REGISTRY, ~60 names).
-          `queues` is the funnel-adjacent one already in use for stacked lists;
-          adding a Tabler filter icon would widen the icon budget for one control. */}
-      <Icon name="queues" size={15} />
-      {label}
+      <Icon name={expanded ? 'panel_left_close' : 'panel_left_open'} size={19} />
       {activeCount > 0 && (
         <span
           className="figure"
+          aria-hidden="true"
           style={{
+            position: 'absolute',
+            top: -5,
+            right: -5,
             display: 'inline-grid',
             placeItems: 'center',
-            minWidth: 20,
-            height: 20,
-            padding: '0 6px',
+            minWidth: 18,
+            height: 18,
+            padding: '0 4px',
             borderRadius: 'var(--r-badge)',
             background: 'var(--primary)',
             color: 'var(--on-brand)',

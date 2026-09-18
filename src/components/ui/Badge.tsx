@@ -106,6 +106,10 @@ export const Badge: React.FC<BadgeProps> = ({
         effectiveIcon = effectiveIcon || <IconLock size={14} />
         break
     }
+  } else if ((status as string) === 'Draft') {
+    effectiveLabel = 'Draft'
+    effectiveTone = 'neutral'
+    effectiveIcon = effectiveIcon || <IconFileText size={14} />
   } else if (flag && FLAGS[flag]) {
     const meta = FLAGS[flag]
     effectiveLabel = flag

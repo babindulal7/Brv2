@@ -171,7 +171,7 @@ type Op =
   | { t: 'notis'; col: string }
   | { t: 'contains'; col: string; val: unknown }
   | { t: 'match'; obj: Record<string, unknown> }
-  | { t: 'or'; clauses: { col: string; pattern: string }[] }
+  | { t: 'or'; clauses: { col: string; op?: string; pattern: string }[] }
 
 interface OrderKey {
   col: string
@@ -255,7 +255,9 @@ function matchesOp(row: Row, op: Op): boolean {
     case 'or':
       return op.clauses.some((c) => {
         const v = get(row, c.col)
-        return v !== null && v !== undefined && ilikeToRegExp(c.pattern).test(String(v))
+        if (v === null || v === undefined) return false
+        if (c.op === 'eq') return String(v) === c.pattern
+        return ilikeToRegExp(c.pattern).test(String(v))
       })
   }
 }
@@ -370,13 +372,13 @@ export function createBuilder(table: string, hooks: EngineHooks): MockBuilderLik
           const col = c.slice(0, first).trim()
           const op = c.slice(first + 1, second).trim()
           const pattern = c.slice(second + 1)
-          if (op !== 'ilike' && op !== 'like') {
+          if (op !== 'ilike' && op !== 'like' && op !== 'eq') {
             warnOnce(`.or() operator "${op}" is not supported — clause ignored`)
             return null
           }
-          return { col, pattern }
+          return { col, op, pattern }
         })
-        .filter((x): x is { col: string; pattern: string } => x !== null)
+        .filter((x): x is { col: string; op: string; pattern: string } => x !== null)
       if (clauses.length) ops.push({ t: 'or', clauses })
     }),
     order: chain((col: string, opts?: { ascending?: boolean }) => {

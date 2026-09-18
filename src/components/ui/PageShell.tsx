@@ -10,7 +10,7 @@ export interface PageShellProps extends HTMLAttributes<HTMLDivElement> {
 
 export function PageShell({ width = 'full', header, toolbar, summary, children, className, ...props }: PageShellProps) {
   return (
-    <div className={['page-shell', `page-shell--${width}`, className].filter(Boolean).join(' ')} {...props}>
+    <div className={['page-shell', `page-shell--${width}`, 'animate-entrance', className].filter(Boolean).join(' ')} {...props}>
       {header}
       {toolbar}
       {summary}

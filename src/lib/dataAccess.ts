@@ -100,7 +100,7 @@ export interface UpdateOptions {
 /** Inserts a record with mandatory `client_uuid` injection for idempotency */
 export async function idempotentInsert<
   TTable extends keyof Database['public']['Tables'],
-  TInsert extends Database['public']['Tables'][TTable]['Insert']
+  TInsert extends Database['public']['Tables'][TTable]['Insert'] = Database['public']['Tables'][TTable]['Insert']
 >(
   table: TTable,
   payload: Omit<TInsert, 'client_uuid'> & { client_uuid?: string },

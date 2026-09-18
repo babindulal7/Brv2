@@ -162,7 +162,6 @@ function row(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   }
 }
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const asRow = (o: Record<string, unknown>) => o as any
 
 describe('toClientRecord — the block flag (migration 0054)', () => {

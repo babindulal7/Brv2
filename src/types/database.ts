@@ -20,7 +20,7 @@ export type Json =
 
 export type OperationKind = 'Packing' | 'Handover' | 'Return' | 'Reset' | 'Cleaning'
 export type SessionState = 'Not Started' | 'In Progress' | 'Completed'
-export type DeliveryMethod = 'Customer Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
+export type DeliveryMethod = 'Client Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
 /**
  * Mirrors `create type item_quantity_state` (`0001_enums.sql:42-48`) — five
  * members, `Damaged` among them.
@@ -55,6 +55,7 @@ export type CrewRoleDb =
   | 'Sound Recordist'
 export type PackingLineState = 'Pending' | 'Packed' | 'Partial' | 'Missing' | 'Not Required' | 'Replaced'
 export type PhysicalCondition = 'Excellent' | 'Good' | 'Fair' | 'Damaged' | 'Not Inspected'
+export type SignatureRole = 'Receiver' | 'Warehouse staff' | 'Driver' | 'Witness' | 'Returning person'
 
 /* ── operations enums (0001_enums.sql), typed 12 Aug 2026 ──────────────────
  *
@@ -1585,6 +1586,42 @@ export interface Database {
           updated_at?: string
         }
         Update: Partial<Database['public']['Tables']['cleaning_queue_entries']['Insert']>
+      }
+
+      /**
+       * `0003_operations.sql:518-535`. One signature per role per session.
+       * Required for Handover sessions before stage transition (0115:320-326).
+       */
+      signatures: {
+        Row: {
+          id: string
+          client_uuid: string
+          session_id: string
+          signature_role: SignatureRole
+          signer_name: string
+          signed_at: string
+          device: string
+          signature_evidence_file_id: string | null
+          is_required: boolean
+          sealed_at: string | null
+          created_at: string
+          created_by: string
+        }
+        Insert: {
+          id?: string
+          client_uuid: string
+          session_id: string
+          signature_role: SignatureRole
+          signer_name: string
+          signed_at: string
+          device: string
+          signature_evidence_file_id?: string | null
+          is_required: boolean
+          sealed_at?: string | null
+          created_at?: string
+          created_by: string
+        }
+        Update: Partial<Database['public']['Tables']['signatures']['Insert']>
       }
     }
   }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
 import { rupees, formatMoney } from '../../../lib/money'
@@ -100,6 +100,13 @@ export function RecordPaymentModal({
   const { user } = useAuth()
   const isOnline = useNetwork()
   const [invoiceId, setInvoiceId] = useState(initialInvoiceId || (invoices[0]?.id ?? ''))
+  const prevInvoicesLen = useRef(invoices.length)
+  useEffect(() => {
+    if (prevInvoicesLen.current === 0 && invoices.length > 0 && !invoiceId) {
+      setInvoiceId(initialInvoiceId || (invoices[0]?.id ?? ''))
+    }
+    prevInvoicesLen.current = invoices.length
+  }, [invoices, initialInvoiceId, invoiceId])
   /*
    * Was `useState<number>(initialAmount || 50000)`.
    *

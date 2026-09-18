@@ -9,6 +9,8 @@ import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
+import { ContextDrawer } from '../../components/ui/ContextDrawer'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Badge } from '../../components/ui/Badge'
 import { formatMoney, grouped } from '../../lib/money'
@@ -24,6 +26,8 @@ import { LoadingSkeleton } from '../../components/ui/StateViews'
 const AddEquipment = lazy(() => import('./AddEquipment'))
 import { FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
 import { BarcodeLookupModal } from '../rentals/modals/BarcodeLookupModal'
+import { PrintLabelModal } from '../../components/ui/PrintLabelModal'
+import type { LabelData } from '../../lib/labelPrinter'
 import {
   listInventory,
   listUnits,
@@ -563,6 +567,7 @@ function ParentRowView({
   columns,
   checked,
   onToggle,
+  onInspect,
 }: {
   row: InventoryListRow
   money: boolean
@@ -571,6 +576,7 @@ function ParentRowView({
   columns: number
   checked: boolean
   onToggle: () => void
+  onInspect: (row: InventoryListRow) => void
 }) {
   const [open, setOpen] = useState(false)
   const td = tdFor(density)
@@ -684,9 +690,15 @@ function ParentRowView({
           </td>
         )}
         <td style={{ ...td, width: 30, color: 'var(--muted)' }}>
-          <Unavailable reason="Row actions are not built — no row action in §7.1 has a screen yet, and §4.1 rules out the status edit outright.">
-            <Icon name="more_vert" size={14} />
-          </Unavailable>
+          <button
+            type="button"
+            onClick={() => onInspect(row)}
+            aria-label={`Quick view ${row.name}`}
+            title="Quick view"
+            style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', width: 30, height: 30, display: 'grid', placeItems: 'center' }}
+          >
+            <Icon name="eye" size={14} />
+          </button>
         </td>
       </tr>
 
@@ -1269,7 +1281,9 @@ export default function Inventory() {
   const [page, setPage] = useState(1)
   /** Keyed on `products.id`, the primary key — the mock keyed on `name`, which is not unique. */
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [inspectingEquipment, setInspectingEquipment] = useState<InventoryListRow | null>(null)
   const [barcodeLookupOpen, setBarcodeLookupOpen] = useState(false)
+  const [printingLabel, setPrintingLabel] = useState<LabelData | null>(null)
 
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -1364,7 +1378,7 @@ export default function Inventory() {
   const countRows = useCallback(
     async (filters: ListFilters): Promise<number | null> => {
       if (query.impossible) return 0
-      const res = await listInventory({ ...filters, withCount: true, page: { index: 0, size: 1 } })
+      const res = await listInventory({ ...filters, headOnly: true })
       return res.total ?? null
     },
     [query.impossible],
@@ -1403,7 +1417,7 @@ export default function Inventory() {
    * `total`. `isFilteredOverride: false` because a KPI is never "filtered": its
    * set is the card's own definition and no operator input reaches it.
    */
-  const countFetcher = useCallback((filters: ListFilters) => listInventory({ ...filters, withCount: true }), [])
+  const countFetcher = useCallback((filters: ListFilters) => listInventory({ ...filters, headOnly: true }), [])
   const modelsKpi = useList<InventoryListRow>(countFetcher, INVENTORY_KPI_FILTERS.models, { isFilteredOverride: false })
   const inStockKpi = useList<InventoryListRow>(countFetcher, INVENTORY_KPI_FILTERS.inStock, { isFilteredOverride: false })
   const onRentKpi = useList<InventoryListRow>(countFetcher, INVENTORY_KPI_FILTERS.onRent, { isFilteredOverride: false })
@@ -1556,7 +1570,18 @@ export default function Inventory() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
-        icon="box"
+        {...(!isNew && tab === 'Equipment'
+          ? {
+              leading: (
+                <FilterButton
+                  onClick={() => setFiltersOpen(!filtersOpen)}
+                  activeCount={activeFacetCount}
+                  controls="inventory-filters"
+                  expanded={filtersOpen}
+                />
+              ),
+            }
+          : { icon: 'box' as const })}
         title="Inventory"
         description="The master equipment database — every physical asset owned, sub-rented, repaired or transferred."
         {...(equipmentActions ? { actions: equipmentActions } : {})}
@@ -1829,7 +1854,7 @@ export default function Inventory() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1fr)',
+              gridTemplateColumns: filtersOpen && !phone ? 'minmax(240px, 300px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
               gap: 'var(--sp-md)',
               alignItems: 'start',
             }}
@@ -1847,6 +1872,7 @@ export default function Inventory() {
               id="inventory-filters"
               open={filtersOpen}
               onClose={() => setFiltersOpen(false)}
+              desktopMode="rail"
               side="left"
               width={380}
               resultCount={list.loading ? null : (list.total ?? null)}
@@ -1901,15 +1927,6 @@ export default function Inventory() {
                 )}
 
                 <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                  {/* The only way into the filter panel now that the rail is an
-                      overlay — one control, one place, every width. */}
-                  <FilterButton
-                    onClick={() => setFiltersOpen((v) => !v)}
-                    activeCount={activeFacetCount}
-                    controls="inventory-filters"
-                    expanded={filtersOpen}
-                  />
-
                   {selected.size > 0 ? (
                     <Button
                       icon="download"
@@ -2098,7 +2115,7 @@ export default function Inventory() {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
+                  <DataTableShell ariaLabel="Equipment inventory" style={{ overflowX: 'auto' }}>
                     <table className="operations-table" aria-label="Equipment inventory" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1060 }}>
                       <thead>
                         <tr style={{ background: 'var(--th-bg)' }}>
@@ -2161,11 +2178,12 @@ export default function Inventory() {
                             columns={tableColumns}
                             checked={selected.has(p.id)}
                             onToggle={() => toggleRow(p.id)}
+                            onInspect={setInspectingEquipment}
                           />
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                  </DataTableShell>
                 )}
               </PageBody>
 
@@ -2307,6 +2325,56 @@ export default function Inventory() {
         </>
       )}
 
+      <ContextDrawer
+        id="equipment-quick-view"
+        open={Boolean(inspectingEquipment)}
+        onClose={() => setInspectingEquipment(null)}
+        title={inspectingEquipment?.name ?? 'Equipment'}
+        subtitle={inspectingEquipment ? `${inspectingEquipment.category ?? 'Uncategorised'} · ${inspectingEquipment.assetCode}` : undefined}
+        status={inspectingEquipment ? <ConditionBadge condition={conditionOf(inspectingEquipment)} /> : undefined}
+      >
+        {inspectingEquipment && (
+          <div style={{ display: 'grid', gap: 'var(--space-6)' }}>
+            <section aria-labelledby="equipment-quick-view-stock">
+              <h3 id="equipment-quick-view-stock" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Stock</h3>
+              <dl style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 'var(--space-2) var(--space-4)', margin: 'var(--space-3) 0 0' }}>
+                <dt style={{ color: 'var(--muted)' }}>Availability</dt><dd className="figure" style={{ margin: 0 }}>{stockLabel(inspectingEquipment)}</dd>
+                <dt style={{ color: 'var(--muted)' }}>Tracking</dt><dd style={{ margin: 0 }}>{inspectingEquipment.trackingMode}</dd>
+                <dt style={{ color: 'var(--muted)' }}>Category</dt><dd style={{ margin: 0 }}>{inspectingEquipment.category ?? '—'}</dd>
+              </dl>
+            </section>
+            <section aria-labelledby="equipment-quick-view-status">
+              <h3 id="equipment-quick-view-status" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Status breakdown</h3>
+              <div style={{ marginTop: 'var(--space-3)' }}><StatusBreakdown breakdown={breakdownOf(inspectingEquipment)} /></div>
+            </section>
+            {money && (
+              <section aria-labelledby="equipment-quick-view-finance">
+                <h3 id="equipment-quick-view-finance" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Replacement value</h3>
+                <p className="figure" style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 700 }}>{inspectingEquipment.replacementValue === null ? '—' : formatMoney(inspectingEquipment.replacementValue)}</p>
+              </section>
+            )}
+            <div style={{ marginTop: 'var(--space-4)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border)' }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setPrintingLabel({
+                    assetCode: inspectingEquipment.assetCode,
+                    title: inspectingEquipment.name,
+                    subtitle: inspectingEquipment.brand || '',
+                    barcodeValue: inspectingEquipment.assetCode,
+                    orgName: 'BABIN RENTALS OS',
+                  })
+                }}
+                style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: 6 }}
+              >
+                <Icon name="barcode" size={14} /> Print Thermal Asset Tag
+              </Button>
+            </div>
+          </div>
+        )}
+      </ContextDrawer>
+
       <FloatingBulkActionBar
         selectedCount={selected.size}
         totalCount={list.rows.length}
@@ -2320,6 +2388,23 @@ export default function Inventory() {
             onClick: () => {
               const selRows = list.rows.filter((r) => selected.has(r.id))
               exportCsv(selRows, money)
+            },
+          },
+          {
+            id: 'bulk-print-tag',
+            label: 'Print Thermal Tag',
+            icon: 'barcode',
+            onClick: () => {
+              const selRow = list.rows.find((r) => selected.has(r.id))
+              if (selRow) {
+                setPrintingLabel({
+                  assetCode: selRow.assetCode,
+                  title: selRow.name,
+                  subtitle: selRow.brand || '',
+                  barcodeValue: selRow.assetCode,
+                  orgName: 'BABIN RENTALS OS',
+                })
+              }
             },
           },
           {
@@ -2346,6 +2431,14 @@ export default function Inventory() {
         isOpen={barcodeLookupOpen}
         onClose={() => setBarcodeLookupOpen(false)}
       />
+
+      {printingLabel && (
+        <PrintLabelModal
+          isOpen={Boolean(printingLabel)}
+          onClose={() => setPrintingLabel(null)}
+          labelData={printingLabel}
+        />
+      )}
 
       <FooterNote extra={['Equipment is retired, never deleted']} />
     </div>

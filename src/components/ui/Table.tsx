@@ -70,7 +70,7 @@ export function Table<T extends Record<string, unknown>>({
         borderRadius: 'var(--r-card)',
         border: '1px solid var(--border)',
         background: 'var(--card)',
-        boxShadow: 'var(--shadow-card)',
+        boxShadow: 'var(--shadow-card), var(--specular-rim)',
       }}
     >
       <table

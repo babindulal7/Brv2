@@ -9,7 +9,6 @@ import { useAuth } from '../../lib/auth'
 import {
   listActivityEvents,
   ACTIVITY_MODULES,
-  ACTIVITY_TIMELINE,
   RETENTION_NOTE,
   targetLabel,
   type ActivityRow,
@@ -54,12 +53,12 @@ export default function ActivityLog() {
   const viewport = useViewport()
   const { user } = useAuth()
   const showNetwork = user?.role === 'Owner' || user?.role === 'Manager' || user?.role === 'Admin'
-  const [timeline, setTimeline] = useState<readonly ActivityRow[]>(ACTIVITY_TIMELINE)
+  const [timeline, setTimeline] = useState<readonly ActivityRow[]>([])
 
   useEffect(() => {
     let active = true
     listActivityEvents().then((res) => {
-      if (active && res.rows.length > 0) {
+      if (active) {
         setTimeline(res.rows)
       }
     }).catch(() => {})

@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
-import { Card, PageHeader, Button, KpiStrip, Rail, SideRail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner } from '../../components/ui/StateViews'
@@ -51,6 +52,7 @@ import Expenses from './Expenses'
 import Documents from '../documents/Documents'
 import { ReportCatalog } from '../reports/ReportCatalog'
 import { DateField } from '../../components/ui/DateField'
+import { exportInvoicePdf } from '../../lib/pdf/exportPdf'
 
 
 /**
@@ -637,6 +639,7 @@ export default function Finance() {
   const [dateCol, setDateCol] = useState<'issue_date' | 'due_date'>('issue_date')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [invoiceFiltersOpen, setInvoiceFiltersOpen] = useState(false)
 
   /**
    * Law 13/14 — width decides, never a platform branch. `viewport` collapses
@@ -728,6 +731,7 @@ export default function Finance() {
     return f
   }, [railSearch, dateCol, dateFrom, dateTo])
   const railIsFiltered = railSearch.trim() !== '' || dateFrom !== '' || dateTo !== ''
+  const invoiceFilterCount = Number(chip !== 'All') + Number(railSearch.trim() !== '') + Number(dateFrom !== '' || dateTo !== '')
   const invoiceListFilters = useMemo<ListFilters>(() => ({ ...chipFilters, ...railFilters }), [chipFilters, railFilters])
 
   const clearInvoiceFilters = useCallback(() => {
@@ -954,6 +958,40 @@ export default function Finance() {
   const handleRefundSuccess = useCallback(() => {
     refreshAll()
   }, [refreshAll])
+
+  const handleExportPdf = useCallback(async (row: InvoiceListRow) => {
+    try {
+      await exportInvoicePdf(
+        {
+          invoiceNo: row.invoiceNo,
+          status: row.status,
+          issueDateAd: row.issueDateAd,
+          dueDateAd: row.dueDateAd,
+          bookingNo: row.bookingNo,
+          client: { name: row.clientName },
+          lines: [
+            {
+              description: 'Equipment Rental & Production Services',
+              quantity: 1,
+              totalPaisa: row.totalAmount,
+            },
+          ],
+          subtotalPaisa: row.totalAmount,
+          taxablePaisa: row.totalAmount,
+          vatPaisa: row.vatAmount,
+          totalPaisa: row.totalAmount,
+          paidPaisa: row.paidAmount,
+          outstandingPaisa: row.outstandingAmount,
+        },
+        {
+          invoiceId: row.id,
+          download: true,
+        },
+      )
+    } catch (err) {
+      console.error('Failed to export invoice PDF:', err)
+    }
+  }, [])
 
   /**
    * ⚠ **Reachable as of MONEY-01** — the day this comment described has arrived.
@@ -1258,16 +1296,9 @@ export default function Finance() {
     </button>
   )
 
-  /*
-   * The Invoices filter column (31 Aug) — `SideRail`, the same collapsible
-   * column ClientsDirectory, Operation and Documents run. Desktop only; below
-   * 1280 the SAME filters render as compact inline rows (rulings §7 —
-   * "collapse below 1280 means reflow, not hide"). The STATUS chips are not
-   * here: they stay on the table as its primary tabs, per the Operations
-   * precedent. Everything sits inside the money-gated `PageBody`, so a
-   * money-blind session never sees "Outstanding"-adjacent vocabulary or
-   * issues a filtered request (Law 6 — the fetcher short-circuits too).
-   */
+  /* The Invoices filters now open from the table toolbar. The panel is fixed,
+     so it never steals a table column, and the same control works at every
+     viewport width. Status chips remain the table's primary tabs. */
   const invoiceFiltersPanel = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
       <Card title="Find">
@@ -1307,36 +1338,6 @@ export default function Finance() {
     </div>
   )
 
-  const invoiceFiltersInline = (
-    <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
-      <input
-        type="search"
-        value={railSearch}
-        onChange={(e) => setRailSearch(e.target.value)}
-        placeholder="Invoice or credit-note no…"
-        aria-label="Search invoices by invoice or credit-note number"
-        style={{ ...railInputStyle, flex: '1 1 200px', minWidth: 160 }}
-      />
-      <div role="group" aria-label="Which date the range binds" style={{ display: 'flex', gap: 6 }}>
-        {dateColChip('issue_date', 'Issue date', false)}
-        {dateColChip('due_date', 'Due date', false)}
-      </div>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-        From
-        <DateField ariaLabel="Invoices from this day" value={dateFrom} onChange={setRailDateFrom} showBs={false} clearable style={railInputStyle} />
-      </label>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-        To
-        <DateField ariaLabel="Invoices up to this day" value={dateTo} onChange={setRailDateTo} showBs={false} clearable style={railInputStyle} />
-      </label>
-      {(railIsFiltered || chip !== 'All') && (
-        <Button icon="close" onClick={clearInvoiceFilters}>
-          Clear all filters
-        </Button>
-      )}
-    </div>
-  )
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {/* The three actions are omitted for a money-blind session, not disabled:
@@ -1348,7 +1349,18 @@ export default function Finance() {
           two Export buttons on one screen exporting different things is the
           duplication the re-host was done to remove. */}
       <PageHeader
-        icon="card"
+        {...(tab === 'Invoices'
+          ? {
+              leading: (
+                <FilterButton
+                  onClick={() => setInvoiceFiltersOpen(!invoiceFiltersOpen)}
+                  activeCount={invoiceFilterCount}
+                  controls="finance-invoice-filters"
+                  expanded={invoiceFiltersOpen}
+                />
+              ),
+            }
+          : { icon: 'card' as const })}
         title="Finance"
         description="Finance consumes operational data and never creates it."
         {...(money && (tab === 'Dashboard' || tab === 'Invoices') ? { actions: headerActions } : {})}
@@ -1383,7 +1395,10 @@ export default function Finance() {
               type="button"
               role="tab"
               aria-selected={on}
-              onClick={() => setTab(t as FinanceTab)}
+              onClick={() => {
+                if (t !== 'Invoices') setInvoiceFiltersOpen(false)
+                setTab(t as FinanceTab)
+              }}
               style={{
                 /* Law 15 — 44×44 at every width, desktop included. The strip was
                    34px high, which is a touch target nobody on the tablet this
@@ -1453,26 +1468,32 @@ export default function Finance() {
           <div
             style={{
               display: 'grid',
-              /* Three tracks only when the Invoices tab carries its filter
-                 column — the Dashboard keeps the two-track shape it had. */
-              gridTemplateColumns:
-                viewport === 'desktop'
-                  ? tab === 'Invoices'
-                    ? 'auto minmax(0,1fr) auto'
-                    : 'minmax(0,1fr) auto'
-                  : '1fr',
+              gridTemplateColumns: tab === 'Invoices' && invoiceFiltersOpen && viewport !== 'phone'
+                ? 'minmax(230px, 280px) minmax(0,1fr)'
+                : 'minmax(0,1fr)',
               gap: 'var(--sp-md)',
               alignItems: 'start',
             }}
           >
-            {viewport === 'desktop' && tab === 'Invoices' && (
-              <SideRail label="Filters" width={224}>
+            {tab === 'Invoices' && (
+              <FilterDrawer
+                id="finance-invoice-filters"
+                open={invoiceFiltersOpen}
+                onClose={() => setInvoiceFiltersOpen(false)}
+                desktopMode="rail"
+                width={360}
+                resultCount={list.loading ? null : list.total}
+                noun="invoices"
+                activeCount={invoiceFilterCount}
+                onClearAll={clearInvoiceFilters}
+                standardFooter
+                onApply={() => setInvoiceFiltersOpen(false)}
+              >
                 {invoiceFiltersPanel}
-              </SideRail>
+              </FilterDrawer>
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-              {viewport !== 'desktop' && tab === 'Invoices' && invoiceFiltersInline}
               {tab === 'Dashboard' ? (
                 <>
                   {/*
@@ -1600,8 +1621,9 @@ export default function Finance() {
                        nothing here narrows rows already fetched. See
                        `invoiceChipFilters` for why three of the seven are not a
                        `status` filter and what happens if they are made one. */
-                    <div role="group" aria-label="Filter invoices by status" style={{ display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
-                      {INVOICE_CHIPS.map((c) => {
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+                      <div role="group" aria-label="Filter invoices by status" style={{ display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
+                        {INVOICE_CHIPS.map((c) => {
                         const on = chip === c
                         return (
                           <button
@@ -1643,7 +1665,8 @@ export default function Finance() {
                             {c}
                           </button>
                         )
-                      })}
+                        })}
+                      </div>
                     </div>
                   }
                   bodyStyle={{ padding: 0 }}
@@ -1747,6 +1770,7 @@ export default function Finance() {
                                     }}
                                     onRefund={() => setSelectedInvoiceForRefund(i)}
                                     onVoid={() => setSelectedInvoiceForVoid(i)}
+                                    onExportPdf={() => handleExportPdf(i)}
                                   />
                                 </td>
                               </tr>
@@ -1825,6 +1849,7 @@ export default function Finance() {
                                 }}
                                 onRefund={() => setSelectedInvoiceForRefund(i)}
                                 onVoid={() => setSelectedInvoiceForVoid(i)}
+                                onExportPdf={() => handleExportPdf(i)}
                               />
                             </span>
                           </div>
@@ -2028,6 +2053,7 @@ function RowActions({
   onPay,
   onRefund,
   onVoid,
+  onExportPdf,
 }: {
   row: InvoiceListRow
   phone?: boolean
@@ -2048,6 +2074,7 @@ function RowActions({
   onPay: () => void
   onRefund: () => void
   onVoid: () => void
+  onExportPdf?: () => void
 }) {
   const base = phone
     ? {
@@ -2105,6 +2132,16 @@ function RowActions({
       {canVoid && !row.isVoid && (
         <button type="button" onClick={onVoid} style={{ ...base, color: 'var(--danger)', fontWeight: 500 }}>
           Void
+        </button>
+      )}
+      {onExportPdf && (
+        <button
+          type="button"
+          onClick={onExportPdf}
+          aria-label={`Export PDF for ${row.invoiceNo || 'invoice'}`}
+          style={{ ...base, color: 'var(--text)', fontWeight: 500 }}
+        >
+          PDF
         </button>
       )}
     </>

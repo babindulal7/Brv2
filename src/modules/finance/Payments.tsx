@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
@@ -188,11 +188,17 @@ export function paymentDateRange(fromDay: string, toDay: string): PaymentDateRan
   }
 }
 
-/** The complete set sent to Postgres: the chip's predicate with the day range bound onto it. */
-export function paymentFilters(chip: PaymentChip, fromDay: string, toDay: string): ListFilters {
+export const ROWS_PER_PAGE = 25
+
+/** The complete set sent to Postgres: the chip's predicate with the day range bound onto it and page bounds. */
+export function paymentFilters(chip: PaymentChip, fromDay: string, toDay: string, page = 1): ListFilters {
   const base = paymentChipFilters(chip)
   const range = paymentDateRange(fromDay, toDay)
-  return range ? { ...base, dateRange: range } : base
+  const filters = range ? { ...base, dateRange: range } : base
+  return {
+    ...filters,
+    page: { index: Math.max(0, page - 1), size: ROWS_PER_PAGE },
+  }
 }
 
 /* ── row rendering ──────────────────────────────────────────────────────── */
@@ -542,6 +548,12 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
    */
   const canReverse = canTakePayment
 
+  const [recordOpen, setRecordOpen] = useState(false)
+  const [reversing, setReversing] = useState<PaymentListRow | null>(null)
+
+  const hasLoadedInvoices = useRef(false)
+  const shouldLoadInvoices = recordOpen || reversing !== null
+
   /* See the block above `Payments()` for why both of these close over `money`. */
   const fetchPayments = useCallback(
     async (filters: ListFilters) => {
@@ -552,10 +564,13 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
   )
   const fetchInvoices = useCallback(
     async (filters: ListFilters) => {
-      if (!money) return { rows: [], total: 0 }
+      if (!money || (!shouldLoadInvoices && !hasLoadedInvoices.current)) {
+        return { rows: [], total: 0 }
+      }
+      hasLoadedInvoices.current = true
       return listInvoices(filters)
     },
-    [money],
+    [money, shouldLoadInvoices],
   )
 
   const chip = chipFromParam(params.get('status'))
@@ -564,8 +579,8 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
   const range = paymentDateRange(fromDay, toDay)
   const isFiltered = chip !== 'All' || range !== null
 
-  const [recordOpen, setRecordOpen] = useState(false)
-  const [reversing, setReversing] = useState<PaymentListRow | null>(null)
+  const pageParam = parseInt(params.get('page') ?? '1', 10)
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
 
   const patch = (next: Record<string, string | null>) => {
     const merged = new URLSearchParams(params)
@@ -577,6 +592,10 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
   }
   const clearFilters = () => setParams(new URLSearchParams())
 
+  const setPage = (nextPage: number) => {
+    patch({ page: nextPage > 1 ? String(nextPage) : null })
+  }
+
   /*
    * The one list. Every predicate server-side.
    *
@@ -586,35 +605,33 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
    * `payment_type` set are different shapes, so a baseline comparison cannot
    * answer "did the operator narrow this".
    */
-  const list = useList<PaymentListRow>(fetchPayments, paymentFilters(chip, fromDay, toDay), {
+  const list = useList<PaymentListRow>(fetchPayments, paymentFilters(chip, fromDay, toDay, page), {
     isFilteredOverride: isFiltered,
   })
+
+  const total = list.total
+  const pageCount = total === null ? 1 : Math.max(1, Math.ceil(total / ROWS_PER_PAGE))
+
+  useEffect(() => {
+    if (total !== null && page > pageCount && pageCount > 0) {
+      patch({ page: pageCount > 1 ? String(pageCount) : null })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- page bounds clamp
+  }, [page, pageCount, total])
 
   /*
    * The invoices the Record Payment modal offers.
    *
-   * ⚠ This was `outstandingInvoices()` — Sent and Partially Paid only — on the
-   * reasoning that *"a draft has not been sent to anybody"*. That reasoning
-   * predates the 4 September rulings and is now the opposite of the truth:
-   *
-   *  · **R-02** — an invoice *"is created as **Draft** and stays Draft for the
-   *    whole rental"*, issued once at return.
-   *  · **R-14** — while `status = 'Draft'`, a payment updates `paid_amount` and
-   *    `outstanding_amount` but does not change the status, so *"the Draft
-   *    carries a true running balance all the way through the rental"*.
-   *  · **SPEC-P0-1 §3.5** — *"`RecordPaymentModal` — reachable once a Draft
-   *    exists."* §5's acceptance case is a 50% advance against that Draft.
-   *
-   * So a Draft is precisely what an advance is taken against, and excluding it
-   * left this screen offering an empty picker for every rental in progress.
-   *
-   * `payableInvoices()` is a NEW set rather than a widening of
-   * `outstandingInvoices()`: that one answers "what is the business owed", which
-   * feeds the receivables figures, and a Draft is deliberately not a receivable.
-   * Two questions, two sets — see `queries/finance.ts`.
+   * ⚠ Deferred: only fetched once the operator opens Record Payment or clicks Reverse.
    */
   const invoiceFilters = payableInvoices()
   const invoiceList = useList(fetchInvoices, invoiceFilters, { baseline: invoiceFilters })
+
+  useEffect(() => {
+    if (shouldLoadInvoices && !hasLoadedInvoices.current) {
+      invoiceList.refetch()
+    }
+  }, [shouldLoadInvoices, invoiceList])
 
   /**
    * Narrowed to what `RecordPaymentModal` declares, and mapped exactly as
@@ -659,7 +676,23 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
 
   const refreshAll = () => {
     list.refetch()
-    invoiceList.refetch()
+    if (hasLoadedInvoices.current) {
+      invoiceList.refetch()
+    }
+  }
+
+  const openRecord = () => {
+    if (!hasLoadedInvoices.current) {
+      invoiceList.refetch()
+    }
+    setRecordOpen(true)
+  }
+
+  const openReverse = (row: PaymentListRow) => {
+    if (!hasLoadedInvoices.current) {
+      invoiceList.refetch()
+    }
+    setReversing(row)
   }
 
   const rows = list.rows
@@ -730,7 +763,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                 `canTakePayment` narrows it further to the roles allowed to
                 record one; see its definition above. */}
             {money && canTakePayment && (
-              <Button icon="plus" variant="primary" aria-label="Record Payment" onClick={() => setRecordOpen(true)}>
+              <Button icon="plus" variant="primary" aria-label="Record Payment" onClick={openRecord}>
                 {phone ? '' : 'Record Payment'}
               </Button>
             )}
@@ -759,7 +792,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
             <button
               key={c}
               type="button"
-              onClick={() => patch({ status: CHIP_PARAM[c] })}
+              onClick={() => patch({ status: CHIP_PARAM[c], page: null })}
               aria-pressed={chip === c}
               style={chipStyle(chip === c)}
               {...(c === 'Refunded'
@@ -805,7 +838,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
           <DateField
             ariaLabel="Payments from this Kathmandu day"
             value={fromDay}
-            onChange={(v) => patch({ from: v || null })}
+            onChange={(v) => patch({ from: v || null, page: null })}
             showBs={false}
             clearable
             style={inputStyle}
@@ -816,7 +849,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
           <DateField
             ariaLabel="Payments up to and including this Kathmandu day"
             value={toDay}
-            onChange={(v) => patch({ to: v || null })}
+            onChange={(v) => patch({ to: v || null, page: null })}
             showBs={false}
             clearable
             align="right"
@@ -923,7 +956,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                       {formatPaymentAt(p.paymentDateAd)}
                     </span>
 
-                    <ReverseAction row={p} onOpen={setReversing} canReverse={canReverse} full />
+                    <ReverseAction row={p} onOpen={openReverse} canReverse={canReverse} full />
                   </article>
                 ))}
               </div>
@@ -990,12 +1023,40 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                           {formatPaymentAt(p.paymentDateAd)}
                         </td>
                         <td style={td}>
-                          <ReverseAction row={p} onOpen={setReversing} canReverse={canReverse} />
+                          <ReverseAction row={p} onOpen={openReverse} canReverse={canReverse} />
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {total !== null && total > ROWS_PER_PAGE && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: '10px 12px',
+                  borderTop: '1px solid var(--border)',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                  Showing {(page - 1) * ROWS_PER_PAGE + 1} to {Math.min(page * ROWS_PER_PAGE, total)} of {total}
+                </span>
+                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}>
+                    Previous
+                  </Button>
+                  <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', padding: '0 4px' }}>
+                    {page} / {pageCount}
+                  </span>
+                  <Button onClick={() => setPage(Math.min(pageCount, page + 1))} disabled={page === pageCount}>
+                    Next
+                  </Button>
+                </span>
               </div>
             )}
           </PageBody>

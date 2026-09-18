@@ -70,6 +70,9 @@ import {
   IconLock,
   IconMinus,
   IconMessage,
+  IconBarcode,
+  IconLayoutSidebarLeftCollapse,
+  IconLayoutSidebarLeftExpand,
   type Icon as TablerIconType,
 } from '@tabler/icons-react'
 import { captureError } from '../../lib/monitoring'
@@ -143,6 +146,7 @@ const REGISTRY = {
   // must read in shape, not colour alone, so hide gets its own glyph.
   eye_off: IconEyeOff,
   error: IconAlertCircle,
+  alert_circle: IconAlertCircle,
   flag: IconFlag,
   info: IconInfoCircle,
   timer: IconClock,
@@ -176,6 +180,9 @@ const REGISTRY = {
   lock: IconLock,
   minus: IconMinus,
   message: IconMessage,
+  barcode: IconBarcode,
+  panel_left_close: IconLayoutSidebarLeftCollapse,
+  panel_left_open: IconLayoutSidebarLeftExpand,
 } satisfies Record<string, TablerIconType>
 
 export type IconName = keyof typeof REGISTRY

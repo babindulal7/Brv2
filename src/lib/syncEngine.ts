@@ -159,7 +159,10 @@ class SyncEngine {
 
     try {
       // Pull products / equipment
-      const { data: products } = await supabase.from('products').select('*').limit(300)
+      const { data: products } = await supabase
+        .from('products_v')
+        .select('id, name, asset_code, brand, model, status, is_active, created_at')
+        .limit(300)
       if (products && products.length > 0) {
         await localStore.products.bulkPut(
           products.map((p: RemoteProduct) => withoutUndefined<CachedProduct>({
@@ -179,7 +182,10 @@ class SyncEngine {
       }
 
       // Pull client directory
-      const { data: clients } = await supabase.from('clients').select('*').limit(300)
+      const { data: clients } = await supabase
+        .from('clients')
+        .select('id, name, phone, email, address, is_blocked, created_at')
+        .limit(300)
       if (clients && clients.length > 0) {
         await localStore.clients.bulkPut(
           clients.map((c: RemoteClient) => withoutUndefined<CachedClient>({
