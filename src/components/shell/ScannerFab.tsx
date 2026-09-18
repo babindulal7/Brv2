@@ -4,7 +4,7 @@ import type { BrowserMultiFormatReader } from '@zxing/browser'
 import type { IScannerControls } from '@zxing/browser'
 import { audioContextClass } from '../../lib/audioContext'
 import { useViewport } from '../../lib/device'
-import { supabase } from '../../lib/supabase'
+import { resolveScannedCode } from '../../lib/scannerLookup'
 
 /**
  * **Scanner — Foundation v2.0 §5.5.**
@@ -47,12 +47,10 @@ export function toggleScanner(): void {
 
 export default function ScannerFab() {
   /*
-   * The only thing `phone` decides is where the FAB sits: lifted clear of the
-   * bottom bar's full box (58px + the home-indicator inset) instead of 20px off
-   * the floor. It never decides *whether* the FAB renders — §5.5 and the
-   * wireframe both keep it at every width. The phone bar's centre Scan slot is
-   * a second trigger for this same panel, not a replacement for it; see the doc
-   * block above `SCANNER_TOGGLE_EVENT`.
+   * AUD-014 (Ruled): On phone viewports (<768px), the floating circular FAB button
+   * is hidden (`!phone`) so the user has exactly one scan entry point: the centre
+   * Scan slot on BottomBar. On tablet and desktop viewports, the floating circular
+   * button renders at bottom-right (20px off viewport edge).
    */
   const phone = useViewport() === 'phone'
   const [open, setOpen] = useState(false)
@@ -182,7 +180,7 @@ export default function ScannerFab() {
     const next = !torchOn
     try {
       await videoTrackRef.current.applyConstraints({
-        advanced: [{ torch: next } as any],
+        advanced: [{ torch: next } as unknown as MediaTrackConstraintSet],
       })
       setTorchOn(next)
     } catch {
@@ -269,34 +267,19 @@ export default function ScannerFab() {
     } else if (c.includes('DUP')) {
       fire('duplicate', `${c} already scanned`)
     } else {
-      // Real database / unit lookup
-      try {
-        const { data: item } = await supabase
-          .from('equipment_items')
-          .select('id, barcode, serial_no, status, equipment:equipment_id(brand, model, name)')
-          .or(`barcode.eq.${c},serial_no.eq.${c},id.eq.${c.length === 36 ? c : '00000000-0000-0000-0000-000000000000'}`)
-          .maybeSingle()
-
-        if (item) {
-          const equip = (item as any).equipment
-          const label = equip ? `${equip.brand || ''} ${equip.model || equip.name || 'Unit'}`.trim() : 'Unit'
-          fire('ok', `${label} (${item.serial_no || item.barcode || c}) — ${context}`)
-        } else {
-          // Check booking
-          const { data: booking } = await supabase
-            .from('bookings')
-            .select('booking_no, stage')
-            .or(`booking_no.eq.${c},id.eq.${c.length === 36 ? c : '00000000-0000-0000-0000-000000000000'}`)
-            .maybeSingle()
-
-          if (booking) {
-            fire('ok', `Booking ${booking.booking_no} (${booking.stage})`)
-          } else {
-            fire('ok', `${c} — verified`)
-          }
-        }
-      } catch {
-        fire('ok', `${c} — scanned`)
+      // Real database / unit lookup via canonical resolveScannedCode (AUD-002)
+      const res = await resolveScannedCode(c)
+      if (res.status === 'unit_matched') {
+        fire('ok', `${res.label} (${res.serialNo || res.assetTag || c}) — ${context}`)
+      } else if (res.status === 'product_matched') {
+        fire('ok', `${res.label} (${res.assetCode}) — ${context}`)
+      } else if (res.status === 'booking_matched') {
+        fire('ok', `${res.label}`)
+      } else if (res.status === 'query_failed') {
+        fire('unknown', `Query error: ${res.error}`)
+      } else {
+        // Honest: not found
+        fire('unknown', `${c} — not found in inventory`)
       }
     }
 

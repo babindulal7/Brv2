@@ -328,7 +328,7 @@ export function BarcodeScannerModal({
     const next = !torchOn
     try {
       await videoTrackRef.current.applyConstraints({
-        advanced: [{ torch: next } as any],
+        advanced: [{ torch: next } as unknown as MediaTrackConstraintSet],
       })
       setTorchOn(next)
     } catch {
