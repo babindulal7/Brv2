@@ -58,12 +58,15 @@ afterEach(async () => {
 })
 
 describe('Sidebar — Law 13, width decides', () => {
-  it('is 219px at desktop, with all eleven labels readable', async () => {
+  it('is 219px at desktop, with all 7 primary labels and More readable', async () => {
     await mount(<Sidebar active="/dashboard" />)
     const aside = container.querySelector('aside')
     expect(aside?.style.width).toBe('219px')
-    expect(container.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(11)
-    expect(container.textContent).toContain('Crew Assist')
+    expect(container.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(7)
+    expect(container.textContent).toContain('Dashboard')
+    expect(container.textContent).toContain('Rentals')
+    expect(container.textContent).toContain('Operations')
+    expect(container.textContent).toContain('More')
   })
 
   it('is a 72px icon rail at tablet, with no labels and no collapse toggle', async () => {
@@ -75,11 +78,12 @@ describe('Sidebar — Law 13, width decides', () => {
     expect(container.querySelector('[aria-label="Expand navigation"]')).toBeNull()
   })
 
-  it('still speaks each label in the rail — title on every row', async () => {
+  it('still speaks each primary label in the rail — title on every row', async () => {
     viewport = 'tablet'
     await mount(<Sidebar active="/dashboard" />)
     const titles = [...container.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.getAttribute('title'))
-    expect(titles).toContain('Crew Assist')
+    expect(titles).toContain('Rentals')
+    expect(titles).toContain('Operations')
     expect(titles.every((t) => t !== null && t.length > 0)).toBe(true)
   })
 
@@ -109,9 +113,9 @@ describe('Sidebar — Law 13, width decides', () => {
 describe('Sidebar — exactly one active row', () => {
   const current = () => [...container.querySelectorAll('[aria-current="page"]')].map((el) => el.textContent)
 
-  it('/rentals/new lights New Rental alone', async () => {
+  it('/rentals/new lights Rentals', async () => {
     await mount(<Sidebar active="/rentals/new" />)
-    expect(current()).toEqual(['New Rental'])
+    expect(current()).toEqual(['Rentals'])
   })
 
   it('/rentals lights Rentals alone', async () => {
@@ -129,9 +133,9 @@ describe('Sidebar — exactly one active row', () => {
     expect(current()).toEqual(['Rentals'])
   })
 
-  it('/operations?queue=packing lights Operation alone', async () => {
+  it('/operations?queue=packing lights Operations alone', async () => {
     await mount(<Sidebar active="/operations?queue=packing" />)
-    expect(current()).toEqual(['Operation'])
+    expect(current()).toEqual(['Operations'])
   })
 })
 

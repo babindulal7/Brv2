@@ -3,38 +3,16 @@ import type { SystemRole } from '../types/database'
 import { canViewMoney, isStaff } from '../lib/rbac'
 
 /**
- * The application's navigation tree — **the updated wireframes, "Shell —
- * identical on every page"**, repeated verbatim at the top of all eleven spec
- * files (`updated mds/01_NEW_RENTAL.md` lines 6–28 … `11_SETTINGS.md`).
+ * The application's navigation tree — simplified global navigation.
  *
- * > **Nav (fixed, 11):** New Rental · Today · Operation · Rentals · Calendar ·
- * > Crew Assist · Inventory · Clients · Finance · Tools · Settings
+ * Primary navigation (7 items):
+ * Dashboard · Rentals · Calendar · Operations · Inventory · Clients · Finance
  *
- * ## This supersedes Foundation v2.0 §5.1's "8 + Settings, hard ceiling"
+ * Secondary navigation (More):
+ * Crew Assist · Tools · Settings
  *
- * That ceiling is gone, and this file no longer argues for it. §5.1 was written
- * against a 15-item sidebar transcribed from the Generation C renders; the fix
- * at the time was to cut to eight and pin Settings below a divider so the array
- * could not quietly grow back. The updated wireframes are the newer artefact and
- * they state a different, equally explicit number: **eleven, in one flat list,
- * with Settings as item 11 inside it.** Eleven named destinations chosen by a
- * spec is not the fifteen-item drift §5.1 was defending against — it is a
- * decision, and this is the decision.
- *
- * Two consequences a future reader should not mistake for a mistake:
- *
- *  1. **Settings is item 11 of `NAV`**, not a separate pinned row. `SETTINGS_NAV`
- *     still exists and still points at *the same object*, so no surface can show
- *     a Settings entry that has drifted from the one in the list.
- *  2. **The nav is flat — no children anywhere.** Operation's five queues
- *     (`?queue=packing` …) were sidebar children; spec `03_OPERATION.md` §3.1
- *     makes them *filter chips on the /operations page*: "queue chips filter one
- *     time-ordered list". `NavChild` survives as a type only so a future spec
- *     that re-introduces nesting has somewhere to land.
- *
- * Scanner is still never a nav item: the wireframe keeps it a FAB "at every
- * width — not phone-only", plus a centre slot on the phone bar that triggers
- * that same FAB (see `components/shell/ScannerFab.tsx`).
+ * New Rental is an action, not a module — it lives under Header Create ▾
+ * and redirects to `/rentals?action=new`.
  */
 
 export interface NavChild {
@@ -51,76 +29,60 @@ export interface NavSection {
 }
 
 /**
- * Declared before `NAV` and inserted into it by reference, so `SETTINGS_NAV`
- * and `NAV[10]` are one object. Anything else lets the two drift.
+ * Declared before navigation arrays and inserted by reference.
  */
 const SETTINGS_SECTION: NavSection = { label: 'Settings', icon: 'settings', to: '/settings' }
 
 /**
- * The fixed eleven, in the wireframe's order. The order is the specification —
- * do not sort, group, or re-rank by role.
- *
- * Note **"Operation"**, singular. Every one of the eleven spec files writes it
- * that way; the route stays `/operations` because that is what the router,
- * the breadcrumbs and every existing deep link already use.
+ * Primary navigation destinations for desktop and tablet shells.
+ * Plural "Operations" per spec simplification.
  */
-export const NAV: NavSection[] = [
-  { label: 'New Rental', icon: 'plus', to: '/rentals/new' }, //      1
-  { label: 'Dashboard', icon: 'home', to: '/dashboard' }, //         2
-  { label: 'Operation', icon: 'queues', to: '/operations' }, //      3
-  { label: 'Rentals', icon: 'checklist', to: '/rentals' }, //        4
-  { label: 'Calendar', icon: 'calendar', to: '/calendar' }, //       5
-  { label: 'Crew Assist', icon: 'crew', to: '/crew' }, //            6
-  { label: 'Inventory', icon: 'box', to: '/inventory' }, //          7
-  { label: 'Clients', icon: 'users', to: '/clients' }, //            8
-  { label: 'Finance', icon: 'card', to: '/finance' }, //             9
-  { label: 'Tools', icon: 'tool', to: '/tools' }, //                10
-  SETTINGS_SECTION, //                                              11
+export const PRIMARY_NAV: NavSection[] = [
+  { label: 'Dashboard', icon: 'home', to: '/dashboard' },
+  { label: 'Rentals', icon: 'checklist', to: '/rentals' },
+  { label: 'Calendar', icon: 'calendar', to: '/calendar' },
+  { label: 'Operations', icon: 'queues', to: '/operations' },
+  { label: 'Inventory', icon: 'box', to: '/inventory' },
+  { label: 'Clients', icon: 'users', to: '/clients' },
+  { label: 'Finance', icon: 'card', to: '/finance' },
 ]
 
 /**
- * Item 11, by reference.
- *
- * **No surface imports this today** — the sidebar renders `permittedNav()` and
- * the phone More sheet renders `moreNav()`, both of which reach Settings through
- * `NAV` like any other item, which is the point of folding it back in. It stays
- * exported as the deliberate handle for a surface that must name Settings
- * specifically (a "pin Settings last" affordance, a first-run wizard), because
- * the alternative such a surface reaches for is a fresh literal that drifts.
- * Since it *is* `NAV[10]` rather than a copy, a filter applied to `NAV` covers
- * it too.
+ * Secondary lower-frequency modules exposed under More.
  */
+export const MORE_NAV: NavSection[] = [
+  { label: 'Crew Assist', icon: 'crew', to: '/crew' },
+  { label: 'Tools', icon: 'tool', to: '/tools' },
+  SETTINGS_SECTION,
+]
+
+export const ALL_NAV: NavSection[] = [...PRIMARY_NAV, ...MORE_NAV]
+export const NAV: NavSection[] = PRIMARY_NAV
+
 export const SETTINGS_NAV: NavSection = SETTINGS_SECTION
 
-/**
- * The single filter every nav surface reads, so the sidebar, the phone bar and
- * the More sheet cannot drift into showing a different set for the same role.
- *
- * **Law 6 — money-blind roles must not see money surfaces.** The "fixed 11" is
- * the nav for a *permitted* role; it is not a bypass of RBAC. This filter is
- * unchanged from the pre-wireframe build and must stay: the test was
- * `role === 'Warehouse'` until 11 Aug 2026, which left Technician, Driver and
- * Client — the other three members of `lib/rbac.ts`'s `MONEY_BLIND` set —
- * holding a sidebar with Finance in it, shown and then refused by `App.tsx`'s
- * Shell guard. Asking `canViewMoney()` instead of naming a role means this
- * filter cannot fall out of step with the engine. The Shell guard stays as the
- * backstop for a typed URL, the one case nav omission cannot cover — and it
- * reads {@link isMoneySurface} too, so guard and nav cannot answer differently.
- */
-export function permittedNav(role: SystemRole | undefined): NavSection[] {
+export function filterNavByRole(sections: NavSection[], role: SystemRole | undefined): NavSection[] {
   if (!role) return []
-  let nav = NAV
+  let nav = sections
   if (!canViewMoney(role)) {
     nav = nav.filter((s) => !isMoneySurface(s.to))
   }
-  /* Client is external (`lib/rbac.ts:isStaff`) — staff surfaces are omitted
-     for it, not shown-then-refused. Same shape as the money filter above:
-     the Shell guard reads {@link isStaffSurface} too, so nav and guard
-     cannot answer differently. Added 22 Aug 2026 (audit theme 3 #7). */
   if (!isStaff(role)) {
     nav = nav.filter((s) => !isStaffSurface(s.to))
   }
   return nav
+}
+
+export function permittedNav(role: SystemRole | undefined): NavSection[] {
+  return filterNavByRole(PRIMARY_NAV, role)
+}
+
+export function permittedMoreNav(role: SystemRole | undefined): NavSection[] {
+  return filterNavByRole(MORE_NAV, role)
+}
+
+export function permittedAllNav(role: SystemRole | undefined): NavSection[] {
+  return filterNavByRole(ALL_NAV, role)
 }
 
 /**
@@ -335,34 +297,28 @@ export function bottomBarSlots(role: SystemRole | undefined): BottomBarSlot[] {
  * The wireframe says: *"Nav items 1, 3, 5, 6, 9, 10, 11 live under More."*
  * That is New Rental · Operation · Calendar · Crew Assist · Finance · Tools ·
  * Settings — seven of the eight items the five-slot bar cannot hold.
+/**
+ * What the phone **More** sheet lists.
  *
- * TODO(decision) — **item 8 (Clients) is missing from the spec's own list.**
- * The bar holds items 2 (Today), 4 (Rentals) and 7 (Inventory). 11 − 3 = 8
- * overflow items, but the spec names only seven: 1, 3, 5, 6, 9, 10, 11.
- * Clients appears in neither the five slots nor the More list, which would make
- * `/clients` unreachable on a phone for every role — including Coordinator,
- * whose whole job is client-facing. This reads as an omission in the spec, not
- * an instruction to hide it, so Clients is listed here in its natural NAV
- * position (between Crew Assist and Finance) and flagged rather than silently
- * "fixed". The reversible choice is to show it: dropping a line is cheaper than
- * discovering a module is unreachable on the floor. **Ruling needed:** is
- * Clients meant to be in More, or was it meant to take a bar slot from
- * Inventory?
+ * Phone 5-slot bar holds Dashboard, Rentals, Scan, Inventory, More.
+ * Destinations outside the bar live under More:
+ * Calendar · Operations · Clients · Crew Assist · Finance · Tools · Settings
+ *
+ * New Rental is removed — global creation lives under Header Create ▾.
  */
 export const MORE_ROUTES: readonly string[] = [
-  '/rentals/new', //  1  New Rental
-  '/operations', //   3  Operation
-  '/calendar', //     5  Calendar
-  '/crew', //         6  Crew Assist
-  '/clients', //      8  Clients — TODO(decision) above; not in the spec's list
-  '/finance', //      9  Finance
-  '/tools', //       10  Tools
-  '/settings', //    11  Settings
+  '/calendar',
+  '/operations',
+  '/clients',
+  '/crew',
+  '/finance',
+  '/tools',
+  '/settings',
 ]
 
-/** The More sheet's contents for a role, resolved against `permittedNav()`. */
+/** The More sheet's contents for a role, resolved against `permittedAllNav()`. */
 export function moreNav(role: SystemRole | undefined): NavSection[] {
-  const permitted = permittedNav(role)
+  const permitted = permittedAllNav(role)
   return MORE_ROUTES.map((r) => permitted.find((s) => s.to === r)).filter(
     (s): s is NavSection => s !== undefined,
   )

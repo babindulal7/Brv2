@@ -9,6 +9,7 @@ import ScannerFab from './components/shell/ScannerFab'
 import { ErrorBoundary } from './components/shell/ErrorBoundary'
 import { LoadingSkeleton, RestrictedState } from './components/ui/StateViews'
 import Placeholder from './modules/Placeholder'
+import { WelcomeOnboarding } from './lib/WelcomeOnboarding'
 import { NAV, isMoneySurface, isStaffSurface, FLOOR_ROUTE_SUFFIXES } from './data/nav'
 import { ToastProvider } from './components/ui/Toast'
 import { SyncProvider } from './lib/syncContext'
@@ -21,6 +22,7 @@ import { useAuth } from './lib/auth'
 import { useViewport } from './lib/device'
 import { canViewMoney, isStaff } from './lib/rbac'
 import { installRoutePreload } from './lib/routePreload'
+import { OperationsWorkspaceProvider } from './modules/operations/OperationsWorkspaceContext'
 
 /* ── lazy-loaded route pages (code-splitting) ─────────────────────────── */
 const Today             = lazy(() => import('./modules/today/Today'))
@@ -98,13 +100,42 @@ void Payments
 void Expenses
 void Warehouses
 
+function RentalsNewRedirect() {
+  const [searchParams] = useSearchParams()
+  const params = new URLSearchParams(searchParams)
+  params.set('action', 'new')
+  return <Navigate to={`/rentals?${params.toString()}`} replace />
+}
+
 export default function App() {
   const { user } = useAuth()
-  useEffect(() => installRoutePreload(), [])
+  const [showOnboarding, setShowOnboarding] = useState(false)
+
+  useEffect(() => {
+    const completed = localStorage.getItem('babin-onboarding-completed')
+    if (completed !== 'true') {
+      setShowOnboarding(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    const install = () => {
+      localStorage.setItem('babin-onboarding-completed', 'true')
+      setShowOnboarding(false)
+    }
+    if (!localStorage.getItem('babin-onboarding-completed')) {
+      // Show onboarding once after first auth state settles
+      const timer = setTimeout(install, 500)
+      return () => clearTimeout(timer)
+    }
+  }, [])
+
   return (
     <ToastProvider>
       <SyncProvider>
+        <OperationsWorkspaceProvider>
         <CommandPalette />
+        {showOnboarding && <WelcomeOnboarding onClose={() => setShowOnboarding(false)} />}
         <Routes>
           <Route path="/login" element={<Login />} />
         {/*
@@ -183,7 +214,7 @@ export default function App() {
         />
 
         {/* Declared before /rentals/:bookingNo so "new" is not read as an ID. */}
-        <Route path="/rentals/new" element={<Navigate to="/rentals?action=new" replace />} />
+        <Route path="/rentals/new" element={<RentalsNewRedirect />} />
 
         {/* §4.3 — operations are full-screen routes, never modals. */}
         <Route
@@ -718,6 +749,7 @@ export default function App() {
           }
         />
       </Routes>
+        </OperationsWorkspaceProvider>
       </SyncProvider>
     </ToastProvider>
   )

@@ -31,11 +31,72 @@ vi.mock('../../../lib/supabase', () => ({
 }))
 
 import { primaryFor } from '../MovementList'
+import { dashboardAction } from '../DashboardMovementPanel'
 import { sortAlerts } from '../AlertsPanel'
 import type { AlertRow } from '../../../types/today'
+import type { MovementRow } from '../../../data/today'
 import type { BookingStatus } from '../../../lib/workflow'
 
 const row = (status: BookingStatus, bookingNo = 'B-715') => ({ bookingNo, status })
+const movement = (status: BookingStatus, extra: Partial<MovementRow> = {}): MovementRow => ({
+  id: 'm-1',
+  bookingNo: 'B-715',
+  clientId: 'c-1',
+  client: 'Test Client',
+  monogram: 'TC',
+  avatarTone: 'neutral',
+  kind: 'Pickup',
+  at: 600,
+  atDayAd: '2026-08-01',
+  flags: [],
+  project: null,
+  pickupLocation: null,
+  returnLocation: null,
+  deliveryType: 'Client Pickup',
+  duration: '1 day',
+  due: '10:00',
+  itemCount: 5,
+  status,
+  ...extra,
+})
+
+describe('dashboardAction · operational vocabulary & jobs', () => {
+  it('maps Booked outgoing to Start Packing (Pack job)', () => {
+    expect(dashboardAction(movement('Booked'), 'outgoing')).toEqual({
+      label: 'Start Packing',
+      job: 'Pack',
+    })
+  })
+
+  it('maps Packed outgoing to Handover (Handover job)', () => {
+    expect(dashboardAction(movement('Packed'), 'outgoing')).toEqual({
+      label: 'Handover',
+      job: 'Handover',
+    })
+  })
+
+  it('maps expected back / On Rent incoming to Return & Inspect (Return job)', () => {
+    expect(dashboardAction(movement('On Rent'), 'incoming')).toEqual({
+      label: 'Return & Inspect',
+      job: 'Return',
+    })
+  })
+
+  it('maps returned / reset pending incoming to Cleaning & Reset (Reset job)', () => {
+    expect(dashboardAction(movement('Returned'), 'incoming')).toEqual({
+      label: 'Cleaning & Reset',
+      job: 'Reset',
+    })
+    expect(dashboardAction(movement('Returned', { statusNote: 'Reset pending' }), 'incoming')).toEqual({
+      label: 'Cleaning & Reset',
+      job: 'Reset',
+    })
+    expect(dashboardAction(movement('On Rent', { statusNote: 'Cleaning pending' }), 'incoming')).toEqual({
+      label: 'Cleaning & Reset',
+      job: 'Reset',
+    })
+  })
+})
 
 describe('primaryFor · the row’s one primary action', () => {
   it('offers Pack on a Booked outgoing row, pointing at the Packing route', () => {

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Button, PageHeader } from '../../components/ui/Page'
+import { PageHeader } from '../../components/ui/Page'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
 import { businessDayAd, businessNowAd, overDays, pickupsQuery, toMovementRow, type MovementRow } from '../../lib/queries/today'
@@ -215,7 +214,6 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
 }
 
 export default function Today() {
-  const navigate = useNavigate()
   const [pickupDateFilter, setPickupDateFilter] = useStoredFilter(STORAGE_PICKUPS)
   const [returnDateFilter, setReturnDateFilter] = useStoredFilter(STORAGE_RETURNS)
   const dayAd = businessDayAd()
@@ -240,15 +238,24 @@ export default function Today() {
   const { refetch: refetchReturns } = returns
   const refetchMovement = useCallback(() => { refetchPickups(); refetchReturns() }, [refetchPickups, refetchReturns])
 
+  useDomainEvent(EVENT_TYPES.RENTAL_PACKED, refetchMovement)
   useDomainEvent(EVENT_TYPES.RENTAL_PICKED_UP, refetchMovement)
+  useDomainEvent(EVENT_TYPES.RENTAL_HANDED_OVER, refetchMovement)
+  useDomainEvent(EVENT_TYPES.RENTAL_RETURN_STARTED, refetchMovement)
   useDomainEvent(EVENT_TYPES.RENTAL_RETURNED, refetchMovement)
+  useDomainEvent(EVENT_TYPES.RENTAL_RESET_COMPLETED, refetchMovement)
+  useDomainEvent(EVENT_TYPES.RENTAL_CLOSED, refetchMovement)
+  useDomainEvent(EVENT_TYPES.RENTAL_CONFIRMED, refetchMovement)
+  useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refetchMovement)
+
+  const isReturnToday = returnDateFilter.kind === 'quick' && returnDateFilter.period === 'Today'
 
   return (
-    <div className="rental-dashboard">
-      <PageHeader title="Dashboard" description="Pickups and returns at a glance." actions={<Button icon="plus" variant="primary" aria-label="New Rental" onClick={() => navigate('/rentals/new')}>New Rental</Button>} />
+    <div className="rental-dashboard animate-entrance">
+      <PageHeader eyebrow="Operations HQ" title="Dashboard" description="Pickups and returns at a glance." />
       <div className="rental-dashboard__panels">
         <DashboardMovementPanel side="outgoing" title="Pickups" subtitle="Rentals scheduled for pickup" icon="truck" list={pickups} periodLabel={filterLabel(pickupDateFilter).toLowerCase()} onClearFilters={() => setPickupDateFilter({ kind: 'quick', period: 'Today' })} filterControl={<DateFilterControl noun="pickup" filter={pickupDateFilter} onChange={setPickupDateFilter} today={dayAd} />} />
-        <DashboardMovementPanel side="incoming" title="Returns" subtitle="Rentals expected to be returned" icon="return_arrow" list={returns} periodLabel={filterLabel(returnDateFilter).toLowerCase()} onClearFilters={() => setReturnDateFilter({ kind: 'quick', period: 'Today' })} filterControl={<DateFilterControl noun="return" filter={returnDateFilter} onChange={setReturnDateFilter} today={dayAd} />} />
+        <DashboardMovementPanel side="incoming" title="Returns" subtitle={isReturnToday ? 'Today · Overdue included' : 'Rentals expected to be returned'} icon="return_arrow" list={returns} periodLabel={filterLabel(returnDateFilter).toLowerCase()} isToday={isReturnToday} onClearFilters={() => setReturnDateFilter({ kind: 'quick', period: 'Today' })} filterControl={<DateFilterControl noun="return" filter={returnDateFilter} onChange={setReturnDateFilter} today={dayAd} />} />
       </div>
     </div>
   )

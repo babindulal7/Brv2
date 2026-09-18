@@ -1,5 +1,4 @@
 import Icon from '../ui/Icon'
-import { Unavailable } from '../ui/Unavailable'
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../lib/auth'
@@ -161,18 +160,24 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               gap: 'var(--sp-sm)',
               width: '100%',
               maxWidth: 440,
-              /* A flex item defaults to `min-width: auto`, i.e. its longest
-                 word — so in the 768–1279 band the button refused to shrink
-                 and the placeholder folded onto four lines instead (A6).
-                 With this it shrinks to icon + ellipsis + kbd. */
               minWidth: 0,
-              minHeight: 44,
-              padding: '0 12px',
-              borderRadius: 'var(--r-input)',
+              minHeight: 40,
+              padding: '0 14px',
+              borderRadius: 999,
               background: 'var(--input-bg)',
               border: '1px solid var(--input-border)',
+              boxShadow: 'var(--specular-rim), 0 1px 3px rgba(0, 0, 0, 0.04)',
               cursor: 'pointer',
               textAlign: 'left',
+              transition: 'transform var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease)',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'var(--input-focus)'
+              e.currentTarget.style.transform = 'translateY(-1px)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--input-border)'
+              e.currentTarget.style.transform = 'translateY(0)'
             }}
           >
             <Icon name="search" size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
@@ -187,21 +192,21 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                 color: 'var(--muted)',
               }}
             >
-              {searchPlaceholder} (⌘K)
+              {searchPlaceholder}
             </span>
-            {/* The chip is the one part that cannot shrink, so on a tablet it
-                is the part that gets cut. The hint survives in the text. */}
             {vp !== 'tablet' && (
               <kbd
                 className="figure"
                 style={{
-                  fontSize: 'var(--t-meta)',
+                  fontSize: '11px',
+                  fontWeight: 600,
                   color: 'var(--muted)',
                   flexShrink: 0,
-                  padding: '2px 6px',
-                  borderRadius: 4,
+                  padding: '2px 8px',
+                  borderRadius: 999,
                   background: 'var(--card)',
                   border: '1px solid var(--border)',
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
                 }}
               >
                 ⌘K
@@ -217,9 +222,9 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: 5,
-                padding: '3px 8px',
-                borderRadius: 'var(--r-xs)',
+                gap: 6,
+                padding: '4px 11px',
+                borderRadius: 999,
                 background:
                   syncStatus === 'syncing'
                     ? 'var(--nav-active-bg)'
@@ -231,6 +236,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                     ? 'var(--danger-soft)'
                     : 'var(--surface-2)',
                 border: '1px solid var(--border)',
+                boxShadow: 'var(--specular-rim)',
                 fontSize: '11px',
                 fontWeight: 600,
                 color:
@@ -242,16 +248,10 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                     ? 'var(--muted)'
                     : syncStatus === 'error'
                     ? 'var(--danger-text)'
-                    /* --success-text, not --st-in-fg. Every other branch here
-                       already names a text-safe token; the settled branch was
-                       the odd one out. --st-in-fg is --on-success = #ffffff in
-                       BOTH themes — ink for a solid green fill — but this
-                       chip's settled background is --surface-2, not green, so
-                       the word "Synced" was white on a light surface and the
-                       chip read as empty on the now-default light theme. */
                     : 'var(--success-text)',
                 cursor: 'pointer',
                 fontFamily: 'inherit',
+                transition: 'all var(--dur-fast) var(--ease)',
               }}
               title={
                 syncStatus === 'syncing'
@@ -261,9 +261,6 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                   : syncStatus === 'offline'
                   ? 'Offline Mode active (Dexie cache). Click to sync when reconnected.'
                   : syncStatus === 'error'
-                  /* Law 12 - the failure is stated here, persistently, rather than
-                     in a toast that expires before it is read. `syncError` is what
-                     syncAll() caught; the fallback covers a failure with no message. */
                   ? `Sync failed: ${syncError ?? 'no reason reported'}. Click to retry.`
                   : 'Cloud Database & Local Cache Synced. Click to force sync.'
               }
@@ -273,8 +270,23 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                   width: 6,
                   height: 6,
                   borderRadius: '50%',
-                  background: 'currentColor',
                   display: 'inline-block',
+                  background:
+                    syncStatus === 'syncing'
+                      ? 'var(--primary-text)'
+                      : syncStatus === 'pending'
+                      ? 'var(--warn-text)'
+                      : syncStatus === 'error'
+                      ? 'var(--danger-text)'
+                      : syncStatus === 'offline'
+                      ? 'var(--muted)'
+                      : 'var(--success-text)',
+                  boxShadow:
+                    syncStatus === 'syncing'
+                      ? '0 0 6px var(--primary-text)'
+                      : syncStatus === 'error'
+                      ? '0 0 6px var(--danger-text)'
+                      : undefined,
                 }}
               />
               <span>
@@ -348,22 +360,6 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
           </button>
         )}
 
-        {/* Notifications and Help — unbuilt; hidden on phone to save 88px of horizontal width */}
-        {!isPhone && (
-          <>
-            <Unavailable reason="Notifications are not built yet — nothing writes one, so there is nothing to open.">
-              <button type="button" aria-label="Notifications" style={iconBtn} disabled>
-                <Icon name="bell" size={17} />
-              </button>
-            </Unavailable>
-
-            <Unavailable reason="Help is not built yet — no destination is settled: in-app guide, docs site, or a support contact.">
-              <button type="button" aria-label="Help" style={iconBtn} disabled>
-                <Icon name="info" size={17} />
-              </button>
-            </Unavailable>
-          </>
-        )}
 
         {isPhone ? (
           <div style={{ position: 'relative' }}>

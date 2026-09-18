@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../ui/Icon'
 import { useTheme } from '../../lib/theme'
-import { BRANCH, permittedNav, activeNavTo } from '../../data/nav'
+import { BRANCH, permittedNav, permittedMoreNav, activeNavTo } from '../../data/nav'
 import type { NavSection } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
 import { useCollapsed } from '../../lib/collapse'
@@ -70,13 +70,17 @@ export default function Sidebar({ active }: SidebarProps) {
   useEffect(() => {
     const root = document.documentElement
     root.style.setProperty('--shell-nav-w', `${rail ? RAIL_W : SIDEBAR_W}px`)
-    return () => root.style.removeProperty('--shell-nav-w')
+    return () => {
+      root.style.removeProperty('--shell-nav-w')
+    }
   }, [rail])
 
   const allowedNav = permittedNav(user?.role)
+  const allowedMore = permittedMoreNav(user?.role)
+  const allPermitted = [...allowedNav, ...allowedMore]
   /* `data/nav.ts` — most specific match wins, so exactly one row can be
      `aria-current="page"`. The phone bar reads the same function. */
-  const activeTo = activeNavTo(allowedNav, active)
+  const activeTo = activeNavTo(allPermitted, active)
 
   if (viewport === 'phone') return null
 
@@ -136,7 +140,7 @@ export default function Sidebar({ active }: SidebarProps) {
         </div>
       )}
 
-      <NavList sections={allowedNav} activeTo={activeTo} rail={rail} />
+      <NavList sections={allowedNav} moreSections={allowedMore} activeTo={activeTo} rail={rail} />
 
       <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', padding: 10 }}>
         {!rail && (
@@ -258,15 +262,25 @@ export default function Sidebar({ active }: SidebarProps) {
  */
 function NavList({
   sections,
+  moreSections,
   activeTo,
   rail,
 }: {
   sections: NavSection[]
+  moreSections: NavSection[]
   activeTo: string | null
   rail: boolean
 }) {
   const [hint, setHint] = useState<{ label: string; top: number } | null>(null)
+  const isMoreActive = moreSections.some((m) => m.to === activeTo)
+  const [moreOpen, setMoreOpen] = useState(isMoreActive)
+  const [moreFlyoutTop, setMoreFlyoutTop] = useState<number>(0)
   const pressTimer = useRef<number | null>(null)
+  const moreRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (isMoreActive && !rail) setMoreOpen(true)
+  }, [isMoreActive, rail])
 
   const clearPress = () => {
     if (pressTimer.current !== null) {
@@ -278,8 +292,29 @@ function NavList({
   useEffect(() => clearPress, [])
   /* A rail that expands mid-hover must not leave its tooltip behind. */
   useEffect(() => {
-    if (!rail) setHint(null)
+    if (!rail) {
+      setHint(null)
+      if (rail) setMoreOpen(false)
+    }
   }, [rail])
+
+  useEffect(() => {
+    if (!rail || !moreOpen) return
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMoreOpen(false)
+    }
+    const onClickAway = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onEscape)
+    window.addEventListener('mousedown', onClickAway)
+    return () => {
+      window.removeEventListener('keydown', onEscape)
+      window.removeEventListener('mousedown', onClickAway)
+    }
+  }, [rail, moreOpen])
 
   const show = (el: HTMLElement, label: string) => {
     const r = el.getBoundingClientRect()
@@ -302,11 +337,17 @@ function NavList({
               title={rail ? s.label : undefined}
               onMouseEnter={(e) => {
                 if (rail) show(e.currentTarget, s.label)
-                else if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                else {
+                  if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                  e.currentTarget.style.transform = 'translateX(2px)'
+                }
               }}
               onMouseLeave={(e) => {
                 setHint(null)
-                if (!rail && !on) e.currentTarget.style.background = 'transparent'
+                if (!rail) {
+                  if (!on) e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.transform = 'none'
+                }
               }}
               onPointerDown={(e) => {
                 if (!rail || e.pointerType === 'mouse') return
@@ -314,13 +355,6 @@ function NavList({
                 clearPress()
                 pressTimer.current = window.setTimeout(() => show(el, s.label), LONG_PRESS_MS)
               }}
-              /* Lifting the finger must dismiss the label as well as cancel the
-                 timer. Clearing only the timer left a long-press tooltip pinned
-                 on screen after the press ended: no `mouseleave`, `blur` or
-                 `pointercancel` follows a touch release, `NavList` is not
-                 unmounted by navigation, and the rail does not change, so
-                 nothing else in this component ever cleared it — the label
-                 survived the route change the same tap triggered. */
               onPointerUp={() => {
                 clearPress()
                 setHint(null)
@@ -342,15 +376,16 @@ function NavList({
                 minHeight: ROW_H,
                 minWidth: rail ? ROW_H : undefined,
                 padding: rail ? 0 : '0 10px',
-                borderRadius: 9,
+                borderRadius: 'var(--r-btn)',
                 textDecoration: 'none',
                 fontSize: 'var(--t-ui)',
                 fontWeight: on ? 600 : 500,
                 color: on ? 'var(--text)' : 'var(--text2)',
                 background: on ? 'var(--nav-active-bg)' : 'transparent',
+                boxShadow: on ? 'var(--specular-rim), 0 1px 2px rgba(0, 0, 0, 0.04)' : undefined,
                 position: 'relative',
                 cursor: 'pointer',
-                transition: 'background-color var(--dur) ease, color var(--dur) ease',
+                transition: 'transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease)',
               }}
             >
               {on && (
@@ -358,12 +393,13 @@ function NavList({
                   aria-hidden
                   style={{
                     position: 'absolute',
-                    left: 0,
-                    top: 8,
-                    bottom: 8,
+                    left: 2,
+                    top: 10,
+                    bottom: 10,
                     width: 3,
-                    borderRadius: '0 3px 3px 0',
+                    borderRadius: 999,
                     background: 'var(--nav-active-accent)',
+                    boxShadow: '0 0 6px var(--nav-active-accent)',
                   }}
                 />
               )}
@@ -380,6 +416,260 @@ function NavList({
             </Link>
           )
         })}
+
+        {/* Secondary navigation under More */}
+        {moreSections.length > 0 && (
+          rail ? (
+            <div ref={moreRef} style={{ position: 'relative' }}>
+              <button
+                type="button"
+                aria-label="More"
+                aria-expanded={moreOpen}
+                aria-haspopup="menu"
+                title="More"
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  setMoreFlyoutTop(r.top + r.height / 2)
+                  setMoreOpen((v) => !v)
+                }}
+                onMouseEnter={(e) => show(e.currentTarget, 'More')}
+                onMouseLeave={() => setHint(null)}
+                onPointerDown={(e) => {
+                  if (e.pointerType === 'mouse') return
+                  const el = e.currentTarget
+                  clearPress()
+                  pressTimer.current = window.setTimeout(() => {
+                    const r = el.getBoundingClientRect()
+                    setMoreFlyoutTop(r.top + r.height / 2)
+                    setMoreOpen(true)
+                  }, LONG_PRESS_MS)
+                }}
+                onPointerUp={clearPress}
+                onPointerCancel={clearPress}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: ROW_H,
+                  minWidth: ROW_H,
+                  borderRadius: 9,
+                  border: 'none',
+                  background: isMoreActive ? 'var(--nav-active-bg)' : 'transparent',
+                  color: isMoreActive ? 'var(--nav-active-accent)' : 'var(--text2)',
+                  position: 'relative',
+                  cursor: 'pointer',
+                  width: '100%',
+                }}
+              >
+                {isMoreActive && (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 8,
+                      bottom: 8,
+                      width: 3,
+                      borderRadius: '0 3px 3px 0',
+                      background: 'var(--nav-active-accent)',
+                    }}
+                  />
+                )}
+                <Icon
+                  name="more_vert"
+                  size={20}
+                  style={{ color: isMoreActive ? 'var(--nav-active-accent)' : 'var(--nav-icon)' }}
+                />
+              </button>
+
+              {moreOpen && (
+                <div
+                  role="menu"
+                  aria-label="More modules"
+                  style={{
+                    position: 'fixed',
+                    left: RAIL_W + 6,
+                    top: moreFlyoutTop,
+                    transform: 'translateY(-50%)',
+                    padding: '6px 8px',
+                    borderRadius: 'var(--r-sm)',
+                    background: 'var(--card)',
+                    border: '1px solid var(--border)',
+                    boxShadow: 'var(--shadow-modal)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
+                    zIndex: 75,
+                    minWidth: 160,
+                  }}
+                >
+                  {moreSections.map((m) => {
+                    const on = m.to === activeTo
+                    return (
+                      <Link
+                        key={m.to}
+                        to={m.to}
+                        role="menuitem"
+                        aria-current={on ? 'page' : undefined}
+                        onClick={() => setMoreOpen(false)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          minHeight: ROW_H,
+                          padding: '0 10px',
+                          borderRadius: 'var(--r-sm)',
+                          textDecoration: 'none',
+                          fontSize: 'var(--t-ui)',
+                          fontWeight: on ? 600 : 500,
+                          color: on ? 'var(--text)' : 'var(--text2)',
+                          background: on ? 'var(--nav-active-bg)' : 'transparent',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Icon name={m.icon} size={16} style={{ color: on ? 'var(--nav-active-accent)' : 'var(--nav-icon)' }} />
+                        <span>{m.label}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div>
+              <button
+                type="button"
+                aria-expanded={moreOpen}
+                aria-haspopup="true"
+                onClick={() => setMoreOpen((v) => !v)}
+                onMouseEnter={(e) => {
+                  if (!isMoreActive) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                }}
+                onMouseLeave={(e) => {
+                  if (!isMoreActive) e.currentTarget.style.background = 'transparent'
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'flex-start',
+                  gap: 10,
+                  minHeight: ROW_H,
+                  padding: '0 10px',
+                  borderRadius: 9,
+                  border: 'none',
+                  fontSize: 'var(--t-ui)',
+                  fontWeight: isMoreActive ? 600 : 500,
+                  color: isMoreActive ? 'var(--text)' : 'var(--text2)',
+                  background: isMoreActive ? 'var(--nav-active-bg)' : 'transparent',
+                  position: 'relative',
+                  cursor: 'pointer',
+                  width: '100%',
+                  textAlign: 'left',
+                  fontFamily: 'inherit',
+                  transition: 'background-color var(--dur) ease, color var(--dur) ease',
+                }}
+              >
+                {isMoreActive && (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 8,
+                      bottom: 8,
+                      width: 3,
+                      borderRadius: '0 3px 3px 0',
+                      background: 'var(--nav-active-accent)',
+                    }}
+                  />
+                )}
+                <Icon
+                  name="more_vert"
+                  size={16}
+                  style={{ color: isMoreActive ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
+                />
+                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  More
+                </span>
+                <Icon
+                  name={moreOpen ? 'chevron_down' : 'chevron_right'}
+                  size={14}
+                  style={{ color: 'var(--muted)', flexShrink: 0 }}
+                />
+              </button>
+
+              {moreOpen && (
+                <div
+                  role="region"
+                  aria-label="More navigation"
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1,
+                    paddingLeft: 12,
+                    margin: '2px 0 4px',
+                  }}
+                >
+                  {moreSections.map((m) => {
+                    const on = m.to === activeTo
+                    return (
+                      <Link
+                        key={m.to}
+                        to={m.to}
+                        aria-current={on ? 'page' : undefined}
+                        onMouseEnter={(e) => {
+                          if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!on) e.currentTarget.style.background = 'transparent'
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          minHeight: ROW_H,
+                          padding: '0 10px',
+                          borderRadius: 8,
+                          textDecoration: 'none',
+                          fontSize: 'var(--t-meta)',
+                          fontWeight: on ? 600 : 500,
+                          color: on ? 'var(--text)' : 'var(--text2)',
+                          background: on ? 'var(--nav-active-bg)' : 'transparent',
+                          position: 'relative',
+                          cursor: 'pointer',
+                          transition: 'background-color var(--dur) ease, color var(--dur) ease',
+                        }}
+                      >
+                        {on && (
+                          <span
+                            aria-hidden
+                            style={{
+                              position: 'absolute',
+                              left: 0,
+                              top: 8,
+                              bottom: 8,
+                              width: 3,
+                              borderRadius: '0 3px 3px 0',
+                              background: 'var(--nav-active-accent)',
+                            }}
+                          />
+                        )}
+                        <Icon
+                          name={m.icon}
+                          size={15}
+                          style={{ color: on ? 'var(--nav-active-accent)' : 'var(--nav-icon)' }}
+                        />
+                        <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {m.label}
+                        </span>
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        )}
       </nav>
 
       {rail && hint && (

@@ -1,11 +1,12 @@
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon, { type IconName } from '../../components/ui/Icon'
 import { PageBody } from '../../components/ui/PageBody'
 import { STATUS } from '../../lib/status'
 import { has, statusKeyOf, timeOf, type MovementRow } from '../../lib/queries/today'
 import type { ListResult } from '../../lib/queries/useList'
-import { primaryFor } from './MovementList'
+import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
+import type { BookingStatus, JobName } from '../../lib/workflow'
 
 interface DashboardMovementPanelProps {
   side: 'outgoing' | 'incoming'
@@ -16,18 +17,56 @@ interface DashboardMovementPanelProps {
   periodLabel: string
   onClearFilters: () => void
   filterControl: ReactNode
+  isToday?: boolean
 }
 
 function movementStatus(row: MovementRow) {
-  const tone = STATUS[has(row, 'Overdue') ? 'danger' : statusKeyOf(row)]
-  return { label: has(row, 'Overdue') ? 'Overdue' : row.status, background: tone.bg, color: tone.fg }
+  const isOverdue = has(row, 'Overdue')
+  const tone = STATUS[isOverdue ? 'danger' : statusKeyOf(row)]
+  return { label: isOverdue ? 'Overdue' : row.status, background: tone.bg, color: tone.fg }
 }
 
-export default function DashboardMovementPanel({ side, title, subtitle, icon, list, periodLabel, onClearFilters, filterControl }: DashboardMovementPanelProps) {
+export function dashboardAction(row: MovementRow, side: 'outgoing' | 'incoming'): { label: string; job: JobName } {
+  if (side === 'incoming') {
+    const stage = (row.status ?? '').toLowerCase()
+    const note = (row.statusNote ?? '').toLowerCase()
+    if (stage.includes('return') || stage.includes('reset') || note.includes('reset') || note.includes('clean')) {
+      return { label: 'Cleaning & Reset', job: 'Reset' }
+    }
+    return { label: 'Return & Inspect', job: 'Return' }
+  }
+  if (row.status === 'Packed') {
+    return { label: 'Handover', job: 'Handover' }
+  }
+  return { label: 'Start Packing', job: 'Pack' }
+}
+
+export default function DashboardMovementPanel({
+  side,
+  title,
+  subtitle,
+  icon,
+  list,
+  periodLabel,
+  onClearFilters,
+  filterControl,
+}: DashboardMovementPanelProps) {
   const navigate = useNavigate()
+  const { openOperations } = useOperationsWorkspace()
   const count = list.loading || list.error ? '—' : String(list.total ?? list.rows.length)
-  const rows = list.rows
   const noun = side === 'outgoing' ? 'pickups' : 'returns'
+
+  // Visually place overdue returns before normal returns
+  const rows = useMemo(() => {
+    if (side !== 'incoming') return list.rows
+    const overdue: MovementRow[] = []
+    const normal: MovementRow[] = []
+    for (const r of list.rows) {
+      if (has(r, 'Overdue')) overdue.push(r)
+      else normal.push(r)
+    }
+    return [...overdue, ...normal]
+  }, [list.rows, side])
 
   return (
     <section className="movement-panel" aria-labelledby={`${side}-panel-title`}>
@@ -42,7 +81,7 @@ export default function DashboardMovementPanel({ side, title, subtitle, icon, li
 
       <div className={`movement-panel__table movement-panel__table--${side}`}>
         <div className="movement-panel__table-head" aria-hidden="true">
-          <span>Rental #</span><span>Customer</span><span>{side === 'outgoing' ? 'Pickup time' : 'Expected return'}</span><span>Items</span><span>Status</span><span>Action</span>
+          <span>Rental #</span><span>Client</span><span>{side === 'outgoing' ? 'Pickup time' : 'Expected return'}</span><span>Items</span><span>Status</span><span>Action</span>
         </div>
         <PageBody
           loading={list.loading}
@@ -61,8 +100,9 @@ export default function DashboardMovementPanel({ side, title, subtitle, icon, li
         >
           <div className="movement-panel__rows">
             {rows.map((row) => {
-              const action = primaryFor(row, side)
+              const action = dashboardAction(row, side)
               const status = movementStatus(row)
+              const isOverdue = has(row, 'Overdue')
               return (
                 <article
                   key={row.id}
@@ -77,14 +117,29 @@ export default function DashboardMovementPanel({ side, title, subtitle, icon, li
                   }}
                 >
                   <Link className="movement-panel__number identifier" to={`/rentals/${row.bookingNo}`} onClick={(event) => event.stopPropagation()}>{row.bookingNo}</Link>
-                  <div className="movement-panel__customer"><strong>{row.client}</strong>{row.project && <span>{row.project}</span>}</div>
+                  <div className="movement-panel__client"><strong>{row.client}</strong>{row.project && <span>{row.project}</span>}</div>
                   <span className="movement-panel__date figure">
                     {side === 'outgoing' ? timeOf(row) : row.due.replace(/^Due\s+/i, '')}
-                    {row.statusNote && <small>{row.statusNote}</small>}
+                    {isOverdue ? (
+                      <small style={{ color: 'var(--danger-text)', fontWeight: 700 }}>Overdue</small>
+                    ) : row.statusNote ? (
+                      <small>{row.statusNote}</small>
+                    ) : null}
                   </span>
                   <span className="movement-panel__items figure">{row.itemCount} <span>{row.itemCount === 1 ? 'item' : 'items'}</span></span>
                   <span className="movement-panel__status" style={{ background: status.background, color: status.color }}>{status.label}</span>
-                  <Link className={`movement-panel__action${side === 'outgoing' && row.status !== 'Packed' ? ' movement-panel__action--secondary' : ''}`} to={action.to} aria-label={`${action.hint} for ${row.client}, booking ${row.bookingNo}`} onClick={(event) => event.stopPropagation()}>{side === 'incoming' ? 'Return & Inspect' : row.status === 'Packed' ? 'Check Out' : action.label === 'Pack' ? 'Prepare' : 'Open Rental'}</Link>
+                  <button
+                    type="button"
+                    className={`movement-panel__action${side === 'outgoing' && row.status !== 'Packed' ? ' movement-panel__action--secondary' : ''}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      const bookingStatus: BookingStatus = (row.status as BookingStatus) || (side === 'incoming' ? 'On Rent' : 'Booked')
+                      openOperations(row.bookingNo, bookingStatus, action.job)
+                    }}
+                    aria-label={`${action.label} for ${row.client}, booking ${row.bookingNo}`}
+                  >
+                    {action.label}
+                  </button>
                 </article>
               )
             })}

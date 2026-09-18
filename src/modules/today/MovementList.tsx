@@ -7,6 +7,7 @@ import { ROWS_PER_COLUMN, ROW_MENU, timeOf, statusKeyOf, has, type MovementRow }
 import { cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import type { ListResult } from '../../lib/queries/useList'
+import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { canRecordPayment } from '../../lib/rbac'
 import { shouldFlipUp } from '../../lib/menuFlip'
@@ -160,6 +161,7 @@ const NONE = '—'
  */
 function HoverCard({ m }: { m: MovementRow }) {
   const { user } = useAuth()
+  const { openOperations } = useOperationsWorkspace()
   const money = useCanViewMoney()
   const facts: Array<[string, string]> = [
     ['Project', m.project ?? NONE],
@@ -275,7 +277,11 @@ function HoverCard({ m }: { m: MovementRow }) {
           }
           if (to) {
             return (
-              <Link key={label} to={to} onClick={(e) => e.stopPropagation()} style={style} className="lift">
+              <Link key={label} to={to} onClick={(e) => {
+                e.stopPropagation()
+                const job = label === 'Pack' || label === 'Packing List' ? 'Pack' : label === 'Handover' ? 'Handover' : label === 'Return' ? 'Return' : null
+                if (job) { e.preventDefault(); openOperations(m.bookingNo, m.status, job) }
+              }} style={style} className="lift">
                 {label}
               </Link>
             )
@@ -306,6 +312,7 @@ const ROW_MENU_H = 460
  */
 function RowMenu({ onClose, m, up }: { onClose: () => void; m: MovementRow; up: boolean }) {
   const navigate = useNavigate()
+  const { openOperations } = useOperationsWorkspace()
   const money = useCanViewMoney()
   const { showSuccessToast } = useToast()
   const booking = `/rentals/${m.bookingNo}`
@@ -314,7 +321,7 @@ function RowMenu({ onClose, m, up }: { onClose: () => void; m: MovementRow; up: 
 
   const actions: Partial<Record<(typeof ROW_MENU)[number], () => void>> = {
     Open: () => navigate(booking),
-    'Packing List': () => navigate(`${booking}/packing`),
+    'Packing List': () => openOperations(m.bookingNo, m.status, 'Pack'),
     Invoice: () => navigate('/documents'),
     'Copy Booking Number': () => {
       void navigator.clipboard?.writeText(m.bookingNo)
@@ -450,6 +457,7 @@ export default function MovementList({
   filteredByChips,
 }: MovementListProps) {
   const navigate = useNavigate()
+  const { openOperations } = useOperationsWorkspace()
   /* Law 14 — width decides. Below 768 the row is a card, not a table row; the
      `.movement-row` grid in `styles/theme.css` has no phone breakpoint and this
      file may not add one, so the arrangement branches here instead. */
@@ -634,7 +642,14 @@ export default function MovementList({
             const primaryButton = (
               <Link
                 to={primary.to}
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const job = primary.label === 'Pack' ? 'Pack' : primary.label === 'Handover' ? 'Handover' : primary.label === 'Return' ? 'Return' : null
+                  if (job) {
+                    e.preventDefault()
+                    openOperations(r.bookingNo, r.status, job)
+                  }
+                }}
                 aria-label={`${primary.hint} for ${r.client}, booking ${r.bookingNo}`}
                 className="press"
                 style={{

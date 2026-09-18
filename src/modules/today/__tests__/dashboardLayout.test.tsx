@@ -16,6 +16,13 @@ vi.mock('../../../lib/queries/useList', () => ({
   }),
 }))
 
+vi.mock('../../../modules/operations/OperationsWorkspaceContext', () => ({
+  useOperationsWorkspace: () => ({
+    openOperations: vi.fn(),
+    closeOperations: vi.fn(),
+  }),
+}))
+
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
 const { default: Today } = await import('../Today')
@@ -71,11 +78,14 @@ describe('focused pickup and return dashboard', () => {
     expect(buttonByLabel('Choose return date filter')?.textContent).toContain('Today')
   })
 
-  it('opens a calendar dialog anchored to the selected panel', async () => {
+  it('does not contain a duplicate New Rental button in the page header', async () => {
     await mount()
-    await act(async () => buttonByLabel('Choose return date filter')?.click())
-    expect(container.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('return date filter')
-    expect(buttonByLabel('Choose pickup date filter')?.getAttribute('aria-expanded')).toBe('false')
-    expect(buttonByLabel('Choose return date filter')?.getAttribute('aria-expanded')).toBe('true')
+    const header = container.querySelector('.page-header')
+    expect(header?.textContent).not.toContain('New Rental')
+  })
+
+  it('clarifies that Returns Today includes overdue items', async () => {
+    await mount()
+    expect(container.textContent).toContain('Today · Overdue included')
   })
 })
