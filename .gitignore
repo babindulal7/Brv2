@@ -23,6 +23,10 @@ typecheck_output.txt
 coverage/
 docs/docs.zip
 
+# Per-session agent scratch space — dev-server and tunnel logs, throwaway HTML.
+# Regenerable runtime noise, not project history.
+.codex-temp/
+
 # Claude Code's per-session git worktrees. Each is a complete second checkout
 # with its own node_modules, and it does not inherit this file — so the Booqable
 # sync scripts inside two of them still held the API token in plaintext for the

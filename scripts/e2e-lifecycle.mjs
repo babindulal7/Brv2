@@ -1396,6 +1396,97 @@ const STEPS = [
       })
     },
   },
+
+  {
+    id: 'L18',
+    title: 'Booking schedule changes cannot desynchronise reservations',
+    expect: 'green',
+    async run() {
+      const firstWindow = ['2100-01-01T04:00:00Z', '2100-01-03T04:00:00Z']
+      const secondWindow = ['2100-01-03T04:00:00Z', '2100-01-05T04:00:00Z']
+
+      await as('Coordinator', async () => {
+        for (const [key, window] of [
+          ['schedule-a', firstWindow],
+          ['schedule-b', secondWindow],
+        ]) {
+          await createBooking({
+            key,
+            window,
+            actor: 'Coordinator',
+            lines: [
+              {
+                productId: SERIAL_PRODUCT,
+                description: 'Schedule ownership camera',
+                qty: 1,
+                days: 2,
+                rate: 3500,
+                units: [UNITS[1]],
+              },
+            ],
+          })
+          await transition(key, 'Quote', 'Booked', 'Coordinator')
+        }
+
+        await refuses(
+          'a direct booking date update whose synchronized reservation would overlap the next booking',
+          'update bookings set return_at = $2 where id = $1',
+          [bookingIds['schedule-a'], '2100-01-04T04:00:00Z'],
+          /no_double_booking|exclusion/i,
+        )
+      })
+
+      assertEq(
+        await one('select return_at = $2::timestamptz from bookings where id = $1', [
+          bookingIds['schedule-a'],
+          firstWindow[1],
+        ]),
+        true,
+        'the refused direct write left the booking schedule unchanged',
+      )
+      assertEq(
+        await one(
+          'select upper(period) = $2::timestamptz from inventory_reservations where booking_id = $1 and released_at is null',
+          [bookingIds['schedule-a'], firstWindow[1]],
+        ),
+        true,
+        'the reservation still ends with the booking',
+      )
+
+      await as('Coordinator', async () => {
+        await q('update bookings set pickup_at = $2 where id = $1', [
+          bookingIds['schedule-a'],
+          '2099-12-31T04:00:00Z',
+        ])
+      })
+      assertEq(
+        await one(
+          'select lower(period) = $2::timestamptz from inventory_reservations where booking_id = $1 and released_at is null',
+          [bookingIds['schedule-a'], '2099-12-31T04:00:00Z'],
+        ),
+        true,
+        'a safe direct schedule change moved the reservation in the same transaction',
+      )
+
+      await as('Coordinator', async () => {
+        await refuses(
+          'the official extension path when its new period overlaps the next booking',
+          'select extend_booking($1::uuid, 1, $2, $3::uuid)',
+          [bookingIds['schedule-a'], 'Client requested one more rental day', U.Coordinator],
+          /no_double_booking|exclusion/i,
+        )
+      })
+
+      assertEq(
+        await one('select return_at = $2::timestamptz from bookings where id = $1', [
+          bookingIds['schedule-a'],
+          firstWindow[1],
+        ]),
+        true,
+        'the refused extension rolled the booking date back',
+      )
+    },
+  },
 ]
 
 /* ── Run ──────────────────────────────────────────────────────────────────── */

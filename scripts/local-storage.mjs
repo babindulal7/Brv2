@@ -126,8 +126,9 @@ async function ensureBucket(id, isPublic = false) {
  */
 if (args.includes('--init')) {
   await ensureBucket('evidence', false)
+  await ensureBucket('documents', false)
   console.log('bucket ready: evidence (private)')
-  console.log('TODO(decision): no bucket is named for client/product documents — see this file.')
+  console.log('bucket ready: documents (private)')
 }
 const adhoc = flag('--bucket')
 if (adhoc?.[0]) {
