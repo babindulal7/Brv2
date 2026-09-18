@@ -29,6 +29,8 @@ import type { ItemCondition, NotReturnedDecision } from '../../types/database'
 import { CompactButton } from '../../components/ui/TouchTarget'
 import { deliveryTypeLabel } from '../../lib/format'
 import { formatGateError } from '../../lib/gates'
+import { clearFloorScan, loadFloorScan, saveFloorScan } from '../../lib/floorScanStorage'
+import { rentalDaysBetween } from '../../lib/rentalDays'
 
 /**
  * **Return & Inspection Workspace** — the floor-loop model
@@ -408,9 +410,7 @@ function buildReturnLines(
 
 /** The AD span between two instants in whole days, floored at 1 (Law 9's days-explicit floor). */
 function rentalDays(pickupIso: string, returnIso: string): number {
-  const ms = Date.parse(returnIso) - Date.parse(pickupIso)
-  if (!Number.isFinite(ms)) return 1
-  return Math.max(1, Math.round(ms / 86_400_000))
+  return rentalDaysBetween(pickupIso, returnIso) ?? 1
 }
 
 /**
@@ -494,11 +494,21 @@ export default function ReturnWorkspace({
     }
   }, [id, reload])
 
+  interface PersistedReturnScan {
+    marks: Record<string, Mark>
+    scanLog: string[]
+    sessionNotes: string
+    returningName: string
+    sigReturning: Sig | null
+    sigWarehouse: Sig | null
+  }
+
   /* ── triage state, keyed on the real rows ────────────────────────────────
    * `marks` holds only rows the operator touched; absence is Outstanding.
    * Local until Complete Session dispatches — dispatch-then-commit, where
    * "commit" is the navigation away on the resolved promise. */
   const [marks, setMarks] = useState<Record<string, Mark>>({})
+  const [restoredFromStorage, setRestoredFromStorage] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All')
   const [query, setQuery] = useState('')
@@ -523,17 +533,74 @@ export default function ReturnWorkspace({
 
   const floorId = floor?.id ?? null
   useEffect(() => {
-    // A different booking arrived: everything triaged belonged to the old one.
+    setDispatchError(null)
+    setDispatching(false)
+    setCompletionKey(newClientUuid())
+
+    if (floorId) {
+      const persisted = loadFloorScan<PersistedReturnScan>('return', floorId)
+      if (
+        persisted &&
+        (Object.keys(persisted.payload.marks || {}).length > 0 ||
+          (persisted.payload.sessionNotes || '').trim() !== '' ||
+          (persisted.payload.returningName || '').trim() !== '' ||
+          persisted.payload.sigReturning !== null ||
+          persisted.payload.sigWarehouse !== null)
+      ) {
+        setMarks(persisted.payload.marks || {})
+        setScanLog(persisted.payload.scanLog || [])
+        setSessionNotes(persisted.payload.sessionNotes || '')
+        setReturningName(persisted.payload.returningName || '')
+        setSigReturning(persisted.payload.sigReturning ?? null)
+        setSigWarehouse(persisted.payload.sigWarehouse ?? null)
+        setRestoredFromStorage(true)
+        return
+      }
+    }
+
+    // No persisted scans: start fresh
     setMarks({})
     setScanLog([])
     setSessionNotes('')
     setReturningName('')
     setSigReturning(null)
     setSigWarehouse(null)
-    setDispatchError(null)
-    setDispatching(false)
-    setCompletionKey(newClientUuid())
+    setRestoredFromStorage(false)
   }, [floorId])
+
+  // Auto-save active scanning state to local storage
+  useEffect(() => {
+    if (!floorId) return
+    const hasContent =
+      Object.keys(marks).length > 0 ||
+      sessionNotes.trim().length > 0 ||
+      returningName.trim().length > 0 ||
+      sigReturning !== null ||
+      sigWarehouse !== null
+    if (hasContent) {
+      saveFloorScan<PersistedReturnScan>('return', floorId, {
+        marks,
+        scanLog,
+        sessionNotes,
+        returningName,
+        sigReturning,
+        sigWarehouse,
+      })
+    } else {
+      clearFloorScan('return', floorId)
+    }
+  }, [floorId, marks, scanLog, sessionNotes, returningName, sigReturning, sigWarehouse])
+
+  const discardRestoredScan = () => {
+    if (floorId) clearFloorScan('return', floorId)
+    setMarks({})
+    setScanLog([])
+    setSessionNotes('')
+    setReturningName('')
+    setSigReturning(null)
+    setSigWarehouse(null)
+    setRestoredFromStorage(false)
+  }
 
   const rows = useMemo<ReturnRow[]>(() => (floor ? buildRows(floor) : []), [floor])
   const actionable = useMemo(() => rows.filter((r) => !r.alreadyReturned), [rows])
@@ -783,6 +850,7 @@ export default function ReturnWorkspace({
         ),
       )
       .then(() => {
+        clearFloorScan('return', floor.id)
         if (onConfirmSuccess) {
           onConfirmSuccess()
         } else {
@@ -805,6 +873,7 @@ export default function ReturnWorkspace({
       isDirty,
       label: 'Confirm & Next →',
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onRegisterActions, canComplete, dispatching, isDirty])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
@@ -882,6 +951,36 @@ export default function ReturnWorkspace({
 
         {floor !== null && stageBlock === null && floor.linesPresence === 'present' && rows.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+            {restoredFromStorage && (
+              <div
+                role="status"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  padding: '10px 14px',
+                  borderRadius: 'var(--r-card)',
+                  background: 'color-mix(in srgb, var(--primary) 10%, var(--surface))',
+                  border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
+                  fontSize: 'var(--t-meta)',
+                  color: 'var(--text)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Icon name="refresh" size={14} style={{ color: 'var(--primary)' }} />
+                  <span>Restored in-progress return session from this device.</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={discardRestoredScan}
+                  style={{ fontSize: 'var(--t-meta)', height: 28, minHeight: 28, padding: '0 8px' }}
+                >
+                  Start Fresh
+                </Button>
+              </div>
+            )}
             {/* ── header ─────────────────────────────────────────────────── */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
               {!embedded && (

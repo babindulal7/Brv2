@@ -596,6 +596,41 @@ describe('the stage moves through the transition trigger and nothing else', () =
     expect(transition?.['actor_role']).toBe(OWNER.role)
     expect(transition?.['branch_id']).toBe(BRANCH_ID)
   })
+
+  it('writes signatures to signatures table before stage transition when provided', async () => {
+    db.state.responses['bookings'] = [[bookingAt('Packed')]]
+    db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
+    db.state.responses['operation_sessions'] = [[]]
+    db.state.responses['handover_lines'] = [[], [{ id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' }]]
+
+    const nowIso = new Date().toISOString()
+    await handoverRental(
+      {
+        bookingId: 'B-715',
+        lines: [{ bookingLineId: LINE_A, unitIds: ['u1'] }],
+        signatures: [
+          { role: 'Receiver', signerName: 'Alice Client', signedAt: nowIso, isRequired: true },
+          { role: 'Warehouse staff', signerName: 'Bob Staff', signedAt: nowIso, isRequired: true },
+        ],
+      },
+      OWNER,
+    )
+
+    const sigWrites = insertsOn('signatures')
+    expect(sigWrites).toHaveLength(2)
+    expect(sigWrites[0]?.payload['signature_role']).toBe('Receiver')
+    expect(sigWrites[0]?.payload['signer_name']).toBe('Alice Client')
+    expect(sigWrites[0]?.payload['created_by']).toBe(OWNER.userId)
+
+    expect(sigWrites[1]?.payload['signature_role']).toBe('Warehouse staff')
+    expect(sigWrites[1]?.payload['signer_name']).toBe('Bob Staff')
+
+    // Signatures written before booking_stage_transitions
+    const sigIndex = writes.state.ops.findIndex((o) => o.table === 'signatures')
+    const transitionIndex = writes.state.ops.findIndex((o) => o.table === 'booking_stage_transitions')
+    expect(sigIndex).toBeGreaterThan(-1)
+    expect(transitionIndex).toBeGreaterThan(sigIndex)
+  })
 })
 
 /* ── 4 · Law 6 — money is neither read nor written ──────────────────────── */

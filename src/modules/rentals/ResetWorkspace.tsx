@@ -760,6 +760,7 @@ export default function ResetWorkspace({
       isDirty,
       label: 'Confirm & Complete',
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onRegisterActions, canComplete, dispatching, isDirty])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */

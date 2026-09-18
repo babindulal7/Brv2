@@ -25,6 +25,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import type { Viewport } from '../../../lib/device'
+import { OperationsWorkspaceProvider } from '../OperationsWorkspaceContext'
 
 let viewport: Viewport = 'desktop'
 
@@ -183,7 +184,7 @@ async function mount(ui: ReactNode, initial = '/') {
     root.render(
       <MemoryRouter initialEntries={[initial]}>
         <PathProbe />
-        {ui}
+        <OperationsWorkspaceProvider>{ui}</OperationsWorkspaceProvider>
       </MemoryRouter>,
     )
   })
@@ -268,49 +269,63 @@ describe('Spec 03 §3.1 — queue chips filter ONE time-ordered list', () => {
 
   it('carries the day scope the §3.1 header draws', async () => {
     await mount(<OperationsQueues />, '/operations')
+    const filters = buttons().find((b) => b.getAttribute('aria-controls') === 'operations-filters')
+    await act(async () => {
+      filters?.click()
+    })
     const labels = buttons().map((b) => b.textContent ?? '')
     expect(labels.some((l) => l.startsWith('Today'))).toBe(true)
     expect(labels.some((l) => l.startsWith('Tomorrow'))).toBe(true)
     expect(labels.some((l) => l.startsWith('Custom'))).toBe(true)
   })
 
-  it('opens the row action on the parameterised workspace route', async () => {
+  it('opens the row action in the global workspace without changing route', async () => {
     await mount(<OperationsQueues />, '/operations')
     const pack = buttons().find((b) => b.textContent === 'Pack')
     await act(async () => {
       pack?.click()
     })
-    expect(path).toBe('/rentals/B-715/packing')
+    expect(path).toBe('/operations')
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
   })
 
-  it('keeps the rail on screen at tablet rather than collapsing it', async () => {
+  it('opens the filter rail from the title control at tablet width', async () => {
     viewport = 'tablet'
     await mount(<OperationsQueues />, '/operations')
-    expect(text()).toContain('no monetary values are shown')
-    expect(buttons().some((b) => (b.getAttribute('aria-label') ?? '').startsWith('Expand'))).toBe(false)
+    const filters = buttons().find((b) => b.getAttribute('aria-controls') === 'operations-filters')
+    await act(async () => {
+      filters?.click()
+    })
+    expect(filters?.getAttribute('aria-expanded')).toBe('true')
+    expect(container.querySelector('#operations-filters')).not.toBeNull()
+    const expandAlerts = buttons().find((b) => b.getAttribute('aria-label') === 'Expand Alerts')
+    await act(async () => {
+      expandAlerts?.click()
+    })
+    expect(text()).toContain('Return Overdue')
   })
 })
 
-describe('Rulings §3 — OperationsShell is a launcher, not a modal host', () => {
-  it('renders four navigable steps and mounts no workspace', async () => {
+describe('OperationsShell is the unified modal host', () => {
+  it('renders four stages and mounts the real workspace', async () => {
     await mount(<OperationsShell bookingNo="B-715" bookingStatus="Booked" isOpen onClose={() => {}} />)
     const labels = buttons().map((b) => b.textContent ?? '')
     expect(labels.some((l) => l.includes('Packing'))).toBe(true)
     expect(labels.some((l) => l.includes('Handover'))).toBe(true)
     expect(labels.some((l) => l.includes('Return & Inspection'))).toBe(true)
     expect(labels.some((l) => l.includes('Reset'))).toBe(true)
-    // The workspaces each render their own <table>; a launcher renders none.
-    expect(container.querySelectorAll('table')).toHaveLength(0)
-    expect(text()).not.toContain('Packing Checklist')
+    expect(container.querySelectorAll('table').length).toBeGreaterThan(0)
+    expect(text()).toContain('Packing Checklist')
   })
 
-  it('navigates to the parameterised route instead of swapping a tab panel', async () => {
+  it('keeps the parent route while resolving another booking in-place', async () => {
     await mount(<OperationsShell bookingNo="B-9001" bookingStatus="Booked" isOpen onClose={() => {}} />)
     const pack = buttons().find((b) => (b.textContent ?? '').includes('Packing'))
     await act(async () => {
       pack?.click()
     })
-    expect(path).toBe('/rentals/B-9001/packing')
+    expect(path).toBe('/')
+    expect(text()).toContain('No booking matches B-9001')
   })
 
   it('keeps a step that is not open yet visible and unclickable, with its reason', async () => {
@@ -323,14 +338,10 @@ describe('Rulings §3 — OperationsShell is a launcher, not a modal host', () =
     expect(text()).toContain('opens once this booking reaches Booked')
   })
 
-  it('offers Evidence as a viewer, never as a fifth step', async () => {
+  it('keeps Evidence out of the four-stage workflow', async () => {
     await mount(<OperationsShell bookingNo="B-715" bookingStatus="Booked" isOpen onClose={() => {}} />)
     const evidence = buttons().find((b) => (b.textContent ?? '').includes('Evidence'))
-    expect(evidence?.textContent).toContain('viewer, not a step')
-    await act(async () => {
-      evidence?.click()
-    })
-    expect(path).toBe('/rentals/B-715/evidence')
+    expect(evidence).toBeUndefined()
   })
 })
 

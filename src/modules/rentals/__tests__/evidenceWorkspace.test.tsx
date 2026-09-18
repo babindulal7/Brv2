@@ -46,8 +46,8 @@ vi.mock('../../../lib/auth', () => ({
  * this screen used to print regardless of the route. This answer disagrees
  * with all four, so any surviving literal shows up as a failure.
  */
-const PICKUP_ISO = '2026-08-03T03:15:00.000Z'
-const RETURN_ISO = '2026-08-06T03:15:00.000Z'
+const PICKUP_ISO = '2026-08-03T00:15:00.000Z'
+const RETURN_ISO = '2026-08-06T00:15:00.000Z'
 
 const FLOOR: FloorBooking = {
   id: '22222222-2222-4222-8222-222222222222',

@@ -376,6 +376,38 @@ export interface FloorVerbInput {
   clientUuid?: string
   /** AD/UTC (Law 7). Defaults to now. */
   occurredAt?: string
+  /**
+   * Handover only — signatures captured at session close (gate 5).
+   *
+   * The DB stage-gate (`0115:320-326`, `0116:221-227`) refuses to advance the
+   * booking to On Rent unless at least one `signatures` row exists for the
+   * handover session. `captureSignature` in `HandoverWorkspace` only set local
+   * UI state; nothing wrote to the table. This field carries the captured
+   * signatures through `handoverRental` → `runFloorVerb` → `writeSignatures`,
+   * which inserts the rows AFTER the session is opened and BEFORE the stage
+   * transition trigger fires.
+   */
+  signatures?: readonly SignatureInput[]
+}
+
+/**
+ * One signature captured at the handover session close.
+ *
+ * The `signatures` table (`0003:518`) requires a row for at least one signatory
+ * before the DB stage-gate (`0115:325`, `0116:226`) will let the booking move to
+ * On Rent. `captureSignature` in `HandoverWorkspace` previously only set local
+ * UI state; this type carries the data through to `writeSignatures` in
+ * `runFloorVerb`, which inserts the rows before the stage transition fires.
+ */
+export interface SignatureInput {
+  /** `'Receiver'` or `'Warehouse staff'` for handovers. */
+  role: 'Receiver' | 'Warehouse staff'
+  /** Signer's display name from real records (client name or operator name). */
+  signerName: string
+  /** ISO-8601 UTC — the instant the operator tapped "Sign". Law 7. */
+  signedAt: string
+  /** Whether this role is required. Receiver and Warehouse staff are always required. */
+  isRequired: boolean
 }
 
 export interface FloorVerbResult {
@@ -1155,12 +1187,30 @@ export async function runFloorVerb(
    *     in the queue, so Return is where the row belongs. */
   const queued = await enqueueReturnedUnits(booking, queueCandidates, ctx, occurredAt)
 
+  /* 5c — signatures for Handover, written BEFORE the stage advance.
+   *
+   *     The DB gate at `0115:320-326` and `0116:221-227` refuses the transition
+   *     to On Rent unless at least one row exists in `signatures` for the
+   *     handover session. `captureSignature` in `HandoverWorkspace` only set
+   *     local UI state; nothing wrote to the table (HO-03 / TODO(decision) at
+   *     HandoverWorkspace.tsx:927). The stage transition at step 7 is what fires
+   *     the trigger, so signatures must land here — after the session is open
+   *     (so we have a valid `sessionId`) and before the transition is attempted.
+   *
+   *     idempotent: `signatures_one_per_role_per_session` (`0003:545`) is a
+   *     unique index on `(session_id, signature_role)` WHERE role <> 'Witness',
+   *     so a double-submit does nothing rather than double-inserting. */
+  if (job === 'Handover' && input.signatures && input.signatures.length > 0) {
+    await writeSignatures(sessionId, input.signatures, ctx, occurredAt)
+  }
+
   /* 6 — one question, asked once, answering two things: has every live line of
    *     the booking reached a state this verb calls terminal? It decides whether
    *     the session may close AND whether the stage may move, and asking it once
    *     is what keeps those two from ever disagreeing. */
   const heldBy = await linesShortOfTerminal(job, live)
   const complete = heldBy.length === 0
+
 
   /* 7 — the stage, through the transition trigger and nothing else — and
    *     BEFORE the session is sealed. The header argues the order (PK-05); the
@@ -1570,6 +1620,55 @@ async function writeDamageFindings(
   return damage.length
 }
 
+/**
+ * Writes captured signatures to `signatures` table for a Handover session.
+ *
+ * Must be called AFTER the session row exists (so `session_id` FK is valid) and
+ * BEFORE the stage transition (`advanceStage`), because the DB gate at
+ * `0115:320-326` and `0116:221-227` refuses the move to On Rent if no signature
+ * row exists for the session.
+ *
+ * Uses `idempotentInsert` keyed on `client_uuid` so a double-submit writes once,
+ * not twice. The unique index `signatures_one_per_role_per_session` (`0003:545`)
+ * provides a second guard at the DB level — it rejects a second row for the same
+ * `(session_id, signature_role)` pair, so even without idempotency the worst
+ * outcome is a harmless constraint error on the second attempt.
+ */
+async function writeSignatures(
+  sessionId: string,
+  signatures: readonly SignatureInput[],
+  ctx: ActionContext,
+  occurredAt: string,
+): Promise<void> {
+  for (const sig of signatures) {
+    const rowId = generateClientUuid()
+    try {
+      await idempotentInsert(
+        'signatures',
+        {
+          id: rowId,
+          client_uuid: rowId,
+          session_id: sessionId,
+          signature_role: sig.role,
+          signer_name: sig.signerName,
+          signed_at: sig.signedAt,
+          device: 'Web',
+          is_required: sig.isRequired,
+          created_by: ctx.userId,
+          created_at: occurredAt,
+        },
+        { returnRow: false },
+      )
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      // A duplicate-key error means the signature already exists — idempotent.
+      if (!msg.includes('duplicate') && !msg.includes('unique') && !msg.includes('signatures_one_per_role_per_session')) {
+        throw new Error(`Could not write ${sig.role} signature for session ${sessionId}: ${msg}`)
+      }
+    }
+  }
+}
+
 /** What an earlier pass of the SAME session already moved on a line. */
 interface PriorMovements {
   unitIds: Set<string>
@@ -1680,9 +1779,7 @@ async function writeUnitStates(
     if (outcome === 'missing') return u.unit_state !== 'Returned'
     return true
   })
-  for (const u of targets) {
-    await safeUpdate('booking_line_units', u.id, patch, actionUuid)
-  }
+  await Promise.all(targets.map((u) => safeUpdate('booking_line_units', u.id, patch, actionUuid)))
 }
 
 /* ── The reset queue: raised at Return, completed at Reset ──────────────── */

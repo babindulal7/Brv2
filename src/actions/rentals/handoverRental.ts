@@ -6,6 +6,7 @@ import {
   type FloorLineInput,
   type FloorVerbResult,
 } from './floorVerb';
+import type { SignatureInput } from './floorVerb';
 
 /**
  * **Handover — the second floor verb.** Runs at `JOBS.Handover.runsAt` =
@@ -44,6 +45,13 @@ export type HandoverRentalInput = {
   overrideReason?: string;
   /** AD/UTC. Defaults to now. */
   occurredAt?: string;
+  /**
+   * The receiver and warehouse-staff signatures captured at session close.
+   * Written to the `signatures` table before the stage-gate trigger fires so
+   * the DB gate at `0115:320-326` passes. Without these rows the booking cannot
+   * advance to On Rent.
+   */
+  signatures?: readonly SignatureInput[];
   /** Gate 1 — checked against the receiver's physical ID at the counter. Written to `operation_sessions`. */
   governmentIdVerified?: boolean;
   bookingAuthorizationVerified?: boolean;
@@ -76,6 +84,7 @@ export const handoverRental = createAction<HandoverRentalInput, FloorVerbResult>
         ...(input.bookingAuthorizationVerified === undefined
           ? {}
           : { bookingAuthorizationVerified: input.bookingAuthorizationVerified }),
+        ...(input.signatures === undefined || input.signatures.length === 0 ? {} : { signatures: input.signatures }),
       },
       ctx,
     );

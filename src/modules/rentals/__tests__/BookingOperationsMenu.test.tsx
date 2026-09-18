@@ -2,9 +2,15 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BookingStatus } from '../../../lib/workflow'
 import BookingOperationsMenu from '../BookingOperationsMenu'
+import { OperationsWorkspaceProvider } from '../../operations/OperationsWorkspaceContext'
+
+vi.mock('../PackingWorkspace', () => ({ default: () => <div>Packing workspace body</div> }))
+vi.mock('../HandoverWorkspace', () => ({ default: () => <div>Handover workspace body</div> }))
+vi.mock('../ReturnWorkspace', () => ({ default: () => <div>Return workspace body</div> }))
+vi.mock('../ResetWorkspace', () => ({ default: () => <div>Reset workspace body</div> }))
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
@@ -25,10 +31,12 @@ async function mount(bookingNo?: string, bookingStatus?: BookingStatus) {
     root.render(
       <MemoryRouter initialEntries={['/rentals/new']}>
         <PathProbe />
-        <BookingOperationsMenu
-          {...(bookingNo ? { bookingNo } : {})}
-          {...(bookingStatus ? { bookingStatus } : {})}
-        />
+        <OperationsWorkspaceProvider>
+          <BookingOperationsMenu
+            {...(bookingNo ? { bookingNo } : {})}
+            {...(bookingStatus ? { bookingStatus } : {})}
+          />
+        </OperationsWorkspaceProvider>
       </MemoryRouter>,
     )
   })
@@ -54,7 +62,7 @@ describe('booking-level Operations dropdown', () => {
     expect(labels).toEqual(['Packing', 'Handover', 'Return & Inspection', 'Cleaning & Reset'])
   })
 
-  it('opens the selected booking operation as its canonical route', async () => {
+  it('opens the selected booking operation in-place', async () => {
     await mount('B-715', 'Booked')
     await openMenu()
 
@@ -63,7 +71,8 @@ describe('booking-level Operations dropdown', () => {
     )
     await act(async () => packing?.click())
 
-    expect(path).toBe('/rentals/B-715/packing')
+    expect(path).toBe('/rentals/new')
+    expect(container.querySelector('[role="dialog"]')?.textContent).toContain('Operations · B-715')
   })
 
   it('keeps all four choices visible but unavailable before a new booking is saved', async () => {

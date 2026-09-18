@@ -25,6 +25,8 @@ import { deliveryTypeLabel } from '../../lib/format'
 import { readServiceDue } from '../../lib/queries/serviceDue'
 import { serviceStatus, type ServiceRow } from '../../lib/serviceDue'
 import { formatGateError } from '../../lib/gates'
+import { clearFloorScan, loadFloorScan, saveFloorScan } from '../../lib/floorScanStorage'
+import { rentalDaysBetween } from '../../lib/rentalDays'
 
 /**
  * **Packing Workspace** — `Packing Workflow.md` v2.1 (Build Locked), wired live.
@@ -437,9 +439,7 @@ export function buildPackLines(
 
 /** The AD span between two instants in whole days, floored at 1 (Law 9's days-explicit floor). */
 function rentalDays(pickupIso: string, returnIso: string): number {
-  const ms = Date.parse(returnIso) - Date.parse(pickupIso)
-  if (!Number.isFinite(ms)) return 1
-  return Math.max(1, Math.round(ms / 86_400_000))
+  return rentalDaysBetween(pickupIso, returnIso) ?? 1
 }
 
 /**
@@ -518,14 +518,30 @@ export default function PackingWorkspace({
     }
   }, [id, reload])
 
+  interface PersistedPackScan {
+    marks: Record<string, Mark>
+    scanLog: string[]
+    sessionNotes: string
+    photoCount: number
+  }
+
   /* ── checklist state, keyed on the real rows ─────────────────────────────
    * `marks` holds only rows the operator touched; absence is Pending. Local
    * until Complete Packing dispatches — dispatch-then-commit, where "commit"
    * is the navigation away on the resolved promise. */
   const [marks, setMarks] = useState<Record<string, Mark>>({})
+  const [restoredFromStorage, setRestoredFromStorage] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All')
+  const [queryInput, setQueryInput] = useState('')
   const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQuery(queryInput)
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [queryInput])
   const [highlight, setHighlight] = useState<string | null>(null)
   const [scanLog, setScanLog] = useState<string[]>([])
   const [sessionNotes, setSessionNotes] = useState('')
@@ -553,16 +569,60 @@ export default function PackingWorkspace({
 
   const floorId = floor?.id ?? null
   useEffect(() => {
-    // A different booking arrived: everything verified belonged to the old one.
-    setMarks({})
-    setPhotoCount(0)
-    setScanLog([])
-    setSessionNotes('')
     setDispatchError(null)
     setDispatching(false)
     setStageHeld(null)
     setCompletionKey(newClientUuid())
+
+    if (floorId) {
+      const persisted = loadFloorScan<PersistedPackScan>('pack', floorId)
+      if (
+        persisted &&
+        (Object.keys(persisted.payload.marks || {}).length > 0 ||
+          (persisted.payload.sessionNotes || '').trim() !== '' ||
+          (persisted.payload.photoCount || 0) > 0)
+      ) {
+        setMarks(persisted.payload.marks || {})
+        setPhotoCount(persisted.payload.photoCount || 0)
+        setScanLog(persisted.payload.scanLog || [])
+        setSessionNotes(persisted.payload.sessionNotes || '')
+        setRestoredFromStorage(true)
+        return
+      }
+    }
+
+    // No persisted scans: start fresh
+    setMarks({})
+    setPhotoCount(0)
+    setScanLog([])
+    setSessionNotes('')
+    setRestoredFromStorage(false)
   }, [floorId])
+
+  // Auto-save active scanning state to local storage
+  useEffect(() => {
+    if (!floorId) return
+    const hasContent = Object.keys(marks).length > 0 || sessionNotes.trim().length > 0 || photoCount > 0
+    if (hasContent) {
+      saveFloorScan<PersistedPackScan>('pack', floorId, {
+        marks,
+        scanLog,
+        sessionNotes,
+        photoCount,
+      })
+    } else {
+      clearFloorScan('pack', floorId)
+    }
+  }, [floorId, marks, scanLog, sessionNotes, photoCount])
+
+  const discardRestoredScan = () => {
+    if (floorId) clearFloorScan('pack', floorId)
+    setMarks({})
+    setPhotoCount(0)
+    setScanLog([])
+    setSessionNotes('')
+    setRestoredFromStorage(false)
+  }
 
   const rows = useMemo<PackRow[]>(() => (floor ? buildRows(floor) : []), [floor])
   const stateOf = (key: string): RowState => marks[key]?.state ?? 'Pending'
@@ -872,6 +932,7 @@ export default function PackingWorkspace({
       )
       .then((result) => {
         if (result.stage !== null) {
+          clearFloorScan('pack', floor.id)
           if (onConfirmSuccess) {
             onConfirmSuccess()
           } else {
@@ -898,6 +959,7 @@ export default function PackingWorkspace({
       isDirty,
       label: 'Confirm & Next →',
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onRegisterActions, canComplete, dispatching, isDirty])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
@@ -966,6 +1028,36 @@ export default function PackingWorkspace({
 
         {floor !== null && stageBlock === null && floor.linesPresence === 'present' && rows.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+            {restoredFromStorage && (
+              <div
+                role="status"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  padding: '10px 14px',
+                  borderRadius: 'var(--r-card)',
+                  background: 'color-mix(in srgb, var(--primary) 10%, var(--surface))',
+                  border: '1px solid color-mix(in srgb, var(--primary) 30%, transparent)',
+                  fontSize: 'var(--t-meta)',
+                  color: 'var(--text)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Icon name="refresh" size={14} style={{ color: 'var(--primary)' }} />
+                  <span>Restored in-progress packing session from this device.</span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={discardRestoredScan}
+                  style={{ fontSize: 'var(--t-meta)', height: 28, minHeight: 28, padding: '0 8px' }}
+                >
+                  Start Fresh
+                </Button>
+              </div>
+            )}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
               {/*
                 §3 — header. No Back, no ✕, and Complete Packing is NOT here.
@@ -1243,8 +1335,13 @@ export default function PackingWorkspace({
                 >
                   <div style={{ display: 'flex', gap: 7, padding: '9px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
                     <input
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
+                      value={queryInput}
+                      onChange={(e) => setQueryInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          setQuery(queryInput)
+                        }
+                      }}
                       placeholder="Search item, serial…"
                       aria-label="Search items"
                       style={{ flex: 1, minWidth: 180, minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}

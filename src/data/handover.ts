@@ -80,7 +80,7 @@ export type SessionState = JobState
 
 export type SessionId = 'S1' | 'S2'
 
-export type DeliveryMethod = 'Customer Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
+export type DeliveryMethod = 'Client Pickup' | 'Babin Delivery' | 'Courier' | 'Third Party'
 
 export interface HandoverUnit {
   id: string
@@ -225,7 +225,7 @@ export interface DeliveryFieldFlags {
  * Customer Pickup has no `vehicle` key to render in the first place.
  */
 export const DELIVERY_FIELDS: Record<DeliveryMethod, DeliveryFieldFlags> = {
-  'Customer Pickup': { pickupPerson: true, vehicle: false, driver: false, courier: false, address: false, warehouseStaff: true, estimatedArrival: false },
+  'Client Pickup': { pickupPerson: true, vehicle: false, driver: false, courier: false, address: false, warehouseStaff: true, estimatedArrival: false },
   'Babin Delivery': { pickupPerson: false, vehicle: true, driver: true, courier: false, address: true, warehouseStaff: true, estimatedArrival: true },
   Courier: { pickupPerson: false, vehicle: false, driver: false, courier: true, address: true, warehouseStaff: true, estimatedArrival: true },
   'Third Party': { pickupPerson: true, vehicle: true, driver: true, courier: false, address: true, warehouseStaff: true, estimatedArrival: true },
@@ -237,7 +237,7 @@ export function driverSignatureRequired(m: DeliveryMethod): boolean {
 }
 
 export const DELIVERY = {
-  method: 'Customer Pickup' as DeliveryMethod,
+  method: 'Client Pickup' as DeliveryMethod,
   pickupPerson: 'Bikash Thapa',
   pickupPersonPhone: '+977 9843927164',
   warehouseStaff: 'Sagar Maharjan',
@@ -340,3 +340,4 @@ if (HANDOVER_SEED_ERROR) {
  * only this constant and the gate that reads it need to change.
  */
 export const EVIDENCE_MIN_PHOTOS_PER_CASE = 1
+1

@@ -36,7 +36,9 @@ import AlertsPanel from '../today/AlertsPanel'
 import { useViewport } from '../../lib/device'
 import { kathmanduCivil, NPT_OFFSET_MIN, getBusinessToday } from '../../lib/bs'
 import { CalendarPopover, DateField } from '../../components/ui/DateField'
+import { FilterButton, FilterDrawer, FilterSection } from '../../components/ui/FilterDrawer'
 import './operations.css'
+import { useOperationsWorkspace } from './OperationsWorkspaceContext'
 
 
 const th = {
@@ -259,10 +261,11 @@ function withScope(filters: ListFilters, range: { fromAd?: string; toAd?: string
  * **No `withDeposit`** — see Law 6 above.
  */
 const fetchBookings = (filters: ListFilters) => listBookings({ ...filters, withCount: true })
+const fetchQueueCount = (filters: ListFilters) => listBookings({ ...filters, headOnly: true })
 
-/** One chip's count, scoped to the same day range the list is showing. */
+/** One chip's count, scoped to the same day range the list is showing (pure HEAD count, no row joins). */
 function useQueueCount(job: JobName, range: { fromAd?: string; toAd?: string } | null): ListResult<BookingListRow> {
-  return useList<BookingListRow>(fetchBookings, withScope(queueCountFilters(job), range), { isFilteredOverride: false })
+  return useList<BookingListRow>(fetchQueueCount, withScope(queueCountFilters(job), range), { isFilteredOverride: false })
 }
 
 /* ── Law L3: The four-way exception facet group ─────────────────────────── */
@@ -409,8 +412,17 @@ function StageBadge({ stage }: { stage: JobRow['stage'] }) {
 }
 
 export default function OperationsQueues() {
+  const { openOperations } = useOperationsWorkspace()
+  const routeNavigate = useNavigate()
+  // Keep the existing dense table render readable while changing its action
+  // from URL navigation to the global modal host.
+  const navigate = (route: string) => {
+    const match = route.match(/^\/rentals\/([^/]+)\/(packing|handover|return|reset)$/)
+    if (!match) { routeNavigate(route); return }
+    const row = jobs.find((candidate) => candidate.bookingNo === match[1])
+    if (row) openOperations(row.bookingNo, row.stage, row.job)
+  }
   const [params, setParams] = useSearchParams()
-  const navigate = useNavigate()
   const [fastReturnOpen, setFastReturnOpen] = useState(false)
   const [barcodeModalOpen, setBarcodeModalOpen] = useState(false)
   const [searchInput, setSearchInput] = useState('')
@@ -425,7 +437,6 @@ export default function OperationsQueues() {
   const [pageSize, setPageSize] = useState(20)
   const queueSearchRef = useRef<HTMLInputElement | null>(null)
   const dateMenuRef = useRef<HTMLDivElement | null>(null)
-  const filtersMenuRef = useRef<HTMLDivElement | null>(null)
   const actionMenuRef = useRef<HTMLDivElement | null>(null)
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
@@ -462,6 +473,14 @@ export default function OperationsQueues() {
   const setQuick = (q: 'pickup' | 'return') => patch({ quick: group === q ? null : q, queue: null, exception: null })
   const setScope = (s: DayScope) => patch({ day: s, ...(s === 'custom' ? {} : { from: null, to: null }) })
   const clearAllFilters = () => setParams(new URLSearchParams())
+  const clearOperationFilters = () => {
+    clearAllFilters()
+    setSearchInput('')
+    setSearch('')
+    setClientFilter('all')
+    setProjectFilter('all')
+    setSelectedBookingNos(new Set())
+  }
 
   /* Queue search stays local to the already server-filtered operation set and
      waits briefly between keystrokes, so scanning a booking number does not
@@ -488,16 +507,15 @@ export default function OperationsQueues() {
   }, [])
 
   useEffect(() => {
-    if (!showDateMenu && !showMoreFilters && !showActionMenu) return
+    if (!showDateMenu && !showActionMenu) return
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node
       if (!dateMenuRef.current?.contains(target)) setShowDateMenu(false)
-      if (!filtersMenuRef.current?.contains(target)) setShowMoreFilters(false)
       if (!actionMenuRef.current?.contains(target)) setShowActionMenu(false)
     }
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
-  }, [showDateMenu, showMoreFilters, showActionMenu])
+  }, [showDateMenu, showActionMenu])
 
   const nowAd = businessNowAd()
   const todayNepal = dayOffsetFromToday(0)
@@ -536,28 +554,6 @@ export default function OperationsQueues() {
     Reset: resetCount,
   }
 
-  /* Law L3: The four-way exception facet live counts */
-  const startingTodayCount = useList<BookingListRow>(
-    fetchBookings,
-    exceptionFilters('starting_today', nowAd, todayNepal),
-    { isFilteredOverride: false }
-  )
-  const endingTodayCount = useList<BookingListRow>(
-    fetchBookings,
-    exceptionFilters('ending_today', nowAd, todayNepal),
-    { isFilteredOverride: false }
-  )
-  const overdueStartCount = useList<BookingListRow>(
-    fetchBookings,
-    exceptionFilters('overdue_start', nowAd, todayNepal),
-    { isFilteredOverride: false }
-  )
-  const overdueEndCount = useList<BookingListRow>(
-    fetchBookings,
-    exceptionFilters('overdue_end', nowAd, todayNepal),
-    { isFilteredOverride: false }
-  )
-
   const alertsQ = useList<BookingListRow>(fetchBookings, overdue(nowAd), { isFilteredOverride: false })
   const quotesQ = useList<BookingListRow>(fetchBookings, quotesExpiring(nowAd), { isFilteredOverride: false })
   const alertRows = [
@@ -575,10 +571,6 @@ export default function OperationsQueues() {
     handoverCount.refetch()
     returnCount.refetch()
     resetCount.refetch()
-    startingTodayCount.refetch()
-    endingTodayCount.refetch()
-    overdueStartCount.refetch()
-    overdueEndCount.refetch()
     /* The Alerts panel lives on this page now — the header's Refresh must not
        leave it quoting stale exceptions beside a fresh queue list. */
     alertsQ.refetch()
@@ -614,6 +606,14 @@ export default function OperationsQueues() {
   const allVisibleSelected = pagedJobs.length > 0 && pagedJobs.every((job) => selectedBookingNos.has(job.bookingNo))
   const resultStart = visibleJobs.length === 0 ? 0 : currentPage * pageSize + 1
   const resultEnd = Math.min((currentPage + 1) * pageSize, visibleJobs.length)
+  const operationFilterCount = [
+    scope !== 'today',
+    group !== null,
+    exception !== null,
+    clientFilter !== 'all',
+    projectFilter !== 'all',
+    search.trim() !== '',
+  ].filter(Boolean).length
   const pageNumbers = Array.from({ length: Math.min(pageCount, 5) }, (_, index) => {
     if (pageCount <= 5) return index
     const start = Math.min(Math.max(currentPage - 2, 0), pageCount - 5)
@@ -655,13 +655,41 @@ export default function OperationsQueues() {
       : 'No booking is sitting at a stage that has floor work in this range.'
 
   return (
-    <div className="operations-v2" style={{ display: 'flex', flexDirection: 'column' }}>
-      <PageHeader
-        icon="queues"
-        title="Operations"
-        description="Track and manage daily workflow. One floor list for every day."
-        actions={<DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refreshAll} loading={list.loading} />}
-      />
+    <div
+      className="operations-v2"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: showMoreFilters && viewport !== 'phone' ? 'minmax(230px, 280px) minmax(0,1fr)' : 'minmax(0,1fr)',
+        gap: 'var(--sp-md)',
+        alignItems: 'start',
+      }}
+    >
+      <div style={{ gridColumn: '1 / -1' }}>
+        <PageHeader
+          leading={
+            <FilterButton
+              onClick={() => setShowMoreFilters((open) => !open)}
+              activeCount={operationFilterCount}
+              controls="operations-filters"
+              expanded={showMoreFilters}
+            />
+          }
+          title="Operations"
+          description="Track and manage daily workflow. One floor list for every day."
+          actions={<DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refreshAll} loading={list.loading} />}
+        />
+      </div>
+
+      <div
+        style={{
+          gridColumn: showMoreFilters && viewport !== 'phone' ? 2 : 1,
+          gridRow: 2,
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--sp-md)',
+        }}
+      >
 
       <div className="operations-v2__topline">
         <div ref={dateMenuRef} className="operations-v2__date-wrap">
@@ -711,32 +739,117 @@ export default function OperationsQueues() {
         <select className="operations-v2__filter-select" aria-label="Client filter" value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}><option value="all">All clients</option>{clients.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
         <select className="operations-v2__filter-select" aria-label="Project filter" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}><option value="all">All projects</option>{projects.map((project) => <option key={project} value={project}>{project}</option>)}</select>
         <input ref={queueSearchRef} className="operations-v2__search" type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search ID, client, project…" aria-label="Search ID, client, project" />
-        <div ref={filtersMenuRef} className="operations-v2__more-wrap">
-          <Button variant="outline" onClick={() => setShowMoreFilters((open) => !open)} aria-expanded={showMoreFilters}>More filters</Button>
-          {showMoreFilters && <div className="operations-v2__popover">
-            <div className="operations-v2__more-sections">
-              <section><p className="operations-v2__more-heading">Queue side</p><div className="operations-v2__facet-grid">{(['pickup', 'return'] as const).map((item) => <Button key={item} variant={group === item ? 'secondary' : 'ghost'} size="sm" className="operations-v2__facet" onClick={() => setQuick(item)}>{GROUP_LABEL[item]}</Button>)}</div></section>
-              <section><p className="operations-v2__more-heading">Attention required</p><div className="operations-v2__facet-grid">{EXCEPTION_FACETS.map((facet) => { const isActive = exception === facet.key; return <Button key={facet.key} variant={isActive ? 'secondary' : 'ghost'} size="sm" className="operations-v2__facet" icon={facet.icon} onClick={() => patch({ exception: isActive ? null : facet.key, queue: null, quick: null })}>{facet.label}</Button> })}</div></section>
-              <section><p className="operations-v2__more-heading">Alerts</p><AlertsPanel alerts={alertRows} loading={alertsQ.loading || quotesQ.loading} error={alertsQ.error ?? quotesQ.error} onRetry={retryAlerts} /></section>
-            </div>
-          </div>}
-        </div>
-        {(isFiltered || search || clientFilter !== 'all' || projectFilter !== 'all') && <Button variant="ghost" onClick={() => { clearAllFilters(); setSearch(''); setClientFilter('all'); setProjectFilter('all'); setSelectedBookingNos(new Set()) }}>Clear filters</Button>}
+        {(isFiltered || search || clientFilter !== 'all' || projectFilter !== 'all') && <Button variant="ghost" onClick={clearOperationFilters}>Clear filters</Button>}
       </div>
 
       {selected === 'Cases' ? <CasesWorkspace embedded /> : (
         <Card style={{ overflow: 'hidden' }} bodyStyle={{ padding: 0 }}>
-          <PageBody loading={list.loading} error={list.error} onRetry={refreshAll} hasRows={jobs.length > 0} empty={list.isEmpty} emptyIsFiltered={list.isFiltered} onClearFilters={clearAllFilters} noun="jobs" skeleton="table" skeletonRows={6} emptyTitle={emptyTitle} emptyMessage={emptyMessage}>
+          <PageBody loading={list.loading} error={list.error} onRetry={refreshAll} hasRows={jobs.length > 0} empty={list.isEmpty} emptyIsFiltered={list.isFiltered} onClearFilters={clearOperationFilters} noun="jobs" skeleton="table" skeletonRows={6} emptyTitle={emptyTitle} emptyMessage={emptyMessage}>
             {!tabular && <div style={{ padding: 10, display: 'grid', gap: 8 }}>{pagedJobs.map((job) => <article key={job.id} style={{ ...cardStyle, padding: 14, display: 'grid', gap: 8 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><Link to={`/rentals/${job.bookingNo}`} className="identifier">{job.bookingNo}</Link><StageBadge stage={job.stage} /></div><div>{job.clientName} · {job.project ?? '—'}</div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span>{formatDueAt(job.dueAtAd)} · {job.itemCount} items</span><Button size="sm" onClick={() => navigate(jobRoute(job.bookingNo, job.job))}>{job.job}</Button></div></article>)}</div>}
             {tabular && <div style={{ overflowX: 'auto' }}><table className="operations-v2__table"><thead><tr><th style={{ ...th, width: 44 }}><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleBookings} aria-label="Select visible bookings" /></th>{['Booking', 'Client', 'Project', 'Items', 'Stage', 'Time', 'Action', ''].map((heading, index) => <th key={heading || index} style={th}>{heading}</th>)}</tr></thead><tbody>{pagedJobs.map((job) => <tr key={job.id} style={{ borderLeft: job.isPastDue ? '2px solid var(--danger)' : '2px solid transparent' }}><td style={{ ...td, width: 44 }}><input type="checkbox" checked={selectedBookingNos.has(job.bookingNo)} onChange={() => toggleBooking(job.bookingNo)} aria-label={`Select ${job.bookingNo}`} /></td><td style={td}><Link to={`/rentals/${job.bookingNo}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 700, textDecoration: 'none' }}>{job.bookingNo}</Link></td><td style={td}><Link to={`/clients/${job.clientId}`} style={{ color: 'inherit', textDecoration: 'none' }}>{job.clientName}</Link></td><td style={{ ...td, color: 'var(--text2)' }}>{job.project ?? '—'}</td><td className="figure" style={td}>{job.itemCount}</td><td style={td}><StageBadge stage={job.stage} /></td><td className="figure" style={{ ...td, fontWeight: job.isPastDue ? 700 : 500, color: job.isPastDue ? 'var(--danger-text)' : 'var(--text)' }}>{formatDueAt(job.dueAtAd)}</td><td style={td}><Button size="sm" variant="secondary" onClick={() => navigate(jobRoute(job.bookingNo, job.job))}>{job.job}</Button></td><td style={{ ...td, width: 44 }}><Link to={`/rentals/${job.bookingNo}`} aria-label={`More for booking ${job.bookingNo}`} style={{ color: 'var(--muted)' }}><Icon name="chevron_right" size={18} /></Link></td></tr>)}</tbody></table>{jobs.length > 0 && visibleJobs.length === 0 && <div className="operations-v2__empty-search">No jobs match “{search}”.</div>}</div>}
           </PageBody>
           <div className="operations-v2__resultbar"><span>{list.total === null ? 'Loading results…' : `Showing ${resultStart}–${resultEnd} of ${visibleJobs.length} ${visibleJobs.length === 1 ? 'job' : 'jobs'}`}{selectedBookingNos.size > 0 ? ` · ${selectedBookingNos.size} selected` : ''}</span><div className="operations-v2__pagination"><label>Rows per page <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>{[20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>{pageCount > 1 && <><Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={currentPage === 0} aria-label="Previous page" icon="chevron_left"> </Button>{pageNumbers.map((number) => <Button key={number} variant={number === currentPage ? 'secondary' : 'outline'} size="sm" onClick={() => setPage(number)} aria-current={number === currentPage ? 'page' : undefined}>{number + 1}</Button>)}<Button variant="outline" size="sm" onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={currentPage === pageCount - 1} aria-label="Next page" icon="chevron_right"> </Button></>}</div></div>
         </Card>
       )}
+      </div>
 
       <FastReturnModal isOpen={fastReturnOpen} onClose={() => setFastReturnOpen(false)} onSuccess={refreshAll} />
       <BarcodeLookupModal isOpen={barcodeModalOpen} onClose={() => setBarcodeModalOpen(false)} />
-      <FooterNote extra={['Queues are stages — no page defines its own status names']} />
+      <FilterDrawer
+        id="operations-filters"
+        open={showMoreFilters}
+        onClose={() => setShowMoreFilters(false)}
+        desktopMode="rail"
+        railStyle={{ gridColumn: 1, gridRow: 2 }}
+        side="left"
+        width={360}
+        resultCount={list.loading ? null : visibleJobs.length}
+        noun={visibleJobs.length === 1 ? 'job' : 'jobs'}
+        activeCount={operationFilterCount}
+        onClearAll={clearOperationFilters}
+        standardFooter
+        onApply={() => setShowMoreFilters(false)}
+      >
+        <div style={{ display: 'grid', gap: 'var(--sp-xs)' }}>
+          <FilterSection title="Date range">
+            <div className="operations-v2__facet-grid">
+              {DISPLAY_SCOPE_ORDER.map((item) => (
+                <Button
+                  key={item}
+                  variant={scope === item ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="operations-v2__facet"
+                  onClick={() => setScope(item)}
+                >
+                  {SCOPE_LABEL[item]}
+                </Button>
+              ))}
+            </div>
+            {scope === 'custom' && (
+              <div className="operations-v2__custom-range" style={{ marginTop: 'var(--sp-sm)' }}>
+                <label>From<DateField ariaLabel="Queue from this day" value={customFrom} onChange={(value) => patch({ from: value || null })} showBs={false} clearable /></label>
+                <label>To<DateField ariaLabel="Queue up to this day" value={customTo} onChange={(value) => patch({ to: value || null })} showBs={false} clearable align="right" /></label>
+              </div>
+            )}
+          </FilterSection>
+
+          <FilterSection title="Queue side">
+            <div className="operations-v2__facet-grid">
+              {(['pickup', 'return'] as const).map((item) => (
+                <Button key={item} variant={group === item ? 'secondary' : 'ghost'} size="sm" className="operations-v2__facet" onClick={() => setQuick(item)}>
+                  {GROUP_LABEL[item]}
+                </Button>
+              ))}
+            </div>
+          </FilterSection>
+
+          <FilterSection title="Client and project">
+            <div style={{ display: 'grid', gap: 'var(--sp-sm)' }}>
+              <label style={{ display: 'grid', gap: 4, color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
+                Client
+                <select className="operations-v2__filter-select" aria-label="Drawer client filter" value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}>
+                  <option value="all">All clients</option>
+                  {clients.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                </select>
+              </label>
+              <label style={{ display: 'grid', gap: 4, color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
+                Project
+                <select className="operations-v2__filter-select" aria-label="Drawer project filter" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
+                  <option value="all">All projects</option>
+                  {projects.map((project) => <option key={project} value={project}>{project}</option>)}
+                </select>
+              </label>
+            </div>
+          </FilterSection>
+
+          <FilterSection title="Attention required">
+            <div className="operations-v2__facet-grid">
+              {EXCEPTION_FACETS.map((facet) => {
+                const isActive = exception === facet.key
+                return (
+                  <Button
+                    key={facet.key}
+                    variant={isActive ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className="operations-v2__facet"
+                    icon={facet.icon}
+                    onClick={() => patch({ exception: isActive ? null : facet.key, queue: null, quick: null })}
+                  >
+                    {facet.label}
+                  </Button>
+                )
+              })}
+            </div>
+          </FilterSection>
+
+          <FilterSection title="Alerts" defaultOpen={false}>
+            <AlertsPanel alerts={alertRows} loading={alertsQ.loading || quotesQ.loading} error={alertsQ.error ?? quotesQ.error} onRetry={retryAlerts} />
+          </FilterSection>
+        </div>
+      </FilterDrawer>
+      <div style={{ gridColumn: '1 / -1' }}>
+        <FooterNote extra={['Queues are stages — no page defines its own status names']} />
+      </div>
     </div>
   )
 }

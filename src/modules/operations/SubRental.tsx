@@ -23,7 +23,6 @@ import {
   type SupplierDirectoryRow,
   type SubRentalStatus,
   type SubRentalRecord,
-  SUB_RENTAL_DATA,
 } from '../../lib/queries/subrentals'
 import type { GateContext } from '../../lib/fieldGating'
 import { IconSearch, IconPlus, IconDownload, IconArrowUpRight, IconArrowDownLeft } from '@tabler/icons-react'
@@ -350,12 +349,12 @@ export function SubRental() {
   // rendered and then hidden.
   const canSeeFinance = canViewMoneyField(gctx, 'asset-finance')
 
-  const [records, setRecords] = useState<SubRentalRecord[]>(SUB_RENTAL_DATA)
+  const [records, setRecords] = useState<SubRentalRecord[]>([])
 
   useEffect(() => {
     let active = true
     listSubRentals().then((res) => {
-      if (active && res.rows.length > 0) {
+      if (active) {
         setRecords(res.rows)
       }
     }).catch(() => {})

@@ -921,11 +921,18 @@ export default function HandoverWorkspace({
    * value live but left it shaped as display text — see `Sig.atIso` for what
    * that costs.
    *
-   * HO-03 — this is a LOCAL mark for gate 5 and nothing more. The `signatures`
-   * table has zero writers in this build; nothing captured here travels with
-   * the dispatch, and the row says so rather than asserting "Signed".
+   * HO-03 — this is a LOCAL mark for gate 5 AND a DB write.
+   *
+   * The captured name and timestamp ride `handoverRental`'s `signatures` field
+   * to `writeSignatures` in `floorVerb.ts`, which inserts a row per role into
+   * the `signatures` table before `advanceStage` fires the DB gate at
+   * `0115:320-326`. Without that row the gate raises
+   * `GATE:gate.handover.agreement_unsigned` and the booking stays at Packed.
+   *
    * TODO(decision): what a signature IS on this screen (a drawn image, a typed
-   * attestation, the operator's login?) before a `signatures` writer can exist.
+   * attestation, the operator's login?) — the tap of "Sign" is the current
+   * attestation. `signature_evidence_file_id` is left null until a richer UX
+   * is ruled.
    */
   const captureSignature = (role: 'receiver' | 'warehouse') => {
     const name = role === 'receiver' ? floor?.clientName : user?.name
@@ -994,6 +1001,26 @@ export default function HandoverWorkspace({
              */
             ...(overrideReason.trim() === '' ? {} : { overrideReason: overrideReason.trim() }),
             ...(notes === '' ? {} : { notes }),
+            /*
+             * HO-03 — gate 5 signatures, now wired to the DB.
+             *
+             * `captureSignature` set local state only; the `signatures` table had
+             * no writer. The DB gate at `0115:320-326` needs at least one row for
+             * the handover session before it will let the booking move to On Rent.
+             * We pass whatever was captured; `writeSignatures` in `floorVerb.ts`
+             * inserts them before `advanceStage` is called.
+             *
+             * The local `Sig.role` label (`'Receiver'`, `'Warehouse'`) is mapped to
+             * the DB enum values (`'Receiver'`, `'Warehouse staff'`).
+             */
+            signatures: [
+              ...(signatures.receiver
+                ? [{ role: 'Receiver' as const, signerName: signatures.receiver.name, signedAt: signatures.receiver.atIso, isRequired: true }]
+                : []),
+              ...(signatures.warehouse
+                ? [{ role: 'Warehouse staff' as const, signerName: signatures.warehouse.name, signedAt: signatures.warehouse.atIso, isRequired: true }]
+                : []),
+            ],
           },
           { userId: user.id, role: user.role },
         ),
@@ -1032,6 +1059,7 @@ export default function HandoverWorkspace({
       isDirty,
       label: 'Confirm & Next →',
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onRegisterActions, canComplete, dispatching, isDirty])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */

@@ -1,10 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { jobRoute } from '../../data/operations'
 import { stepWriteGate } from '../../data/operationsShell'
 import type { BookingStatus, JobName } from '../../lib/workflow'
+import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 
 const OPERATIONS: ReadonlyArray<{ job: JobName; label: string; icon: IconName }> = [
   { job: 'Pack', label: 'Packing', icon: 'box' },
@@ -37,7 +36,7 @@ export default function BookingOperationsMenu({
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const menuId = useId()
-  const navigate = useNavigate()
+  const { openOperations } = useOperationsWorkspace()
 
   useEffect(() => {
     if (!open) return
@@ -138,7 +137,7 @@ export default function BookingOperationsMenu({
                 onClick={() => {
                   if (disabled || !bookingNo) return
                   setOpen(false)
-                  navigate(jobRoute(bookingNo, job))
+                  openOperations(bookingNo, bookingStatus!, job)
                 }}
                 style={{
                   display: 'flex',
