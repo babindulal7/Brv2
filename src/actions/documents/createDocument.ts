@@ -2,6 +2,7 @@ import { createAction, type ActionContext, type ActionConfig } from '../core';
 import { EVENT_TYPES } from '../../events/eventBus';
 import { idempotentInsert, generateClientUuid } from '../../lib/dataAccess';
 import { supabase } from '../../lib/supabase';
+import { generateAndStoreDocumentPdf } from '../../lib/documentStorage';
 
 export type CreateDocumentInput = {
   title: string;
@@ -102,7 +103,27 @@ export const createDocumentConfig: ActionConfig<CreateDocumentInput, CreateDocum
     }
 
     const actionUuid = input.clientUuid || generateClientUuid();
-    const fileUrl = input.fileUrl?.trim() || `/documents/${documentNo}.pdf`;
+    let resolvedFileUrl = input.fileUrl?.trim();
+    let resolvedSizeBytes = input.fileSizeBytes || null;
+
+    // Generate and upload PDF to Supabase Storage if fileUrl is not provided
+    if (!resolvedFileUrl) {
+      try {
+        const stored = await generateAndStoreDocumentPdf({
+          documentNo,
+          title: input.title,
+          docType,
+          bookingNo: input.relatedBookingId?.trim() || undefined,
+        });
+        resolvedFileUrl = stored.signedUrl || stored.storagePath;
+        resolvedSizeBytes = stored.fileSizeBytes;
+      } catch (storageErr) {
+        // Fallback gracefully to default document path
+        console.warn('Could not upload generated PDF to Supabase Storage:', storageErr);
+        resolvedFileUrl = `/documents/${documentNo}.pdf`;
+      }
+    }
+
     const lifecycleStatus = input.status || 'Draft';
 
     const docRow = {
@@ -112,8 +133,8 @@ export const createDocumentConfig: ActionConfig<CreateDocumentInput, CreateDocum
       booking_id: resolvedBookingId,
       client_id: resolvedClientId,
       lifecycle_status: lifecycleStatus,
-      file_url: fileUrl,
-      file_size_bytes: input.fileSizeBytes || null,
+      file_url: resolvedFileUrl,
+      file_size_bytes: resolvedSizeBytes,
       generated_by: ctx.userId,
       created_by: ctx.userId,
     };

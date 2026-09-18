@@ -1,10 +1,12 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { CreateDocumentModal } from './CreateDocumentModal'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
-import { Card, Button, KpiStrip, Rail, SideRail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { useViewport } from '../../lib/device'
 import { ScreenHeader } from '../finance/TabHeader'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -40,7 +42,6 @@ import {
   ROW_MENU,
   SORTS,
   categoriesFor,
-  documentsFor,
   expiringFor,
   kpisFor,
   missingFor,
@@ -413,8 +414,6 @@ function PageBtn({ label, active, disabled, onClick }: { label: string; active?:
  * to. `CreateDocumentInput` already takes `relatedBookingId`, and nothing in
  * this repo rules who chooses it. A page may not answer that (CLAUDE.md).
  */
-const CREATE_UNAVAILABLE =
-  'Not built yet — document storage is unwired, and no form asks what the document should be called'
 
 /**
  * **Documents** — built against `03 Core Modules/Documents.PNG` with the
@@ -465,12 +464,19 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const gctx = useMemo(() => gateContext(role), [role])
 
   const categories = useMemo(() => categoriesFor(money), [money])
-  const [docRows, setDocRows] = useState<DocRow[]>(() => documentsFor(money))
+  const [docRows, setDocRows] = useState<DocRow[]>([])
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+
+  const refetchDocs = useCallback(() => {
+    listDocuments().then((res) => {
+      setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
+    }).catch(() => {})
+  }, [money])
 
   useEffect(() => {
     let mounted = true
     listDocuments().then((res) => {
-      if (mounted && res.rows.length > 0) {
+      if (mounted) {
         setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
       }
     }).catch(() => {})
@@ -513,6 +519,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const [related, setRelated] = useState(ALL_RELATED)
   const [branch, setBranch] = useState(ALL_BRANCHES)
   const [sort, setSort] = useState<SortKey>('Created Date')
+  const [filtersOpen, setFiltersOpen] = useState(false)
   /*
     Spec 9.5 draws a card grid ("TABLET 3-up · PHONE 2-up") and this screen
     had no width read at all: `cards` defaulted to false at every width, so a
@@ -568,6 +575,12 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
     setMenuFor(null)
   }
 
+  function clearDocumentFilters() {
+    clearAll()
+    pickCategory('All')
+    setSelected(new Set())
+  }
+
   const rows = useMemo(() => {
     const f = isoToDate(from)
     const t = isoToDate(to)
@@ -600,6 +613,16 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
     else sorted.sort((a, b) => a.party.localeCompare(b.party))
     return sorted
   }, [allDocs, category, query, type, status, related, branch, from, to, sort])
+
+  const documentFilterCount = [
+    category !== 'All',
+    query.trim() !== '',
+    from !== '' || to !== '',
+    type !== ALL_TYPES,
+    status !== ALL_STATUS,
+    related !== ALL_RELATED,
+    branch !== ALL_BRANCHES,
+  ].filter(Boolean).length
 
   const pageCount = Math.max(1, Math.ceil(rows.length / perPage))
   const current = Math.min(page, pageCount)
@@ -677,7 +700,14 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }} onClick={() => setMenuFor(null)}>
       <ScreenHeader
         embedded={embedded}
-        icon="file"
+        leading={
+          <FilterButton
+            onClick={() => setFiltersOpen(!filtersOpen)}
+            activeCount={documentFilterCount}
+            controls="documents-filters"
+            expanded={filtersOpen}
+          />
+        }
         title="Documents"
         description="Every rental and finance document in one place. Create, manage, send and track — a document exists once."
         actions={
@@ -699,11 +729,14 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             <Button icon="download" aria-label="Export documents" onClick={exportCsv}>
               {phone ? '' : 'Export'}
             </Button>
-            <Unavailable reason={CREATE_UNAVAILABLE}>
-              <Button icon="plus" variant="primary" aria-label="Create Document" disabled>
-                {phone ? '' : 'Create Document'}
-              </Button>
-            </Unavailable>
+            <Button
+              icon="plus"
+              variant="primary"
+              aria-label="Create Document"
+              onClick={() => setIsCreateOpen(true)}
+            >
+              {phone ? '' : 'Create Document'}
+            </Button>
           </>
         }
       />
@@ -752,11 +785,19 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         })}
       </div>
 
-      {/* The render's three columns: a ~200px category + filter rail, the list,
-          and a 300px summary rail. The left rail is a little wider here so
-          "Maintenance Documents" sets on one line at the theme's UI size. */}
-      <div style={{ display: 'grid', gridTemplateColumns: desktop ? 'auto minmax(0,1fr) auto' : 'minmax(0,1fr)', gap: 'var(--sp-md)', alignItems: 'start' }}>
-        {/* ── left rail ─────────────────────────────────────────────────── */}
+      {/* Filters open from the list toolbar and occupy no grid width. */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: filtersOpen && !phone
+            ? 'minmax(230px, 280px) minmax(0,1fr) auto'
+            : desktop
+              ? 'minmax(0,1fr) auto'
+              : 'minmax(0,1fr)',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
         {(() => {
           const categoriesContent = (
           <>
@@ -944,12 +985,22 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           </Card>
           </>
           )
-          /* Rulings §7 — reflow, not hide. `order: 2` puts the categories and
-             filters beneath the list below 1280 instead of behind a handle. */
-          return desktop ? (
-            <SideRail width={228} label="Categories">{categoriesContent}</SideRail>
-          ) : (
-            <div style={{ order: 2, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>{categoriesContent}</div>
+          return (
+            <FilterDrawer
+              id="documents-filters"
+              open={filtersOpen}
+              onClose={() => setFiltersOpen(false)}
+              desktopMode="rail"
+              width={360}
+              resultCount={rows.length}
+              noun={rows.length === 1 ? 'document' : 'documents'}
+              activeCount={documentFilterCount}
+              onClearAll={clearDocumentFilters}
+              standardFooter
+              onApply={() => setFiltersOpen(false)}
+            >
+              {categoriesContent}
+            </FilterDrawer>
           )
         })()}
 
@@ -1561,6 +1612,12 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           ARCHIVED_NOT_RECYCLE_BIN,
           'Category counts are installation totals; the table lists the seeded sample',
         ]}
+      />
+
+      <CreateDocumentModal
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onSuccess={refetchDocs}
       />
     </div>
   )
