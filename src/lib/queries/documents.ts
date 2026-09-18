@@ -185,11 +185,14 @@ export function mapDbRowToDocRow(row: DocumentRowDb): DocRow {
   }
 }
 
+const DOCUMENT_COLUMNS =
+  'id, client_uuid, document_no, document_type, booking_id, client_id, lifecycle_status, file_url, file_size_bytes, generated_by, signed_at, signed_by_name, created_at'
+
 export async function listDocuments(filters?: ListFilters): Promise<ListQueryResult<DocRow>> {
   try {
     let query = supabase
       .from('document_registry')
-      .select('*')
+      .select(DOCUMENT_COLUMNS, { count: 'exact' })
       .order('created_at', { ascending: false })
 
     if (filters?.search && filters.search.trim().length > 0) {
@@ -197,24 +200,29 @@ export async function listDocuments(filters?: ListFilters): Promise<ListQueryRes
       query = query.or(`document_no.ilike.%${term}%,document_type.ilike.%${term}%`)
     }
 
-    const { data, error } = await query
+    if (filters?.page) {
+      const from = filters.page.index * filters.page.size
+      query = query.range(from, from + filters.page.size - 1)
+    }
 
-    if (error || !data || data.length === 0) {
+    const { data, error, count } = await query
+
+    if (error) {
       return {
-        rows: [...DOCUMENTS],
-        total: DOCUMENTS.length,
+        rows: [],
+        total: 0,
       }
     }
 
-    const mapped = (data as unknown as DocumentRowDb[]).map(mapDbRowToDocRow)
+    const mapped = ((data ?? []) as unknown as DocumentRowDb[]).map(mapDbRowToDocRow)
     return {
       rows: mapped,
-      total: mapped.length,
+      total: count ?? mapped.length,
     }
   } catch {
     return {
-      rows: [...DOCUMENTS],
-      total: DOCUMENTS.length,
+      rows: [],
+      total: 0,
     }
   }
 }

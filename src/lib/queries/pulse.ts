@@ -56,24 +56,24 @@ export interface PulseLiveSummary {
  */
 export async function getPulseLiveSummary(): Promise<PulseLiveSummary> {
   try {
-    const [bookingsRes, invoicesRes, paymentsRes, itemsRes] = await Promise.all([
-      supabase.from('bookings').select('id, status'),
-      supabase.from('invoices').select('id, total, status'),
+    const [bookingsRes, invoicesRes, paymentsRes, unitsRes] = await Promise.all([
+      supabase.from('bookings').select('id, stage'),
+      supabase.from('invoices').select('id, total_amount, status'),
       supabase.from('payments').select('id, amount, status').eq('status', 'Completed'),
-      supabase.from('inventory_items').select('id, status'),
+      supabase.from('product_units').select('id, status'),
     ])
 
     const bookings = bookingsRes.data ?? []
     const invoices = invoicesRes.data ?? []
     const payments = paymentsRes.data ?? []
-    const items = itemsRes.data ?? []
+    const units = unitsRes.data ?? []
 
     const activeBookings = bookings.filter((b) =>
-      ['Confirmed', 'Packed', 'On Rent'].includes(b.status),
+      ['Confirmed', 'Packed', 'On Rent'].includes(b.stage),
     ).length
 
     const invoicedTotal = rupees(
-      invoices.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0),
+      invoices.reduce((sum, inv) => sum + (Number(inv.total_amount) || 0), 0),
     )
 
     const collectedTotal = rupees(
@@ -85,7 +85,7 @@ export async function getPulseLiveSummary(): Promise<PulseLiveSummary> {
       activeBookings,
       invoicedTotal,
       collectedTotal,
-      inventoryUnitsCount: items.length,
+      inventoryUnitsCount: units.length,
     }
   } catch {
     return {

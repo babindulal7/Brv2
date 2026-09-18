@@ -158,14 +158,19 @@ export function mapDbRowToCase(row: CaseRowDb): Case {
 
 /**
  * Reads cases from the Postgres `cases` table.
- * If the database query errors or returns 0 rows (e.g. fresh mock/test environments),
- * it gracefully falls back to the seeded CASES array so screens degrade honestly.
+ * Returns empty records { rows: [], total: 0 } when the database is empty or on error.
  */
+const CASE_COLUMNS =
+  'id, client_uuid, case_no, type, title, counterparty_kind, counterparty_name, priority, status, disposition, ' +
+  'linked_booking_id, assessed_amount, deposit_held_amount, charged_to_client_amount, deposit_applied_amount, ' +
+  'insurance_claimed_amount, warranty_covered_amount, recovered_from_partner_amount, absorbed_amount, owner_id, ' +
+  'flags, opened_at, settled_at, created_at'
+
 export async function listCases(filters?: CaseFilters): Promise<ListQueryResult<Case>> {
   try {
     let query = supabase
       .from('cases')
-      .select('*')
+      .select(CASE_COLUMNS)
       .order('opened_at', { ascending: false })
 
     if (filters?.search && filters.search.trim().length > 0) {
@@ -179,40 +184,22 @@ export async function listCases(filters?: CaseFilters): Promise<ListQueryResult<
 
     const { data, error } = await query
 
-    if (error || !data || data.length === 0) {
-      // In mock environment or when DB is empty, serve fixture corpus
-      return filterSeedCases(CASES, filters)
+    if (error) {
+      return {
+        rows: [],
+        total: 0,
+      }
     }
 
-    const mapped = (data as unknown as CaseRowDb[]).map(mapDbRowToCase)
+    const mapped = ((data ?? []) as unknown as CaseRowDb[]).map(mapDbRowToCase)
     return {
       rows: mapped,
       total: mapped.length,
     }
   } catch {
-    return filterSeedCases(CASES, filters)
-  }
-}
-
-function filterSeedCases(seed: Case[], filters?: CaseFilters): ListQueryResult<Case> {
-  let rows = [...seed]
-
-  if (filters?.status && filters.status !== 'All') {
-    rows = rows.filter((c) => c.status === filters.status)
-  }
-
-  if (filters?.search && filters.search.trim().length > 0) {
-    const q = filters.search.trim().toLowerCase()
-    rows = rows.filter((c) => {
-      const matchTitle = c.title.toLowerCase().includes(q)
-      const matchId = c.id.toLowerCase().includes(q)
-      const matchCp = c.counterpartyName.toLowerCase().includes(q)
-      return matchTitle || matchId || matchCp
-    })
-  }
-
-  return {
-    rows,
-    total: rows.length,
+    return {
+      rows: [],
+      total: 0,
+    }
   }
 }

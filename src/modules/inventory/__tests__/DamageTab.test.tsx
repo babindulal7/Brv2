@@ -13,6 +13,8 @@ import { MemoryRouter } from 'react-router-dom'
 const role = { current: 'Owner' as string }
 const canSeeMoney = { current: true }
 
+const mockDamageFindings = vi.hoisted(() => ({ current: null as unknown }))
+
 vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => canSeeMoney.current }))
 vi.mock('../../../lib/auth', () => ({
   useAuth: () => ({
@@ -21,6 +23,15 @@ vi.mock('../../../lib/auth', () => ({
     isLocked: false,
   }),
 }))
+vi.mock('../../../lib/queries/damage', async (orig) => {
+  const actual = await orig<typeof import('../../../lib/queries/damage')>()
+  return {
+    ...actual,
+    getDamageFindings: vi.fn().mockImplementation(async () => {
+      return mockDamageFindings.current !== null ? mockDamageFindings.current : actual.DAMAGE_FINDINGS
+    }),
+  }
+})
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
@@ -62,6 +73,7 @@ async function typeCharge(id: string, value: string) {
 beforeEach(() => {
   role.current = 'Owner'
   canSeeMoney.current = true
+  mockDamageFindings.current = null
 })
 
 afterEach(async () => {
@@ -153,5 +165,24 @@ describe('DamageTab — §8.3', () => {
     expect(text()).toContain('Charges and deposit settlement are not shown to this role')
     expect(text()).not.toContain('Replacement value')
     expect(text()).not.toContain('Deposit held')
+  })
+
+  it('renders standard empty state when database returns no damage findings for money-blind role', async () => {
+    canSeeMoney.current = false
+    role.current = 'Warehouse'
+    mockDamageFindings.current = []
+    await mount()
+    expect(text()).toContain('No damage findings')
+    expect(text()).toContain('No active damage findings are currently recorded')
+  })
+})
+
+describe('DamageTab — empty state', () => {
+  it('renders standard empty state when database returns no damage findings', async () => {
+    mockDamageFindings.current = []
+    await mount()
+    expect(text()).toContain('Nothing waiting')
+    expect(text()).toContain('Every damage finding raised at Return has been approved or rejected')
+    expect(text()).toContain('No settled findings')
   })
 })

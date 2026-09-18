@@ -34,15 +34,17 @@ export async function getDepreciableAssets(): Promise<DepreciableAsset[]> {
   try {
     const { data, error } = await supabase
       .from('products_v')
-      .select('id, name, category, daily_rate')
+      .select('id, name, purchase_price')
 
-    if (error || !data || data.length === 0) {
-      return PRICED_ASSETS
+    if (error) {
+      return []
     }
 
-    // Return database products merged with known priced assets
-    return PRICED_ASSETS
+    return (data ?? []).map((d) => ({
+      name: d.name,
+      ...(d.purchase_price != null ? { purchasePricePaisa: (Number(d.purchase_price) * 100) as Paisa } : {}),
+    }))
   } catch {
-    return PRICED_ASSETS
+    return []
   }
 }

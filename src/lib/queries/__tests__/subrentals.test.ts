@@ -30,7 +30,7 @@ describe('subrentals query', () => {
         {
           id: 'line-1',
           booking_id: 'b-12345678',
-          item_description: 'ARRI Alexa Mini',
+          description: 'ARRI Alexa Mini',
           rate: 50000,
           supplier_cost: 35000,
           qty: 1,
@@ -55,7 +55,7 @@ describe('subrentals query', () => {
     expect(result.rows[0]?.costPaisa).toBe(3500000)
   })
 
-  it('listSubRentals falls back to seeded SUB_RENTAL_DATA when empty or error', async () => {
+  it('listSubRentals returns empty array when empty or error', async () => {
     const mockSelect = vi.fn().mockReturnThis()
     const mockEq = vi.fn().mockResolvedValue({
       data: [],
@@ -68,7 +68,7 @@ describe('subrentals query', () => {
     })
 
     const result = await listSubRentals()
-    expect(result.rows.length).toBe(4)
-    expect(result.rows[0]?.id).toBe('SR-2026-0032')
+    expect(result.rows).toEqual([])
+    expect(result.total).toBe(0)
   })
 })

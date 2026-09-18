@@ -38,14 +38,13 @@ export type {
 
 interface AuditEventRowDb {
   id: string
-  event_timestamp: string
-  actor_name: string | null
+  created_at: string
   action: string
   module: string
   status: string
-  target_id: string | null
-  target_type: string | null
-  client_ip: string | null
+  record_id: string | null
+  table_name: string | null
+  ip_address: string | null
 }
 
 function mapModuleToActivityModule(m: string | null | undefined): ActivityModule {
@@ -69,27 +68,27 @@ export async function listActivityEvents(_filters?: ListFilters): Promise<ListQu
   try {
     const { data, error } = await supabase
       .from('audit_events')
-      .select('id, event_timestamp, actor_name, action, module, status, target_id, target_type, client_ip')
-      .order('event_timestamp', { ascending: false })
+      .select('id, created_at, action, module, status, record_id, table_name, ip_address')
+      .order('created_at', { ascending: false })
       .limit(100)
 
-    if (error || !data || data.length === 0) {
+    if (error) {
       return {
-        rows: [...ACTIVITY_TIMELINE],
-        total: ACTIVITY_TIMELINE.length,
+        rows: [],
+        total: 0,
       }
     }
 
-    const rows: ActivityRow[] = (data as unknown as AuditEventRowDb[]).map((e, idx) => ({
+    const rows: ActivityRow[] = ((data ?? []) as unknown as AuditEventRowDb[]).map((e, idx) => ({
       id: `ACT-${String(idx + 1).padStart(3, '0')}`,
-      timestamp: e.event_timestamp,
-      user: e.actor_name || 'System User',
+      timestamp: e.created_at,
+      user: 'Staff Member',
       action: e.action || 'Performed action',
       module: mapModuleToActivityModule(e.module),
-      target: e.target_type ? { kind: e.target_type, code: null, ...(e.target_id ? { label: e.target_id } : {}) } : null,
+      target: e.table_name ? { kind: e.table_name, code: null, ...(e.record_id ? { label: e.record_id } : {}) } : null,
       where: `${e.module || 'System'} ▸ ${e.action || 'Activity'}`,
       status: e.status === 'failure' || e.status === 'Failed' ? 'Failed' : 'Success',
-      ip: e.client_ip || '127.0.0.1',
+      ip: e.ip_address || '127.0.0.1',
       location: 'Kathmandu, NP',
     }))
 
@@ -99,8 +98,8 @@ export async function listActivityEvents(_filters?: ListFilters): Promise<ListQu
     }
   } catch {
     return {
-      rows: [...ACTIVITY_TIMELINE],
-      total: ACTIVITY_TIMELINE.length,
+      rows: [],
+      total: 0,
     }
   }
 }

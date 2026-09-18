@@ -56,22 +56,21 @@ export async function listMembers(_filters?: ListFilters): Promise<ListQueryResu
       .from('client_memberships_v')
       .select('id, client_id, plan_id, join_date, fee_paid, created_at')
 
-    if (error || !data || data.length === 0) {
+    if (error) {
       return {
-        rows: [...MEMBERS],
-        total: MEMBERS.length,
+        rows: [],
+        total: 0,
       }
     }
 
-    // Fall back to MEMBERS when live memberships exist but are not yet hydrated with client details
     return {
-      rows: [...MEMBERS],
-      total: MEMBERS.length,
+      rows: [],
+      total: data?.length ?? 0,
     }
   } catch {
     return {
-      rows: [...MEMBERS],
-      total: MEMBERS.length,
+      rows: [],
+      total: 0,
     }
   }
 }

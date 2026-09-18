@@ -132,7 +132,7 @@ export function mapStageToSubRentalStatus(stage: string | null | undefined): Sub
 interface BookingLineRowDb {
   id: string
   booking_id: string
-  item_description: string | null
+  description: string | null
   rate: number | null
   supplier_cost: number | null
   qty: number | null
@@ -145,17 +145,17 @@ export async function listSubRentals(_filters?: ListFilters): Promise<ListQueryR
   try {
     const { data, error } = await supabase
       .from('booking_lines_v')
-      .select('id, booking_id, item_description, rate, supplier_cost, qty, days, line_type, created_at')
+      .select('id, booking_id, description, rate, supplier_cost, qty, days, line_type, created_at')
       .eq('line_type', 'Sub-rental')
 
-    if (error || !data || data.length === 0) {
+    if (error) {
       return {
-        rows: [...SUB_RENTAL_DATA],
-        total: SUB_RENTAL_DATA.length,
+        rows: [],
+        total: 0,
       }
     }
 
-    const rows = (data as unknown as BookingLineRowDb[]).map((line, idx) => {
+    const rows = ((data ?? []) as unknown as BookingLineRowDb[]).map((line, idx) => {
       const rentalVal = line.rate ?? 0
       const costVal = line.supplier_cost ?? 0
       return {
@@ -163,7 +163,7 @@ export async function listSubRentals(_filters?: ListFilters): Promise<ListQueryR
         counterparty: 'Partner Supplier',
         linkedBooking: `B-${line.booking_id.slice(0, 4)}`,
         direction: 'Borrowing' as SubRentalDirection,
-        equipment: line.item_description || 'Sub-rental gear',
+        equipment: line.description || 'Sub-rental gear',
         quantity: line.qty ?? 1,
         startDateBs: '2083/03/10',
         endDateBs: '2083/03/15',
@@ -183,8 +183,8 @@ export async function listSubRentals(_filters?: ListFilters): Promise<ListQueryR
     }
   } catch {
     return {
-      rows: [...SUB_RENTAL_DATA],
-      total: SUB_RENTAL_DATA.length,
+      rows: [],
+      total: 0,
     }
   }
 }

@@ -1,4 +1,4 @@
-import { Children, useMemo, useState } from 'react'
+import { Children, useMemo, useState, useEffect } from 'react'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { Badge } from '../../components/ui/Badge'
@@ -17,7 +17,7 @@ import {
   OWNER_APPROVAL_THRESHOLD,
   MIN_PHOTOS,
 } from '../../lib/damage'
-import { DAMAGE_FINDINGS } from '../../lib/queries/damage'
+import { getDamageFindings } from '../../lib/queries/damage'
 import type { DamageFinding } from '../../lib/queries/damage'
 
 /**
@@ -118,7 +118,20 @@ export function DamageTab() {
    */
   const approver = user?.name.trim() ? user.name.trim() : null
 
-  const [findings, setFindings] = useState<DamageFinding[]>(DAMAGE_FINDINGS)
+  const [findings, setFindings] = useState<DamageFinding[]>([])
+
+  useEffect(() => {
+    let active = true
+    getDamageFindings().then((res) => {
+      if (active) {
+        setFindings(res)
+      }
+    }).catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
   /* The approval confirmation cannot live inside the pending list: approving
      removes the row from it, so the message would render into a branch that no
      longer exists. Held here and shown above the list instead. */
@@ -132,22 +145,26 @@ export function DamageTab() {
   if (!money) {
     return (
       <Card title={`Damage findings (${findings.length})`}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {findings.map((f) => (
-            <div key={f.id} style={{ ...cardStyle, padding: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                <strong style={{ fontSize: 'var(--t-meta)' }}>{f.unitName}</strong>
-                <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{f.serial}</span>
-                <Chip tone={f.state === 'Approved' ? 'success' : 'progress'}>{f.state}</Chip>
+        {findings.length === 0 ? (
+          <EmptyState title="No damage findings" description="No active damage findings are currently recorded." />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {findings.map((f) => (
+              <div key={f.id} style={{ ...cardStyle, padding: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+                  <strong style={{ fontSize: 'var(--t-meta)' }}>{f.unitName}</strong>
+                  <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{f.serial}</span>
+                  <Chip tone={f.state === 'Approved' ? 'success' : 'progress'}>{f.state}</Chip>
+                </div>
+                <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.description}</p>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                  <Icon name="lock" size={11} />
+                  Charges and deposit settlement are not shown to this role.
+                </span>
               </div>
-              <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.description}</p>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                <Icon name="lock" size={11} />
-                Charges and deposit settlement are not shown to this role.
-              </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     )
   }
@@ -348,10 +365,13 @@ export function DamageTab() {
       </Card>
 
       <Card title="Settled">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {findings
-            .filter((f) => f.state === 'Approved' || f.state === 'Rejected')
-            .map((f) => {
+        {findings.filter((f) => f.state === 'Approved' || f.state === 'Rejected').length === 0 ? (
+          <EmptyState title="No settled findings" description="No damage findings have been approved or rejected yet." />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {findings
+              .filter((f) => f.state === 'Approved' || f.state === 'Rejected')
+              .map((f) => {
               /* RS-04 — a rejected finding charges nothing. Settling against
                  the figure that was refused printed a refund and an
                  "uncovered" shortfall for money nobody is owed. */
@@ -378,7 +398,8 @@ export function DamageTab() {
                 </div>
               )
             })}
-        </div>
+          </div>
+        )}
       </Card>
     </div>
   )

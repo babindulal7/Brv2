@@ -57,41 +57,39 @@ export async function getExpenseReportsSummary(): Promise<ExpenseReportsSummary>
       .select('id, expense_no, amount, status, expense_date, description, vendor_name')
       .order('expense_date', { ascending: false })
 
-    if (error || !data || data.length === 0) {
-      const totals = totalsOf(EXPENSES)
+    if (error) {
       return {
-        rows: EXPENSES,
+        rows: [],
         categories: CATEGORIES,
         branches: BRANCHES,
-        totalSpent: totals.paid as unknown as Paisa,
-        pendingApproval: totals.pending as unknown as Paisa,
+        totalSpent: 0 as Paisa,
+        pendingApproval: 0 as Paisa,
       }
     }
 
-    const rows: ExpenseRow[] = data.map((d, index) => {
-      const fallback = (EXPENSES[index % EXPENSES.length] ?? EXPENSES[0]) as ExpenseRow
+    const rows: ExpenseRow[] = (data ?? []).map((d) => {
       const amountPaisa = rupees(Number(d.amount) || 0)
       const r: ExpenseRow = {
         id: d.expense_no || d.id,
-        billNo: fallback.billNo ?? null,
+        // Fields not yet in the DB query — stubs, not seed values.
+        // Extend the select() above when the DB columns are ready.
+        billNo: null,
         date: new Date(d.expense_date),
-        category: fallback.category,
-        subCategory: fallback.subCategory,
-        vendor: d.vendor_name || fallback.vendor,
-        vendorPan: fallback.vendorPan ?? null,
-        description: d.description || fallback.description,
+        category: 'Miscellaneous',
+        subCategory: 'Other',
+        vendor: d.vendor_name || '-',
+        vendorPan: null,
+        description: d.description || '-',
         amount: amountPaisa,
-        vat: fallback.vat ?? null,
-        method: fallback.method,
-        methodDetail: fallback.methodDetail,
+        vat: null,
+        method: 'Cash',
+        methodDetail: '',
         status: (d.status as ExpenseRow['status']) || 'Draft',
-        paidBy: fallback.paidBy ?? null,
-        submittedBy: fallback.submittedBy,
-        branch: fallback.branch,
-        recurring: fallback.recurring,
-        attachments: fallback.attachments,
-        ...(fallback.link ? { link: fallback.link } : {}),
-        ...(fallback.note ? { note: fallback.note } : {}),
+        paidBy: null,
+        submittedBy: '-',
+        branch: 'Boudha (Head Office)',
+        recurring: false,
+        attachments: 0,
       }
       return r
     })
@@ -105,13 +103,12 @@ export async function getExpenseReportsSummary(): Promise<ExpenseReportsSummary>
       pendingApproval: totals.pending as unknown as Paisa,
     }
   } catch {
-    const totals = totalsOf(EXPENSES)
     return {
-      rows: EXPENSES,
+      rows: [],
       categories: CATEGORIES,
       branches: BRANCHES,
-      totalSpent: totals.paid as unknown as Paisa,
-      pendingApproval: totals.pending as unknown as Paisa,
+      totalSpent: 0 as Paisa,
+      pendingApproval: 0 as Paisa,
     }
   }
 }

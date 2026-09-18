@@ -22,4 +22,10 @@ describe('addBundle query layer', () => {
     expect(iconForCategory('Camera')).toBe('camera')
     expect(iconForCategory('Case')).toBe('package')
   })
+
+  it('listActiveBundleTemplates returns empty array when empty or error', async () => {
+    const { listActiveBundleTemplates } = await import('../addBundle')
+    const res = await listActiveBundleTemplates()
+    expect(res).toEqual([])
+  })
 })

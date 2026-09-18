@@ -12,7 +12,20 @@ import {
   LIMITS,
 } from '../evidence'
 
+import { supabase } from '../../supabase'
+import { vi, beforeEach } from 'vitest'
+
+vi.mock('../../supabase', () => ({
+  supabase: {
+    from: vi.fn(),
+  },
+}))
+
 describe('evidence queries', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('re-exports canonical evidence configurations and limits', () => {
     expect(PHOTOS.length).toBeGreaterThan(0)
     expect(CATEGORY_NAMES.length).toBeGreaterThan(0)
@@ -31,12 +44,40 @@ describe('evidence queries', () => {
     }
   })
 
-  it('loads evidence summary with valid counts', async () => {
+  it('loads evidence summary with 0 counts when empty or error', async () => {
+    const mockSelect = vi.fn().mockResolvedValue({
+      data: [],
+      error: null,
+    })
+    ;(supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      select: mockSelect,
+    })
+
     const summary = await getEvidenceSummary()
-    expect(summary.total).toBeGreaterThan(0)
-    expect(summary.matched).toBeGreaterThanOrEqual(0)
-    expect(summary.review).toBeGreaterThanOrEqual(0)
-    expect(summary.unmatched).toBeGreaterThanOrEqual(0)
+    expect(summary.total).toBe(0)
+    expect(summary.photos).toEqual([])
+    expect(summary.matched).toBe(0)
+    expect(summary.review).toBe(0)
+    expect(summary.unmatched).toBe(0)
+  })
+
+  it('loads evidence summary with valid counts when data present', async () => {
+    const mockSelect = vi.fn().mockResolvedValue({
+      data: [
+        { id: '1', match_state: 'Matched', match_source: 'QR', category: 'Camera', processing_step: 'Processed' },
+        { id: '2', match_state: 'Review', match_source: 'AI', category: 'Lens', processing_step: 'Processed' },
+      ],
+      error: null,
+    })
+    ;(supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      select: mockSelect,
+    })
+
+    const summary = await getEvidenceSummary()
+    expect(summary.total).toBe(2)
+    expect(summary.matched).toBe(1)
+    expect(summary.review).toBe(1)
+    expect(summary.unmatched).toBe(0)
     expect(summary.matched + summary.review + summary.unmatched).toBe(summary.total)
   })
 })

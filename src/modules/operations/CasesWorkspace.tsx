@@ -14,7 +14,6 @@ import { formatBsOrAd } from '../../lib/bs'
 import { useViewport } from '../../lib/device'
 import {
   listCases,
-  CASES,
   findClientIdByBooking,
   CASE_STATUS_META,
   CASE_PRIORITY_META,
@@ -135,12 +134,12 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
   const activeFilter = statusFromParam(params.get('status'))
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [isLogCaseOpen, setIsLogCaseOpen] = useState(false)
-  const [casesList, setCasesList] = useState<Case[]>(() => [...CASES])
+  const [casesList, setCasesList] = useState<Case[]>([])
 
   useEffect(() => {
     let mounted = true
     listCases().then((res) => {
-      if (mounted && res.rows.length > 0) {
+      if (mounted) {
         setCasesList(res.rows)
       }
     }).catch(() => {})
@@ -204,7 +203,21 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
   }
 
   const setActiveFilter = (f: FilterKey) => patch({ status: f === 'All' ? null : STATUS_URL_KEY[f] })
-  const setSearchQuery = (q: string) => patch({ q: q || null })
+
+  const [searchInput, setSearchInput] = useState(searchQuery)
+
+  useEffect(() => {
+    setSearchInput(searchQuery)
+  }, [searchQuery])
+
+  useEffect(() => {
+    if (searchInput === searchQuery) return
+    const timer = setTimeout(() => {
+      patch({ q: searchInput || null })
+    }, 200)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounced search sync to URL
+  }, [searchInput, searchQuery])
 
   const filteredCases = useMemo(() => {
     return casesList.filter((c) => {
@@ -406,8 +419,13 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
           <div style={{ flex: phone ? 1 : undefined, width: phone ? undefined : 240 }}>
             <Input
               placeholder="Search ID, title, client…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  patch({ q: searchInput || null })
+                }
+              }}
               icon={<IconSearch size={16} />}
             />
           </div>

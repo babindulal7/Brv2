@@ -752,6 +752,11 @@ export interface InventoryListOptions extends ListFilters {
   /** Ask for the total matching count. Costs an extra planner pass, so it is opt-in. */
   withCount?: boolean
   /**
+   * Only fetch total count via HEAD request. Omits BASE_COLUMNS and units embed,
+   * returning zero row payload for facet counters.
+   */
+  headOnly?: boolean
+  /**
    * Include `daily_rate` and `replacement_value`. **Money.** Read MONEY above,
    * then pass `useCanViewMoney()` from `src/lib/moneyVisibility.ts` — never a
    * literal `true`, and never a boolean held in component state.
@@ -783,7 +788,30 @@ function narrows(filters: ListFilters, column: string): boolean {
  * and the filters cannot disagree about whether a chip is live.
  */
 export async function listInventory(opts: InventoryListOptions = {}): Promise<ListQueryResult<InventoryListRow>> {
-  const { withCount, withMoney, ...filters } = opts
+  const { withCount, withMoney, headOnly, ...filters } = opts
+
+  if (headOnly) {
+    let columns = 'id'
+    if (narrows(filters, UNIT_STATE_COLUMN)) columns += UNIT_STATE_JOIN
+    if (narrows(filters, UNIT_CONDITION_COLUMN)) columns += UNIT_CONDITION_JOIN
+
+    const base = supabase
+      .from('products_v')
+      .select(columns, { count: 'exact', head: true })
+
+    const query = applyListFilters(base, {
+      ...filters,
+      searchColumns: filters.searchColumns ?? SEARCH_COLUMNS,
+    })
+
+    const { count, error } = (await query) as unknown as {
+      error: { message: string } | null
+      count: number | null
+    }
+
+    if (error) throw new Error(`listInventory count failed: ${error.message}`)
+    return { rows: [], total: count ?? null }
+  }
 
   let columns = withMoney ? COLUMNS_WITH_MONEY : BASE_COLUMNS
   if (narrows(filters, UNIT_STATE_COLUMN)) columns += UNIT_STATE_JOIN

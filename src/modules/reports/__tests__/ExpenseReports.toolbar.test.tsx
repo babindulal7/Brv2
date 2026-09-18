@@ -47,12 +47,30 @@ Object.defineProperty(window, 'matchMedia', {
   }),
 })
 
-/** The signed-in role, mutable between mounts — `useCanViewMoney` reads it. */
 const auth = vi.hoisted(() => ({ role: 'Owner' as string }))
+const mockExpenseSummary = vi.hoisted(() => ({ current: null as unknown }))
 
 vi.mock('../../../lib/auth', () => ({
   useAuth: () => ({ user: { id: 'USR-TEST', name: 'Tester', role: auth.role, isSharedDevice: false } }),
 }))
+vi.mock('../../../lib/queries/expenseReports', async (orig) => {
+  const actual = await orig<typeof import('../../../lib/queries/expenseReports')>()
+  return {
+    ...actual,
+    getExpenseReportsSummary: vi.fn().mockImplementation(async () => {
+      if (mockExpenseSummary.current !== null) {
+        return mockExpenseSummary.current
+      }
+      return {
+        rows: actual.EXPENSES,
+        categories: actual.CATEGORIES,
+        branches: actual.BRANCHES,
+        totalSpent: 0,
+        pendingApproval: 0,
+      }
+    }),
+  }
+})
 
 const { default: ExpenseReports } = await import('../ExpenseReports')
 
@@ -76,6 +94,7 @@ afterEach(() => {
   act(() => root.unmount())
   container.remove()
   auth.role = 'Owner'
+  mockExpenseSummary.current = null
 })
 
 function need<T extends HTMLElement>(label: string): T {
@@ -195,5 +214,20 @@ describe('ExpenseReports · the shared toolbar drives the ledger', () => {
     expect(container.querySelector('[aria-label="Branch"]')).toBeNull()
     expect([...container.querySelectorAll('button')].some((b) => b.textContent?.includes('CSV'))).toBe(false)
     expect([...container.querySelectorAll('button')].some((b) => b.textContent?.includes('Print'))).toBe(false)
+  })
+
+  it('renders standard empty state when database returns no expenses', async () => {
+    mockExpenseSummary.current = {
+      rows: [],
+      categories: [],
+      branches: [],
+      totalSpent: 0,
+      pendingApproval: 0,
+    }
+    await mount()
+    const text = container.textContent ?? ''
+    expect(text).toContain('No expenses recorded')
+    expect(text).toContain('Nothing has been booked to this ledger yet')
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(0)
   })
 })

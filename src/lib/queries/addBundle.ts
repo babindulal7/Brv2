@@ -100,11 +100,11 @@ export async function listActiveBundleTemplates(): Promise<typeof TEMPLATE_BUNDL
       .eq('is_active', true)
 
     if (error || !data || data.length === 0) {
-      return TEMPLATE_BUNDLES
+      return []
     }
 
-    return TEMPLATE_BUNDLES
+    return []
   } catch {
-    return TEMPLATE_BUNDLES
+    return []
   }
 }

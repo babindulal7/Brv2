@@ -97,7 +97,7 @@ describe('documents queries', () => {
     expect(result.rows[0]?.id).toBe('DOC-2026-0001')
   })
 
-  it('listDocuments falls back to DOCUMENTS seed when empty or error', async () => {
+  it('listDocuments returns empty array when empty or error', async () => {
     const mockSelect = vi.fn().mockReturnThis()
     const mockOrder = vi.fn().mockResolvedValue({
       data: [],
@@ -110,7 +110,7 @@ describe('documents queries', () => {
     })
 
     const result = await listDocuments()
-    expect(result.rows.length).toBeGreaterThan(0)
-    expect(result.rows[0]?.id).toBeDefined()
+    expect(result.rows).toEqual([])
+    expect(result.total).toBe(0)
   })
 })

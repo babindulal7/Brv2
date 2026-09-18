@@ -129,42 +129,51 @@ export async function getSettingsSummary(): Promise<SettingsSummaryData> {
       .select('id, branch_code, name, address, phone, is_active')
       .order('branch_code', { ascending: true })
 
-    if (error || !data || data.length === 0) {
+    if (error) {
       return {
-        branches: BRANCHES,
-        totals: totalsOf(BRANCHES),
-        alerts: SYSTEM_ALERTS,
-        adminActivity: ADMIN_ACTIVITY,
-        branchActivity: BRANCH_ACTIVITY,
+        branches: [],
+        totals: totalsOf([]),
+        alerts: [],
+        adminActivity: [],
+        branchActivity: [],
       }
     }
 
-    const mappedBranches: Branch[] = data.map((b, index) => {
-      const fallback = (BRANCHES[index % BRANCHES.length] ?? BRANCHES[0]) as Branch
+    const mappedBranches: Branch[] = (data ?? []).map((b) => {
       return {
-        ...fallback,
         id: b.id,
-        code: b.branch_code || fallback.code,
-        name: b.name || fallback.name,
-        address: b.address || fallback.address,
-        phone: b.phone || fallback.phone,
+        code: b.branch_code || '',
+        name: b.name || '',
+        address: b.address || '',
+        phone: b.phone || '',
+        // Fields not yet exposed by the DB query — stubs, not seed values.
+        // When the DB view adds these columns, map them here.
+        city: '',
+        manager: '',
+        warehouses: 0,
+        staff: 0,
+        equipment: 0,
+        revenue: 0 as import('../money').Paisa,
+        utilization: 0,
+        growthPercent: 0,
+        status: (b.is_active ? 'Active' : 'Inactive') as import('../../data/settings').BranchStatus,
       }
     })
 
     return {
       branches: mappedBranches,
       totals: totalsOf(mappedBranches),
-      alerts: SYSTEM_ALERTS,
-      adminActivity: ADMIN_ACTIVITY,
-      branchActivity: BRANCH_ACTIVITY,
+      alerts: [],
+      adminActivity: [],
+      branchActivity: [],
     }
   } catch {
     return {
-      branches: BRANCHES,
-      totals: totalsOf(BRANCHES),
-      alerts: SYSTEM_ALERTS,
-      adminActivity: ADMIN_ACTIVITY,
-      branchActivity: BRANCH_ACTIVITY,
+      branches: [],
+      totals: totalsOf([]),
+      alerts: [],
+      adminActivity: [],
+      branchActivity: [],
     }
   }
 }
@@ -179,11 +188,11 @@ export function useSettingsSummary(): {
   refresh: () => void
 } {
   const [data, setData] = useState<SettingsSummaryData>({
-    branches: BRANCHES,
-    totals: totalsOf(BRANCHES),
-    alerts: SYSTEM_ALERTS,
-    adminActivity: ADMIN_ACTIVITY,
-    branchActivity: BRANCH_ACTIVITY,
+    branches: [],
+    totals: totalsOf([]),
+    alerts: [],
+    adminActivity: [],
+    branchActivity: [],
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)

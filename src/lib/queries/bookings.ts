@@ -381,6 +381,11 @@ export interface BookingListOptions extends ListFilters {
   /** Ask for the total matching count. Costs an extra planner pass, so it is opt-in. */
   withCount?: boolean
   /**
+   * Only fetch total count via HEAD request. Omits BASE_COLUMNS and child joins,
+   * returning zero row payload for badge/chip counters.
+   */
+  headOnly?: boolean
+  /**
    * Include `deposit_required`. **Money.** Read the DEPOSIT block above before
    * setting this. The figure rides `bookings_deposit_v` — after migration 0065
    * a definer-rights view with the `auth_is_staff()` row predicate (0048
@@ -424,7 +429,27 @@ async function readDeposits(ids: string[]): Promise<Map<string, number | null>> 
 }
 
 export async function listBookings(opts: BookingListOptions = {}): Promise<ListQueryResult<BookingListRow>> {
-  const { withCount, withDeposit, ...filters } = opts
+  const { withCount, withDeposit, headOnly, ...filters } = opts
+
+  if (headOnly) {
+    const base = supabase
+      .from('bookings')
+      .select('id', { count: 'exact', head: true })
+
+    const query = applyListFilters(base, {
+      ...filters,
+      search: filters.search === undefined ? undefined : parseBookingNoSearch(filters.search),
+      searchColumns: filters.searchColumns ?? SEARCH_COLUMNS,
+    })
+
+    const { count, error } = (await query) as unknown as {
+      error: { message: string } | null
+      count: number | null
+    }
+
+    if (error) throw new Error(`listBookings count failed: ${error.message}`)
+    return { rows: [], total: count ?? 0 }
+  }
 
   const base = supabase
     .from('bookings')

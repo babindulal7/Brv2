@@ -1,13 +1,61 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { getSettingsSummary, TABS, isTabKey, DEFAULT_TAB } from '../settings'
+import { supabase } from '../../supabase'
+
+vi.mock('../../supabase', () => ({
+  supabase: {
+    from: vi.fn(),
+  },
+}))
 
 describe('settings queries', () => {
-  it('loads live settings summary and branch data', async () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('loads empty settings summary when database is empty or errors', async () => {
+    const mockOrder = vi.fn().mockResolvedValue({
+      data: [],
+      error: null,
+    })
+    const mockSelect = vi.fn().mockReturnValue({
+      order: mockOrder,
+    })
+    ;(supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      select: mockSelect,
+    })
+
     const summary = await getSettingsSummary()
     expect(summary).toBeDefined()
-    expect(summary.branches.length).toBeGreaterThan(0)
-    expect(summary.totals.branches).toBeGreaterThan(0)
-    expect(summary.alerts.length).toBeGreaterThan(0)
+    expect(summary.branches).toEqual([])
+    expect(summary.totals.branches).toBe(0)
+  })
+
+  it('loads live settings summary when branch data is present', async () => {
+    const mockOrder = vi.fn().mockResolvedValue({
+      data: [
+        {
+          id: 'br-1',
+          branch_code: 'BR-KTM-01',
+          name: 'Kathmandu Main HQ',
+          address: 'Anamnagar',
+          phone: '+977-1-4770000',
+          is_active: true,
+        },
+      ],
+      error: null,
+    })
+    const mockSelect = vi.fn().mockReturnValue({
+      order: mockOrder,
+    })
+    ;(supabase.from as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      select: mockSelect,
+    })
+
+    const summary = await getSettingsSummary()
+    expect(summary.branches.length).toBe(1)
+    expect(summary.branches[0]?.code).toBe('BR-KTM-01')
+    expect(summary.totals.branches).toBe(1)
   })
 
   it('validates tab configurations and keys', () => {

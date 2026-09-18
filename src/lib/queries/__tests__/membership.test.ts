@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { listMembers, MEMBERS } from '../membership'
+import { listMembers } from '../membership'
 
 vi.mock('../../supabase', () => ({
   supabase: {
@@ -13,9 +13,9 @@ vi.mock('../../supabase', () => ({
 }))
 
 describe('membership query module', () => {
-  it('falls back to MEMBERS on error or empty table', async () => {
+  it('returns empty array on error or empty table', async () => {
     const res = await listMembers()
-    expect(res.rows).toEqual(MEMBERS)
-    expect(res.total).toBe(MEMBERS.length)
+    expect(res.rows).toEqual([])
+    expect(res.total).toBe(0)
   })
 })

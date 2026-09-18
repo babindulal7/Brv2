@@ -45,49 +45,41 @@ export async function getEvidenceSummary(): Promise<EvidenceSummary> {
       .from('evidence_files')
       .select('id, match_state, match_source, category, processing_step')
 
-    if (error || !data || data.length === 0) {
-      let matched = 0
-      let review = 0
-      let unmatched = 0
-      for (const p of PHOTOS) {
-        const s = matchState(p)
-        if (s === 'Matched') matched++
-        else if (s === 'Review') review++
-        else unmatched++
-      }
+    if (error) {
       return {
-        photos: PHOTOS,
-        total: PHOTOS.length,
-        matched,
-        review,
-        unmatched,
+        photos: [],
+        total: 0,
+        matched: 0,
+        review: 0,
+        unmatched: 0,
       }
     }
 
+    const rows = data ?? []
     let matched = 0
     let review = 0
     let unmatched = 0
 
-    for (const d of data) {
+    for (const d of rows) {
       if (d.match_state === 'Matched') matched++
       else if (d.match_state === 'Review') review++
       else unmatched++
     }
 
     return {
-      photos: PHOTOS,
-      total: data.length,
+      photos: [],
+      total: rows.length,
       matched,
       review,
       unmatched,
     }
   } catch {
     return {
-      photos: PHOTOS,
-      total: PHOTOS.length,
-      matched: PHOTOS.filter((p) => matchState(p) === 'Matched').length,
-      review: PHOTOS.filter((p) => matchState(p) === 'Review').length,
-      unmatched: PHOTOS.filter((p) => matchState(p) === 'Unmatched').length,
+      photos: [],
+      total: 0,
+      matched: 0,
+      review: 0,
+      unmatched: 0,
     }
   }
 }

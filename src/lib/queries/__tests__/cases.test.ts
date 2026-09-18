@@ -110,7 +110,7 @@ describe('cases queries', () => {
     expect(result.rows[0]?.assessedPaisa).toBe(1200000)
   })
 
-  it('listCases falls back to seeded CASES when Supabase returns error or empty', async () => {
+  it('listCases returns empty array when Supabase returns error or empty', async () => {
     const mockSelect = vi.fn().mockReturnThis()
     const mockOrder = vi.fn().mockResolvedValue({
       data: [],
@@ -123,7 +123,7 @@ describe('cases queries', () => {
     })
 
     const result = await listCases()
-    expect(result.rows.length).toBeGreaterThan(0)
-    expect(result.rows[0]?.id).toBeDefined()
+    expect(result.rows).toEqual([])
+    expect(result.total).toBe(0)
   })
 })

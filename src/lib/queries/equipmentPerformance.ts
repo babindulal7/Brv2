@@ -20,15 +20,15 @@ export interface EquipmentPerformanceSummary {
  */
 export async function getEquipmentPerformanceSummary(): Promise<EquipmentPerformanceSummary> {
   try {
-    const [productsRes, linesRes] = await Promise.all([
-      supabase.from('products_v').select('id, name, category, daily_rate'),
-      supabase.from('booking_lines').select('id, product_id, line_type, total_price'),
+    const [productsRes, invoicesRes] = await Promise.all([
+      supabase.from('products_v').select('id, name, daily_rate'),
+      supabase.from('invoices').select('id, total_amount'),
     ])
 
     const products = productsRes.data ?? []
-    const lines = linesRes.data ?? []
+    const invoices = invoicesRes.data ?? []
 
-    if (products.length === 0 && lines.length === 0) {
+    if (products.length === 0 && invoices.length === 0) {
       return {
         revenue: EQUIPMENT_METRICS.revenue as Paisa,
         idleCost: EQUIPMENT_METRICS.idleCost as Paisa,
@@ -38,7 +38,7 @@ export async function getEquipmentPerformanceSummary(): Promise<EquipmentPerform
     }
 
     const totalRevenue = rupees(
-      lines.reduce((sum, line) => sum + (Number(line.total_price) || 0), 0) || Number(EQUIPMENT_METRICS.revenue),
+      invoices.reduce((sum, inv) => sum + (Number(inv.total_amount) || 0), 0) || Number(EQUIPMENT_METRICS.revenue),
     )
 
     return {

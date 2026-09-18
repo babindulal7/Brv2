@@ -27,6 +27,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 const canSeeMoney = { current: true }
+const mockCasesData = vi.hoisted(() => ({ current: null as unknown }))
 
 vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => canSeeMoney.current }))
 vi.mock('../../../lib/auth', () => ({
@@ -36,6 +37,19 @@ vi.mock('../../../lib/auth', () => ({
     isLocked: false,
   }),
 }))
+vi.mock('../../../lib/queries/cases', async (orig) => {
+  const actual = await orig<typeof import('../../../lib/queries/cases')>()
+  return {
+    ...actual,
+    listCases: vi.fn().mockImplementation(async () => {
+      const data = mockCasesData.current !== null ? mockCasesData.current : actual.CASES
+      return {
+        rows: data as any,
+        total: (data as any[]).length,
+      }
+    }),
+  }
+})
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
@@ -118,6 +132,7 @@ async function announce(c: Case) {
 
 beforeEach(() => {
   canSeeMoney.current = true
+  mockCasesData.current = null
 })
 
 afterEach(async () => {
@@ -191,6 +206,16 @@ describe('CasesWorkspace — RS-10, the id in the URL is read', () => {
   it('says so, rather than showing the whole queue, when the id matches nothing', async () => {
     await mount('/inventory/cases/CASE-2026-0000')
     expect(text()).toContain('No case matches CASE-2026-0000')
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(0)
+  })
+})
+
+describe('CasesWorkspace — empty state', () => {
+  it('renders standard empty state when database returns no cases', async () => {
+    mockCasesData.current = []
+    await mount('/inventory/cases')
+    expect(text()).toContain('No cases found')
+    expect(text()).toContain('Adjust your filters or search query to find incident cases')
     expect(container.querySelectorAll('tbody tr')).toHaveLength(0)
   })
 })

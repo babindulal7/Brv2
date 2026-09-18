@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { listActivityEvents, ACTIVITY_TIMELINE } from '../activity'
+import { listActivityEvents } from '../activity'
 
 vi.mock('../../supabase', () => ({
   supabase: {
@@ -17,9 +17,9 @@ vi.mock('../../supabase', () => ({
 }))
 
 describe('activity query module', () => {
-  it('falls back to ACTIVITY_TIMELINE on error or empty table', async () => {
+  it('returns empty rows and zero total on database error', async () => {
     const res = await listActivityEvents()
-    expect(res.rows).toEqual(ACTIVITY_TIMELINE)
-    expect(res.total).toBe(ACTIVITY_TIMELINE.length)
+    expect(res.rows).toEqual([])
+    expect(res.total).toBe(0)
   })
 })

@@ -17,7 +17,6 @@ import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
 import {
-  EXPENSES,
   CATEGORIES,
   EXPENSE_STATUSES,
   PAYMENT_METHODS,
@@ -222,7 +221,7 @@ export default function ExpenseReports() {
   const [report, setReport] = useState<ReportFilters>({ dateRange: SEEDED_RANGE })
   const branch = report.chips?.branch?.[0] ?? ''
 
-  const [expenseList, setExpenseList] = useState<ExpenseRow[]>(EXPENSES)
+  const [expenseList, setExpenseList] = useState<ExpenseRow[]>([])
 
   useEffect(() => {
     let active = true
