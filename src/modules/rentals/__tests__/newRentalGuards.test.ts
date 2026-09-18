@@ -99,6 +99,13 @@ describe('confirmWriteRefusals — NR-10, the card and the button read one list'
     expect(out[0]?.action).toBe('Open Equipment')
   })
 
+  it('refuses a blocked client with AUD-026 warning action', () => {
+    const out = confirmWriteRefusals({ ...CLEAR, clientIsBlocked: true })
+    expect(out).toHaveLength(1)
+    expect(out[0]?.text).toContain('Blocked from equipment rentals')
+    expect(out[0]?.action).toBe('View Client')
+  })
+
   it('reports every refusal at once — the card lists them all, it does not stop at the first', () => {
     const out = confirmWriteRefusals({
       clientSelected: true,
@@ -123,8 +130,8 @@ describe('bookingDays — NR-19, the length is measured over the instants that g
   })
 
   it('keeps the plain overnight and multi-day answers unchanged', () => {
-    expect(days('2026-09-05', '09:00', '2026-09-06', '09:00')).toBe(1)
-    expect(days('2026-09-05', '09:00', '2026-09-08', '09:00')).toBe(3)
+    expect(days('2026-09-05', '09:00', '2026-09-06', '06:00')).toBe(1)
+    expect(days('2026-09-05', '09:00', '2026-09-08', '06:00')).toBe(3)
   })
 
   it('rounds the priced span half-up, as lib/rentalDays does — 37 hours is 2 days', () => {
@@ -144,10 +151,10 @@ describe('bookingDays — NR-19, the length is measured over the instants that g
   })
 
   it('the times move the answer — the whole point of NR-19', () => {
-    /* Same two dates, different times: 09:00 → 10:00 the next day is 25 h (1),
-       09:00 → 23:00 the next day is 38 h (2). The old date-only difference
-       answered 1 for both. */
-    expect(days('2026-09-05', '09:00', '2026-09-06', '10:00')).toBe(1)
+    /* Same two dates, different times: returning by 06:00 is 1 day;
+       returning at 10:00 (crossing 06:00 boundary into next shift) is 2 days. */
+    expect(days('2026-09-05', '09:00', '2026-09-06', '06:00')).toBe(1)
+    expect(days('2026-09-05', '09:00', '2026-09-06', '10:00')).toBe(2)
     expect(days('2026-09-05', '09:00', '2026-09-06', '23:00')).toBe(2)
   })
 })

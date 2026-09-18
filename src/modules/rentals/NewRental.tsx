@@ -2,14 +2,12 @@ import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } fr
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { ConfirmDialog, Input, Select } from '../../components/ui'
+import { ConfirmDialog, Input, Select, Modal } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
-import { Unavailable } from '../../components/ui/Unavailable'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, LoadingSkeleton } from '../../components/ui/StateViews'
 import { ScannerInput } from '../../components/ui/ScannerInput'
 import { useToast } from '../../components/ui/Toast'
 import { useViewport } from '../../lib/device'
-import { BAR_BOX } from '../../components/shell/BottomBar'
 import { useNetwork } from '../../lib/network'
 import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
@@ -18,10 +16,24 @@ import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
 import { rentalDaysBetween } from '../../lib/rentalDays'
 import { validateDiscount } from '../../lib/discount'
 import { getSetting } from '../../lib/settingsStore'
-import { price, formatMoney, rupees, roundHalfUp, toRupees } from '../../lib/money'
+import {
+  calculatePricingPipeline,
+  type PricingPipelineResult,
+  DISCOUNT_STACKING_CAP_PERCENT,
+  PROMO_CODES,
+} from '../../lib/pricingPipeline'
+import { formatMoney, rupees, roundHalfUp, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { listClientRecords, CLIENTS_DATA, type ClientRecord } from '../../lib/queries/clients'
-import { CREW_ROLES, createRental, deliveryTypeFromLabel, CreateRentalPartialError } from '../../actions/rentals/createRental'
+import { updateClient } from '../../actions/clients/updateClient'
+import { CREW_ROLES, createRental, deliveryTypeFromLabel, CreateRentalPartialError, type BookingLineType } from '../../actions/rentals/createRental'
+import {
+  cancelDraft,
+  convertDraft,
+  fetchRentalDraft,
+  saveDraft as persistRentalDraft,
+  type RentalDraftData,
+} from '../../actions/rentals/saveDraft'
 import type { CrewRoleDb } from '../../types/database'
 import { supabase, newClientUuid } from '../../lib/supabase'
 import { listInventory, INV_STYLE, type InvStatus } from '../../lib/queries/inventory'
@@ -38,7 +50,6 @@ import { CREW_ROSTER, searchRoster, type CrewMember, type CrewRole } from '../..
 import { useAuth } from '../../lib/auth'
 import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
-import { canRecordPayment } from '../../lib/rbac'
 import {
   AddClientModal,
   AddItemPanel,
@@ -87,6 +98,18 @@ import type { AddItemSource, BookingLineDraft, BookingWindow } from './booking'
  */
 
 const DAY = 86400000
+
+/** JSONB does not preserve object-key order. Canonicalise before dirty checks. */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, child]) => child !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+    return `{${entries.map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`).join(',')}}`
+  }
+  return JSON.stringify(value)
+}
 
 /**
  * The two pickers of one end of the booking — a `YYYY-MM-DD` date and an
@@ -174,8 +197,15 @@ const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, 25] as const
 
 interface Line {
   id: string
+  clientUuid?: string | undefined
+  parentClientUuid?: string | null | undefined
   /** Inventory lines omit this legacy-safe default; custom work is explicit. */
-  lineType?: 'Equipment' | 'Service' | 'Manual item'
+  lineType?: 'Equipment' | 'Bundle' | 'Accessory' | 'Service' | 'Sub-rental' | 'Manual item' | undefined
+  isIncluded?: boolean | undefined
+  productId?: string | null | undefined
+  bundleId?: string | null | undefined
+  bundleCode?: string | undefined
+  bundleName?: string | undefined
   name: string
   serial: string
   category: string
@@ -214,13 +244,6 @@ interface Line {
    */
   status?: InvStatus | undefined
   committedTo: string
-  /**
-   * §34 — set when the line arrived as part of a bundle, so the footer can
-   * count bundles honestly and the row can say where it came from. A line
-   * added on its own genuinely has no bundle, so this is absent, never ''.
-   */
-  bundleCode?: string | undefined
-  bundleName?: string | undefined
 }
 
 /** §10.1 — line amount, rounded once at the end (half-up), same convention `lib/money.ts`'s `price()` uses internally. */
@@ -270,6 +293,8 @@ export interface ConfirmWriteState {
   sampleLineName: string | null
   /** Law 6 — whether this role is shown equipment rates at all. */
   canBookingMoney: boolean
+  /** AUD-026: Whether the selected client is flagged as Blocked or On-Stop. */
+  clientIsBlocked?: boolean
 }
 
 /**
@@ -301,6 +326,12 @@ export function confirmWriteRefusals(s: ConfirmWriteState): BlockingNotice[] {
         ? 'The selected client came from sample data and has no database record, so there is nothing to book against. Pick a client from the live list.'
         : 'The client list has not loaded from the database yet, so the selected client is sample data. Wait for it to load, then re-select the client.',
       action: 'Select Client',
+    })
+  }
+  if (s.clientIsBlocked) {
+    out.push({
+      text: 'This client is flagged as Blocked from equipment rentals. Quotation or confirmation is restricted without manager override.',
+      action: 'View Client',
     })
   }
   if (s.lineCount === 0) {
@@ -361,18 +392,9 @@ const SECTIONS = [
   'Equipment, Bundles & Services',
   'Crew',
   'Delivery',
-  'Pricing & Payments',
+  'Pricing & Terms',
 ] as const
 
-/** redesign v1 §6 — one review item per fact, shared by the rail's Review
- *  card and the id each maps to. Payments and Documents don't have their own
- *  body section any more; Payments jumps to Pricing & Payments and Documents
- *  jumps to the rail's own Documents card. */
-interface ReviewItem {
-  label: string
-  ok: boolean
-  targetId: string
-}
 
 /* Law 15 — hit area over paint, number from `--tap`. This object is also handed
    down as the `inputStyle` prop to the discount and crew sub-forms, so raising
@@ -654,273 +676,6 @@ function Section({
       </div>
       {open && <div style={{ padding: 'var(--sp-md)' }}>{children}</div>}
     </section>
-  )
-}
-
-/**
- * §4 — Operations is a *menu*, not a fourth equal-weight button.
- *
- * §4.1's rule is unchanged: at `Draft` it is disabled, visible and greyed,
- * and it states why. The menu therefore never opens on this screen today; it
- * is built as a menu so the shape is right the moment a Confirmed booking
- * renders through the same header.
- */
-function OperationsMenu({ disabled, reason, items }: { disabled: boolean; reason: string; items: Array<{ label: string; icon: IconName }> }) {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDocDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node | null)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDocDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  return (
-    <div ref={rootRef} style={{ position: 'relative' }} title={disabled ? reason : undefined}>
-      <button
-        type="button"
-        className="press"
-        disabled={disabled}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={disabled ? `Operations — unavailable. ${reason}` : 'Operations'}
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          height: 34,
-          padding: '0 12px',
-          borderRadius: 'var(--r-btn)',
-          background: 'transparent',
-          color: 'var(--text2)',
-          border: '1px solid var(--btn-secondary-border)',
-          fontFamily: 'inherit',
-          fontSize: 'var(--t-meta)',
-          fontWeight: 600,
-          whiteSpace: 'nowrap',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.5 : 1,
-        }}
-      >
-        Operations
-        <Icon name="chevron_down" size={14} />
-      </button>
-      {open && !disabled && (
-        <div
-          role="menu"
-          aria-label="Operations"
-          style={{
-            position: 'absolute',
-            zIndex: 40,
-            top: 'calc(100% + 6px)',
-            right: 0,
-            minWidth: 200,
-            padding: 5,
-            background: 'var(--dropdown)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--r-card)',
-            boxShadow: 'var(--shadow-modal)',
-          }}
-        >
-          {items.map((it) => (
-            <button
-              key={it.label}
-              type="button"
-              role="menuitem"
-              className="press"
-              onClick={() => setOpen(false)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--sp-sm)',
-                width: '100%',
-                minHeight: 40,
-                padding: '0 9px',
-                borderRadius: 'var(--r-btn)',
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--text)',
-                fontFamily: 'inherit',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                textAlign: 'left',
-                cursor: 'pointer',
-              }}
-            >
-              <Icon name={it.icon} size={15} style={{ color: 'var(--text2)' }} />
-              {it.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * redesign v1 §5 — `Send Quote` becomes a split button: `[Send Quote ▾]` →
- * Email to client · Download PDF · Copy link · Print. Same shell as
- * `OperationsMenu` above (outside-click + Escape close), but each item
- * carries a real handler — Operations' items are inert by design (§4.1,
- * nothing to dispatch to at Draft); this menu's are not.
- *
- * Download PDF and Copy link have no generator/link service in this build —
- * disabled with the reason stated, the same "honest gap" shape
- * `itemCatalogue.ts`'s `SERVICES_UNAVAILABLE_REASON` and Settings.tsx's `N()`
- * destinations already use, rather than a button that does nothing.
- */
-function SendQuoteMenu({ onEmail }: { onEmail: () => void }) {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDocDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node | null)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDocDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDocDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  const items: Array<{ label: string; icon: IconName; onClick?: () => void; disabledReason?: string }> = [
-    { label: 'Email to client', icon: 'mail', onClick: onEmail },
-    { label: 'Download PDF', icon: 'download', disabledReason: 'No PDF generator is connected in this build.' },
-    { label: 'Copy link', icon: 'external_link', disabledReason: 'No shareable-link service is connected in this build.' },
-    { label: 'Print', icon: 'file', onClick: () => window.print() },
-  ]
-
-  return (
-    <div ref={rootRef} style={{ position: 'relative' }}>
-      <button
-        type="button"
-        className="press"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Send Quote"
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          height: 34,
-          padding: '0 12px',
-          borderRadius: 'var(--r-btn)',
-          background: 'transparent',
-          color: 'var(--text2)',
-          border: '1px solid var(--btn-secondary-border)',
-          fontFamily: 'inherit',
-          fontSize: 'var(--t-meta)',
-          fontWeight: 600,
-          whiteSpace: 'nowrap',
-          cursor: 'pointer',
-        }}
-      >
-        Send Quote
-        <Icon name="chevron_down" size={14} />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          aria-label="Send Quote options"
-          style={{
-            position: 'absolute',
-            zIndex: 40,
-            top: 'calc(100% + 6px)',
-            right: 0,
-            minWidth: 200,
-            padding: 5,
-            background: 'var(--dropdown)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--r-card)',
-            boxShadow: 'var(--shadow-modal)',
-          }}
-        >
-          {items.map((it) => (
-            <button
-              key={it.label}
-              type="button"
-              role="menuitem"
-              className="press"
-              disabled={!it.onClick}
-              title={it.disabledReason}
-              onClick={() => {
-                it.onClick?.()
-                setOpen(false)
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--sp-sm)',
-                width: '100%',
-                minHeight: 40,
-                padding: '0 9px',
-                borderRadius: 'var(--r-btn)',
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--text)',
-                fontFamily: 'inherit',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                textAlign: 'left',
-                cursor: it.onClick ? 'pointer' : 'not-allowed',
-                opacity: it.onClick ? 1 : 0.5,
-              }}
-            >
-              <Icon name={it.icon} size={15} style={{ color: 'var(--text2)' }} />
-              {it.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** §6 — one strip cell: small label, large value, small support line. */
-function StripCell({ label, value, support, tone, big, style }: { label: string; value: string; support?: string | undefined; tone?: string | undefined; big?: boolean | undefined; style?: React.CSSProperties | undefined }) {
-  return (
-    <div style={{ padding: '11px 14px', minWidth: 0, ...style }}>
-      <div style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text2)' }}>{label}</div>
-      <div
-        className={big ? 'figure' : undefined}
-        style={{
-          marginTop: 3,
-          fontSize: big ? 'var(--t-h2)' : 'var(--t-ui)',
-          fontWeight: 700,
-          lineHeight: 1.15,
-          letterSpacing: big ? '-0.02em' : undefined,
-          color: tone ?? 'var(--text)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
-        {value}
-      </div>
-      {support && (
-        <div style={{ marginTop: 2, fontSize: 'var(--t-meta)', color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {support}
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -1667,7 +1422,7 @@ export interface NewRentalProps {
 
 export default function NewRental({ embedded = false, onDone }: NewRentalProps = {}) {
   const navigate = useNavigate()
-  const handleExit = useCallback(() => {
+  const doExit = useCallback(() => {
     if (onDone) {
       onDone()
     } else {
@@ -1689,21 +1444,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const canBookingMoney = canViewMoneyField(gctx, 'booking')
   const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
   const canClientBalance = canViewMoneyField(gctx, 'client-balance')
-  /*
-   * Money VISIBILITY (`canBookingMoney`, above) is not permission to move
-   * money. The rail's `Receive Payment` / `Receive Deposit` pair is the same
-   * action `RecordPaymentModal` performs elsewhere, and `rbac.canRecordPayment`
-   * — Owner / Coordinator / Accounts — is the rule `actions/core.ts` resolves
-   * `payment.create` through. Admin and Manager pass the visibility gate and
-   * fail this one, which is exactly the gap that put a refusable button in
-   * front of them on Finance and BookingDetail.
-   *
-   * ⚠ These two buttons are inert in this build (no `onClick`), so nothing is
-   * refused today. The gate is here so that whoever wires them up inherits the
-   * permission rather than reopening the hole. Absent, not disabled —
-   * `MovementList.tsx`'s row menu drops the entry it cannot offer.
-   */
-  const canTakePayment = user ? canRecordPayment(user.role) : false
   // §1.4 — the retired `Draft` stage is status Quote plus a Draft flag.
   const status: BookingStatus = 'Quote'
   const flag = 'Draft'
@@ -1956,15 +1696,13 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * The Government ID / PAN box, seeded from the selected client's `pan`
    * (`clients.pan_vat`, read by `queries/clients.ts`).
    *
-   * **TODO(decision) — this field is collected and then dropped, and it gates
-   * Confirm on the way.** `govId` has exactly four readers: the
+   * **The draft preserves this field, but a confirmed booking still has no
+   * dedicated column for it.** `govId` is therefore recoverable from the
+   * retained converted draft, while the booking write cannot project it into
+   * `bookings`. It also gates Confirm. Its UI readers are the
    * "Missing client ID or PAN" Critical, the Review card's Client row, the
-   * input itself and its inline error. It is in no write. `CreateRentalInput`
-   * has no field for it (`actions/rentals/createRental.ts` — clientUuid,
-   * clientId, branchId, contactId, project, the two instants, deliveryType,
-   * the two locations, quoteExpiresAt, depositRequired, lines, discounts, crew,
-   * transport), and this page dispatches nothing else, so a PAN typed here is
-   * lost the moment the page unmounts — while a blank one blocks the booking.
+   * input itself and its inline error. `CreateRentalInput` has no field for it,
+   * so the converted draft remains its durable booking-time record.
    *
    * Three answers are possible and none of them is mine to pick:
    *  a. write it back to the client record — `clients.pan_vat` exists and
@@ -1977,7 +1715,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * call, so the gate is left exactly as it is rather than quietly relaxed.
    */
   const [govId, setGovId] = useState(client?.pan ?? '')
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const fromParam = searchParams.get('from')
   const toParam = searchParams.get('to')
   /* Dates default to query parameters if present, otherwise the business day
@@ -1994,12 +1732,9 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const [returnTime, setReturnTime] = useState('18:00')
   /**
    * Law 17 (PLAN.md §6.1) — the UI reads **Client Pickup**, which is the 27 Jul
-   * lock's own wording. This union is private to the page and is never written:
-   * `saveDraft` and `confirmBooking` send an id and nothing else, so no value
-   * from here reaches a `delivery_type` column and the rename moves no stored
-   * data. The `<option>` carries no explicit `value`, so its text *is* the
-   * value — label and literal have to move together or the §9.2 comparison
-   * below silently stops matching.
+   * lock's own wording. The `<option>` carries no explicit `value`, so its text
+   * is the value. The durable draft stores that label and `createRental` maps it to the
+   * database enum during conversion.
    *
    * TODO(decision) — the Postgres `delivery_type` / `delivery_method` enums
    * still spell this member `'Customer Pickup'` (`0001_enums.sql:34,280`), and
@@ -2102,19 +1837,23 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * The VAT rate, read from Settings ▸ Financial once per mount. The literal
    * `VAT_PCT = 13` this page used to carry is deleted — see `readVatRatePercent`.
    */
-  const [vatRatePercent] = useState<number>(readVatRatePercent)
+  const [vatRatePercent, setVatRatePercent] = useState<number>(readVatRatePercent)
   /** 01_NEW_RENTAL §1.1 rail — `VAT {rate}%  [on ▢]`. On is the default. */
   const [vatOn, setVatOn] = useState(true)
-  /*
-   * All three were the §10.2 worked example (15,000 / 50,000 / 25,000) and
-   * rendered on a blank draft as if money had already moved. Nothing has: the
-   * advance is typed below, and how the required deposit is derived is still
-   * unruled (0002_bookings.sql, `deposit_required` — TODO(decision)), so both
-   * deposit figures are honestly zero until a ruling makes them a calculation.
-   */
   const [advancePaisa, setAdvancePaisa] = useState<Paisa>(rupees(0) as Paisa)
-  const depositRequiredPaisa = rupees(0) as Paisa
-  const depositReceivedPaisa = rupees(0) as Paisa
+  const [womenDopEligible, setWomenDopEligible] = useState(false)
+  const [manualDiscountReason, setManualDiscountReason] = useState('')
+  const [manualDiscountAuthorizedBy, setManualDiscountAuthorizedBy] = useState('')
+  const [promoCodeInput, setPromoCodeInput] = useState('')
+  const [promoCodeApplied, setPromoCodeApplied] = useState<string | null>(null)
+  const [promoNotice, setPromoNotice] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null)
+
+  const [manualDepositOverride, setManualDepositOverride] = useState(false)
+  const [manualDepositAmount, setManualDepositAmount] = useState<string>('')
+  const [depositOverrideReason, setDepositOverrideReason] = useState('')
+  const [depositAuthorizedBy, setDepositAuthorizedBy] = useState('')
+
+  const [confirmedSuccess, setConfirmedSuccess] = useState<{ bookingId: string; bookingNo: string } | null>(null)
 
   /** Pickup and return as instants — see `bookingInstant`. */
   const pickupAt = useMemo(() => bookingInstant(pickup, pickupTime), [pickup, pickupTime])
@@ -2262,20 +2001,30 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     [liveRows, availabilitySource],
   )
 
-  /* ── §10.1 calculation order — via lib/money.ts's canonical price(), not a local re-derivation. ── */
-  const equipmentLines = useMemo(
-    () => lines.filter((l) => l.lineType === undefined || l.lineType === 'Equipment'),
+  /* ── §10.1 canonical calculation order — via calculatePricingPipeline (Task 6) ── */
+  const standaloneEquipmentLines = useMemo(
+    () => lines.filter((l) => (l.lineType === undefined || l.lineType === 'Equipment') && !l.isIncluded),
     [lines],
   )
+  const equipmentLines = standaloneEquipmentLines
+
+  const bundleLines = useMemo(
+    () => lines.filter((l) => l.lineType === 'Bundle'),
+    [lines],
+  )
+
   const equipmentPaisa = useMemo(
-    () => equipmentLines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa,
-    [equipmentLines],
+    () => standaloneEquipmentLines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa,
+    [standaloneEquipmentLines],
+  )
+  const bundlePaisa = useMemo(
+    () => bundleLines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa,
+    [bundleLines],
   )
   const servicePaisa = useMemo(
     () => lines.filter((l) => l.lineType === 'Service' || l.lineType === 'Manual item').reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa,
     [lines],
   )
-  const rentalLinesPaisa = (equipmentPaisa + servicePaisa) as Paisa
   const crewChargesPaisa = useMemo(
     () => crew.reduce((s, c) => s + c.dayRatePaisa * days + c.overtimePaisa + c.accommodationPaisa + c.mealsPaisa, 0) as Paisa,
     [crew, days],
@@ -2284,25 +2033,88 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const clientPickup = deliveryType === 'Client Pickup'
   const transportPaisa = (clientPickup ? 0 : deliveryChargePaisa + fuelChargePaisa) as Paisa
 
-  const breakdown = useMemo(
-    () =>
-      price({
-        equipment: rentalLinesPaisa,
-        crew: crewChargesPaisa,
-        transport: transportPaisa,
-        discountPercent: discountPct,
-        // The rail's VAT switch: off means the rate is 0 for this booking, not
-        // that the configured rate changed. The rate itself is Settings'.
-        vatPercent: vatOn ? vatRatePercent : 0,
-        payments: advancePaisa,
-      }),
-    [rentalLinesPaisa, crewChargesPaisa, transportPaisa, discountPct, vatOn, vatRatePercent, advancePaisa],
+  const isStudentBundle = useMemo(
+    () => lines.some((l) => l.bundleName?.toLowerCase().includes('student') || l.category?.toLowerCase().includes('student') || l.category?.toLowerCase().includes('college')),
+    [lines],
   )
 
-  /** §10.4, as ruled: this is the *invoice* state, not a payment status. */
-  const invoiceState = advancePaisa <= 0 ? 'Unpaid' : advancePaisa < breakdown.rentalTotal ? 'Partially Paid' : 'Paid'
+  const recommendedDepositPaisa = useMemo<Paisa>(() => {
+    const totalGear = equipmentPaisa + bundlePaisa
+    if (totalGear <= 0) return 0 as Paisa
+    return Math.max(500000, Math.round(totalGear)) as Paisa
+  }, [equipmentPaisa, bundlePaisa])
 
-  const depositPendingPaisa = (depositRequiredPaisa - depositReceivedPaisa) as Paisa
+  const manualDepositPaisa = useMemo<Paisa | null>(() => {
+    if (!manualDepositOverride) return null
+    const num = Number(manualDepositAmount)
+    return Number.isFinite(num) && num >= 0 ? (rupees(num) as Paisa) : null
+  }, [manualDepositOverride, manualDepositAmount])
+
+  const pricing = useMemo<PricingPipelineResult>(() => {
+    const promoCodeKey = promoCodeApplied ? String(promoCodeApplied).toUpperCase() : null
+    const promo = promoCodeKey ? (PROMO_CODES[promoCodeKey] ?? null) : null
+    return calculatePricingPipeline({
+      equipmentSubtotalPaisa: equipmentPaisa,
+      bundleSubtotalPaisa: bundlePaisa,
+      servicesSubtotalPaisa: servicePaisa,
+      crewSubtotalPaisa: crewChargesPaisa,
+      deliveryChargePaisa: clientPickup ? (0 as Paisa) : deliveryChargePaisa,
+      fuelChargePaisa: clientPickup ? (0 as Paisa) : fuelChargePaisa,
+      discounts: {
+        manualDiscountPercent: discountPct,
+        manualDiscountReason: manualDiscountReason.trim() || null,
+        manualDiscountAuthorizedBy: manualDiscountAuthorizedBy.trim() || null,
+        womenDopEligible,
+        promoCode: promo,
+        isStudentBundle,
+      },
+      vatEnabled: vatOn,
+      vatRatePercent,
+      recommendedDepositPaisa,
+      manualDepositOverridePaisa: manualDepositPaisa,
+      depositOverrideReason: manualDepositOverride ? depositOverrideReason.trim() || null : null,
+      depositAuthorizedBy: manualDepositOverride ? depositAuthorizedBy.trim() || null : null,
+      bookingDateAd: pickupAt?.toISOString(),
+    })
+  }, [
+    equipmentPaisa,
+    bundlePaisa,
+    servicePaisa,
+    crewChargesPaisa,
+    clientPickup,
+    deliveryChargePaisa,
+    fuelChargePaisa,
+    discountPct,
+    manualDiscountReason,
+    manualDiscountAuthorizedBy,
+    womenDopEligible,
+    promoCodeApplied,
+    isStudentBundle,
+    vatOn,
+    vatRatePercent,
+    recommendedDepositPaisa,
+    manualDepositOverride,
+    manualDepositPaisa,
+    depositOverrideReason,
+    depositAuthorizedBy,
+    pickupAt,
+  ])
+
+  const breakdown = useMemo(() => ({
+    equipment: pricing.equipmentSubtotalPaisa,
+    crew: pricing.crewSubtotalPaisa,
+    transport: pricing.deliverySubtotalPaisa,
+    subtotal: pricing.grossSubtotalPaisa,
+    discount: pricing.discounts.discountPaisa,
+    taxable: pricing.taxableSubtotalPaisa,
+    vat: pricing.vatPaisa,
+    rentalTotal: pricing.rentalTotalPaisa,
+    outstanding: pricing.rentalTotalPaisa,
+  }), [pricing])
+
+  const depositRequiredPaisa = pricing.securityDeposit.requiredPaisa
+  const depositReceivedPaisa = rupees(0) as Paisa
+  const depositPendingPaisa = depositRequiredPaisa
 
   /* ── §12 alerts. Critical blocks Confirm; Warning blocks Handover. ─────── */
   /**
@@ -2363,6 +2175,15 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       : []),
     ...(!client ? [{ text: 'No client selected', severity: 'Critical' as const, action: 'Select Client' }] : []),
     ...(client && govId.trim().length === 0 ? [{ text: 'Missing client ID or PAN', severity: 'Critical' as const, action: 'Edit Client' }] : []),
+    ...(client && (client.isBlocked || client.onStop)
+      ? [
+          {
+            text: `Client is blocked: ${client.blockReason || client.onStop?.reason || 'Account flagged as on-stop'}`,
+            severity: 'Critical' as const,
+            action: 'View Client',
+          },
+        ]
+      : []),
     ...(discountUnapproved
       ? [{ text: discountVerdict.error ?? 'Discount is not a valid percentage.', severity: 'Critical' as const, action: 'Fix Discount' }]
       : []),
@@ -2423,8 +2244,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     ...(canBookingMoney && breakdown.outstanding > 0 ? [{ text: 'Rental outstanding', severity: 'Warning' as const, action: 'Receive Payment' }] : []),
   ]
   const critical = alerts.filter((a) => a.severity === 'Critical')
-  /** Warnings and information — the criticals live in the blocking-notices card. */
-  const nonBlockingAlerts = alerts.filter((a) => a.severity !== 'Critical')
 
   /**
    * 01_NEW_RENTAL §1.1 — the rail's `⚠ blocking notices (inline, persists)`.
@@ -2453,11 +2272,14 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     ...confirmWriteRefusals({
       clientSelected: Boolean(client),
       clientDbId: client?.dbId ?? null,
+      clientIsBlocked: Boolean(client?.isBlocked || client?.onStop),
       clientsAreLive,
       lineCount: lines.length,
       sampleLineName: equipmentLines.find((l) => !PRODUCT_ID_RE.test(l.id))?.name ?? null,
       canBookingMoney,
     }),
+    ...pricing.discounts.validationErrors.map((err) => ({ text: err, action: 'Open Pricing' })),
+    ...pricing.securityDeposit.validationErrors.map((err) => ({ text: err, action: 'Open Pricing' })),
   ]
   /**
    * ONE predicate. The card lists `blockingNotices`, this disables the button
@@ -2471,7 +2293,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     : undefined
 
   const pickupBs = toBs(new Date(pickup))
-  const returnBs = toBs(new Date(ret))
 
   /* ── §24 / §34 — the Add Item panel hands back ready lines; the page appends
    *    them and every existing pricing / availability path recomputes as it
@@ -2562,17 +2383,15 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     type ScannedUnit = { product?: { id?: string | null } | null }
     let unit: ScannedUnit | null = null
     try {
-      for (const field of ['barcode', 'serial_no', 'asset_tag'] as const) {
-        const { data, error } = await supabase
-          .from('product_units_v')
-          .select('product:products_v (id)')
-          .eq(field, code)
-          .maybeSingle()
-        if (error) throw error
-        if (data) {
-          unit = data as ScannedUnit
-          break
-        }
+      const { data, error } = await supabase
+        .from('product_units_v')
+        .select('product:products_v (id)')
+        .or(`barcode.eq.${code},serial_no.eq.${code},asset_tag.eq.${code}`)
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      if (data) {
+        unit = data as ScannedUnit
       }
     } catch (error: unknown) {
       setScanNotice({ tone: 'danger', text: `We could not look up that code: ${error instanceof Error ? error.message : String(error)}` })
@@ -2672,7 +2491,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * retry confirms the SAME booking rather than creating another, and the
    * error line can say what is actually true.
    */
-  const createdQuote = useRef<{ id: string; no: string } | null>(null)
+  const createdQuote = useRef<{ id: string; no: string; stage?: string } | null>(null)
   /* NR-02 — Law 8 keys for the rows written beside the header, one per row,
      minted on the first press and reused on a retry so the same press lands
      the same rows once. Cleared with `confirmKey` when the whole press lands. */
@@ -2686,50 +2505,280 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    *  - **false** — nothing was persisted, so Cancel discards local state and
    *    navigates away. No law is engaged; there is no row to delete.
    *  - **true** — a draft row exists, so Cancel is a *named terminal
-   *    transition* on it (`CANCEL_RENTAL`), behind a `ConfirmDialog` with a
+    *    transition* on it (`CANCEL_RENTAL_DRAFT`), behind a `ConfirmDialog` with a
    *    reason. It is never a delete.
    */
   const [draftPersisted, setDraftPersisted] = useState(false)
-  /** null = closed. 'discard' is the pre-save behaviour, 'cancel' the post-save one. */
-  const [cancelIntent, setCancelIntent] = useState<'discard' | 'cancel' | null>(null)
-  const saveDraft = useCallback(() => {
-    const ctx = dispatchContext()
-    if (!ctx) {
-      setActionError('Not saved — you are not signed in, so this draft cannot be attributed to anyone. Sign in and save again.')
-      setSaveState('error')
+  const [draftId, setDraftId] = useState<string | null>(() => searchParams.get('draft'))
+  const [draftBookingNo, setDraftBookingNo] = useState<string | null>(null)
+  const [draftLoading, setDraftLoading] = useState<boolean>(() => Boolean(searchParams.get('draft')))
+  const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
+  const [exitPrompt, setExitPrompt] = useState<'unsaved-new' | 'unsaved-edits' | null>(null)
+  const [draftClientDbId, setDraftClientDbId] = useState<string | null>(null)
+  const [savedDraftFingerprint, setSavedDraftFingerprint] = useState<string | null>(null)
+  const draftCreateKey = useRef<string | null>(null)
+  const draftBookingKey = useRef<string | null>(null)
+  const loadedDraftId = useRef<string | null>(null)
+
+  const draftData = useMemo<RentalDraftData>(
+    () => ({
+      version: 1,
+      selectedClientId,
+      clientDbId: client?.dbId ?? draftClientDbId,
+      project,
+      kind,
+      govId,
+      pickup,
+      pickupTime,
+      returnDate: ret,
+      returnTime,
+      deliveryType,
+      pickupLocation,
+      returnLocation,
+      specialInstructions,
+      lines: lines.map((line) => ({
+        id: line.id,
+        ...(line.lineType !== undefined ? { lineType: line.lineType } : {}),
+        name: line.name,
+        serial: line.serial,
+        category: line.category,
+        ratePaisa: Number(line.ratePaisa),
+        days: line.days,
+        ...(line.daysOverridden !== undefined ? { daysOverridden: line.daysOverridden } : {}),
+        qty: line.qty,
+        discountPct: line.discountPct,
+        location: line.location,
+        ...(line.status !== undefined ? { status: line.status } : {}),
+        committedTo: line.committedTo,
+        ...(line.bundleCode !== undefined ? { bundleCode: line.bundleCode } : {}),
+        ...(line.bundleName !== undefined ? { bundleName: line.bundleName } : {}),
+      })),
+      crew: crew.map((member) => ({
+        ...member,
+        dayRatePaisa: Number(member.dayRatePaisa),
+        overtimePaisa: Number(member.overtimePaisa),
+        accommodationPaisa: Number(member.accommodationPaisa),
+        mealsPaisa: Number(member.mealsPaisa),
+      })),
+      deliveryChargePaisa: Number(deliveryChargePaisa),
+      fuelChargePaisa: Number(fuelChargePaisa),
+      vehicle,
+      numberPlate,
+      driverContact,
+      discountPct,
+      vatOn,
+      vatRatePercent,
+      advancePaisa: Number(advancePaisa),
+      ...(draftBookingNo ? { bookingNo: draftBookingNo } : {}),
+    }),
+    [
+      selectedClientId, client, draftClientDbId, project, kind, govId, pickup, pickupTime, ret, returnTime, deliveryType,
+      pickupLocation, returnLocation, specialInstructions, lines, crew, deliveryChargePaisa, fuelChargePaisa,
+      vehicle, numberPlate, driverContact, discountPct, vatOn, vatRatePercent, advancePaisa, draftBookingNo,
+    ],
+  )
+  const draftFingerprint = useMemo(() => stableJson(draftData), [draftData])
+  const draftHasUnsavedChanges = savedDraftFingerprint !== draftFingerprint
+
+  const handleExit = useCallback(() => {
+    if (draftId && draftHasUnsavedChanges) {
+      setExitPrompt('unsaved-edits')
       return
     }
-    setActionError(null)
+    const isDirtyNew = !draftId && Boolean(selectedClientId || lines.length > 0 || project.trim() !== '')
+    if (isDirtyNew) {
+      setExitPrompt('unsaved-new')
+      return
+    }
+    doExit()
+  }, [draftId, draftHasUnsavedChanges, selectedClientId, lines.length, project, doExit])
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      const isDirty = draftId
+        ? draftHasUnsavedChanges
+        : Boolean(selectedClientId || lines.length > 0 || project.trim() !== '')
+      if (isDirty) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [draftId, draftHasUnsavedChanges, selectedClientId, lines.length, project])
+
+  useEffect(() => {
+    if (client?.dbId) setDraftClientDbId(client.dbId)
+  }, [client])
+
+  useEffect(() => {
+    const requestedId = searchParams.get('draft')
+    if (!requestedId) {
+      setDraftLoading(false)
+      return
+    }
+    if (loadedDraftId.current === requestedId) return
+    loadedDraftId.current = requestedId
+    setDraftLoading(true)
+    setDraftLoadError(null)
     setSaveState('saving')
-    void import('../../actions/rentals/index')
-      .then((m) => m.saveDraft({ id: 'draft-new' }, ctx))
-      /*
-       * This `showSuccessToast` used to hang off `.finally()`, which runs on
-       * rejection exactly as it does on resolution. `saveDraft` is still an
-       * unimplemented stub, so the dispatcher rejects it before `execute` and
-       * the operator was told "Draft saved" about a draft that was never
-       * written — then navigated away and lost it. Success reporting now lives
-       * on the resolved path and nowhere else.
-       *
-       * `{ id: 'draft-new' }` is still a placeholder: this screen holds the
-       * whole booking in local state and has no persisted row to name. Left as
-       * found rather than guessed at — see the report / TODO(decision) on
-       * wiring a real draft id.
-       */
-      .then(() => {
-        setSaveState('saved')
-        // Only a *landed* save flips this. Cancel's second behaviour hangs off
-        // it, so setting it optimistically would offer a terminal transition
-        // on a row that does not exist.
+    setActionError(null)
+    void fetchRentalDraft(requestedId)
+      .then((draft) => {
+        if (draft.status !== 'Active') {
+          throw new Error(
+            draft.status === 'Converted'
+              ? 'This draft has already been converted into a booking.'
+              : 'This draft was cancelled and is read-only.',
+          )
+        }
+        const data = draft.data
+        setDraftId(draft.id)
+        draftCreateKey.current = draft.clientUuid
+        draftBookingKey.current = draft.bookingClientUuid
+        confirmKey.current = draft.bookingClientUuid
+        setDraftBookingNo(data.bookingNo ?? null)
+        setSelectedClientId(data.selectedClientId)
+        setDraftClientDbId(data.clientDbId)
+        setProject(data.project)
+        setKind(data.kind)
+        setGovId(data.govId)
+        setPickup(data.pickup)
+        setPickupTime(data.pickupTime)
+        setRet(data.returnDate)
+        setReturnTime(data.returnTime)
+        setDeliveryType(data.deliveryType)
+        setPickupLocation(data.pickupLocation)
+        setReturnLocation(data.returnLocation)
+        setSpecialInstructions(data.specialInstructions)
+        setLines(
+          data.lines.map((line) => ({
+            ...line,
+            ratePaisa: line.ratePaisa as Paisa,
+            status: line.status as InvStatus | undefined,
+          })),
+        )
+        setCrew(
+          data.crew.map((member) => ({
+            ...member,
+            role: member.role as CrewRole,
+            dayRatePaisa: member.dayRatePaisa as Paisa,
+            overtimePaisa: member.overtimePaisa as Paisa,
+            accommodationPaisa: member.accommodationPaisa as Paisa,
+            mealsPaisa: member.mealsPaisa as Paisa,
+          })),
+        )
+        setDeliveryChargePaisa(data.deliveryChargePaisa as Paisa)
+        setFuelChargePaisa(data.fuelChargePaisa as Paisa)
+        setVehicle(data.vehicle)
+        setNumberPlate(data.numberPlate)
+        setDriverContact(data.driverContact)
+        setDiscountPct(data.discountPct)
+        setVatOn(data.vatOn)
+        setVatRatePercent(data.vatRatePercent)
+        setAdvancePaisa(data.advancePaisa as Paisa)
+        setSavedDraftFingerprint(stableJson(data))
         setDraftPersisted(true)
-        showSuccessToast('Draft saved', 'This booking is saved as a draft. Nothing has been confirmed.')
+        setSaveState('saved')
+        setDraftLoading(false)
       })
       .catch((err: unknown) => {
-        console.error('save draft failed:', err)
         setSaveState('error')
-        setActionError(`Not saved — ${err instanceof Error ? err.message : String(err)}`)
+        const msg = err instanceof Error ? err.message : String(err)
+        setDraftLoading(false)
+        setDraftLoadError(msg)
+        setActionError(`Draft not loaded — ${msg}`)
       })
-  }, [dispatchContext, showSuccessToast])
+  }, [searchParams])
+
+  const retryLoadDraft = useCallback(() => {
+    const requestedId = searchParams.get('draft')
+    if (!requestedId) return
+    loadedDraftId.current = null
+    setDraftLoadError(null)
+    setDraftLoading(true)
+    setSearchParams(new URLSearchParams(searchParams))
+  }, [searchParams, setSearchParams])
+
+  /* A client code may change after a draft is saved. Resolve its immutable DB
+     id against the live pool so reopening does not silently drop the client. */
+  useEffect(() => {
+    if (!draftPersisted || client || !draftClientDbId) return
+    const match = clientPool.find((candidate) => candidate.dbId === draftClientDbId)
+    if (match) setSelectedClientId(match.id)
+  }, [draftPersisted, client, clientPool, draftClientDbId])
+
+  /** null = closed. 'discard' is the pre-save behaviour, 'cancel' the post-save one. */
+  const [cancelIntent, setCancelIntent] = useState<'discard' | 'cancel' | null>(null)
+
+  const saveDraft = useCallback(
+    (options?: { silent?: boolean }) => {
+      if (saveState === 'saving') return
+      const ctx = dispatchContext()
+      if (!ctx) {
+        setActionError('Not saved — you are not signed in, so this draft cannot be attributed to anyone. Sign in and save again.')
+        setSaveState('error')
+        return
+      }
+      if (!draftCreateKey.current) draftCreateKey.current = newClientUuid()
+      if (!draftBookingKey.current) draftBookingKey.current = newClientUuid()
+      setActionError(null)
+      setSaveState('saving')
+      void persistRentalDraft(
+        {
+          ...(draftId ? { id: draftId } : {}),
+          clientUuid: draftCreateKey.current,
+          bookingClientUuid: draftBookingKey.current,
+          data: draftData,
+        },
+        ctx,
+      )
+        .then((saved) => {
+          if (!('data' in saved)) throw new Error('the database did not return a durable New Rental draft')
+          setDraftId(saved.id)
+          loadedDraftId.current = saved.id
+          draftCreateKey.current = saved.clientUuid
+          draftBookingKey.current = saved.bookingClientUuid
+          confirmKey.current = saved.bookingClientUuid
+          setDraftBookingNo(saved.data.bookingNo ?? null)
+          const next = new URLSearchParams(searchParams)
+          next.set('draft', saved.id)
+          setSearchParams(next, { replace: true })
+          setSavedDraftFingerprint(draftFingerprint)
+          setSaveState('saved')
+          // Only a *landed* save flips this. Cancel's second behaviour hangs off
+          // it, so setting it optimistically would offer a terminal transition
+          // on a row that does not exist.
+          setDraftPersisted(true)
+
+          // Requirement 17: Sync PAN to client record if client is selected and 9 digits
+          if (client?.dbId && govId.trim().length === 9 && /^[0-9]{9}$/.test(govId.trim()) && client.pan !== govId.trim()) {
+            void updateClient({ clientId: client.dbId, patch: { pan: govId.trim() } }, ctx).catch((err) => {
+              console.warn('Could not sync PAN to client record:', err)
+            })
+          }
+
+          if (!options?.silent) {
+            const noDisplay = saved.data.bookingNo ? ` #${saved.data.bookingNo}` : ''
+            showSuccessToast(`Draft${noDisplay} saved`, 'This booking is saved as a draft. Nothing has been confirmed.')
+          }
+        })
+        .catch((err: unknown) => {
+          console.error('save draft failed:', err)
+          setSaveState('error')
+          setActionError(`Not saved — ${err instanceof Error ? err.message : String(err)}`)
+        })
+    },
+    [saveState, dispatchContext, draftId, draftData, draftFingerprint, searchParams, setSearchParams, showSuccessToast, client, govId],
+  )
+
+  useEffect(() => {
+    if (!draftId || !draftHasUnsavedChanges || saveState === 'saving') return
+    const timer = setTimeout(() => {
+      saveDraft({ silent: true })
+    }, 2500)
+    return () => clearTimeout(timer)
+  }, [draftId, draftHasUnsavedChanges, saveState, saveDraft])
 
   const confirmBooking = useCallback(() => {
     /*
@@ -2788,14 +2837,23 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     setActionError(null)
     setSaveState('saving')
     /* Minted at the press, not per attempt: a retry of THIS press reuses it. */
-    if (!confirmKey.current) confirmKey.current = newClientUuid()
+    if (!confirmKey.current) confirmKey.current = draftBookingKey.current ?? newClientUuid()
     const pressKey: string = confirmKey.current
     /* Which of the two writes is in flight, so the catch can tell the truth
        about what landed. Everything up to and including `createRental` is
        'create' (nothing persisted if it throws); `confirmRental` is 'confirm'. */
-    let step: 'create' | 'confirm' = 'create'
+    let step: 'save-draft' | 'create' | 'confirm' | 'convert' = 'create'
     void (async () => {
       try {
+        /* A saved draft remains the lossless source snapshot. Persist edits
+           made since the last Save Draft before creating its booking. */
+        if (draftId && draftHasUnsavedChanges) {
+          step = 'save-draft'
+          const saved = await persistRentalDraft({ id: draftId, data: draftData }, ctx)
+          if (!('data' in saved)) throw new Error('the database did not return the updated rental draft')
+          setSavedDraftFingerprint(stableJson(saved.data))
+        }
+        step = 'create'
         /* A retry after a half-success: the Quote exists, so skip straight to
            confirming it rather than creating a second one.
            TODO(decision): if the operator EDITS lines/dates after the Quote
@@ -2842,14 +2900,15 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             clientId: clientDbId,
             branchId,
             project: project.trim() ? project.replace(/^'|'$/g, '') : null,
+            ...(draftBookingNo ? { bookingNo: draftBookingNo } : {}),
             /* Law 7 — the stored instant is AD/UTC; the pickers hold local
                wall-clock, so they are combined and sent as a full ISO string.
                NR-19 — the SAME two instants the page measured `days` over
                (`bookingInstant`), not a second construction of them. */
             pickupAt: pickupAt.toISOString(),
             returnAt: returnAt.toISOString(),
-            /* The UI says "Client Pickup"; the enum stores "Customer Pickup"
-               (Law 17 lives in the label, not the column). */
+            /* The UI says "Client Pickup"; the enum stores "Client Pickup"
+   (Law 17 lives in the label, not the column). */
             deliveryType: deliveryTypeFromLabel(deliveryType),
             /* NR-02 — the write carries what the rail prices, not equipment
                lines alone. What still has NO home on a Quote and is therefore
@@ -2858,14 +2917,16 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                an invoice — recordPayment refuses without one). Both are
                TODO(decision): where a Quote-time VAT choice and a typed
                advance are recorded before the first invoice. */
-            depositRequired: toRupees(depositRequiredPaisa),
-            ...(discountPct > 0
+            depositRequired: toRupees(pricing.securityDeposit.requiredPaisa),
+            ...(pricing.discounts.discountPaisa > 0
               ? {
                   discounts: [
                     {
                       clientUuid: discountKey.current ?? (discountKey.current = newClientUuid()),
                       discountSource: 'Manual',
-                      percent: discountPct,
+                      percent: pricing.discounts.appliedPercent,
+                      reason: manualDiscountReason.trim() || (womenDopEligible ? 'Women DoP/Director Discount' : 'Quotation Discount'),
+                      approverId: manualDiscountAuthorizedBy.trim() || null,
                     },
                   ],
                 }
@@ -2909,13 +2970,17 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                   },
                 }),
             lines: lines.map((l, i) => {
-              const inventoryLine = l.lineType === undefined || l.lineType === 'Equipment'
+              const isBundle = l.lineType === 'Bundle'
+              const isIncluded = l.isIncluded ?? false
+              const inventoryLine = !isBundle && (l.lineType === undefined || l.lineType === 'Equipment')
               const lineKey = l.id ?? `line-${i}`
-              const assigned = inventoryLine ? creationUnitPlan?.unitsByKey.get(lineKey) : undefined
+              const assigned = inventoryLine && !isIncluded ? creationUnitPlan?.unitsByKey.get(lineKey) : undefined
               return {
-                clientUuid: newClientUuid(),
-                lineType: l.lineType ?? ('Equipment' as const),
-                ...(inventoryLine ? { productId: l.id } : { description: l.name }),
+                clientUuid: l.clientUuid ?? newClientUuid(),
+                parentClientUuid: l.parentClientUuid ?? null,
+                lineType: (l.lineType ?? 'Equipment') as BookingLineType,
+                isIncluded,
+                ...(isBundle ? { bundleId: l.bundleId ?? null, description: l.name } : inventoryLine ? { productId: l.productId ?? l.id } : { description: l.name }),
                 qty: l.qty,
                 /* Law 9 — days is mandatory and never defaulted. */
                 days: l.days,
@@ -2930,14 +2995,25 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           },
           ctx,
         )
-        createdQuote.current = { id: created.bookingId, no: created.bookingNo }
+        createdQuote.current = { id: created.bookingId, no: created.bookingNo, stage: created.stage }
         }
 
         /* Created as a Quote; confirm it into Booked with the id the database
            just minted — never the `bk-new` placeholder this screen used to send. */
-        step = 'confirm'
-        const mod = await import('../../actions/rentals/confirmRental')
-        await mod.confirmRental({ id: createdQuote.current.id }, ctx)
+        if (createdQuote.current.stage !== 'Booked') {
+          step = 'confirm'
+          const mod = await import('../../actions/rentals/confirmRental')
+          await mod.confirmRental({ id: createdQuote.current.id }, ctx)
+          createdQuote.current.stage = 'Booked'
+        }
+
+        if (draftId) {
+          step = 'convert'
+          await convertDraft({ id: draftId, bookingId: createdQuote.current.id }, ctx)
+        }
+
+        const bookedId = createdQuote.current.id
+        const bookedNo = createdQuote.current.no
 
         /* The whole press landed: the next press is a new booking. */
         confirmKey.current = null
@@ -2946,9 +3022,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         crewKeys.current = []
         transportKey.current = null
         setSaveState('saved')
-        /* Landing on the rentals list is this app's universal "the write
-           landed" signal — now it has. */
-        handleExit()
+        /* Transition to confirmed success dialog */
+        setConfirmedSuccess({ bookingId: bookedId, bookingNo: bookedNo })
       } catch (err) {
         setSaveState('error')
         const reason = err instanceof Error ? err.message : String(err)
@@ -2962,7 +3037,12 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           )
           return
         }
-        if (step === 'confirm' && createdQuote.current) {
+        if (step === 'convert' && createdQuote.current) {
+          setActionError(
+            `Booking ${createdQuote.current.no} is confirmed, but the draft link did not update: ${reason}. ` +
+              'Press Confirm Booking again to finish linking this same draft; no second booking will be created.',
+          )
+        } else if (step === 'confirm' && createdQuote.current) {
           /* The create landed and the confirm did not. "Nothing was written"
              would be false here — a Quote exists, and it is named so the
              operator can find it. A retry confirms that same Quote. */
@@ -2994,7 +3074,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     /* NR-02 — the rows written beside the header read these; without them in
        the deps the press sent the INITIAL zero discount and no crew (driven
        3 Sep: 5% on screen, no booking_discounts row in the overlay). */
-    discountPct,
+    pricing,
+    manualDiscountReason,
+    manualDiscountAuthorizedBy,
+    womenDopEligible,
     crew,
     clientPickup,
     deliveryChargePaisa,
@@ -3008,8 +3091,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     returnLocation,
     specialInstructions,
     days,
-    depositRequiredPaisa,
-    handleExit,
+    draftId,
+    draftBookingNo,
+    draftHasUnsavedChanges,
+    draftData,
   ])
 
   /**
@@ -3029,11 +3114,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   }, [handleExit])
 
   /**
-   * The post-save path: `CANCEL_RENTAL`, the named terminal transition, with
-   * the reason the dialog collected. The action is not marked `implemented`
-   * (see `SUCCESS_FABRICATION_REGISTER_2026-08-12.md` — no page agent may mark
-   * one, doing so turns a lie into a wrong write), so `actions/core.ts` refuses
-   * it and the operator reads *why* instead of a fabricated success.
+   * The post-save path: `CANCEL_RENTAL_DRAFT`, the named terminal transition,
+   * records the dialog's reason on the durable draft row. It never deletes it.
    */
   const cancelDraftBooking = useCallback(
     (reason?: string) => {
@@ -3044,28 +3126,18 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         return
       }
       setActionError(null)
-      /*
-       * TODO(decision) — `CancelRentalInput` (`actions/rentals/cancelRental.ts`,
-       * not this agent's file) is `{ id: string }` and carries no `reason`
-       * field, so the reason the dialog collects rides along in the payload
-       * without a declared home. Widening that input, and where the reason is
-       * stored, belongs to whoever owns the actions layer. It is sent rather
-       * than dropped so the fix is a schema change, not a re-collection.
-       *
-       * `id: 'draft-new'` is the same placeholder `saveDraft` uses — this
-       * screen holds the booking in local state and has no persisted row to
-       * name. Left as found rather than guessed at.
-       */
-      const input = { id: 'draft-new', reason: reason ?? null }
-      void import('../../actions/rentals/index')
-        .then((m) => m.cancelRental(input, ctx))
+      if (!draftId) {
+        setActionError('Not cancelled — this saved draft has no database id. Reload it from the saved draft URL and try again.')
+        return
+      }
+      void cancelDraft({ id: draftId, reason: reason ?? '' }, ctx)
         .then(() => handleExit())
         .catch((err: unknown) => {
           console.error('cancel booking failed:', err)
           setActionError(`Not cancelled — ${err instanceof Error ? err.message : String(err)}`)
         })
     },
-    [dispatchContext, handleExit],
+    [dispatchContext, draftId, handleExit],
   )
 
   /* ── §7–20 — client selection handlers. ───────────────────────────────── */
@@ -3101,18 +3173,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
   const health = useMemo(() => (client ? clientHealth(client) : null), [client])
 
-  // §5.2 / redesign v1 §7.6 — Pickup and Return merged into one Dates cell,
-  // so the strip is four cells on desktop (Client · Dates · Stage ·
-  // Outstanding), not five. Below desktop every value still ellipsizes into
-  // unreadable fragments, so it collapses to fewer columns per Law 14.
-  const summaryCols = isDesktop
-    ? canBookingMoney
-      ? 'repeat(3, minmax(0,1fr)) minmax(0,1.15fr)'
-      : 'repeat(3, minmax(0,1fr))'
-    : viewport === 'tablet'
-      ? 'repeat(2, minmax(0,1fr))'
-      : '1fr'
-  const summaryDivider = isDesktop ? { borderRight: '1px solid var(--border)' } : { borderBottom: '1px solid var(--border)' }
 
   const bundleCount = useMemo(() => new Set(lines.map((l) => l.bundleCode).filter(Boolean)).size, [lines])
   const totalUnits = lines.reduce((s, l) => s + l.qty, 0)
@@ -3157,6 +3217,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       // A rejected crew role is settled where the crew is: remove the person,
       // or wait for the roster/enum mismatch to be ruled.
       if (action === 'Open Crew') jumpToSection('section-3')
+      if (action === 'Open Pricing') jumpToSection('section-5')
       if (action === 'Fix Discount') {
         // The approval popover this used to open left with the discount gate
         // (31 Aug 2026); the fix for an arithmetic refusal is the percent
@@ -3172,21 +3233,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     [client, jumpToSection, navigate],
   )
 
-  // §11 — never all green while a Critical alert is open. Documents are
-  // post-confirm work, so they do not hold a new booking's readiness hostage.
-  const reviewItems: ReviewItem[] = [
-    { label: 'Client', ok: Boolean(client) && govId.trim().length > 0, targetId: 'section-0' },
-    { label: 'Dates', ok: days > 0, targetId: 'section-1' },
-    { label: 'Equipment', ok: lines.length > 0 && conflictLines.length === 0, targetId: 'section-2' },
-    /* Not unconditionally true any more: a crew member whose role the database
-       refuses is a Critical, and §11 forbids an all-green Review while one is
-       open. Crew is otherwise optional, so an empty crew list is still fine. */
-    { label: 'Crew', ok: crew.every((c) => !dbRejectsRole(c.role)), targetId: 'section-3' },
-    { label: 'Delivery', ok: true, targetId: 'section-4' },
-    { label: 'Pricing', ok: !discountUnapproved && breakdown.rentalTotal > 0, targetId: 'section-5' },
-    { label: 'Payments', ok: breakdown.outstanding <= 0, targetId: 'section-5' },
-  ]
-  const reviewCompleteCount = reviewItems.filter((r) => r.ok).length
 
   /*
    * ⛔ NR-12 — `documentTiles` lived here and is gone. It listed five documents
@@ -3472,373 +3518,178 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * it in the DOM at all; the Crew row is separately `asset-finance`, which is
    * the one figure a Coordinator may not see.
    */
-  const summaryCard = canBookingMoney ? (
-    <Card id="rail-booking-summary" title="Summary">
-      <MoneyRow label="Equipment" value={formatMoney(equipmentPaisa)} />
-      {servicePaisa > 0 && <MoneyRow label="Services & custom lines" value={formatMoney(servicePaisa)} />}
-      {canCrewMoney && <MoneyRow label="Crew" value={formatMoney(crewChargesPaisa)} />}
-      <MoneyRow label="Delivery" value={formatMoney(transportPaisa)} />
-
-      <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
-        <DiscountChips percent={discountPct} onPercent={setDiscountPct} amount={formatMoney(breakdown.discount)} />
-        <VatToggle ratePercent={vatRatePercent} on={vatOn} onChange={setVatOn} />
-        <MoneyRow label={vatOn ? `VAT at ${vatRatePercent}%` : 'VAT not applied'} value={formatMoney(breakdown.vat)} />
-      </div>
-
-      <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
-        <MoneyRow label="TOTAL" value={formatMoney(breakdown.rentalTotal)} big />
-        <MoneyRow label="Rental paid" value={formatMoney(advancePaisa)} tone="var(--success-text)" />
-        <MoneyRow
-          label="Rental outstanding"
-          value={formatMoney(breakdown.outstanding)}
-          tone={breakdown.outstanding > 0 ? 'var(--danger-text)' : 'var(--success-text)'}
-          strong
-        />
-      </div>
-
-      {/* Law 5 — the deposit is a separate obligation and the spec draws it as
-          "Deposit (separate)". It never enters TOTAL and never reduces
-          Outstanding, which is why it sits below its own rule with its own
-          words rather than as a fourth line in the block above. */}
-      <div style={{ ...moneyBlock, marginTop: 10 }}>
-        <h3 style={sub}>Deposit — separate, held as a liability</h3>
-        <MoneyRow label="Required" value={formatMoney(depositRequiredPaisa)} />
-        <MoneyRow label="Received" value={formatMoney(depositReceivedPaisa)} tone="var(--success-text)" />
-        <MoneyRow label="Pending" value={formatMoney(depositPendingPaisa)} tone="var(--progress-text)" strong />
-        <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-          Never added to Rental Outstanding — these are two separate obligations.
-        </p>
-      </div>
-
-      {/*
-        "Advance due" is the amount of advance a booking is *required* to carry
-        before pickup. Nothing in this build derives it: there is no advance
-        policy in `settingsStore`, none in `lib/money.ts`, and no column for
-        one. `WIREFRAME_RULINGS_2026-08-12.md` §8 — "Never seed a plausible
-        default" — so it says so rather than borrowing Rental Outstanding,
-        which is a different number for a different obligation.
-
-        TODO(decision) — where does the required advance come from? A
-        percentage of Rental Total in Settings ▸ Financial, a per-client credit
-        term, or a per-booking figure the coordinator types? Until that is
-        ruled this row has no source.
-      */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, marginTop: 10, padding: '3px 0' }}>
-        <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Advance due</span>
-        <span
-          title="No advance policy is configured, so the required advance has no source in this build."
-          style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}
-        >
-          not tracked yet
-        </span>
-      </div>
-
-      {/* The rail is where redesign v1 §1 puts the two money buttons, once.
-          They are the same action as `RecordPaymentModal`'s, so they carry its
-          permission — see `canTakePayment` where it is defined. The rest of
-          this Summary card (the figures) stays on `canBookingMoney`. */}
-      {canTakePayment && (
-        <div style={{ marginTop: 11, display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-          {/*
-            BUG-004 — both of these were enabled, styled as live secondary
-            actions, and carried no `onClick`. A money-taking affordance that
-            silently does nothing is worse than an absent one.
-
-            They are NOT blocked on the policy question the audit raised ("can
-            money be taken against an unconfirmed booking?"). They are blocked
-            one layer below it: **this screen never persists a booking.**
-            `Confirm Booking` does not dispatch `createRental` yet either — see
-            the ⛔ block at :1485 — so there is no `bookings.id`, no invoice, and
-            nothing for `RecordPaymentModal` (which resolves an `invoiceId` out
-            of an `invoices` list) to attach a payment to. That holds whichever
-            way the policy is ruled.
-
-            Disabled with the reason rather than removed: the money buttons are
-            where §1 of the redesign puts them, and hiding them here would read
-            as "this role cannot take payment", which is the Law 6 meaning and
-            not what is true — `canTakePayment` already passed to render this.
-
-            The same action, wired, lives on Booking Detail once the booking
-            exists (`canBookingMoney && canTakePayment`).
-          */}
-          <Unavailable reason="This booking does not exist yet — Confirm creates it, and a payment needs an invoice to record against. Receive payment from the booking once it is confirmed.">
-            <Button icon="dollar" variant="secondary" disabled>Receive Payment</Button>
-          </Unavailable>
-          <Unavailable reason="This booking does not exist yet — Confirm creates it, and a deposit needs a booking to be held against. Receive the deposit from the booking once it is confirmed.">
-            <Button icon="dollar" variant="secondary" disabled>Receive Deposit</Button>
-          </Unavailable>
-        </div>
-      )}
-    </Card>
-  ) : null
-
   /**
-   * 01_NEW_RENTAL §1.1 — `⚠ blocking notices (inline, persists)`.
-   *
-   * One card, every reason Confirm is refused, in full. Law 12 keeps it inline
-   * and persistent: it is never a toast, and at tablet/phone it detaches from
-   * the rail and renders immediately above the sticky bar rather than being
-   * truncated into it.
-   *
-   * Law 11 — icon + label + colour on each row, never the tone alone.
+   * Part B — Right Rail Simplification
+   * One Single Consolidated Card: Booking Summary
    */
-  const noticesCard = (
-    <Card
-      id="rail-blocking-notices"
-      title={blockingNotices.length === 0 ? 'Blocking notices' : `Blocking notices (${blockingNotices.length})`}
-    >
-      {blockingNotices.length === 0 ? (
-        <EmptyState title="Nothing is blocking this booking" description="Every requirement for Confirm Booking is met." />
+  const bookingSummaryCard = (
+    <Card id="rail-booking-summary" title="Booking Summary">
+      {canBookingMoney ? (
+        <>
+          <MoneyRow label="Equipment" value={formatMoney(pricing.equipmentSubtotalPaisa)} />
+          {pricing.bundleSubtotalPaisa > 0 && <MoneyRow label="Bundles" value={formatMoney(pricing.bundleSubtotalPaisa)} />}
+          {pricing.servicesSubtotalPaisa > 0 && <MoneyRow label="Services & custom lines" value={formatMoney(pricing.servicesSubtotalPaisa)} />}
+          {canCrewMoney && pricing.crewSubtotalPaisa > 0 && <MoneyRow label="Crew" value={formatMoney(pricing.crewSubtotalPaisa)} />}
+          <MoneyRow label="Delivery" value={formatMoney(pricing.deliverySubtotalPaisa)} />
+
+          <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+            <MoneyRow label="Subtotal" value={formatMoney(pricing.grossSubtotalPaisa)} />
+            <MoneyRow
+              label={
+                pricing.discounts.appliedPercent > 0
+                  ? `Discount (${pricing.discounts.appliedPercent}%${pricing.discounts.capped ? ' capped' : ''})`
+                  : 'Discount'
+              }
+              value={pricing.discounts.discountPaisa > 0 ? `− ${formatMoney(pricing.discounts.discountPaisa)}` : '—'}
+              {...(pricing.discounts.discountPaisa > 0 ? { tone: 'var(--danger-text)' } : {})}
+            />
+            <MoneyRow
+              label={vatOn ? `VAT (${pricing.vatRatePercent}%)` : 'VAT'}
+              value={vatOn ? formatMoney(pricing.vatPaisa) : '—'}
+              {...(!vatOn ? { tone: 'var(--muted)' } : {})}
+            />
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+            <MoneyRow label="Rental Total" value={formatMoney(pricing.rentalTotalPaisa)} big />
+          </div>
+
+          {/* Security Deposit (separate liability guarantee) and Advance Required */}
+          <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+            <MoneyRow
+              label="Security Deposit (Refundable)"
+              value={formatMoney(pricing.securityDeposit.requiredPaisa)}
+              tone="var(--text2)"
+            />
+            <MoneyRow
+              label="Advance Required"
+              value={formatMoney(pricing.advanceRequiredPaisa)}
+              tone="var(--st-primary-fg)"
+              strong
+            />
+          </div>
+        </>
       ) : (
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {blockingNotices.map((n) => {
-            /* Hoisted so the guard below narrows it for the click handler too —
-               a property read would not stay narrowed inside the closure. */
-            const action = n.action
-            return (
-              <li key={n.text} style={{ padding: '8px 9px', borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
-                <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start' }}>
-                  <Icon name="error" size={13} style={{ color: 'var(--st-danger-fg)', flexShrink: 0, marginTop: 2 }} />
-                  {/* The full sentence, never clipped — Law 12. */}
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
-                    <span style={srOnly}>Blocking: </span>
-                    {n.text}
-                  </span>
-                </div>
-                {/* NR-10 — a notice with nowhere to send the operator gets no
-                    button. The money-blind refusal is the one: its fix is another
-                    person, not another section, and `runNoticeAction` matches no
-                    branch for it, so a button here would do nothing at all. */}
-                {action !== undefined && (
-                  <button
-                    type="button"
-                    className="press"
-                    onClick={() => runNoticeAction(action)}
-                    style={{ position: 'relative', marginTop: 5, marginLeft: 20, minHeight: 26, padding: '0 8px', borderRadius: 'var(--r-btn)', border: '1px solid var(--st-danger-fg)', background: 'transparent', color: 'var(--st-danger-fg)', fontFamily: 'inherit', fontSize: 'var(--t-th)', fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    <TouchInset />
-                    {action}
-                  </button>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+        <p style={{ margin: '0 0 8px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+          Prices are hidden for your role.
+        </p>
       )}
+
+      {/* Attention Status */}
+      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+        {blockingNotices.length === 0 ? (
+          <div
+            data-testid="booking-ready-status"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 10px',
+              borderRadius: 'var(--r-btn)',
+              background: 'var(--st-success-bg, #ecfdf5)',
+              color: 'var(--st-success-fg, #065f46)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+            }}
+          >
+            <Icon name="check" size={15} style={{ color: 'var(--st-success-fg, #065f46)', flexShrink: 0 }} />
+            <span>Ready to confirm</span>
+          </div>
+        ) : (
+          <div
+            data-testid="booking-attention-status"
+            style={{
+              padding: '8px 10px',
+              borderRadius: 'var(--r-btn)',
+              background: 'var(--st-danger-bg)',
+              color: 'var(--st-danger-fg)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 'var(--t-meta)' }}>
+              <Icon name="error" size={14} style={{ flexShrink: 0 }} />
+              <span>
+                {blockingNotices.length} {blockingNotices.length === 1 ? 'thing needs' : 'things need'} attention:
+              </span>
+            </div>
+            <ul style={{ listStyle: 'disc', margin: '6px 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)' }}>
+              {blockingNotices.map((n) => (
+                <li key={n.text} style={{ lineHeight: 1.35 }}>
+                  <span>{n.text}</span>
+                  {n.action && (
+                    <button
+                      type="button"
+                      className="press"
+                      onClick={() => runNoticeAction(n.action!)}
+                      style={{
+                        display: 'inline-block',
+                        marginLeft: 6,
+                        padding: '1px 6px',
+                        borderRadius: 'var(--r-badge)',
+                        border: '1px solid var(--st-danger-fg)',
+                        background: 'transparent',
+                        color: 'var(--st-danger-fg)',
+                        fontSize: 'var(--t-th)',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {n.action}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Action */}
+      <div style={{ marginTop: 12 }}>
+        <Button
+          icon={saveState === 'saving' ? 'refresh' : 'check'}
+          variant="primary"
+          onClick={confirmBooking}
+          disabled={confirmBlocked || saveState === 'saving'}
+          title={blockReasonText}
+          style={{ width: '100%', minHeight: 40, justifyContent: 'center' }}
+        >
+          {saveState === 'saving' ? 'Confirming Booking…' : 'Confirm Booking'}
+        </Button>
+      </div>
     </Card>
   )
 
-  /**
-   * 01_NEW_RENTAL §1.1 — `[ Confirm Booking ]` lives at the bottom of the rail,
-   * not in the header. Moving it also closes an existing defect: at tablet and
-   * phone the header button and the sticky bar's button were two primaries for
-   * one action on one screen.
-   *
-   * Rendered by the desktop rail only; below 1280 the sticky bar owns it, so
-   * there is exactly one Confirm at every width.
-   */
-  const confirmBlock = (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }} title={blockReasonText}>
-      <Button icon="check" variant="primary" onClick={confirmBooking} disabled={confirmBlocked || saveState === 'saving'}>
-        Confirm Booking
-      </Button>
-      {blockReasonText && (
-        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600, lineHeight: 1.4 }}>
-          {blockReasonText}
-        </span>
-      )}
-    </div>
-  )
+  if (draftLoading) {
+    return (
+      <div style={{ padding: 'var(--sp-xl)', maxWidth: 1000, margin: '40px auto' }}>
+        <LoadingSkeleton type="card" label="Loading draft booking…" />
+      </div>
+    )
+  }
 
-  const railCards = (
-    <>
-      {/* §53 / §13 — exactly three tiles. */}
-      <Card title="Quick Actions">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'var(--sp-sm)' }}>
-          {/*
-            BUG-004 — `Share` and `More` had no `onClick`, and their `title` /
-            `aria-label` actively PROMISED the behaviour ("Share this draft
-            booking", "More actions for this booking"). The tooltip was the
-            harm: a dead button is a puzzle, a dead button that describes what
-            it does is a lie, and on a screen reader the promise was the only
-            thing announced.
-
-            `Print` is real (`window.print()`) and is left alone. The other two
-            carry their reason instead of their promise, and are disabled so the
-            press does not read as "nothing happened".
-          */}
-          {([
-            { label: 'Print', icon: 'file' as IconName, hint: 'Print this draft booking', why: null },
-            { label: 'Share', icon: 'arrow_right' as IconName, hint: null, why: 'Sharing is not built yet — no destination is settled (a client portal link, an email, or a PDF hand-off).' },
-            { label: 'More', icon: 'more_vert' as IconName, hint: null, why: 'No further actions are built for a draft booking yet — the ones that exist are Print, and Confirm at the foot of the page.' },
-          ]).map((a) => {
-            const tile = (
-              <button
-                key={a.label}
-                type="button"
-                className={a.why ? undefined : 'press'}
-                title={a.hint ?? undefined}
-                aria-label={a.hint ?? a.label}
-                disabled={a.why !== null}
-                onClick={a.label === 'Print' ? () => window.print() : undefined}
-                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 56, padding: '10px 4px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: a.why ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: a.why ? 0.6 : 1, width: '100%' }}
-              >
-                <Icon name={a.icon} size={17} style={{ color: 'var(--text2)' }} />
-                {a.label}
-              </button>
-            )
-            return a.why ? (
-              <Unavailable key={a.label} reason={a.why} style={{ display: 'block' }}>
-                {tile}
-              </Unavailable>
-            ) : (
-              tile
-            )
-          })}
-        </div>
-      </Card>
-
-      {/* redesign v1 §6 — Review moved from the bottom-of-page Section 5 into
-          the rail, so the checklist that decides whether Confirm is ready
-          sits beside Confirm instead of a screen away from it. Each row jumps
-          to the section that owns the fact. */}
-      <Card title={`Review · ${reviewCompleteCount}/${reviewItems.length}`}>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {reviewItems.map((r) => (
-            <button
-              key={r.label}
-              type="button"
-              className="press"
-              onClick={() => jumpToSection(r.targetId)}
-              /* Grown, not coated. These rows were minHeight 30 with a
-                 `TouchInset` on top, which is the vertical-overlap trap: a 44px
-                 target on a 30px row in a GAPLESS column overhangs 7px each
-                 side, so adjacent rows overlapped by 14px and the later one in
-                 the DOM won — a tap near a boundary jumped to the wrong
-                 section. Full-width rows have no horizontal neighbour to
-                 collide with, so the box grows to the floor and the inset is
-                 not needed at all: the row IS the target. */
-              style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', width: '100%', minHeight: 'var(--tap)', padding: '4px 2px', border: 'none', background: 'transparent', textAlign: 'left', fontFamily: 'inherit', fontSize: 'var(--t-meta)', cursor: 'pointer' }}
-            >
-              <Icon name={r.ok ? 'check' : 'alert_triangle'} size={13} style={{ color: r.ok ? 'var(--success-text)' : 'var(--progress-text)', flexShrink: 0 }} />
-              <span style={{ flex: 1, minWidth: 0, color: 'var(--text2)' }}>{r.label}</span>
-              <span style={{ fontWeight: 600, color: r.ok ? 'var(--text)' : 'var(--progress-text)' }}>{r.ok ? 'Complete' : 'Pending'}</span>
-              <Icon name="chevron_right" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      {/* redesign v1 §6 — Documents also moved from Section 5 into the rail.
-          §11 — nothing is pre-generated on a Draft. NR-12: and nothing is
-          generated *after* one either, so the card says so rather than listing
-          five documents with an availability each. See the note where
-          `documentTiles` used to be built. */}
-      <Card id="rail-documents" title="Documents">
-        <EmptyState
-          title="No documents"
-          description="This booking has no documents: it has not been created, and no document — quote, agreement, packing list, delivery note or invoice — is generated anywhere in this build yet. There is nothing to open, download or send."
-        />
-      </Card>
-
-      {/* §54–56 — compact alerts. Severity is a labelled chip, not a colour;
-          the blocking rules themselves are untouched (§67): Critical blocks
-          Confirm, Warning blocks Handover, Information blocks nothing.
-
-          Criticals are **not** repeated here: they are the rail's blocking-
-          notices card now (01_NEW_RENTAL §1.1), with the same action button.
-          Rendering them in both places would have put the same sentence twice
-          in one rail. Nothing was removed — the row moved home. */}
-      <Card title={`Warnings & information (${nonBlockingAlerts.length})`}>
-        {nonBlockingAlerts.length === 0 ? (
-          <EmptyState title="No open warnings" description="This booking has no warning or information alerts." />
-        ) : (
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {nonBlockingAlerts.map((a) => {
-              const tone = a.severity === 'Critical' ? 'danger' : a.severity === 'Warning' ? 'progress' : 'primary'
-              const t = STATUS[tone]
-              const icon: IconName = a.severity === 'Critical' ? 'error' : a.severity === 'Warning' ? 'alert_triangle' : 'info'
-              return (
-                <li key={a.text} style={{ padding: '8px 9px', borderRadius: 'var(--r-btn)', background: t.bg }}>
-                  <div style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)' }}>
-                    <Icon name={icon} size={13} style={{ color: t.fg, flexShrink: 0, marginTop: 2 }} />
-                    <span style={{ flex: 1, minWidth: 0, color: t.fg, fontWeight: 500, lineHeight: 1.35 }}>{a.text}</span>
-                    <span
-                      style={{ flexShrink: 0, fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.03em', textTransform: 'uppercase', color: t.fg }}
-                    >
-                      {a.severity}
-                    </span>
-                  </div>
-                  {/* §12 — every alert carries exactly one primary action. */}
-                  <button
-                    type="button"
-                    className="press"
-                    onClick={() => runNoticeAction(a.action)}
-                    style={{
-                      position: 'relative',
-                      marginTop: 5,
-                      marginLeft: 20,
-                      minHeight: 26,
-                      padding: '0 8px',
-                      borderRadius: 'var(--r-btn)',
-                      border: `1px solid ${t.fg}`,
-                      background: 'transparent',
-                      color: t.fg,
-                      fontFamily: 'inherit',
-                      fontSize: 'var(--t-th)',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <TouchInset />
-                    {a.action}
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-        <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-          Warning blocks Handover, not Confirm. Information blocks nothing. What blocks Confirm is in
-          Blocking notices, above.
-        </p>
-      </Card>
-
-      {/* §57 — Activity Timeline last.
-
-          ⛔ NR-20 — this card listed two events, and neither had happened:
-
-           - `{ at: 'Just now', what: 'Draft created', who: 'by Ramesh Dulal' }`
-             — a literal, and demo data at that: that name is a seed CREW roster
-             member (`data/crew.ts`, CR-007, a Grip), not the person at the
-             keyboard, whom this component has had all along in `useAuth()`.
-             Worse than the wrong name is the event: no draft is created by this
-             page. `saveDraft` dispatches an action declared
-             `implemented: false`, so it rejects; the first row this screen can
-             write is the Quote `confirmBooking` creates, and that navigates
-             away.
-           - `'Items added'` counted the lines currently on screen and stamped
-             them "Just now" — a running total dressed as a past event, at an
-             instant nothing occurred.
-
-          Naming the real actor would not have fixed it: there is no event for
-          an actor to have performed. A booking's history begins when the
-          booking does, so this states that instead. The card is kept rather
-          than dropped — `WIREFRAME_RULINGS_2026-08-12.md` §1 keeps the rail
-          cards the wireframe does not draw, and the operator should find the
-          same rail here as on a saved booking.
-
-          `BookingDetail.tsx`'s own Activity Timeline says the matching thing
-          for a booking that DOES exist: `booking_stage_transitions` holds the
-          history and has no query module yet. */}
-      <Card title="Activity Timeline">
-        <EmptyState
-          title="No activity yet"
-          description="Nothing has happened to this booking — it has not been created. Its history starts at the moment it is confirmed, and is kept against the booking itself, not against this screen."
-        />
-      </Card>
-    </>
-  )
+  if (draftLoadError) {
+    return (
+      <div style={{ padding: 'var(--sp-xl)', maxWidth: 600, margin: '40px auto' }}>
+        <Card style={{ padding: 'var(--sp-lg)', textAlign: 'center' }}>
+          <EmptyState
+            kind="no-results"
+            title="Couldn't load this draft"
+            description={draftLoadError}
+            actionLabel="Back to Rentals"
+            onAction={doExit}
+          />
+          <div style={{ marginTop: 'var(--sp-md)', display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <Button variant="secondary" onClick={retryLoadDraft}>
+              Retry
+            </Button>
+            <Button variant="ghost" onClick={doExit}>
+              Back to Rentals
+            </Button>
+          </div>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
@@ -3858,7 +3709,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         removes them.
       */}
       <PageHeader
-        title="New Rental"
+        title={draftBookingNo ? `Draft #${draftBookingNo}` : 'New Rental'}
         description={`${client?.name ?? 'No client selected'} · ${kind}`}
         actions={
           <>
@@ -3876,22 +3727,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, padding: '0 10px', borderRadius: 'var(--r-badge)', background: STATUS[statusToken(status)].bg, color: STATUS[statusToken(status)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}
             >
               <Icon name="file" size={13} />
-              {status} · {flag}
+              {draftBookingNo ? `Draft #${draftBookingNo}` : `${status} · ${flag}`}
             </span>
-            <Button variant="ghost" onClick={saveDraft} disabled={saveState === 'saving'}>
+            <Button variant="ghost" onClick={() => saveDraft()} disabled={saveState === 'saving'}>
               {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
             </Button>
-            {/* §4.1 — Operations is disabled at Draft, visible and greyed with the reason. */}
-            <OperationsMenu
-              disabled
-              reason="Operations become available once the booking is Confirmed."
-              items={[
-                { label: 'Assign Crew', icon: 'crew' },
-                { label: 'Extend Rental', icon: 'calendar_event' },
-                { label: 'Create Sub-Rental', icon: 'truck' },
-              ]}
-            />
-            <SendQuoteMenu onEmail={() => setEmailDraftDoc('Quote')} />
             {/* Two behaviours behind one label — see `discardDraft` /
                 `cancelDraftBooking`. Which one runs depends on whether a draft
                 row exists, never on which button was pressed. */}
@@ -3901,51 +3741,13 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           </>
         }
       />
-      {/* Errors are inline and persistent, never a toast and never an alert().
-          What *blocks Confirm* is no longer repeated here: it is the rail's
-          blocking-notices card, which spec 01 draws and which now states each
-          reason in full. This line is only ever what the last dispatch did
-          instead of succeeding — a different fact, which can be true while
-          Confirm is also blocked. */}
+      {/* Errors are inline and persistent, never a toast and never an alert(). */}
       {actionError && (
         <p role="status" style={inlineErrorStyle}>
           <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 1 }} />
           {actionError}
         </p>
       )}
-
-      {/* §6 / redesign v1 §1 §7.6 — the booking status strip: small label,
-          large value, small support line. Four cells, not five — Pickup and
-          Return share one Dates cell, and Outstanding drops the deposit
-          footnote (the rail is its one home now). Outstanding is the largest
-          figure and the only red one. */}
-      <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: summaryCols }}>
-        <StripCell label="Client" value={client?.name ?? 'Not selected'} support={client ? (client.company ?? kind) : 'Choose a client to continue'} style={summaryDivider} />
-        <StripCell
-          label="Dates"
-          value={`${pickupBs ? formatBs(pickupBs) : '—'} → ${returnBs ? formatBs(returnBs) : '—'}`}
-          support={`${Number.isNaN(Date.parse(pickup)) ? '—' : formatAd(new Date(pickup))} → ${Number.isNaN(Date.parse(ret)) ? '—' : formatAd(new Date(ret))}`}
-          style={summaryDivider}
-        />
-        <StripCell
-          label="Stage"
-          value={`${status} · ${flag}`}
-          support={`${days} rental ${dayWord} · ${lines.length} items · ${crew.length} crew`}
-          style={canBookingMoney ? summaryDivider : undefined}
-        />
-        {canBookingMoney && (
-          <StripCell
-            label="Rental Outstanding"
-            value={formatMoney(breakdown.outstanding)}
-            tone="var(--danger-text)"
-            big
-            style={{
-              gridColumn: isDesktop ? undefined : '1 / -1',
-              borderRadius: isDesktop ? '0 var(--r-card) var(--r-card) 0' : '0 0 var(--r-card) var(--r-card)',
-            }}
-          />
-        )}
-      </div>
 
       <div
         style={{
@@ -4029,6 +3831,43 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 {/* §20 — retained, and now a drawer instead of a route change. */}
                 {client && <Button icon="activity" onClick={() => setHistoryOpen(true)}>Client History</Button>}
               </div>
+
+              {/* AUD-026: Client Credit & Blocked Status Warning Banner */}
+              {client && (client.isBlocked || client.onStop || (canBookingMoney && client.outstandingPaisa > 0) || health?.level === 'attention') && (
+                <div
+                  role="alert"
+                  data-testid="client-credit-warning"
+                  style={{
+                    marginTop: 10,
+                    padding: '10px 14px',
+                    borderRadius: 'var(--radius-md, 8px)',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                    background: (client.isBlocked || client.onStop) ? 'var(--danger-bg, #fef2f2)' : 'var(--warning-bg, #fffbeb)',
+                    border: `1px solid ${(client.isBlocked || client.onStop) ? 'var(--danger-border, #fca5a5)' : 'var(--warning-border, #fcd34d)'}`,
+                    color: (client.isBlocked || client.onStop) ? 'var(--danger-text, #991b1b)' : 'var(--warning-text, #92400e)',
+                    fontSize: 13,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <Icon
+                    name={(client.isBlocked || client.onStop) ? 'alert_circle' : 'alert_triangle'}
+                    size={18}
+                    style={{ flexShrink: 0, marginTop: 1 }}
+                  />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600 }}>
+                      {(client.isBlocked || client.onStop) ? 'Client Account Blocked' : 'Client Credit Warning'}
+                    </div>
+                    <div>
+                      {(client.isBlocked || client.onStop)
+                        ? (client.blockReason || client.onStop?.reason || 'This client is currently blocked from equipment rentals. Quotation and booking confirmation cannot proceed without manager override.')
+                        : (health?.reasons?.map((r) => r.text).join(' · ') || `Client has outstanding balance of ${formatMoney(client.outstandingPaisa)}.`)}
+                    </div>
+                  </div>
+                </div>
+              )}
             </Field>
 
             <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : viewport === 'tablet' ? 'repeat(2, minmax(0,1fr))' : 'repeat(3, minmax(0,1fr))', gap: 11, marginTop: 11 }}>
@@ -4452,7 +4291,9 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               {canBookingMoney && (
                 <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 7, alignItems: 'baseline' }}>
                   <span style={{ color: 'var(--text2)' }}>Line Subtotal</span>
-                  <span className="figure" style={{ fontWeight: 700, fontSize: 'var(--t-ui)' }}>{formatMoney(rentalLinesPaisa)}</span>
+                  <span className="figure" style={{ fontWeight: 700, fontSize: 'var(--t-ui)' }}>
+                    {formatMoney((pricing.equipmentSubtotalPaisa + pricing.bundleSubtotalPaisa + pricing.servicesSubtotalPaisa) as Paisa)}
+                  </span>
                 </span>
               )}
             </div>
@@ -4465,7 +4306,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             title={SECTIONS[3]}
             open={open[3] ?? false}
             onToggle={() => toggle(3)}
-            summary={crew.length === 0 ? 'No crew assigned' : `${crew.length} crew`}
+            summary={crew.length === 0 ? 'Optional / None' : `${crew.length} crew`}
           >
             <div>
               {/* Babin, 4 Sep 2026 — "same for crew and transport": no
@@ -4800,151 +4641,325 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               "New Rental's Pricing & Payments" among the sections that survive
               because no spec removes them in prose — the rail summarises this
               section, it does not replace it. */}
+          {/* Part C — Pricing & Terms Simplification */}
           {canBookingMoney && (
             <Section
               id="section-5"
               title={SECTIONS[5]}
               open={open[5] ?? true}
               onToggle={() => toggle(5)}
-              summary={`${formatMoney(breakdown.rentalTotal)} total · ${formatMoney(breakdown.outstanding)} outstanding`}
+              summary={`${formatMoney(pricing.rentalTotalPaisa)} total`}
             >
-              {/* §43–47 — three visually separate blocks: Rental Charges,
-                  Deposit, Payment History. RENTAL TOTAL is the dominant figure;
-                  Rental Outstanding and Deposit Pending never combine. */}
-              <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(3, minmax(0,1fr))' : isPhone ? '1fr' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(2, minmax(0,1fr))' : '1fr', gap: 'var(--sp-md)' }}>
+                {/* Column 1: Rental Charges Breakdown */}
                 <div style={moneyBlock}>
                   <h3 style={sub}>Rental Charges</h3>
-                  {/* §10.1 in order — the displayed column sums to the displayed total.
-                      Crew Charges is `asset-finance` money: HIS v2.1 §4.1 gives a
-                      Coordinator booking money but explicitly "no crew pay", and this
-                      row was leaking it while the crew table one section up hid the
-                      same figure. Law 6 — omitted, not masked. */}
                   {[
-                    { l: 'Equipment Rental', v: formatMoney(equipmentPaisa) },
+                    { l: 'Equipment Rental', v: formatMoney(pricing.equipmentSubtotalPaisa) },
+                    { l: 'Bundles', v: pricing.bundleSubtotalPaisa > 0 ? formatMoney(pricing.bundleSubtotalPaisa) : '—' },
                     { l: 'Sub-Rental', v: '—' },
-                    { l: 'Services & custom lines', v: servicePaisa > 0 ? formatMoney(servicePaisa) : '—' },
-                    ...(canCrewMoney ? [{ l: 'Crew Charges', v: formatMoney(crewChargesPaisa) }] : []),
-                    { l: 'Transport', v: formatMoney(transportPaisa) },
+                    { l: 'Services & custom lines', v: pricing.servicesSubtotalPaisa > 0 ? formatMoney(pricing.servicesSubtotalPaisa) : '—' },
+                    ...(canCrewMoney ? [{ l: 'Crew Charges', v: pricing.crewSubtotalPaisa > 0 ? formatMoney(pricing.crewSubtotalPaisa) : '—' }] : []),
+                    { l: 'Transport', v: pricing.deliverySubtotalPaisa > 0 ? formatMoney(pricing.deliverySubtotalPaisa) : '—' },
                   ].map((r) => (
                     <MoneyRow key={r.l} label={r.l} value={r.v} {...(r.v === '—' ? { tone: 'var(--muted)' } : {})} />
                   ))}
                   <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
-                    <MoneyRow label="Subtotal" value={formatMoney(breakdown.subtotal)} />
-                    <MoneyRow label={`Discount (${discountPct}%)`} value={`− ${formatMoney(breakdown.discount)}`} tone="var(--danger-text)" />
-                    <MoneyRow label="Taxable Amount" value={formatMoney(breakdown.taxable)} />
-                    {/* The rate is Settings', and the switch that turns it off is
-                        the rail's. Both facts are stated so this block never
-                        reads as a silent 0%. */}
+                    <MoneyRow label="Subtotal" value={formatMoney(pricing.grossSubtotalPaisa)} />
                     <MoneyRow
-                      label={vatOn ? `VAT (${vatRatePercent}%)` : 'VAT — off for this booking'}
-                      value={formatMoney(breakdown.vat)}
+                      label={
+                        pricing.discounts.appliedPercent > 0
+                          ? `Discount (${pricing.discounts.appliedPercent}%${pricing.discounts.capped ? ' - CAPPED' : ''})`
+                          : 'Discount'
+                      }
+                      value={pricing.discounts.discountPaisa > 0 ? `− ${formatMoney(pricing.discounts.discountPaisa)}` : '—'}
+                      {...(pricing.discounts.discountPaisa > 0 ? { tone: 'var(--danger-text)' } : {})}
+                    />
+                    <MoneyRow label="Taxable Amount" value={formatMoney(pricing.taxableSubtotalPaisa)} />
+                    <MoneyRow
+                      label={vatOn ? `VAT (${pricing.vatRatePercent}%)` : 'VAT — off for this booking'}
+                      value={vatOn ? formatMoney(pricing.vatPaisa) : '—'}
                       {...(vatOn ? {} : { tone: 'var(--muted)' })}
                     />
                   </div>
-                  {/* §45 — Rental Total is the dominant figure in this block. */}
                   <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                    <MoneyRow label="RENTAL TOTAL" value={formatMoney(breakdown.rentalTotal)} big />
+                    <MoneyRow label="RENTAL TOTAL" value={formatMoney(pricing.rentalTotalPaisa)} big />
+                  </div>
+                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                    <MoneyRow
+                      label="Security Deposit (Refundable)"
+                      value={formatMoney(pricing.securityDeposit.requiredPaisa)}
+                      tone="var(--text2)"
+                    />
+                    <p style={{ margin: '2px 0 8px', fontSize: '11px', color: 'var(--muted)' }}>
+                      Held as a separate liability guarantee. Not taxable, not rental revenue.
+                    </p>
+                    <MoneyRow
+                      label={`Advance Required (${pricing.advanceRequiredPaisa === pricing.rentalTotalPaisa && pricing.rentalTotalPaisa <= 500000 ? '100%' : pricing.rentalTotalPaisa <= 1000000 ? 'Rs 5,000' : '50%'})`}
+                      value={formatMoney(pricing.advanceRequiredPaisa)}
+                      tone="var(--st-primary-fg)"
+                      strong
+                    />
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                      Tier policy: ≤ Rs 5,000 (100%) · ≤ Rs 10,000 (Rs 5,000) · &gt; Rs 10,000 (50%)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Column 2: Discounts, VAT & Security Deposit Policy */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+                  <div style={moneyBlock}>
+                    <h3 style={sub}>Discounts & Taxes</h3>
+                    <div style={{ marginTop: 8 }}>
+                      <Field label="Manual Discount %">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={DISCOUNT_STACKING_CAP_PERCENT}
+                          value={discountPct}
+                          onChange={(e) => setDiscountPct(Math.min(DISCOUNT_STACKING_CAP_PERCENT, Math.max(0, Number(e.target.value) || 0)))}
+                          style={inputStyle}
+                        />
+                      </Field>
+                      <div style={{ marginTop: 8 }}>
+                        <DiscountChips percent={discountPct} onPercent={setDiscountPct} amount={formatMoney(pricing.discounts.discountPaisa)} />
+                      </div>
+
+                      {discountPct > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+                          <Field label="Discount Reason *">
+                            <Input
+                              value={manualDiscountReason}
+                              onChange={(e) => setManualDiscountReason(e.target.value)}
+                              placeholder="e.g. Director courtesy"
+                              style={inputStyle}
+                            />
+                          </Field>
+                          <Field label="Authorized By *">
+                            <Input
+                              value={manualDiscountAuthorizedBy}
+                              onChange={(e) => setManualDiscountAuthorizedBy(e.target.value)}
+                              placeholder="e.g. Babin"
+                              style={inputStyle}
+                            />
+                          </Field>
+                        </div>
+                      )}
+
+                      {/* Women DoP / Director toggle */}
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer', fontSize: 'var(--t-meta)' }}>
+                        <input
+                          type="checkbox"
+                          checked={womenDopEligible}
+                          onChange={(e) => setWomenDopEligible(e.target.checked)}
+                          style={{ cursor: 'pointer', width: 16, height: 16 }}
+                        />
+                        <span>
+                          <strong>Women DoP / Director (+5% discount)</strong>
+                          <span style={{ display: 'block', color: 'var(--muted)', fontSize: '11px' }}>
+                            Encouraging women cinematographers & filmmakers in Nepal.
+                          </span>
+                        </span>
+                      </label>
+
+                      {/* Student bundle indicator */}
+                      {isStudentBundle && (
+                        <div style={{ marginTop: 10, padding: '6px 10px', borderRadius: 'var(--r-btn)', background: 'var(--st-info-bg, #eff6ff)', color: 'var(--st-info-fg, #1e40af)', fontSize: '12px' }}>
+                          <Icon name="info" size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
+                          Student/College bundle detected — subsidized flat rate lines are protected from stacking discounts.
+                        </div>
+                      )}
+
+                      {/* Promo code */}
+                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                        <Field label="Promo Code">
+                          <div style={{ display: 'flex', gap: 8 }}>
+                            <Input
+                              value={promoCodeInput}
+                              onChange={(e) => {
+                                setPromoCodeInput(e.target.value.toUpperCase())
+                                setPromoNotice(null)
+                              }}
+                              placeholder="e.g. NEPALFILM, MONSOON26"
+                              style={{ ...inputStyle, textTransform: 'uppercase' }}
+                            />
+                            <Button
+                              variant="secondary"
+                              type="button"
+                              onClick={() => {
+                                const code = promoCodeInput.trim().toUpperCase()
+                                if (!code) {
+                                  setPromoNotice({ tone: 'danger', text: 'Enter a promo code.' })
+                                  return
+                                }
+                                const promo = PROMO_CODES[code]
+                                if (!promo) {
+                                  setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is invalid or expired.` })
+                                  return
+                                }
+                                if (!promo.active) {
+                                  setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is no longer active.` })
+                                  return
+                                }
+                                if (pickupAt) {
+                                  const pickupIso = pickupAt.toISOString()
+                                  if (promo.validFrom && pickupIso < promo.validFrom) {
+                                    setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is not valid until ${promo.validFrom}.` })
+                                    return
+                                  }
+                                  if (promo.validTo && pickupIso > promo.validTo) {
+                                    setPromoNotice({ tone: 'danger', text: `Promo code "${code}" expired on ${promo.validTo}.` })
+                                    return
+                                  }
+                                }
+                                if (promo.minSpendPaisa && pricing.grossSubtotalPaisa < promo.minSpendPaisa) {
+                                  setPromoNotice({
+                                    tone: 'danger',
+                                    text: `Promo "${code}" requires minimum rental spend of ${formatMoney(promo.minSpendPaisa)}.`,
+                                  })
+                                  return
+                                }
+                                setPromoCodeApplied(code)
+                                setPromoNotice({
+                                  tone: 'success',
+                                  text: `Promo "${code}" applied: ${promo.discountPercent}% off${promo.description ? ` (${promo.description})` : ''}.`,
+                                })
+                              }}
+                            >
+                              Apply
+                            </Button>
+                            {promoCodeApplied && (
+                              <Button
+                                variant="ghost"
+                                type="button"
+                                onClick={() => {
+                                  setPromoCodeApplied(null)
+                                  setPromoCodeInput('')
+                                  setPromoNotice(null)
+                                }}
+                              >
+                                Clear
+                              </Button>
+                            )}
+                          </div>
+                        </Field>
+                        {promoNotice && (
+                          <div
+                            style={{
+                              marginTop: 6,
+                              fontSize: '12px',
+                              color: promoNotice.tone === 'success' ? 'var(--st-success-fg, #065f46)' : 'var(--danger-text)',
+                            }}
+                          >
+                            {promoNotice.text}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Stacking cap indicator */}
+                      {pricing.discounts.capped && (
+                        <div style={{ marginTop: 10, padding: '6px 10px', borderRadius: 'var(--r-btn)', background: 'var(--st-warning-bg, #fffbeb)', color: 'var(--st-warning-fg, #92400e)', fontSize: '12px' }}>
+                          <Icon name="alert_triangle" size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
+                          Discounts capped at 25% maximum per company policy.
+                        </div>
+                      )}
+
+                      {/* Validation errors */}
+                      {pricing.discounts.validationErrors.length > 0 && (
+                        <div style={{ marginTop: 9, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
+                          {pricing.discounts.validationErrors.map((err, i) => (
+                            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
+                              <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+                              {err}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                      <VatToggle ratePercent={vatRatePercent} on={vatOn} onChange={setVatOn} />
+                    </div>
                   </div>
 
-                  <div style={{ marginTop: 14 }}>
-                    <Field label="Discount %">
-                      <Input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={discountPct}
-                        /* The old clamp-to-25 left with the gate (31 Aug 2026 —
-                           D3, no gate). 0–100 is arithmetic validity, not a
-                           chosen cap: negative is a price rise, >100% a
-                           negative price. */
-                        onChange={(e) => setDiscountPct(Math.min(100, Math.max(0, Number(e.target.value) || 0)))}
-                        style={inputStyle}
+                  {/* Security Deposit Block */}
+                  <div style={moneyBlock}>
+                    <h3 style={sub}>Security Deposit</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Recommended Deposit</span>
+                      <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}>{formatMoney(pricing.securityDeposit.recommendedPaisa)}</span>
+                    </div>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer', fontSize: 'var(--t-meta)' }}>
+                      <input
+                        type="checkbox"
+                        checked={manualDepositOverride}
+                        onChange={(e) => {
+                          setManualDepositOverride(e.target.checked)
+                          if (!e.target.checked) {
+                            setManualDepositAmount('')
+                            setDepositOverrideReason('')
+                            setDepositAuthorizedBy('')
+                          } else {
+                            setManualDepositAmount(String(toRupees(pricing.securityDeposit.recommendedPaisa)))
+                          }
+                        }}
+                        style={{ cursor: 'pointer', width: 16, height: 16 }}
                       />
-                    </Field>
-                    {/* Law 12 — an arithmetic refusal (should state ever carry
-                        one) surfaces inline with the engine's own words. The
-                        reason/approver inputs that lived here left with the
-                        gate. */}
-                    {!discountVerdict.valid && (
-                      <div style={{ marginTop: 9, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
-                          <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
-                          {discountVerdict.error}
-                        </div>
+                      <span>Manual Deposit Override</span>
+                    </label>
+
+                    {manualDepositOverride && (
+                      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <Field label="Override Amount (Rs) *">
+                          <Input
+                            type="number"
+                            min={0}
+                            value={manualDepositAmount}
+                            onChange={(e) => setManualDepositAmount(e.target.value)}
+                            placeholder="0"
+                            style={inputStyle}
+                          />
+                        </Field>
+                        <Field label="Override Reason *">
+                          <Input
+                            value={depositOverrideReason}
+                            onChange={(e) => setDepositOverrideReason(e.target.value)}
+                            placeholder="e.g. Low risk repeat client with corporate guarantee"
+                            style={inputStyle}
+                          />
+                        </Field>
+                        <Field label="Authorized By *">
+                          <Input
+                            value={depositAuthorizedBy}
+                            onChange={(e) => setDepositAuthorizedBy(e.target.value)}
+                            placeholder="e.g. Managing Director Babin"
+                            style={inputStyle}
+                          />
+                        </Field>
                       </div>
                     )}
-                  </div>
-                </div>
 
-                {/* redesign v1 §1 — the Deposit block is gone from here entirely.
-                    The rail's Booking Summary card is its one home now; repeating
-                    it here was the same three figures shown twice on one screen. */}
-                <div style={moneyBlock}>
-                  <h3 style={sub}>Payments — rental only</h3>
-                  <Field label="Advance Payment">
-                    <Input
-                      type="number"
-                      min={0}
-                      value={advancePaisa / 100}
-                      onChange={(e) => setAdvancePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
-                      style={inputStyle}
-                    />
-                  </Field>
-                  {/* redesign v1 §1 — Rental Outstanding is not repeated here; it
-                      already has a home in the header strip and the rail. Invoice
-                      State is the one fact this block adds that lives nowhere else. */}
-                  <div style={{ display: 'flex', gap: 9, padding: '7px 0 3px', fontSize: 'var(--t-meta)' }}>
-                    <span style={{ flex: 1, color: 'var(--text2)' }}>Invoice State</span>
-                    <span style={{ fontWeight: 600 }}>{invoiceState}</span>
-                  </div>
-                  <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
-                    <MoneyRow label="Rental Outstanding" value={formatMoney(breakdown.outstanding)} strong />
-                  </div>
-                  <p style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                    <strong style={{ color: 'var(--text2)' }}>Partially Paid</strong> is an invoice state, not a payment
-                    status — a payment is Received in full or it is not.
-                  </p>
-                </div>
+                    {pricing.securityDeposit.validationErrors.length > 0 && (
+                      <div style={{ marginTop: 9, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
+                        {pricing.securityDeposit.validationErrors.map((err, i) => (
+                          <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
+                            <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+                            {err}
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
-                <div style={moneyBlock}>
-                  <h3 style={sub}>Payment History</h3>
-                  {/*
-                   * ⛔ **What stood here.** A hardcoded two-row table asserting
-                   * that *Sagar Maharjan collected Rs 25,000 in cash on 16 Jul
-                   * 2026* and took a *Rs 15,000 eSewa advance on 10 Jul 2026* —
-                   * rendered against whatever booking the operator happened to
-                   * be building, and identical on every one of them. A
-                   * fabricated collector and two fabricated figures, on a money
-                   * panel: the record named an actor nobody signed in as and an
-                   * amount nobody entered.
-                   *
-                   * A NEW rental has no payment history by definition. A payment
-                   * references a booking, and this screen has never persisted
-                   * one — `confirmBooking` above says exactly that ("this
-                   * booking has not been saved yet"). So there is no figure to
-                   * degrade to and no collector to fall back on; the honest
-                   * render is the empty state.
-                   *
-                   * `EmptyState` rather than an empty table, and rather than
-                   * dropping the panel: it is the affordance this screen already
-                   * uses for a section that is real but not yet applicable
-                   * (Equipment before the first line, Crew before the first
-                   * assignment), and a header row over nothing still frames the
-                   * panel as a ledger that has been consulted.
-                   *
-                   * Law 6 is untouched — this block sits inside Section 5, which
-                   * only renders behind `canBookingMoney`.
-                   */}
-                  <EmptyState
-                    title="No payments on this booking"
-                    description="Payments are recorded against a saved booking. Once this rental exists, every payment and deposit taken on it is listed here with its date, method and the person who collected it."
-                  />
-                  {/* redesign v1 §1 — Receive Payment / Receive Deposit are not
-                      repeated here. Both money buttons live once, in the rail. */}
-                  <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                    Payments are immutable — no Edit, no Void. A mistake is corrected by a reversal entry referencing
-                    the original.
-                  </p>
+                    <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+                      <strong>Security Deposit Policy:</strong> Any security deposit required is held as a separate liability guarantee.
+                      It is never credited towards rental charges and does not reduce rental outstanding.
+                    </p>
+                    <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
+                      <strong>Payment Recording:</strong> New Rental creates the booking reservation.
+                      Advance payments and security deposits are officially recorded with receipt numbers directly on the <strong>Booking Detail</strong> page once the booking and invoice are created.
+                    </p>
+                  </div>
                 </div>
               </div>
             </Section>
@@ -4954,46 +4969,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               body entirely. It is now the rail's Review + Documents cards,
               below, which stay beside Confirm Booking instead of a screen away. */}
 
-          {/* §58 — the footer reports the save state and nothing else. The one
-              real Save Draft action lives in the header; a second large button
-              here read as a second primary and had to go.
-
-              ⛔ NR-13 — two of the four branches claimed a save that had not
-              happened, and one of them named a store that does not exist:
-
-               - the default branch read **"All changes saved"**. `saveState`
-                 *initialises* to `'saved'`, so that sentence was on screen from
-                 first paint, before anything had been typed, on a page that
-                 persists nothing until Confirm Booking. Nothing on this screen
-                 writes a draft: `saveDraft` dispatches
-                 `actions/rentals/saveDraft.ts`, which declares
-                 `implemented: false`, and `createAction` fails closed on that
-                 flag (`actions/core.ts`), so the dispatch rejects today.
-
-                 Two code paths set `'saved'` after an attempt, not one:
-                 `saveDraft`'s `.then()` and `confirmBooking`'s success path.
-                 Neither can leave this sentence standing on an unsaved booking
-                 TODAY — the first is unreachable while the stub rejects, and
-                 the second navigates to `/rentals` and unmounts this line. But
-                 the first becomes reachable the moment `saveDraft` is
-                 implemented (NR-15), and at that point this branch must say
-                 something different again. Written down because the previous
-                 version of this note said `confirmBooking` was the only path
-                 and would have made that change look unnecessary.
-               - the `!online` branch read **"Offline · Changes saved locally"**.
-                 There is no local store: this file contains no `localStorage`,
-                 no `sessionStorage` and no IndexedDB write of any kind, and the
-                 booking lives entirely in React state in this tab.
-
-              So the default now states the true position — unsaved, tab-local —
-              and the offline case adds what offline actually changes here:
-              `createRental.execute` refuses outright when
-              `ctx.isOnline === false || navigator.onLine === false`, because a
-              create is one RPC and the outbox (`lib/dataAccess.ts`'s
-              `enqueueMutation`) queues table inserts and updates, nothing else.
-
-              `saving` and `error` are unchanged; both are genuinely reachable
-              (Save Draft rejects into `error`, and `confirmBooking` sets both). */}
+          {/* §58 — the footer reports the database-backed save state and
+              nothing else. A fingerprint distinguishes the last successful
+              snapshot from edits made after it, so "Draft saved" cannot remain
+              on screen once the form diverges from the stored row. */}
           <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '0 2px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
             {saveState === 'saving' ? (
               <>
@@ -5013,8 +4992,12 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               <>
                 <Icon name={online ? 'info' : 'plug'} size={13} style={{ color: 'var(--text2)' }} />
                 <span style={{ lineHeight: 1.4 }}>
-                  <span style={{ fontWeight: 600, color: 'var(--text2)' }}>Not saved</span> — this
-                  booking exists only in this browser tab. It is written when you confirm it.
+                  <span style={{ fontWeight: 600, color: 'var(--text2)' }}>
+                    {draftPersisted ? 'Unsaved changes' : 'Not saved'}
+                  </span>{' '}
+                  — {draftPersisted
+                    ? 'save this draft again before leaving to keep the latest changes.'
+                    : 'this booking exists only in this browser tab. It is written when you save the draft or confirm it.'}
                   {!online && ' You are offline, and confirming a booking is refused until you are back online.'}
                 </span>
               </>
@@ -5038,89 +5021,19 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         {isDesktop && (
           <div style={{ position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)', overflowY: 'auto', paddingLeft: 14, marginLeft: -14 }}>
             <Rail width={300}>
-              {summaryCard}
-              {noticesCard}
-              {confirmBlock}
-              {railCards}
+              {bookingSummaryCard}
             </Rail>
           </div>
         )}
       </div>
 
-      {/*
-        Tablet and phone: the rail **reflows**, it does not hide.
-
-        `WIREFRAME_RULINGS_2026-08-12.md` §7 — "Right rails collapse below 1280"
-        means the rail's content moves below the list and stays visible. The
-        collapsed "Review n/n" handle that used to sit here hid the blocking
-        notices behind a tap, which Law 12 forbids outright.
-
-        `CollapsibleAside` is deliberately not used and its defaults are not
-        touched — other pages depend on them.
-      */}
       {!isDesktop && (
-        <div style={{ display: 'grid', gridTemplateColumns: viewport === 'tablet' ? 'repeat(2, minmax(0,1fr))' : '1fr', gap: 'var(--sp-md)', alignItems: 'start' }}>
-          {summaryCard}
-          {railCards}
+        <div style={{ marginTop: 'var(--sp-md)' }}>
+          {bookingSummaryCard}
         </div>
       )}
 
       <FooterNote extra={['Sections are not a wizard — any order, one Confirm']} />
-
-      {/*
-        01_NEW_RENTAL Notes — "Blocking notices sit inline in the rail and
-        persist — never a toast."
-
-        The tablet and phone bars the spec draws are `Total …… [Confirm]`, with
-        no room for a notice. So below 1280 the notices card **detaches from the
-        rail and renders immediately above the sticky bar**, in full: not
-        truncated into the bar, not a toast, and not behind a disclosure. It is
-        the last thing above the button it is refusing.
-      */}
-      {!isDesktop && <div style={{ marginTop: 'var(--sp-md)' }}>{noticesCard}</div>}
-
-      {/* §65 — the sticky bottom summary + primary action for tablet and phone,
-          where the rail is no longer beside the work. */}
-      {!isDesktop && (
-        <div
-          style={{
-            position: 'sticky',
-            bottom: isPhone ? BAR_BOX : 0,
-            zIndex: 40,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--sp-md)',
-            padding: '9px 12px',
-            marginTop: 4,
-            background: 'var(--card)',
-            borderTop: '1px solid var(--border)',
-            borderRadius: 'var(--r-card) var(--r-card) 0 0',
-            boxShadow: '0 -4px 16px rgba(0,0,0,0.10)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-          }}
-        >
-          {canBookingMoney && (
-            <div style={{ display: 'flex', gap: 14, minWidth: 0, flex: 1 }}>
-              <span style={{ minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text2)' }}>Rental Total</span>
-                <span className="figure" style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{formatMoney(breakdown.rentalTotal)}</span>
-              </span>
-              <span style={{ minWidth: 0 }}>
-                <span style={{ display: 'block', fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text2)' }}>Outstanding</span>
-                <span className="figure" style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: breakdown.outstanding > 0 ? 'var(--danger-text)' : 'var(--success-text)' }}>
-                  {formatMoney(breakdown.outstanding)}
-                </span>
-              </span>
-            </div>
-          )}
-          <span style={{ marginLeft: canBookingMoney ? 0 : 'auto' }} title={blockReasonText}>
-            <Button icon="check" variant="primary" onClick={confirmBooking} disabled={confirmBlocked || saveState === 'saving'}>
-              Confirm Booking
-            </Button>
-          </span>
-        </div>
-      )}
 
       {/* ── Disclosures. None of these route; the booking stays behind them. ── */}
       {client && (
@@ -5216,7 +5129,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
       {/*
         `[Cancel]`, behaviour two — a draft row exists. Law 3: nothing is
-        deleted, so this is the named terminal transition `CANCEL_RENTAL` with
+        deleted, so this is the named terminal transition `CANCEL_RENTAL_DRAFT` with
         a recorded reason, not a discard.
       */}
       <ConfirmDialog
@@ -5230,6 +5143,88 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         variant="danger"
         requireReason={{ minLength: 10, label: 'Why is this booking being cancelled?' }}
       />
+
+      <ConfirmDialog
+        isOpen={exitPrompt === 'unsaved-new'}
+        onClose={() => setExitPrompt(null)}
+        onConfirm={() => {
+          setExitPrompt(null)
+          doExit()
+        }}
+        title="Discard this booking?"
+        description="Nothing has been saved yet. Leaving will discard what is on screen."
+        confirmLabel="Discard and leave"
+        cancelLabel="Keep editing"
+        variant="danger"
+      />
+
+      <ConfirmDialog
+        isOpen={exitPrompt === 'unsaved-edits'}
+        onClose={() => setExitPrompt(null)}
+        onConfirm={() => {
+          setExitPrompt(null)
+          doExit()
+        }}
+        title="Unsaved changes on draft"
+        description="You have unsaved changes on this draft. Would you like to leave without saving? Your last saved draft version will remain intact."
+        confirmLabel="Leave without saving"
+        cancelLabel="Stay here"
+        variant="default"
+      />
+
+      {/* Confirmed Booking Success Modal */}
+      {confirmedSuccess && (
+        <Modal
+          isOpen={Boolean(confirmedSuccess)}
+          onClose={() => setConfirmedSuccess(null)}
+          title="Booking Confirmed!"
+          size="md"
+        >
+          <div style={{ textAlign: 'center', padding: '16px 8px' }}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                background: 'var(--st-success-bg, #ecfdf5)',
+                color: 'var(--st-success-fg, #065f46)',
+                marginBottom: 16,
+              }}
+            >
+              <Icon name="check" size={28} />
+            </div>
+            <h3 style={{ margin: '0 0 8px', fontSize: '18px', fontWeight: 700 }}>
+              Rental {confirmedSuccess.bookingNo} Confirmed
+            </h3>
+            <p style={{ margin: '0 0 20px', color: 'var(--text2)', fontSize: 'var(--t-body)', lineHeight: 1.5 }}>
+              The booking has been successfully recorded in the database and inventory has been reserved.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 320, margin: '0 auto' }}>
+              <Button
+                variant="primary"
+                onClick={() => navigate(`/rentals/${confirmedSuccess.bookingNo}`)}
+              >
+                Open Rental Detail
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => navigate(`/rentals/${confirmedSuccess.bookingNo}/packing`)}
+              >
+                Start Packing
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => navigate('/rentals')}
+              >
+                Back to Rentals List
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

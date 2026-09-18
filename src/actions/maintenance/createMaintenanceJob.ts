@@ -5,29 +5,29 @@ import { supabase } from '../../lib/supabase';
 
 export type CreateMaintenanceJobInput = {
   /** Optional client-side idempotency UUID (Law 8). */
-  clientUuid?: string;
+  clientUuid?: string | undefined;
   /** `product_units.id` (UUID). */
-  productUnitId?: string;
+  productUnitId?: string | undefined;
   /** Or serial number (e.g. 'SN-001') to resolve to product_unit_id */
-  serialNo?: string;
+  serialNo?: string | undefined;
   /** 'Preventive Service' | 'Repair' | 'Calibration' | 'Routine Inspection' (default: 'Preventive Service') */
-  maintenanceType?: string;
+  maintenanceType?: string | undefined;
   /** 'Normal' | 'Urgent' | 'Low' (default: 'Normal') */
-  priority?: string;
+  priority?: string | undefined;
   /** 'Scheduled' | 'In Progress' (default: 'Scheduled') */
-  status?: string;
+  status?: string | undefined;
   /** Detailed description of required work */
   description: string;
   /** Scheduled date in YYYY-MM-DD (defaults to current_date) */
-  scheduledDate?: string;
+  scheduledDate?: string | undefined;
   /** Optional vendor or service partner name */
-  vendorName?: string;
+  vendorName?: string | undefined;
   /** Estimated or actual cost in rupees (numeric(14,2)) */
-  cost?: number;
+  cost?: number | undefined;
   /** User UUID of technician assigned */
-  performedBy?: string;
+  performedBy?: string | undefined;
   /** Custom record number (e.g. 'MNT-2026-0001') */
-  recordNo?: string;
+  recordNo?: string | undefined;
 };
 
 export type CreateMaintenanceJobResult = {

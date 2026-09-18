@@ -531,25 +531,38 @@ const SUB_RENTAL_PAGE = 1000
  */
 const SUB_RENTAL_MAX_PAGES = 200
 
-export async function subRentalBookingIds(): Promise<readonly string[] | null> {
+export async function subRentalBookingIds(forBookingIds?: readonly string[]): Promise<readonly string[] | null> {
   const data: { booking_id: string | null; line_type: string | null }[] = []
 
-  for (let page = 0; page < SUB_RENTAL_MAX_PAGES; page++) {
-    const from = page * SUB_RENTAL_PAGE
+  if (forBookingIds !== undefined) {
+    if (forBookingIds.length === 0) return []
     const { data: rows, error } = await supabase
       .from('booking_lines_v')
       .select('booking_id, line_type')
       .in('line_type', [...SUB_RENTAL_LINE_TYPES])
+      .in('booking_id', [...forBookingIds])
       .is('voided_at', null)
-      .order('booking_id', { ascending: true })
-      .range(from, from + SUB_RENTAL_PAGE - 1)
 
     if (error || !rows) return null
     data.push(...rows)
-    /* A short page is the end of the set. A full one is not proof of more, but
-       asking again costs one round trip and guessing costs correctness. */
-    if (rows.length < SUB_RENTAL_PAGE) break
-    if (page === SUB_RENTAL_MAX_PAGES - 1) return null
+  } else {
+    for (let page = 0; page < SUB_RENTAL_MAX_PAGES; page++) {
+      const from = page * SUB_RENTAL_PAGE
+      const { data: rows, error } = await supabase
+        .from('booking_lines_v')
+        .select('booking_id, line_type')
+        .in('line_type', [...SUB_RENTAL_LINE_TYPES])
+        .is('voided_at', null)
+        .order('booking_id', { ascending: true })
+        .range(from, from + SUB_RENTAL_PAGE - 1)
+
+      if (error || !rows) return null
+      data.push(...rows)
+      /* A short page is the end of the set. A full one is not proof of more, but
+         asking again costs one round trip and guessing costs correctness. */
+      if (rows.length < SUB_RENTAL_PAGE) break
+      if (page === SUB_RENTAL_MAX_PAGES - 1) return null
+    }
   }
 
   /*

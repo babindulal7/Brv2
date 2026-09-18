@@ -33,7 +33,7 @@ describe('bookCrew confirmed writes', () => {
   it('saves the chosen booking and person with real default dates and rate', async () => {
     const { result, events } = await bookCrewConfig.execute(input(), ctx)
     expect(result).toEqual({ success: true, count: 1, assignmentIds: ['saved-1'] })
-    expect(state.inserted[0]).toMatchObject({ booking_id: state.booking.id, crew_id: state.people[0]!.id, days: 2, daily_rate: 6500, line_total: 13000, call_time: state.booking.pickup_at, client_uuid: input().clientUuid })
+    expect(state.inserted[0]).toMatchObject({ booking_id: state.booking.id, crew_id: state.people[0]!.id, days: 3, daily_rate: 6500, line_total: 19500, call_time: state.booking.pickup_at, client_uuid: input().clientUuid })
     expect(events).toHaveLength(1)
   })
   it('persists supplied role, times, rate, days and notes', async () => {

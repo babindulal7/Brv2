@@ -78,6 +78,13 @@ vi.mock('../../../lib/auth', () => ({
   }),
 }))
 
+/* BookingOperationsMenu (inside BookingDetail) calls useOperationsWorkspace —
+   mock the context so tests don't need a real provider (which renders OperationsShell). */
+vi.mock('../../operations/OperationsWorkspaceContext', () => ({
+  OperationsWorkspaceProvider: ({ children }: { children: unknown }) => children,
+  useOperationsWorkspace: () => ({ openOperations: vi.fn(), closeOperations: vi.fn() }),
+}))
+
 vi.mock('../../../lib/queries/bookings', () => {
   const row = (bookingNo: string) => ({
     id: bookingNo === 'B-715' ? BOOKING_UUID : OTHER_UUID,

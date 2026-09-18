@@ -14,6 +14,7 @@ import type { BrandKey } from '../../lib/status'
 import { BOOKING_STATUS, STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import BookingOperationsMenu from './BookingOperationsMenu'
+import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useAuth } from '../../lib/auth'
 import { newClientUuid } from '../../lib/supabase'
@@ -61,6 +62,7 @@ import { whatsappActionsFor } from '../../lib/whatsappActions'
 import { paymentReceipt } from '../../lib/whatsappTemplates'
 import { buildWaLink } from '../../lib/whatsapp'
 import { openWaLink } from '../../lib/whatsapp'
+import { WhatsAppShareButton } from '../../components/ui/WhatsAppShareButton'
 import { readSettings } from '../../lib/settingsStore'
 import { releaseBookingLineUnit } from '../../actions/rentals/releaseBookingLineUnit'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -975,15 +977,21 @@ function NotWiredNote({ children }: { children: React.ReactNode }) {
  * in its own right and this screen now carries the launcher, and `recordPayment`
  * settles by `invoices.id` because R-15 gives a Draft no number at all.
  */
+/**
+ * Law 16 — the edit affordance for Block 1 (Client & Schedule) is shown but
+ * unavailable because the booking-update write path does not exist yet. Showing
+ * a disabled button with this reason is better than removing the control: the
+ * operator can see editing IS a future possibility and knows WHY it is absent
+ * today. A missing button would read as "this screen is read-only by design."
+ */
+const BOOKING_EDIT_UNAVAILABLE =
+  'Inline edit was removed with the 21 Aug live conversion — it persisted ' +
+  'nothing and silently reverted on reload. A real booking-update action is ' +
+  'needed before this control can be re-wired.'
+
 const NO_INVOICE_PAYMENT_UNAVAILABLE =
   'No invoice has been raised for this booking yet, and a payment settles against an invoice. ' +
   'Use Create Invoice to raise the Draft first — it stays a Draft, so an advance can be taken against it.'
-const ITEM_EDIT_UNAVAILABLE =
-  'Adding, searching or filtering booking lines is not wired yet — booking_lines has no write path from this screen.'
-const TRANSPORT_EDIT_UNAVAILABLE =
-  'Transport details are read-only: booking_transport has no query or write path from this screen yet.'
-const ADD_DOCUMENT_UNAVAILABLE = 'Document uploads are not wired — document_registry has no write path from this screen.'
-const SEND_QUOTE_UNAVAILABLE = 'Quote sending is not wired yet — no action exists behind this button.'
 
 /**
  * What the Hover Intel card says under "Recorded by" (BD-19).
@@ -1057,6 +1065,7 @@ export default function BookingDetail() {
   const [showCreateInvoice, setShowCreateInvoice] = useState(false)
   const [showCancelModal, setShowCancelModal] = useState(false)
   const { showSuccessToast } = useToast()
+  const { openOperations } = useOperationsWorkspace()
   const viewport = useViewport()
 
   /*
@@ -1281,7 +1290,6 @@ export default function BookingDetail() {
    * column takes. "No invoice" is reserved for the case the app has actually
    * established; the other two say which question is open.
    */
-  const noInvoiceCell = invoicesKnown ? 'No invoice' : invoicesList.error !== null ? 'Not read' : 'Loading…'
 
   /* One booking can carry several invoices; the page's Rental Total / Paid /
      Outstanding are their sums — a MERGE of already-fetched rows, not a second
@@ -1745,6 +1753,21 @@ export default function BookingDetail() {
     },
   ]
 
+  const missingSerialsCount = lines
+    .filter((l) => l.lineType === 'Equipment')
+    .reduce((sum, l) => sum + Math.max(0, l.qty - l.units.length), 0)
+
+  const blockers: string[] = []
+  if (missingSerialsCount > 0 && stage !== 'Returned' && stage !== 'Closed' && !booking.isCancelled) {
+    blockers.push(`${missingSerialsCount} equipment item${missingSerialsCount === 1 ? '' : 's'} missing serial assignment`)
+  }
+  if (canBookingMoney && hasInvoice && totals.outstanding > 0) {
+    blockers.push(`Outstanding balance: ${money(totals.outstanding)}`)
+  }
+  if (canBookingMoney && booking.depositRequired && booking.depositRequired > 0 && stage !== 'Closed') {
+    blockers.push(`Security deposit required: ${formatMoney(booking.depositRequired)}`)
+  }
+
   const recordPaymentButton = (label: string) => {
     /* Three reasons, not one. `NO_INVOICE_PAYMENT_UNAVAILABLE` is a statement
        about this booking; while the read is in flight or after it failed the
@@ -1802,6 +1825,29 @@ export default function BookingDetail() {
 
   const railBody = (
     <>
+      {blockers.length > 0 && showSegment('Items') && (
+        <Card title={`Attention (${blockers.length})`}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
+            {blockers.map((b) => (
+              <div
+                key={b}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  fontSize: 'var(--t-meta)',
+                  color: 'var(--danger-text)',
+                  padding: '4px 0',
+                }}
+              >
+                <Icon name="alert_triangle" size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--danger)' }} />
+                <span>{b}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Same booking-money figures as the Facts strip and Block 4 — gated the
           same way, omitted rather than masked. On phone this card is the
           `Money` segment's rail content. */}
@@ -1889,16 +1935,6 @@ export default function BookingDetail() {
             }}
           />
 
-          <Card title="Alerts">
-            {/* The seed carried three invented alerts. There is no alerts
-                engine and no alerts table read — an empty card that SAYS why
-                beats three plausible fabrications (Law 16). */}
-            <NotWiredNote>
-              Alerts are not computed from live data yet — there is no alerts engine behind this booking. This is a
-              statement about the wiring, not a claim that nothing needs attention.
-            </NotWiredNote>
-          </Card>
-
           <Card title="Activity Timeline">
             {/* `booking_stage_transitions` holds the real history and has no
                 query module yet — stated rather than seeded. */}
@@ -1923,10 +1959,8 @@ export default function BookingDetail() {
         <span style={{ color: 'var(--text)', fontWeight: 600 }}>{booking.bookingNo}</span>
       </div>
       <PageHeader
-        title={booking.bookingNo}
-        description={`${booking.clientName}${booking.project ? ` · ${booking.project}` : ''}${
-          booking.pickupLocation ? ` · ${booking.pickupLocation}` : ''
-        }`}
+        title={booking.clientName ? `${booking.bookingNo} · ${booking.clientName}` : booking.bookingNo}
+        description={`${formatAdDateTime(booking.pickupAtAd)} → ${formatAdDateTime(booking.returnAtAd)}${booking.project ? ` · ${booking.project}` : ''}`}
         actions={
           <>
             {/* §8 step 2 — the stage block is <Badge>'s. This assembled it
@@ -1945,26 +1979,71 @@ export default function BookingDetail() {
             {/* §11.1 — computed from the QUERIED lines on every render; there
                 is no stored `bookings.is_sub_rental` and there must not be. */}
             {subRental && <SubRentedMark label="Sub-rental" />}
-            {stage === 'Returned' &&
-              canCloseRental(gctx.role) &&
+            {stage === 'Booked' &&
               (cancelledReason ? (
                 <Unavailable reason={cancelledReason}>
-                  <Button icon="check" variant="primary" disabled>
-                    Close Rental
+                  <Button icon="box" variant="primary" disabled>
+                    Start Packing
                   </Button>
                 </Unavailable>
               ) : (
-                <Button icon="check" variant="primary" onClick={closeBooking} disabled={closing}>
-                  {closing ? 'Closing…' : 'Close Rental'}
+                <Button icon="box" variant="primary" onClick={() => openOperations(booking.bookingNo, stage, 'Pack')}>
+                  Start Packing
                 </Button>
               ))}
-              {stage === 'Quote' && (
-              <>
-                <Unavailable reason={SEND_QUOTE_UNAVAILABLE}>
-                  <Button icon="arrow_right" variant="secondary" disabled>
-                    Send Quote
+            {stage === 'Packed' &&
+              (cancelledReason ? (
+                <Unavailable reason={cancelledReason}>
+                  <Button icon="truck" variant="primary" disabled>
+                    Handover
                   </Button>
                 </Unavailable>
+              ) : (
+                <Button icon="truck" variant="primary" onClick={() => openOperations(booking.bookingNo, stage, 'Handover')}>
+                  Handover
+                </Button>
+              ))}
+            {stage === 'On Rent' &&
+              (cancelledReason ? (
+                <Unavailable reason={cancelledReason}>
+                  <Button icon="return_arrow" variant="primary" disabled>
+                    Return & Inspect
+                  </Button>
+                </Unavailable>
+              ) : (
+                <Button icon="return_arrow" variant="primary" onClick={() => openOperations(booking.bookingNo, stage, 'Return')}>
+                  Return & Inspect
+                </Button>
+              ))}
+            {stage === 'Returned' && (
+              <>
+                {cancelledReason ? (
+                  <Unavailable reason={cancelledReason}>
+                    <Button icon="refresh" variant="secondary" disabled>
+                      Cleaning & Reset
+                    </Button>
+                  </Unavailable>
+                ) : (
+                  <Button icon="refresh" variant="secondary" onClick={() => openOperations(booking.bookingNo, stage, 'Reset')}>
+                    Cleaning & Reset
+                  </Button>
+                )}
+                {canCloseRental(gctx.role) &&
+                  (cancelledReason ? (
+                    <Unavailable reason={cancelledReason}>
+                      <Button icon="check" variant="primary" disabled>
+                        Close Rental
+                      </Button>
+                    </Unavailable>
+                  ) : (
+                    <Button icon="check" variant="primary" onClick={closeBooking} disabled={closing}>
+                      {closing ? 'Closing…' : 'Close Rental'}
+                    </Button>
+                  ))}
+              </>
+            )}
+            {stage === 'Quote' && (
+              <>
                 {/* `confirmRental` refuses a cancelled booking by name before it
                     writes anything, so a live Confirm here is a press that can
                     only end in the error banner below the header. */}
@@ -1985,8 +2064,38 @@ export default function BookingDetail() {
               bookingNo={id}
               bookingStatus={stage}
               unavailable={operationsUnavailable}
-              primary={!['Quote', 'Closed'].includes(stage)}
+              primary={false}
             />
+            <Button icon="file" variant="secondary" onClick={() => window.print()}>
+              Print booking
+            </Button>
+            {booking && (
+              <WhatsAppShareButton
+                clientPhone={clientPhone}
+                facts={{
+                  clientName: booking.clientName,
+                  bookingNo: booking.bookingNo,
+                  stage: (stage as import('../../lib/whatsappTemplates').WaStage) ?? 'Quote',
+                  startIso: booking.pickupAtAd,
+                  endIso: booking.returnAtAd,
+                  itemCount: booking.itemCount,
+                  topLines: (floor?.lines ?? [])
+                    .slice(0, 3)
+                    .map((l) => l.productName ?? l.description)
+                    .filter((x): x is string => Boolean(x)),
+                  isOverdue:
+                    booking.stage === 'On Rent' &&
+                    !booking.isClosed &&
+                    !booking.isCancelled &&
+                    booking.actualReturnAtAd === null &&
+                    new Date(booking.returnAtAd) < new Date(),
+                  total: canBookingMoney && hasInvoice ? (totals.total as Paisa) : null,
+                  advance: canBookingMoney && hasInvoice ? (totals.paid as Paisa) : null,
+                  deposit: canBookingMoney ? booking.depositRequired : null,
+                  balance: canBookingMoney && hasInvoice ? (totals.outstanding as Paisa) : null,
+                }}
+              />
+            )}
             {/* Two gates, both required: money visibility ("may this role see
                 this figure") AND capability ("may this role do this").
                 `canPerformOperations` remains the narrowest EXISTING rule —
@@ -2041,13 +2150,6 @@ export default function BookingDetail() {
                       },
                     ]
                   : []),
-                {
-                  label: 'Save draft',
-                  icon: 'file',
-                  onClick: () => undefined,
-                  unavailable:
-                    'Draft saving has no write path — booking edits from this screen are not persisted yet.',
-                },
                 {
                   label: 'Cancel booking',
                   icon: 'close',
@@ -2197,7 +2299,25 @@ export default function BookingDetail() {
                   real booking-update action exists. */}
               <SummaryRows
                 rows={[
-                  { label: 'Client', value: booking.clientName },
+                  {
+                    label: 'Client',
+                    value: booking.clientId ? (
+                      <Link to={`/clients/${booking.clientId}`} style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600 }}>
+                        {booking.clientName}
+                      </Link>
+                    ) : (
+                      booking.clientName
+                    ),
+                  },
+                  {
+                    label: 'Phone',
+                    value:
+                      contact.kind === 'ready' && contact.phone
+                        ? contact.phone
+                        : contact.kind === 'loading'
+                          ? 'Loading…'
+                          : 'Not recorded',
+                  },
                   { label: 'Project', value: booking.project ?? 'Not recorded' },
                   { label: 'Pickup Location', value: booking.pickupLocation ?? 'Not recorded' },
                   { label: 'Return Location', value: booking.returnLocation ?? 'Not recorded' },
@@ -2206,6 +2326,14 @@ export default function BookingDetail() {
                   { label: 'Rental Days', value: formatRentalDays(days, 'Not recorded') },
                 ]}
               />
+              {/* Law 16 — Edit exists but is Unavailable-with-reason. A missing
+                  button reads as "read-only by design"; a disabled one with a
+                  reason states the truth: the write path is not yet wired. */}
+              <div style={{ marginTop: 'var(--sp-sm)' }}>
+                <Unavailable reason={BOOKING_EDIT_UNAVAILABLE}>
+                  <Button disabled>Edit</Button>
+                </Unavailable>
+              </div>
               {/* BD-08 — inline and persistent, in the block this failure is
                   ABOUT (§12: errors inline, toasts for successes only). Without
                   it the only trace of a failed client read was a greyed row
@@ -2236,17 +2364,7 @@ export default function BookingDetail() {
           )}
 
           {showSegment('Items') && (
-            <Block
-              no="2"
-              title="Equipment, Bundles & Services"
-              action={
-                <Unavailable reason={ITEM_EDIT_UNAVAILABLE}>
-                  <Button icon="plus" variant="primary" disabled>
-                    Add Item
-                  </Button>
-                </Unavailable>
-              }
-            >
+            <Block no="2" title="Equipment, Bundles & Services">
               {/* §12 — a failed release is inline and persistent, above the
                   table whose chip refused to clear. Success is a toast. */}
               {releaseError && (
@@ -2489,16 +2607,7 @@ export default function BookingDetail() {
                 <BookingCrewList key={`${booking.id}:${user?.id}:${canCrewMoney}`} bookingId={booking.id} includeMoney={canCrewMoney} version={crewVersion} />
               </Block>
 
-              <Card
-                title="Transport & Delivery"
-                action={
-                  <Unavailable reason={TRANSPORT_EDIT_UNAVAILABLE}>
-                    <Button variant="ghost" icon="tool" disabled>
-                      Edit
-                    </Button>
-                  </Unavailable>
-                }
-              >
+              <Card title="Transport & Delivery">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                   <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', alignItems: 'flex-start' }}>
                     <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>Delivery Type</span>
@@ -2731,70 +2840,11 @@ export default function BookingDetail() {
           )}
 
           {showSegment('Docs') && (
-            <Block no="5" title="Documents & Review">
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1.2fr) minmax(0,1fr)' : '1fr',
-                  gap: 'var(--sp-md)',
-                }}
-              >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-                  {/* The five seeded document tiles belonged to no booking.
-                      `document_registry` / `booking_documents` have no query
-                      module yet. */}
-                  <NotWiredNote>
-                    This booking&apos;s documents live in document_registry, which has no query module yet — nothing
-                    is listed rather than five tiles that belong to no booking.
-                  </NotWiredNote>
-                  <span>
-                    <Unavailable reason={ADD_DOCUMENT_UNAVAILABLE}>
-                      <Button icon="plus" disabled>
-                        Add Document
-                      </Button>
-                    </Unavailable>
-                  </span>
-                </div>
-
-                <div>
-                  <h3 style={sub}>Review Summary</h3>
-                  {/* Derived from the same queried rows the blocks above
-                      render — a merge, not a second query. The Pricing row is
-                      dropped, not blanked, for a money-blind role (Law 6). */}
-                  {[
-                    { label: 'Client & Schedule', value: booking.clientName ? 'Completed' : 'Missing', ok: !!booking.clientName },
-                    {
-                      label: 'Equipment',
-                      value: floorLoading ? 'Loading…' : `${booking.itemCount} Item${booking.itemCount === 1 ? '' : 's'}`,
-                      ok: booking.itemCount > 0,
-                    },
-                    ...(canBookingMoney
-                      ? [
-                          {
-                            label: 'Pricing',
-                            value: hasInvoice ? money(totals.total) : noInvoiceCell,
-                            ok: hasInvoice,
-                          },
-                          {
-                            label: 'Payments',
-                            value: hasInvoice ? (totals.outstanding > 0 ? 'Attention' : 'Settled') : noInvoiceCell,
-                            ok: hasInvoice && totals.outstanding <= 0,
-                          },
-                        ]
-                      : []),
-                  ].map((r) => (
-                    <div key={r.label} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '5px 0', fontSize: 'var(--t-meta)', alignItems: 'center' }}>
-                      <Icon
-                        name={r.ok ? 'dot' : 'alert_triangle'}
-                        size={12}
-                        style={{ color: r.ok ? 'var(--success-text)' : 'var(--progress-text)', flexShrink: 0 }}
-                      />
-                      <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>{r.label}</span>
-                      <span style={{ color: r.ok ? 'var(--text)' : 'var(--progress-text)', fontWeight: 600 }}>{r.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <Block no="5" title="Documents">
+              <NotWiredNote>
+                This booking&apos;s documents live in document_registry, which has no query module yet — nothing is
+                listed rather than documents that belong to another booking.
+              </NotWiredNote>
             </Block>
           )}
         </div>

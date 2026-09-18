@@ -8,6 +8,8 @@ import { ContextDrawer } from '../../components/ui/ContextDrawer'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { ActiveFilterChips, FilterButton } from '../../components/ui/FilterDrawer'
 import { Unavailable } from '../../components/ui/Unavailable'
+import { SavedViewsMenu, type SavedListView } from '../../components/ui/SavedViewsMenu'
+import { RentalTimeline } from './RentalTimeline'
 import { supabase } from '../../lib/supabase'
 import { Badge } from '../../components/ui/Badge'
 import { STATUS, BRAND } from '../../lib/status'
@@ -57,6 +59,7 @@ import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { DateField } from '../../components/ui/DateField'
 import { LoadingSkeleton } from '../../components/ui/StateViews'
+import { listActiveDrafts, type RentalDraftRecord } from '../../actions/rentals/saveDraft'
 const NewRental = lazy(() => import('./NewRental'))
 import { CancelRentalModal } from './modals/CancelRentalModal'
 import { QuickActionBar, FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
@@ -66,7 +69,9 @@ import { BarcodeLookupModal } from './modals/BarcodeLookupModal'
 import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
 import { captureError } from '../../lib/monitoring'
 import { TouchTarget } from '../../components/ui/TouchTarget'
+import BookingOperationsMenu from './BookingOperationsMenu'
 import './rentals.css'
+import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 /**
  * ## No tabs, and no Productions — `04_RENTALS.md` line 3
  *
@@ -154,13 +159,52 @@ const EXTERNAL_LABEL = 'Sub-rented — external gear'
 const EXTERNAL_ICON: IconName = 'external_link'
 
 /** Stage chip icons, typed against the REGISTRY — see `ExternalGearMark` above. */
-const STAGE_ICON: Record<BookingStatus, IconName> = {
+const STAGE_ICON: Record<BookingStatus | 'Draft', IconName> = {
+  Draft: 'file',
   Quote: 'file',
   Booked: 'check',
   Packed: 'box',
   'On Rent': 'truck',
   Returned: 'return_arrow',
   Closed: 'lock',
+}
+
+function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
+  const data = d.data
+  const bookingNoDisplay = data.bookingNo ? `Draft #${data.bookingNo}` : `Draft ${d.id.slice(0, 8)}`
+  const clientName = data.selectedClientId || 'Draft Client'
+  const pickupDate = data.pickup || ''
+  const pickupTime = data.pickupTime || '09:00'
+  const returnDate = data.returnDate || ''
+  const returnTime = data.returnTime || '18:00'
+
+  return {
+    id: d.id,
+    bookingNo: bookingNoDisplay,
+    clientId: data.clientDbId ?? data.selectedClientId ?? '',
+    client: clientName,
+    monogram: (clientName.trim()[0] || 'D').toUpperCase(),
+    avatarTone: 'neutral',
+    project: data.project || 'Untitled Draft',
+    pickupLocation: data.pickupLocation || null,
+    returnLocation: data.returnLocation || null,
+    itemCount: data.lines?.reduce((sum, l) => sum + (l.qty || 1), 0) ?? 0,
+    createdOn: formatAd(new Date(d.updatedAt)),
+    status: 'Draft' as unknown as BookingStatus,
+    statusKey: 'neutral',
+    flags: [],
+    isCancelled: false,
+    isClosed: false,
+    isOverdue: false,
+    progress: 0,
+    progressTone: 'neutral',
+    pickup: { date: pickupDate, time: pickupTime },
+    ret: { date: returnDate, time: returnTime },
+    deliveryType: data.deliveryType === 'Babin Delivery' ? 'Babin Delivery' : 'Client Pickup',
+    quoteExpires: null,
+    deposit: null,
+    isExternal: false,
+  }
 }
 
 /**
@@ -383,6 +427,7 @@ function RowOperations({
   onCancel?: ((row: RentalListRow) => void) | undefined
   onInspect?: ((row: RentalListRow) => void) | undefined
 }) {
+  const { openOperations } = useOperationsWorkspace()
   const [open, setOpen] = useState(false)
   const [up, setUp] = useState(false)
   const ref = useDismiss(open, () => setOpen(false))
@@ -493,6 +538,12 @@ function RowOperations({
                 key={o.label}
                 to={`/rentals/${row.bookingNo}/${o.path}`}
                 role="menuitem"
+                onClick={(event) => {
+                  event.preventDefault()
+                  setOpen(false)
+                  const job = o.path === 'packing' ? 'Pack' : o.path === 'handover' ? 'Handover' : o.path === 'return' ? 'Return' : 'Reset'
+                  openOperations(row.bookingNo, row.status, job)
+                }}
                 style={style}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
@@ -702,7 +753,7 @@ export default function RentalsList() {
    * page can own this one directly and the two writers compose.
    */
   const [rawParams, setRawParams] = useSearchParams()
-  const isNew = rawParams.get('action') === 'new' || rawParams.get('tab') === 'new'
+  const isNew = rawParams.get('action') === 'new' || rawParams.get('tab') === 'new' || Boolean(rawParams.get('draft'))
   const perPage = useMemo(() => {
     const n = Number(rawParams.get('per'))
     return (ROWS_PER_PAGE as readonly number[]).includes(n) ? n : 20
@@ -738,7 +789,7 @@ export default function RentalsList() {
          dropped at the parser, so the badge, the chip row and the query all
          agree it is not a filter. Validating it only on the way to
          `rentalsQuery` would leave the first two counting it. */
-      allow: { stage: STATUS_ORDER, quick: Object.keys(CHIP_MEANS), sub: ['on'] },
+      allow: { stage: ['Draft', ...STATUS_ORDER], quick: Object.keys(CHIP_MEANS), sub: ['on'] },
     }),
     [perPage],
   )
@@ -763,6 +814,31 @@ export default function RentalsList() {
         },
         { replace: true },
       )
+    },
+    [setRawParams],
+  )
+
+  const savedViewQuery = useMemo(() => rawParams.toString(), [rawParams])
+  const savedViewStorageKey = `babin-rentals:saved-views:${user?.id ?? 'anonymous'}`
+  const applySavedView = useCallback(
+    (saved: SavedListView | null) => {
+      setRawParams(
+        (current) => {
+          const next = new URLSearchParams(saved?.query ?? '')
+          const per = current.get('per')
+          if (per) next.set('per', per)
+          next.sort()
+          return next
+        },
+        { replace: false },
+      )
+      const columns = new Set(
+        (saved?.hiddenColumns ?? []).filter((column): column is OptionalColumn =>
+          (OPTIONAL_COLUMNS as readonly string[]).includes(column),
+        ),
+      )
+      setHiddenCols(columns)
+      setSelectedIds(new Set())
     },
     [setRawParams],
   )
@@ -826,10 +902,20 @@ export default function RentalsList() {
      vocabulary filter below, and the one stage that matters most on this list
      could never be filtered (BUG_AUDIT_LIFECYCLE X-04, driven 2 Sep 2026). */
   const statusKey = (f.filters.chips?.stage ?? []).join('|')
-  const statuses = useMemo(
-    () => (statusKey ? statusKey.split('|').filter((s): s is BookingStatus => (STATUS_ORDER as readonly string[]).includes(s)) : []),
+  const stageChips = useMemo(
+    () =>
+      statusKey
+        ? statusKey
+            .split('|')
+            .filter((s): s is BookingStatus | 'Draft' => (STATUS_ORDER as readonly string[]).includes(s) || s === 'Draft')
+        : [],
     [statusKey],
   )
+  const statuses = useMemo(
+    () => stageChips.filter((s): s is BookingStatus => s !== 'Draft'),
+    [stageChips],
+  )
+  const isDraftSelected = useMemo(() => stageChips.includes('Draft'), [stageChips])
   const statusFilter = useMemo(() => new Set(statuses), [statuses])
 
   const from = f.filters.dateRange?.fromAd ?? ''
@@ -924,10 +1010,41 @@ export default function RentalsList() {
   const fetchRentals = useCallback(
     async (filters: ListFilters): Promise<ListQueryResult<RentalListRow>> => {
       if (query.impossible) return { rows: [], total: 0 }
-      const res = await listBookings({ ...filters, withCount: true, ...(money ? { withDeposit: true } : {}) })
-      /* The instant the rows ARRIVED, not one captured at import: `lateDays`
-         and the 'Late today' note are measured from it (X-06). */
-      return { rows: res.rows.map((r) => toRentalListRow(r, businessNowAd())), total: res.total ?? null }
+
+      const rawStages = (filters.chips?.stage ?? []) as string[]
+      const includesDraft = rawStages.includes('Draft')
+      const dbStages = rawStages.filter((s) => s !== 'Draft')
+      const onlyDraft = includesDraft && dbStages.length === 0
+      const shouldFetchDrafts = includesDraft || rawStages.length === 0
+
+      const dbFilters: ListFilters = {
+        ...filters,
+        ...(filters.chips?.stage ? { chips: { ...filters.chips, stage: dbStages } } : {}),
+      }
+
+      const [res, drafts] = await Promise.all([
+        onlyDraft ? Promise.resolve({ rows: [], total: 0 }) : listBookings({ ...dbFilters, withCount: true, ...(money ? { withDeposit: true } : {}) }),
+        shouldFetchDrafts ? listActiveDrafts().catch(() => []) : Promise.resolve([]),
+      ])
+
+      let filteredDrafts = drafts
+      if (filters.search) {
+        const q = filters.search.toLowerCase()
+        filteredDrafts = drafts.filter(
+          (d) =>
+            (d.data.bookingNo && d.data.bookingNo.toLowerCase().includes(q)) ||
+            (d.data.project && d.data.project.toLowerCase().includes(q)) ||
+            (d.data.selectedClientId && d.data.selectedClientId.toLowerCase().includes(q)),
+        )
+      }
+
+      const draftRows = filteredDrafts.map(draftToRentalListRow)
+      const bookingRows = res.rows.map((r) => toRentalListRow(r, businessNowAd()))
+
+      const combinedRows = [...draftRows, ...bookingRows]
+      const totalCount = (res.total ?? bookingRows.length) + draftRows.length
+
+      return { rows: combinedRows, total: totalCount }
     },
     [query.impossible, money],
   )
@@ -996,7 +1113,7 @@ export default function RentalsList() {
          */
         return subOn && subIds === null ? null : 0
       }
-      const res = await listBookings({ ...q.filters, withCount: true, page: { index: 0, size: 1 } })
+      const res = await listBookings({ ...q.filters, headOnly: true })
       return res.total ?? null
     },
     [chip, from, to, subOn, subIds],
@@ -1193,6 +1310,7 @@ export default function RentalsList() {
               const next = new URLSearchParams(prev)
               next.delete('action')
               next.delete('tab')
+              next.delete('draft')
               return next
             })
             refreshAll()
@@ -1205,6 +1323,14 @@ export default function RentalsList() {
   return (
     <PageShell className="rentals-v2">
       <PageHeader
+        leading={
+          <FilterButton
+            onClick={() => setFiltersOpen((open) => !open)}
+            activeCount={f.activeCount}
+            controls="rentals-filters"
+            expanded={filtersOpen}
+          />
+        }
         title="Rentals"
         description="Manage bookings and rental lifecycle."
         actions={
@@ -1337,6 +1463,19 @@ export default function RentalsList() {
             </button>
           )
         })}
+        <button
+          type="button"
+          onClick={() => f.toggleChip('stage', 'Draft')}
+          aria-pressed={isDraftSelected}
+          style={stageChipStyle(isDraftSelected)}
+        >
+          <Icon
+            name="file"
+            size={13}
+            style={{ color: isDraftSelected ? 'var(--nav-active-accent)' : STATUS[statusToken('Quote')].fg }}
+          />
+          Draft
+        </button>
       </div>
 
       <div
@@ -1482,7 +1621,6 @@ export default function RentalsList() {
           >
             {VIEWS.map((v) => {
               const on = view === v
-              const unbuilt = v === 'Timeline'
               const btnStyle = {
                 display: 'inline-flex' as const,
                 alignItems: 'center' as const,
@@ -1495,23 +1633,13 @@ export default function RentalsList() {
                 color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
                 fontSize: 'var(--t-meta)',
                 fontWeight: on ? 600 : 500,
-                cursor: unbuilt ? 'not-allowed' : 'pointer',
+                cursor: 'pointer',
                 fontFamily: 'inherit',
                 boxShadow: on ? 'var(--shadow-card)' : 'none',
               }
-              if (unbuilt) {
-                return (
-                  <Unavailable key={v} reason="Timeline view is not built yet — the render only specifies the Table view in detail.">
-                    <button type="button" disabled aria-pressed={on} style={btnStyle}>
-                      <Icon name="timer" size={14} />
-                      {v}
-                    </button>
-                  </Unavailable>
-                )
-              }
               return (
                 <button key={v} type="button" onClick={() => setView(v)} aria-pressed={on} style={btnStyle}>
-                  <Icon name={v === 'Table' ? 'checklist' : 'queues'} size={14} />
+                  <Icon name={v === 'Table' ? 'checklist' : v === 'Timeline' ? 'calendar' : 'queues'} size={14} />
                   {v}
                 </button>
               )
@@ -1580,56 +1708,43 @@ export default function RentalsList() {
       <div
         style={{
           display: 'grid',
-          /* One track at every width now. The rail used to take a column here
-             — `auto minmax(0,1fr)` on desktop, reflowing under the list below
-             1280 — and the drawer replaced both: it is `position: fixed`, so
-             there is no track to give it and no reflow rule to write. */
-          gridTemplateColumns: 'minmax(0,1fr)',
+          gridTemplateColumns: filtersOpen && viewport !== 'phone' ? 'minmax(240px, 320px) minmax(0,1fr)' : 'minmax(0,1fr)',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
       >
+        <BooqableRentalFilterDrawer
+          id="rentals-filters"
+          open={filtersOpen}
+          onClose={() => setFiltersOpen(false)}
+          resultCount={list.loading ? null : total}
+          activeCount={f.activeCount}
+          onClearAll={clearFilters}
+          statusFilter={statusFilter}
+          onToggleStatus={toggleStatus}
+          quickFilter={chip}
+          onSelectQuickFilter={pickChip}
+          dateRange={{ from, to }}
+          onChangeDateRange={(r) => setRange(r.from, r.to)}
+          subOn={subOn}
+          onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
+          money={money}
+          stageCounts={stageCounts}
+        />
         {view === 'Timeline' ? (
-          <div style={{ ...cardStyle, padding: 18, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            The <strong style={{ color: 'var(--text)' }}>{view}</strong> view is not built yet — the render only
-            specifies the Table view in detail.{' '}
-            <button
-              type="button"
-              onClick={() => setView('Table')}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--link)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                padding: 0,
-              }}
-            >
-              Back to Table
-            </button>
+          <div style={{ ...cardStyle, minWidth: 0, overflow: 'hidden' }}>
+            <RentalTimeline rows={rowsWithIntel.map(({ row }) => row)} />
           </div>
         ) : (
           <Card
             title={countedTitle}
             action={
-              <>
-                {/* Was a disabled "More Filters" whose reason read *"no filter
-                    drawer exists yet"*. One does now, and it holds the same
-                    facets the rail held — this is that button, enabled. */}
-                <FilterButton
-                  onClick={() => setFiltersOpen((o) => !o)}
-                  activeCount={f.activeCount}
-                  controls="rentals-filters"
-                  expanded={filtersOpen}
-                />
-                <Unavailable reason="Saved views are not built yet — nothing settles where a view is stored or who it is shared with.">
-                  <Button icon="flag" disabled>
-                    Save View
-                  </Button>
-                </Unavailable>
-              </>
+              <SavedViewsMenu
+                storageKey={savedViewStorageKey}
+                currentQuery={savedViewQuery}
+                currentHiddenColumns={[...hiddenCols]}
+                onApply={applySavedView}
+              />
             }
             bodyStyle={{ padding: 0 }}
           >
@@ -1679,7 +1794,7 @@ export default function RentalsList() {
                       : 'No booking has been created yet.'
               }
             >
-              {(view === 'Cards' || !tabular) && (
+              {((view === 'Cards' && tabular) || !tabular) && (
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   {rowsWithIntel.map(({ row: r, glance, detail }) => (
                     <div
@@ -1743,7 +1858,7 @@ export default function RentalsList() {
                           detailSubtitle={`${r.client} · ${r.status}`}
                         >
                           <Link
-                            to={`/rentals/${r.bookingNo}`}
+                            to={(r.status as string) === 'Draft' ? `/rentals?action=new&draft=${r.id}` : `/rentals/${r.bookingNo}`}
                             className="identifier"
                             style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--link)', textDecoration: 'none' }}
                           >
@@ -1778,7 +1893,7 @@ export default function RentalsList() {
                       {/* §7: "one primary button each" on a phone card row. */}
                       <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginTop: 2 }}>
                         <Link
-                          to={`/rentals/${r.bookingNo}`}
+                          to={(r.status as string) === 'Draft' ? `/rentals?action=new&draft=${r.id}` : `/rentals/${r.bookingNo}`}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -1796,7 +1911,7 @@ export default function RentalsList() {
                           }}
                         >
                           <Icon name="external_link" size={14} />
-                          Open Booking
+                          {(r.status as string) === 'Draft' ? 'Edit Draft' : 'Open Booking'}
                         </Link>
                         <span style={{ flexShrink: 0 }}>
                           <RowOperations row={r} onCancel={canWriteDesk ? setCancellingRental : undefined} onInspect={setInspectingRental} />
@@ -1908,7 +2023,7 @@ export default function RentalsList() {
                             >
                               {/* Booking Detail exists, so this is a real link. */}
                               <Link
-                                to={`/rentals/${r.bookingNo}`}
+                                to={(r.status as string) === 'Draft' ? `/rentals?action=new&draft=${r.id}` : `/rentals/${r.bookingNo}`}
                                 className="identifier"
                                 style={{
                                   fontSize: 'var(--t-meta)',
@@ -2206,9 +2321,12 @@ export default function RentalsList() {
         subtitle={inspectingRental ? `${inspectingRental.client}${inspectingRental.project ? ` · ${inspectingRental.project}` : ''}` : undefined}
         status={inspectingRental ? <Badge status={inspectingRental.status} size="sm" /> : undefined}
         actions={inspectingRental ? (
-          <Link to={`/rentals/${inspectingRental.bookingNo}`} className="ui-button ui-button--secondary" onClick={() => setInspectingRental(null)}>
-            Open rental
-          </Link>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <BookingOperationsMenu bookingNo={inspectingRental.bookingNo} bookingStatus={inspectingRental.status} unavailable={inspectingRental.isCancelled ? 'Cancelled rentals cannot run operations.' : null} />
+            <Link to={`/rentals/${inspectingRental.bookingNo}`} className="ui-button ui-button--secondary" onClick={() => setInspectingRental(null)}>
+              Open rental
+            </Link>
+          </div>
         ) : undefined}
       >
         {inspectingRental && (
@@ -2249,35 +2367,6 @@ export default function RentalsList() {
           }}
         />
       )}
-
-      {/*
-        The same card the rail held, in an overlay that costs no layout.
-
-        `resultCount` is not decoration: on phone the panel covers the list, and
-        on desktop it covers the left third of it, so the header count is what
-        makes live filtering legible while you cannot see the rows move.
-
-        Rulings §7 — "rails collapse below 1280" means reflow, not hide — is
-        satisfied differently now and better: there is no rail to collapse, and
-        the panel is reachable at every width from the same button.
-      */}
-      <BooqableRentalFilterDrawer
-        open={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        resultCount={list.loading ? null : total}
-        activeCount={f.activeCount}
-        onClearAll={clearFilters}
-        statusFilter={statusFilter}
-        onToggleStatus={toggleStatus}
-        quickFilter={chip}
-        onSelectQuickFilter={pickChip}
-        dateRange={{ from, to }}
-        onChangeDateRange={(r) => setRange(r.from, r.to)}
-        subOn={subOn}
-        onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
-        money={money}
-        stageCounts={stageCounts}
-      />
 
       <FloatingBulkActionBar
         selectedCount={selectedIds.size}

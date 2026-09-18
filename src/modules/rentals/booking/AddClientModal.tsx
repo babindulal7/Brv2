@@ -789,7 +789,7 @@ export function AddClientModal({
           zIndex: 1,
           width: '100%',
           maxWidth: 580,
-          maxHeight: '88vh',
+          maxHeight: '85dvh',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--card)',

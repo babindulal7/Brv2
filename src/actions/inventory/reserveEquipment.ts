@@ -3,6 +3,7 @@ import { EVENT_TYPES } from '../../events/eventBus';
 import { supabase } from '../../lib/supabase';
 import { idempotentInsert, generateClientUuid } from '../../lib/dataAccess';
 import { applyBookingTransition } from '../../lib/bookingTransition';
+import type { BookingStatus } from '../../lib/workflow';
 
 export type ReserveEquipmentInput = {
   /** Target booking ID (UUID or booking_no), booking line ID, or product unit ID */
@@ -73,7 +74,7 @@ export const reserveEquipmentConfig: ActionConfig<ReserveEquipmentInput, Reserve
           await applyBookingTransition({
             bookingId: booking.id,
             branchId: booking.branch_id,
-            from: booking.stage as any,
+            from: booking.stage as BookingStatus,
             to: 'Booked',
             actorId: ctx.userId,
             actorRole: ctx.role,

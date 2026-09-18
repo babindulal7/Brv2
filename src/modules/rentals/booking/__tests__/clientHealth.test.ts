@@ -178,3 +178,28 @@ describe('clientHealth — the gate still works when the figure is real', () => 
     expect(verdict.reasons).toEqual([])
   })
 })
+
+describe('clientHealth — blocked and overdue status (AUD-026)', () => {
+  it('marks blocked client as attention required with on-stop reason', () => {
+    const blockedClient = {
+      ...client(),
+      isBlocked: true,
+      blockReason: 'Non-payment of past invoice',
+    }
+    const verdict = clientHealth(blockedClient)
+    expect(verdict.level).toBe('attention')
+    expect(verdict.reasons.map((r) => r.code)).toContain('on-stop')
+    expect(verdict.reasons.find((r) => r.code === 'on-stop')?.text).toContain('Non-payment of past invoice')
+  })
+
+  it('marks client with significant outstanding balance as attention required', () => {
+    const overdueClient = {
+      ...client(),
+      outstandingPaisa: rupees(60_000), // > significantOutstandingPaisa (50,000)
+    }
+    const verdict = clientHealth(overdueClient)
+    expect(verdict.level).toBe('attention')
+    expect(verdict.reasons.map((r) => r.code)).toContain('outstanding-significant')
+  })
+})
+

@@ -119,6 +119,7 @@ export interface CreateRentalLine {
   discountAmount?: number
   isIncluded?: boolean
   parentLineId?: string | null
+  parentClientUuid?: string | null
   supplierId?: string | null
   supplierCost?: number | null
   markupAmount?: number | null
@@ -236,6 +237,8 @@ export const CREW_ROLES = [
 export type CreateRentalInput = {
   /** **Law 8.** Minted where the operator pressed the button; reused on retry. */
   clientUuid?: string
+  /** Pre-allocated booking number from draft; reuses the exact number if confirming a draft. */
+  bookingNo?: string
   /** `clients.id` — a **uuid**, not a `C-` code. See the note in `validate`. */
   clientId: string
   branchId: string
@@ -476,6 +479,7 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
        function's argument, not a TypeScript value that happens to be nearby. */
     const payload = {
       client_uuid: clientUuid,
+      ...(input.bookingNo ? { booking_no: input.bookingNo } : {}),
       created_by: ctx.userId,
       branch_id: input.branchId,
       client_id: input.clientId,
@@ -494,6 +498,7 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
         client_uuid: line.clientUuid ?? newClientUuid(),
         line_type: line.lineType,
         parent_line_id: line.parentLineId ?? null,
+        parent_client_uuid: line.parentClientUuid ?? null,
         product_id: line.productId ?? null,
         bundle_id: line.bundleId ?? null,
         description: line.description ?? null,

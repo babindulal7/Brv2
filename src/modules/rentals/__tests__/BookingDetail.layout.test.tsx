@@ -36,6 +36,13 @@ vi.mock('../../../lib/auth', () => ({
   }),
 }))
 
+/* BookingOperationsMenu (rendered inside BookingDetail) calls useOperationsWorkspace.
+   Mock the context so tests don't need a real provider (which renders OperationsShell). */
+vi.mock('../../operations/OperationsWorkspaceContext', () => ({
+  OperationsWorkspaceProvider: ({ children }: { children: unknown }) => children,
+  useOperationsWorkspace: () => ({ openOperations: vi.fn(), closeOperations: vi.fn() }),
+}))
+
 /*
  * The query seam. Every figure below is what the DATABASE would answer —
  * paisa at the module boundary, exactly the row shapes the real modules
@@ -299,7 +306,7 @@ describe('§4.2 — the phone segmented control', () => {
     expect(container.querySelector('[role="tablist"]')).toBeNull()
     expect(text()).toContain('Client & Schedule')
     expect(text()).toContain('Pricing & Payments')
-    expect(text()).toContain('Documents & Review')
+    expect(text()).toContain('Documents')
   })
 
   it('offers [Items][Money][Docs] on phone, showing one at a time', async () => {
@@ -311,7 +318,7 @@ describe('§4.2 — the phone segmented control', () => {
     // Items is the opening segment — witnessed by Block 2's heading, which
     // appears in no other segment.
     expect(text()).toContain('Equipment, Bundles & Services')
-    expect(text()).not.toContain('Documents & Review')
+    expect(text()).not.toContain('This booking\'s documents live')
   })
 
   it('switches the page when a segment is picked', async () => {
@@ -320,7 +327,7 @@ describe('§4.2 — the phone segmented control', () => {
     await act(async () => {
       docs?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(text()).toContain('Documents & Review')
+    expect(text()).toContain('This booking\'s documents live')
     expect(text()).not.toContain('Equipment, Bundles & Services')
   })
 })
@@ -397,10 +404,9 @@ describe('Law 5 — the deposit is a liability and says so where it could be mis
   })
 })
 
-describe('Law 16 — surfaces with no read behind them say so instead of inventing rows', () => {
-  it('states the alerts and timeline gaps in place of the retired seed arrays', async () => {
+describe('Law 16 — unwired surfaces do not invent booking data', () => {
+  it('keeps only the activity gap and never invents an alert', async () => {
     await mount(1280)
-    expect(text()).toContain('no alerts engine')
     expect(text()).toContain('booking_stage_transitions')
     // And none of the seed's invented content survives.
     expect(text()).not.toContain('only 2 left this week')
@@ -408,7 +414,7 @@ describe('Law 16 — surfaces with no read behind them say so instead of inventi
   })
 })
 
-describe('§4.2 header — [Operations ▾] and [⋮], with nothing deleted to get there', () => {
+describe('§4.2 header — [Operations ▾] and [⋮], with dead controls removed', () => {
   it('keeps Operations as its own control', async () => {
     await mount(1280)
     expect(button('Operations')).toBeDefined()
@@ -424,35 +430,18 @@ describe('§4.2 header — [Operations ▾] and [⋮], with nothing deleted to g
       more?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const items = [...container.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent?.trim())
-    /* The ruling this asserts is that NOTHING was dropped to make room for the
-       header's two controls, so the four operational entries are checked for
-       presence and order. It was an exact-equality check until 1 Sep 2026, when
-       WHATSAPP_LINKS_SPEC v1.0 §3 added "Message client"; equality was relaxed
-       rather than the new entry hidden, because the four verbs are what this
-       test was written to protect and all four are still here. The length
-       assertion is the replacement guard: the menu stays FIVE rows however many
-       messages a stage offers, which is the whole point of the submenu. */
+    /* All remaining rows lead to a real action. The former Save draft entry
+       had no persistence path and was removed rather than masquerading as a
+       disabled action. */
     expect(items.filter((i) => i !== 'Message client')).toEqual([
       'Extend rental',
       'Assign crew',
       'Create sub-rental',
-      'Save draft',
       'Cancel booking',
     ])
     expect(items).toContain('Message client')
-    expect(items).toHaveLength(6)
-  })
-
-  it('renders Save draft disabled with its reason, rather than as a control that does nothing', async () => {
-    await mount(1280)
-    const more = allButtons().find((b) => b.getAttribute('aria-label') === 'More booking actions')
-    await act(async () => {
-      more?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    const save = [...container.querySelectorAll('[role="menuitem"]')].find(
-      (i) => i.textContent?.trim() === 'Save draft',
-    ) as HTMLButtonElement | undefined
-    expect(save?.disabled).toBe(true)
+    expect(items).toHaveLength(5)
+    expect(items).not.toContain('Save draft')
   })
 })
 
@@ -471,7 +460,7 @@ describe('§4.2 header — [Operations ▾] and [⋮], with nothing deleted to g
  * cannot catch a value that arrives from the database.
  */
 describe('Law 17 — a stored delivery type never reaches the DOM raw', () => {
-  it('renders "Client Pickup" for the stored "Customer Pickup"', async () => {
+  it('renders "Client Pickup" for the stored delivery type', async () => {
     await mount(1440)
     expect(text()).toContain('Client Pickup')
   })

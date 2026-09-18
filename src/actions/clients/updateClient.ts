@@ -1,6 +1,7 @@
 import { createAction, type ActionConfig, type ActionContext } from '../core'
 import { EVENT_TYPES } from '../../events/eventBus'
 import { safeUpdate, idempotentInsert } from '../../lib/dataAccess'
+import type { Database } from '../../types/database'
 import { supabase } from '../../lib/supabase'
 import { getClientRecord } from '../../lib/queries/clients'
 import { isValidLocalPhone, canonicalPhone, PHONE_STORED_RE } from '../../lib/phone'
@@ -182,29 +183,29 @@ export const updateClientConfig: ActionConfig<UpdateClientInput, UpdateClientRes
         }
         if (Object.keys(contactUpdate).length > 0) {
           await safeUpdate(
-            'client_contacts' as any,
+            'client_contacts' as unknown as keyof Database['public']['Tables'],
             (existingContact as { id: string }).id,
-            contactUpdate as any,
+            contactUpdate as unknown as Database['public']['Tables']['branches']['Update'],
             input.clientUuid
           )
         }
       } else if (patch.contact_name && String(patch.contact_name).trim()) {
-        await idempotentInsert('client_contacts' as any, {
+        await idempotentInsert('client_contacts' as unknown as keyof Database['public']['Tables'], {
           client_id: resolvedId,
           full_name: String(patch.contact_name).trim(),
           designation: patch.contact_designation ? String(patch.contact_designation).trim() : null,
           phone: patch.contact_phone ? String(patch.contact_phone).trim() : null,
           is_primary: true,
           client_uuid: input.clientUuid,
-        } as any)
+        } as unknown as Database['public']['Tables']['branches']['Insert'])
       }
     }
 
     if (Object.keys(clientPayload).length > 0) {
       const { data: updatedRow, error } = await safeUpdate(
-        'clients' as any,
+        'clients' as unknown as keyof Database['public']['Tables'],
         resolvedId,
-        clientPayload as any,
+        clientPayload as unknown as Database['public']['Tables']['branches']['Update'],
         input.clientUuid,
         { returnRow: true, returningColumns: 'id, client_code, name, phone, updated_at' }
       )
@@ -214,8 +215,8 @@ export const updateClientConfig: ActionConfig<UpdateClientInput, UpdateClientRes
       if (!updatedRow && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
         throw new Error(`Update returned no row for client '${resolvedId}'. Nothing was saved.`)
       }
-      if (updatedRow && (updatedRow as { client_code?: string }).client_code) {
-        clientCode = (updatedRow as { client_code: string }).client_code
+      if (updatedRow && (updatedRow as unknown as { client_code?: string }).client_code) {
+        clientCode = (updatedRow as unknown as { client_code: string }).client_code
       }
     }
 

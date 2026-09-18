@@ -124,6 +124,12 @@ describe('the RPC call itself', () => {
     expect(p['created_by']).toBe(OWNER.userId)
   })
 
+  it('forwards pre-allocated booking_no when provided (e.g. from draft confirmation)', async () => {
+    await run({ bookingNo: '1052' })
+    const p = (rpc.state.calls[0]?.args as { p_payload: Record<string, unknown> }).p_payload
+    expect(p['booking_no']).toBe('1052')
+  })
+
   it('sends days and qty per line, unaltered — no pricing happens here', async () => {
     await run()
     const p = (rpc.state.calls[0]?.args as { p_payload: { lines: Array<Record<string, unknown>> } }).p_payload

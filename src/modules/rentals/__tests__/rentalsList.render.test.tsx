@@ -117,6 +117,13 @@ vi.mock('../../../lib/auth', () => ({
   }),
 }))
 
+/* RentalsList.RowOperations calls useOperationsWorkspace — mock the context so
+   tests don't need a real provider (which would render OperationsShell). */
+vi.mock('../../operations/OperationsWorkspaceContext', () => ({
+  OperationsWorkspaceProvider: ({ children }: { children: unknown }) => children,
+  useOperationsWorkspace: () => ({ openOperations: vi.fn(), closeOperations: vi.fn() }),
+}))
+
 window.matchMedia = ((q: string) => ({
   matches: false,
   media: q,
@@ -351,13 +358,11 @@ describe('§18 — this screen’s filters are the query string', () => {
 })
 
 describe('the three layouts, from one width reading (Law 14)', () => {
-  it('desktop ≥1280 — table, and the filter panel costs the table no width', async () => {
+  it('desktop ≥1280 — the collapsed panel costs no width and expands as an in-flow rail', async () => {
     await mount(1280)
     expect(container.querySelector('table')).not.toBeNull()
 
-    // The rail this replaced took a grid column even collapsed — a 32px track
-    // content could not reflow into. The drawer is `position: fixed`, so the
-    // grid is one track at every width and the table gets all of it.
+    // Closed means the rail is absent and the table gets the full track.
     const grid = [...container.querySelectorAll<HTMLDivElement>('div')].find(
       (d) => d.style.display === 'grid' && d.style.gridTemplateColumns !== '',
     )
@@ -366,6 +371,14 @@ describe('the three layouts, from one width reading (Law 14)', () => {
     // Closed by default, and nothing of the panel is in the tree until asked for.
     expect(filterButton()?.getAttribute('aria-expanded')).toBe('false')
     expect(text()).not.toContain('Save as new filter')
+
+    await act(async () => filterButton()!.click())
+    const rail = container.querySelector<HTMLElement>('.filter-rail')
+    expect(rail?.style.position).toBe('sticky')
+    expect(rail?.querySelector('[role="region"]')).not.toBeNull()
+    expect(
+      [...container.querySelectorAll<HTMLElement>('div')].some((d) => d.style.gridTemplateColumns.includes('240px')),
+    ).toBe(true)
   })
 
   it('tablet 768–1279 — fewer columns, and the filter panel is reachable at this width too', async () => {
@@ -551,7 +564,6 @@ describe('§Step 10 & 11 — Sub-Rental refresh and retry', () => {
     expect(liveSubBtn?.disabled).toBe(false)
   })
 })
-
 
 
 

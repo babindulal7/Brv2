@@ -74,6 +74,14 @@ import type { IconName } from '../../../components/ui/Icon'
  */
 export interface BookingLineDraft {
   id: string
+  clientUuid?: string
+  parentClientUuid?: string | null
+  lineType?: 'Equipment' | 'Bundle' | 'Accessory' | 'Service' | 'Sub-rental' | 'Manual item'
+  isIncluded?: boolean
+  productId?: string | null
+  bundleId?: string | null
+  bundleCode?: string
+  bundleName?: string
   name: string
   serial: string
   category: string
@@ -83,23 +91,6 @@ export interface BookingLineDraft {
   qty: number
   discountPct: number
   location: string
-  /**
-   * The **physical unit's own** `inventory_state`, where the draft came from a
-   * row that is a physical unit.
-   *
-   * ⚠ Optional since NR-09, and the absence is the point. A live catalogue row
-   * is a PRODUCT (`products.id`), not a unit, and `products` carries no
-   * `inventory_state` column — so a live-sourced draft has no unit status and
-   * says so by omitting one, rather than stamping `'In Stock'` / `'On Rent'`
-   * from a count of where the product's units happen to be at this instant.
-   * That fabricated value is what `NewRental.tsx` used to raise a Critical
-   * from; availability for the booking's window is now answered by
-   * `lib/queries/productAvailability.ts` instead.
-   *
-   * Present on: seed catalogue rows (a serialised unit, or a pooled SKU
-   * carrying its own breakdown status) and bundle component drafts, whose
-   * status comes from `BundleLine.blockedBy`.
-   */
   status?: InvStatus
   committedTo: string
 }
@@ -1131,10 +1122,41 @@ export function addBundleToBooking(
   const availability = bundleAvailability(b, facts, w)
   const existing = o.existingLineIds ?? new Set<string>()
   const days = Math.max(1, Math.round(o.days) || 1)
-  const discountPct = o.applyBundleSaving && facts.savingPct > 0 ? facts.savingPct : 0
-
+  const discountPct = 0
   const lines: BookingLineDraft[] = []
   const skipped: Array<{ model: string; reason: string }> = []
+
+  const mintDraftUuid = (): string => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0
+      return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+    })
+  }
+
+  const parentKey = mintDraftUuid()
+  if (!existing.has(b.id)) {
+    lines.push({
+      id: b.id,
+      clientUuid: parentKey,
+      lineType: 'Bundle',
+      bundleId: b.id,
+      bundleCode: b.id,
+      bundleName: b.name,
+      name: b.name,
+      serial: '—',
+      category: b.category,
+      ratePaisa: b.bundleRatePaisa,
+      days,
+      qty: 1,
+      discountPct: 0,
+      location: '—',
+      status: 'In Stock',
+      committedTo: b.booking ? `${b.booking.id} · ${b.booking.client}` : '—',
+    })
+  }
 
   for (const l of b.lines) {
     const priced = isPriced(l)
@@ -1158,14 +1180,20 @@ export function addBundleToBooking(
 
     lines.push({
       id,
+      clientUuid: mintDraftUuid(),
+      parentClientUuid: parentKey,
+      lineType: 'Equipment',
+      isIncluded: true,
+      bundleCode: b.id,
+      bundleName: b.name,
       name: l.model,
       // A bundle stores models, never serials (bundle seed §10) — packing assigns the unit.
       serial: '—',
       category: l.group,
-      ratePaisa: l.unitRatePaisa,
+      ratePaisa: 0 as Paisa, // Included in parent bundle rate — avoids double charging!
       days,
       qty: l.quantity,
-      discountPct,
+      discountPct: 0,
       // No bundle line carries a location; an em-dash is the honest value.
       location: '—',
       status,
@@ -1175,9 +1203,9 @@ export function addBundleToBooking(
 
   const notes: string[] = []
   notes.push(
-    `${lines.length} component line${lines.length === 1 ? '' : 's'} from ${b.name} (${b.id}), ${days} day${
-      days === 1 ? '' : 's'
-    } each.`,
+    `Bundle ${b.name} (${b.id}) added: bundle billed at daily rate; ${b.lines.length} component line${
+      b.lines.length === 1 ? '' : 's'
+    } included at Rs 0 to reserve inventory without double charging (${days} day${days === 1 ? '' : 's'}).`,
   )
   if (!o.includeCrewAndVehicle && (facts.crew > 0 || facts.vehicle > 0)) {
     notes.push(
