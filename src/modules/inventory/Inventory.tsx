@@ -3,8 +3,9 @@ import type { ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Select } from '../../components/ui'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { Kpi } from '../../components/ui/Page'
@@ -102,19 +103,7 @@ const tdFor = (d: Density) => ({
   verticalAlign: 'top' as const,
 })
 
-/* Law 15 — hit area, not paint; `--tap` carries the number. Two consumers,
-   both Selects (sort, rows per page) in flex rows that wrap. */
-const selectStyle = {
-  minHeight: 'var(--tap)',
-  padding: '0 8px',
-  borderRadius: 'var(--r-input)',
-  border: '1px solid var(--input-border)',
-  background: 'var(--input-bg)',
-  color: 'var(--text)',
-  fontSize: 'var(--t-meta)',
-  fontFamily: 'inherit',
-  cursor: 'pointer',
-}
+
 
 /* ── the filter set ────────────────────────────────────────────────────────
  *
@@ -634,12 +623,23 @@ function ParentRowView({
             <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <Thumb category={category} />
               <span style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                <span style={{ fontWeight: 600 }}>{row.name}</span>
+                <Link
+                  to={`/inventory/${encodeURIComponent(row.assetCode)}`}
+                  style={{ fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--link)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}
+                >
+                  {row.name}
+                </Link>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <CategoryChip category={category} />
-                  <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                  <Link
+                    to={`/inventory/${encodeURIComponent(row.assetCode)}`}
+                    className="identifier"
+                    style={{ fontSize: 'var(--t-th)', color: 'var(--link)', textDecoration: 'none' }}
+                  >
                     {row.assetCode}
-                  </span>
+                  </Link>
                   {!serialised && (
                     <span
                       style={{
@@ -793,12 +793,21 @@ function ParentCardView({
         <Thumb category={category} />
         <IntelCard glance={glance} detail={detail} detailTitle={row.name} detailSubtitle={category}>
           <span style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', minWidth: 0 }}>
-            <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{row.name}</span>
+            <Link
+              to={`/inventory/${encodeURIComponent(row.assetCode)}`}
+              style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', textDecoration: 'none' }}
+            >
+              {row.name}
+            </Link>
             <span style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
               <CategoryChip category={category} />
-              <span className="identifier" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+              <Link
+                to={`/inventory/${encodeURIComponent(row.assetCode)}`}
+                className="identifier"
+                style={{ fontSize: 'var(--t-th)', color: 'var(--link)', textDecoration: 'none' }}
+              >
                 {row.assetCode}
-              </span>
+              </Link>
               {!serialised && (
                 <span
                   style={{
@@ -1515,6 +1524,7 @@ export default function Inventory() {
   const lastOnPage = firstOnPage + list.rows.length - 1
   /** Units on THIS PAGE. Never presented as a fleet total — see the KPI note. */
   const unitsOnPage = list.rows.reduce((a, r) => a + r.unitCount, 0)
+  const countedTitle = total === null ? 'Equipment' : `${grouped(total)} ${total === 1 ? 'Model' : 'Models'} found`
 
   /*
    * §7.1 draws the action cluster in the PAGE header (`[＋ Add Equipment]
@@ -1568,24 +1578,27 @@ export default function Inventory() {
     ) : null
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <PageHeader
-        {...(!isNew && tab === 'Equipment'
-          ? {
-              leading: (
-                <FilterButton
-                  onClick={() => setFiltersOpen(!filtersOpen)}
-                  activeCount={activeFacetCount}
-                  controls="inventory-filters"
-                  expanded={filtersOpen}
-                />
-              ),
-            }
-          : { icon: 'box' as const })}
-        title="Inventory"
-        description="The master equipment database — every physical asset owned, sub-rented, repaired or transferred."
-        {...(equipmentActions ? { actions: equipmentActions } : {})}
-      />
+    <PageShell
+      width="full"
+      header={
+        <PageHeader
+          {...(!isNew && tab === 'Equipment'
+            ? {
+                leading: (
+                  <FilterButton
+                    onClick={() => setFiltersOpen(!filtersOpen)}
+                    activeCount={activeFacetCount}
+                    controls="inventory-filters"
+                    expanded={filtersOpen}
+                  />
+                ),
+              }
+            : { icon: 'box' as const })}
+          title="Inventory"
+          {...(equipmentActions ? { actions: equipmentActions } : {})}
+        />
+      }
+    >
 
       {/*
         §7 closing note — **"Tabs scroll horizontally rather than wrapping at any
@@ -1598,84 +1611,25 @@ export default function Inventory() {
         see `data/inventory.ts`'s `TABS` note and the header of
         `Warehouses.tsx` / `PurchaseRequests.tsx`.
       */}
-      <div
-        role="tablist"
-        aria-label="Inventory sections"
-        style={{
-          display: 'flex',
-          gap: 'var(--sp-xs)',
-          alignItems: 'center',
-          borderBottom: '1px solid var(--border)',
-          flexWrap: 'nowrap',
-          overflowX: 'auto',
-          overflowY: 'hidden',
-          WebkitOverflowScrolling: 'touch',
-          scrollbarWidth: 'thin',
-        }}
-      >
-        {TABS.map((t) => {
-          const on = !isNew && tab === t
-          return (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              onClick={() => {
-                if (isNew) {
-                  const p = new URLSearchParams(params)
-                  p.delete('tab')
-                  setParams(p, { replace: true })
-                }
-                setTab(t)
-              }}
-              aria-selected={on}
-              aria-current={on ? 'page' : undefined}
-              style={{
-                flexShrink: 0,
-                /* Law 15 — 44×44 at every width, desktop included. */
-                minHeight: 44,
-                padding: '0 13px',
-                border: 'none',
-                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                background: 'transparent',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 700 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
-                marginBottom: -1,
-              }}
-            >
-              {t}
-            </button>
-          )
-        })}
-        {isNew && (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={true}
-            aria-current="page"
-            style={{
-              flexShrink: 0,
-              minHeight: 44,
-              padding: '0 13px',
-              border: 'none',
-              borderBottom: '2px solid var(--nav-active-accent)',
-              background: 'transparent',
-              color: 'var(--nav-active-accent)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 700,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              whiteSpace: 'nowrap',
-              marginBottom: -1,
-            }}
-          >
-            Add Equipment
-          </button>
-        )}
+      <div style={{ overflowX: 'auto', paddingBottom: 2, maxWidth: '100%' }}>
+        <SegmentedControl
+          ariaLabel="Inventory sections"
+          options={[
+            ...TABS.map((t) => ({ id: t, label: t })),
+            ...(isNew ? [{ id: 'new', label: 'Add Equipment' }] : []),
+          ]}
+          value={isNew ? 'new' : tab}
+          onChange={(selectedId) => {
+            if (isNew && selectedId !== 'new') {
+              const p = new URLSearchParams(params)
+              p.delete('tab')
+              setParams(p, { replace: true })
+            }
+            if (selectedId !== 'new') {
+              setTab(selectedId as InventoryTab)
+            }
+          }}
+        />
       </div>
 
       {isNew ? (
@@ -1892,77 +1846,38 @@ export default function Inventory() {
               />
             </FilterDrawer>
 
-            <Card bodyStyle={{ padding: 0 }}>
-              {/* toolbar */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--sp-sm)',
-                  padding: '10px 12px',
-                  borderBottom: '1px solid var(--border)',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  {selected.size > 0 ? `${selected.size} selected` : total === null ? 'Models' : `${grouped(total)} models`}
-                </span>
-                {selected.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelected(new Set())}
-                    style={{
-                      border: 'none',
-                      background: 'transparent',
-                      color: 'var(--link)',
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 600,
-                      fontFamily: 'inherit',
-                      cursor: 'pointer',
-                      padding: 0,
-                    }}
-                  >
-                    Clear selection
-                  </button>
-                )}
-
-                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                  {selected.size > 0 ? (
-                    <Button
-                      icon="download"
-                      onClick={() => {
-                        const selRows = list.rows.filter((r) => selected.has(r.id))
-                        exportCsv(selRows, money)
-                      }}
-                      aria-label={`Export ${selected.size} selected items`}
-                    >
-                      Export ({selected.size})
-                    </Button>
-                  ) : (
-                    <Unavailable reason="§4.1 — status is written by the Status Engine, never by hand, so no bulk action is offered. Select items using the checkboxes to export or stock check.">
-                      <Button icon="chevron_down" disabled>
-                        Bulk Actions
-                      </Button>
-                    </Unavailable>
-                  )}
-
-                  <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                    Sort by
-                    <Select
+            <Card
+              title={countedTitle}
+              action={
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+                  {/* Sort dropdown */}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                    <Icon name="chevron_down" size={13} style={{ color: 'var(--muted)' }} />
+                    <span style={{ fontWeight: 500 }}>Sort:</span>
+                    <select
                       value={sort}
                       onChange={(e) => {
                         setSort(e.target.value as SortKey)
                         setPage(1)
                       }}
-                      style={selectStyle}
                       aria-label="Sort equipment"
+                      style={{
+                        height: 32,
+                        padding: '0 26px 0 10px',
+                        borderRadius: 'var(--r-sm)',
+                        border: '1px solid var(--border)',
+                        background: 'var(--card)',
+                        color: 'var(--text)',
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 500,
+                        fontFamily: 'inherit',
+                        cursor: 'pointer',
+                        appearance: 'none',
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 8px center',
+                      }}
                     >
-                      {/*
-                        Two of the five have no column to order by, so they are
-                        DISABLED with the reason rather than quietly reordering
-                        the twenty-five rows in hand and calling it the
-                        catalogue. See `SORT_UNAVAILABLE`.
-                      */}
                       {SORTS.map((s) => {
                         const blocked = SORT_UNAVAILABLE[s]
                         return (
@@ -1971,9 +1886,10 @@ export default function Inventory() {
                           </option>
                         )
                       })}
-                    </Select>
-                  </label>
+                    </select>
+                  </div>
 
+                  {/* Density toggle */}
                   <button
                     type="button"
                     onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
@@ -1982,9 +1898,9 @@ export default function Inventory() {
                     style={{
                       width: 32,
                       height: 32,
-                      borderRadius: 'var(--r-input)',
-                      border: '1px solid var(--input-border)',
-                      background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--input-bg)',
+                      borderRadius: 'var(--r-sm)',
+                      border: '1px solid var(--border)',
+                      background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--card)',
                       color: density === 'compact' ? 'var(--nav-active-accent)' : 'var(--text2)',
                       cursor: 'pointer',
                       display: 'grid',
@@ -1994,32 +1910,71 @@ export default function Inventory() {
                     <Icon name={density === 'compact' ? 'chevron_up' : 'chevron_down'} size={15} />
                   </button>
 
-                  <span style={{ display: 'inline-flex', border: '1px solid var(--input-border)', borderRadius: 'var(--r-input)', overflow: 'hidden' }}>
-                    {(['table', 'grid'] as const).map((v) => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => setView(v)}
-                        aria-pressed={view === v}
-                        aria-label={v === 'table' ? 'Table view' : 'Grid view'}
-                        title={v === 'table' ? 'Table view' : 'Grid view'}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          border: 'none',
-                          background: view === v ? 'var(--nav-active-bg)' : 'var(--input-bg)',
-                          color: view === v ? 'var(--nav-active-accent)' : 'var(--text2)',
-                          cursor: 'pointer',
-                          display: 'grid',
-                          placeItems: 'center',
-                        }}
-                      >
-                        <Icon name={v === 'table' ? 'checklist' : 'queues'} size={15} />
-                      </button>
-                    ))}
-                  </span>
-                </span>
-              </div>
+                  {/* View layout SegmentedControl */}
+                  <SegmentedControl
+                    size="sm"
+                    ariaLabel="View layout"
+                    options={[
+                      { id: 'table', label: 'Table', icon: 'checklist' },
+                      { id: 'grid', label: 'Cards', icon: 'queues' },
+                    ]}
+                    value={view}
+                    onChange={(v) => setView(v as 'table' | 'grid')}
+                  />
+                </div>
+              }
+              bodyStyle={{ padding: 0 }}
+            >
+              {selected.size > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 14px',
+                    background: 'var(--hover-card)',
+                    borderBottom: '1px solid var(--border)',
+                    fontSize: 'var(--t-meta)',
+                    flexWrap: 'wrap',
+                    gap: 'var(--sp-sm)',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+                    <span style={{ fontWeight: 600, color: 'var(--text)' }}>
+                      {selected.size} model{selected.size === 1 ? '' : 's'} selected
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelected(new Set())}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        color: 'var(--link)',
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 600,
+                        fontFamily: 'inherit',
+                        cursor: 'pointer',
+                        padding: 0,
+                      }}
+                    >
+                      Clear selection
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+                    <Button
+                      icon="download"
+                      size="sm"
+                      onClick={() => {
+                        const selRows = list.rows.filter((r) => selected.has(r.id))
+                        exportCsv(selRows, money)
+                      }}
+                      aria-label={`Export ${selected.size} selected items`}
+                    >
+                      Export ({selected.size})
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* The safety net under the disabled options — a sort with no column
                   must never look as though it ran. */}
@@ -2153,7 +2108,31 @@ export default function Inventory() {
                               <Icon name={sort === 'Equipment Z–A' ? 'arrow_down' : 'arrow_up'} size={11} />
                             </button>
                           </th>
-                          {['Category', 'Stock', 'Status', 'Location', 'Condition'].map((h) => (
+                          <th style={th}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSort((s) => (s === 'Category A–Z' ? 'Equipment A–Z' : 'Category A–Z'))
+                                setPage(1)
+                              }}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                border: 'none',
+                                background: 'transparent',
+                                padding: 0,
+                                color: 'inherit',
+                                font: 'inherit',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Category
+                              {sort === 'Category A–Z' && <Icon name="arrow_up" size={11} />}
+                            </button>
+                          </th>
+                          {['Stock', 'Status', 'Location', 'Condition'].map((h) => (
                             <th key={h} style={th}>
                               {h}
                             </th>
@@ -2210,21 +2189,35 @@ export default function Inventory() {
 
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   Rows per page
-                  <Select
+                  <select
                     value={rowsPerPage}
                     onChange={(e) => {
                       setRowsPerPage(Number(e.target.value))
                       setPage(1)
                     }}
-                    style={selectStyle}
                     aria-label="Rows per page"
+                    style={{
+                      height: 28,
+                      padding: '0 24px 0 8px',
+                      borderRadius: 'var(--r-sm)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--card)',
+                      color: 'var(--text)',
+                      fontSize: 'var(--t-meta)',
+                      fontFamily: 'inherit',
+                      cursor: 'pointer',
+                      appearance: 'none',
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 6px center',
+                    }}
                   >
                     {ROWS_PER_PAGE_OPTIONS.map((n) => (
                       <option key={n} value={n}>
                         {n}
                       </option>
                     ))}
-                  </Select>
+                  </select>
                 </label>
 
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 3, alignItems: 'center' }}>
@@ -2353,7 +2346,19 @@ export default function Inventory() {
                 <p className="figure" style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 700 }}>{inspectingEquipment.replacementValue === null ? '—' : formatMoney(inspectingEquipment.replacementValue)}</p>
               </section>
             )}
-            <div style={{ marginTop: 'var(--space-4)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border)' }}>
+            <div style={{ marginTop: 'var(--space-4)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Link
+                to={`/inventory/${encodeURIComponent(inspectingEquipment.assetCode)}`}
+                style={{ textDecoration: 'none' }}
+              >
+                <Button
+                  variant="primary"
+                  size="sm"
+                  style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: 6 }}
+                >
+                  <Icon name="eye" size={14} /> Full Asset Details
+                </Button>
+              </Link>
               <Button
                 variant="secondary"
                 size="sm"
@@ -2441,6 +2446,6 @@ export default function Inventory() {
       )}
 
       <FooterNote extra={['Equipment is retired, never deleted']} />
-    </div>
+    </PageShell>
   )
 }

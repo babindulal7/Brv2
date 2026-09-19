@@ -248,4 +248,30 @@ describe('Task 5 — Operations popup navigation and state', () => {
     expect(returnTab?.textContent).toContain('🔒')
     expect(resetTab?.textContent).toContain('🔒')
   })
+
+  it('renders booking context summary details', async () => {
+    await mount(vi.fn(), 'Booked', 'Pack')
+    expect(container.textContent).toContain('Himalayan Films')
+    expect(container.textContent).toContain('Booking:')
+    expect(container.textContent).toContain('B-715')
+    expect(container.textContent).toContain('Pickup:')
+    expect(container.textContent).toContain('2026-09-20')
+  })
+
+  it('switches between unlocked stages using 1-4 number keys', async () => {
+    await mount(vi.fn(), 'On Rent', 'Pack')
+    expect(container.textContent).toContain('Packing · Status: On Rent')
+
+    // Press '2' to switch to Handover
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '2' }))
+    })
+    expect(container.textContent).toContain('Handover · Status: On Rent')
+
+    // Press '3' to switch to Return
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: '3' }))
+    })
+    expect(container.textContent).toContain('Return & Inspection · Status: On Rent')
+  })
 })

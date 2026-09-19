@@ -345,7 +345,7 @@ export default function UnifiedInbox() {
             position: 'fixed',
             bottom: 24,
             right: 24,
-            zIndex: 9999,
+            zIndex: 'var(--z-modal)' as unknown as number,
             background: 'var(--card)',
             color: 'var(--text)',
             border: '1px solid var(--border)',
@@ -1348,7 +1348,7 @@ export default function UnifiedInbox() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 10000,
+            zIndex: 'var(--z-modal)' as unknown as number,
           }}
           onClick={() => setShowTemplateModal(false)}
         >

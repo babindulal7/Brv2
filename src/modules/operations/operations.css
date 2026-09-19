@@ -1,6 +1,5 @@
 .operations-v2 { gap: 18px; }
-.operations-v2 .page-header { padding: 2px 2px 0; }
-.operations-v2 .page-header__description { font-size: 15px !important; }
+/* PageHeader typography/padding is locked (Page.tsx) — no page overrides. */
 .operations-v2__topline, .operations-v2__filters, .operations-v2__queues { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .operations-v2__topline { justify-content: flex-end; }
 .operations-v2__queues { padding: 14px 0 6px; border-top: 1px solid var(--border); }
@@ -38,5 +37,7 @@
 .operations-v2__pagination select { min-height: 36px; border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--input-bg); color: var(--text); font: inherit; padding: 0 7px; }
 .operations-v2__pagination .ui-button { min-width: 36px; min-height: 36px; padding: 0 9px; }
 .operations-v2__empty-search { padding: 48px 18px; text-align: center; color: var(--muted); }
-@media (max-width: 900px) { .operations-v2__topline { justify-content: flex-start; } .operations-v2__filter-select { min-width: 120px; flex: 1 1 140px; } }
-@media (max-width: 620px) { .operations-v2__queues { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; } .operations-v2__queue { flex-shrink: 0; } .operations-v2__filters { align-items: stretch; } .operations-v2__filter-select, .operations-v2__search { flex: 1 1 100%; width: 100%; } .operations-v2__custom-range { grid-template-columns: 1fr; } .operations-v2__resultbar { align-items: flex-start; flex-direction: column; } }
+/* Canonical bands only (768/1280, see styles/responsive.css). The old 900px
+   "tablet" rule moved into the phone band (the layout it fixed wraps fine
+   until then); 620px became the canonical 768 phone band. */
+@media (max-width: 767px) { .operations-v2__topline { justify-content: flex-start; } .operations-v2__filter-select { min-width: 120px; flex: 1 1 140px; } .operations-v2__queues { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 10px; } .operations-v2__queue { flex-shrink: 0; } .operations-v2__filters { align-items: stretch; } .operations-v2__filter-select, .operations-v2__search { flex: 1 1 100%; width: 100%; } .operations-v2__custom-range { grid-template-columns: 1fr; } .operations-v2__resultbar { align-items: flex-start; flex-direction: column; } }

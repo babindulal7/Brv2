@@ -30,6 +30,7 @@ export interface CreateDocumentModalProps {
   onClose: () => void
   onSuccess?: () => void
   initialBookingNo?: string
+  initialClientId?: string
   initialDocType?: string
 }
 
@@ -38,6 +39,7 @@ export function CreateDocumentModal({
   onClose,
   onSuccess,
   initialBookingNo = '',
+  initialClientId = '',
   initialDocType = 'Quotation',
 }: CreateDocumentModalProps) {
   const { user } = useAuth()
@@ -45,6 +47,7 @@ export function CreateDocumentModal({
   const [title, setTitle] = useState('')
   const [docType, setDocType] = useState(initialDocType)
   const [bookingRef, setBookingRef] = useState(initialBookingNo)
+  const [clientRef, setClientRef] = useState(initialClientId)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -68,6 +71,7 @@ export function CreateDocumentModal({
           title: title.trim(),
           docType,
           relatedBookingId: bookingRef.trim() || undefined,
+          clientId: clientRef.trim() || undefined,
           clientUuid: generateClientUuid(),
         },
         {
@@ -81,6 +85,7 @@ export function CreateDocumentModal({
       onClose()
       setTitle('')
       setBookingRef('')
+      setClientRef('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create document.')
     } finally {
@@ -184,6 +189,17 @@ export function CreateDocumentModal({
             />
           </label>
         </div>
+
+        <label style={labelStyle}>
+          <span>Related Client ID (Optional)</span>
+          <input
+            type="text"
+            value={clientRef}
+            onChange={(e) => setClientRef(e.target.value)}
+            placeholder="e.g. C-1"
+            style={inputStyle}
+          />
+        </label>
       </form>
     </Modal>
   )

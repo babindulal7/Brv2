@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { PageHeader } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
@@ -25,7 +26,6 @@ import {
   recoveredThisMonthPaisa,
   outstandingOf,
   ageDays,
-  CASES_EXPORT_UNAVAILABLE_REASON,
   NEW_CASE_UNAVAILABLE_REASON,
   type Case,
   type CaseStatus,
@@ -33,8 +33,45 @@ import {
 } from '../../lib/queries/cases'
 import { IconSearch, IconPlus, IconDownload } from '@tabler/icons-react'
 import { LogCaseModal } from './modals/LogCaseModal'
+import { ResolveCaseModal } from './modals/ResolveCaseModal'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
+
+function exportCasesCsv(rows: Case[], canViewMoney: boolean) {
+  const head = ['Case ID', 'Title', 'Type', 'Booking', 'Client', 'Priority', 'Status', 'Opened Date', 'Days Open']
+  if (canViewMoney) head.push('Assessed Loss (NPR)', 'Charged Client (NPR)', 'Deposit Applied (NPR)', 'Outstanding (NPR)')
+  const body = rows.map((c) => {
+    const cells = [
+      c.id,
+      c.title,
+      c.type,
+      c.linked?.linkedRecordId ?? '',
+      c.counterpartyName,
+      c.priority,
+      c.status,
+      c.openedAd instanceof Date ? c.openedAd.toISOString().slice(0, 10) : String(c.openedAd),
+      String(ageDays(c.openedAd)),
+    ]
+    if (canViewMoney) {
+      cells.push(
+        c.assessedPaisa ? formatMoney(c.assessedPaisa) : '',
+        c.chargedToClientPaisa ? formatMoney(c.chargedToClientPaisa) : '',
+        c.depositAppliedPaisa ? formatMoney(c.depositAppliedPaisa) : '',
+        formatMoney(outstandingOf(c)),
+      )
+    }
+    return cells
+  })
+  const csv = [head, ...body]
+    .map((cells) => cells.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `cases-report-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 /* Age comes from the shared `ageDays` in `data/cases.ts`, computed against the
  * one operating day (`getBusinessToday()` in `lib/bs.ts`). This file used to
@@ -134,6 +171,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
   const activeFilter = statusFromParam(params.get('status'))
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [isLogCaseOpen, setIsLogCaseOpen] = useState(false)
+  const [selectedCaseForResolve, setSelectedCaseForResolve] = useState<Case | null>(null)
   const [casesList, setCasesList] = useState<Case[]>([])
 
   useEffect(() => {
@@ -283,14 +321,23 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
     setSelectedRowIds(next)
   }
 
-  return (
+  const content = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {/* The one `<h1>` on the route — this screen opened straight on the KPI
           strip, the only queue in the app without a title landmark (A7). */}
       {!embedded && (
         <PageHeader
+          breadcrumb={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              <Link to="/operations" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Icon name="chevron_left" size={14} />
+                Operations
+              </Link>
+              <span>›</span>
+              <span style={{ color: 'var(--text)', fontWeight: 600 }}>Cases</span>
+            </div>
+          }
           title="Cases"
-          description="Damage, loss and discrepancy cases across bookings — the queue, its exposure, and what has been recovered."
         />
       )}
 
@@ -307,6 +354,11 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
                 the one case it names. The other rows are hidden here, not gone.
               </p>
             </div>
+            {filteredCases[0] && filteredCases[0].status !== 'Resolved' && filteredCases[0].status !== 'Closed' && (
+              <Button variant="primary" onClick={() => setSelectedCaseForResolve(filteredCases[0] ?? null)}>
+                Resolve Case
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => navigate('/inventory/cases')}>
               Show all cases
             </Button>
@@ -433,11 +485,20 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
               fabrication src/actions/core.ts §1 names. Unbuilt renders as
               Unavailable with the honest sentence, never as a fake success. */}
           {!phone && (
-            <Unavailable reason={CASES_EXPORT_UNAVAILABLE_REASON}>
-              <Button variant="secondary" icon={<IconDownload size={16} />} disabled>
-                Export
-              </Button>
-            </Unavailable>
+            <Button
+              variant="secondary"
+              icon={<IconDownload size={16} />}
+              onClick={() => {
+                const toExport =
+                  selectedRowIds.size > 0
+                    ? filteredCases.filter((c) => selectedRowIds.has(c.id))
+                    : filteredCases
+                exportCasesCsv(toExport, money)
+              }}
+              title={selectedRowIds.size > 0 ? `Export ${selectedRowIds.size} selected cases` : 'Export filtered cases'}
+            >
+              Export{selectedRowIds.size > 0 ? ` (${selectedRowIds.size})` : ''}
+            </Button>
           )}
           {/* RS-06 — LogCaseModal mints CASE-2026-${random}, writes nothing and
               closes as a success. Until a case-creation action exists the
@@ -567,9 +628,20 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
                       </div>
                     </td>
                     <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                      <Button variant="secondary" size="sm" onClick={() => navigate(CASE_WORKSPACE_ROUTE(c.id))}>
-                        Open Case
-                      </Button>
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        {c.status !== 'Resolved' && c.status !== 'Closed' && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => setSelectedCaseForResolve(c)}
+                          >
+                            Resolve
+                          </Button>
+                        )}
+                        <Button variant="secondary" size="sm" onClick={() => navigate(CASE_WORKSPACE_ROUTE(c.id))}>
+                          Open Case
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -584,6 +656,29 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
         onClose={() => setIsLogCaseOpen(false)}
         onSuccess={(newCase: Case) => upsertCase(newCase)}
       />
+
+      {selectedCaseForResolve && (
+        <ResolveCaseModal
+          isOpen={Boolean(selectedCaseForResolve)}
+          onClose={() => setSelectedCaseForResolve(null)}
+          caseItem={selectedCaseForResolve}
+          onSuccess={(caseId, targetStatus, resolution) => {
+            setCasesList((prev) =>
+              prev.map((item) =>
+                item.id === caseId
+                  ? { ...item, status: targetStatus, disposition: resolution }
+                  : item,
+              ),
+            )
+          }}
+        />
+      )}
     </div>
   )
+
+  if (embedded) {
+    return content
+  }
+
+  return <PageShell width="full">{content}</PageShell>
 }

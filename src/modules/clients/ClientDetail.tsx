@@ -4,6 +4,8 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, SummaryRows } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { Badge } from '../../components/ui/Badge'
 import { EditableRows } from '../../components/ui/EditableRows'
 import type { EditableRowDef } from '../../components/ui/EditableRows'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
@@ -17,6 +19,8 @@ import { useList } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { listBookings, type BookingListRow } from '../../lib/queries/bookings'
 import { listInvoices, invoicesForClient, financeRestriction, type InvoiceListRow } from '../../lib/queries/finance'
+import { listDocuments, documentsForClient, type DocRow } from '../../lib/queries/documents'
+import { CreateDocumentModal } from '../documents/CreateDocumentModal'
 import { useEditMode } from '../../lib/edit/useEditMode'
 import type { FieldSpec } from '../../lib/edit/useEditMode'
 import { validateDiscount } from '../../lib/discount'
@@ -416,13 +420,15 @@ export default function ClientDetail() {
             role: user.role,
           },
         )
+        showSuccessToast('Client Updated', 'Client details have been saved.')
+        profile.refetch()
       }
       setDraft((d) => {
         const base = d ?? loaded?.record ?? null
         return base ? applyPatch(base, patch) : base
       })
     },
-    [loaded, user],
+    [loaded, user, profile, showSuccessToast],
   )
 
   const edit = useEditMode({ record: editRecord, fields: CLIENT_FIELDS, onSave })
@@ -454,6 +460,12 @@ export default function ClientDetail() {
     clientUuid ? invoicesForClient(clientUuid) : { chips: { client_id: [] } },
     { isFilteredOverride: false },
   )
+  const documents = useList<DocRow>(
+    listDocuments,
+    clientUuid ? documentsForClient(clientUuid) : { chips: { client_id: [] } },
+    { isFilteredOverride: false },
+  )
+  const [showCreateDoc, setShowCreateDoc] = useState(false)
 
   /* ── On Stop — RULING §11.2 ─────────────────────────────────────────────
    *
@@ -625,127 +637,146 @@ export default function ClientDetail() {
   ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <PageHeader
-        icon="users"
-        title={client.name}
-        description={`${client.id} · ${client.clientType}`}
-        actions={
-          <>
-            {/* VIP is a `client_flags` flag_type exactly as Blocked is, but
-                `client_directory_v` publishes only `is_blocked` (0054). The
-                mapper therefore never sets `isVip`, so this badge cannot appear
-                on a database record — kept because `ClientRecord` still carries
-                the field and other surfaces set it, not because this page can
-                reach it. */}
-            {client.isVip && <Tone text="VIP" entity />}
-            {client.isBlocked && <Tone text="Blocked" tone="danger" icon="alert_triangle" />}
-            {/* Rulings §11.2.4 — beside Blocked, never instead of it: a client
-                is routinely Active AND blocked AND on stop, and folding the
-                three into one badge is how a real state disappears. */}
-            {creditStop?.onStop && (
-              <Tone text="On Stop" tone="danger" icon="lock" reason={creditStop.reasons.join(' ')} />
-            )}
-            {edit.editing ? (
-              <>
+    <PageShell
+      width="full"
+      className="client-detail-shell"
+      header={
+        <PageHeader
+          breadcrumb={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              <Link to="/clients" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Icon name="chevron_left" size={14} />
+                Clients
+              </Link>
+              <span>›</span>
+              <span style={{ color: 'var(--text)', fontWeight: 600 }}>{client.name}</span>
+            </div>
+          }
+          icon="users"
+          title={client.name}
+          description={`${client.id} · ${client.clientType}`}
+          actions={
+            <>
+              {/* VIP is a `client_flags` flag_type exactly as Blocked is, but
+                  `client_directory_v` publishes only `is_blocked` (0054). The
+                  mapper therefore never sets `isVip`, so this badge cannot appear
+                  on a database record — kept because `ClientRecord` still carries
+                  the field and other surfaces set it, not because this page can
+                  reach it. */}
+              {client.isVip && <Tone text="VIP" entity />}
+              {client.isBlocked && <Tone text="Blocked" tone="danger" icon="alert_triangle" />}
+              {/* Rulings §11.2.4 — beside Blocked, never instead of it: a client
+                  is routinely Active AND blocked AND on stop, and folding the
+                  three into one badge is how a real state disappears. */}
+              {creditStop?.onStop && (
+                <Tone text="On Stop" tone="danger" icon="lock" reason={creditStop.reasons.join(' ')} />
+              )}
+              {edit.editing ? (
+                <>
+                  <Button
+                    icon="check"
+                    onClick={() => {
+                      const outcome = edit.stopEditing()
+                      setLeaveError(
+                        outcome.ok
+                          ? null
+                          : `Unsaved: ${outcome.unsaved.join(', ')}. Save or cancel each before leaving edit mode.`,
+                      )
+                    }}
+                  >
+                    Done
+                  </Button>
+                  <Button
+                    icon="close"
+                    variant="ghost"
+                    onClick={() => {
+                      edit.cancelAll()
+                      setLeaveError(null)
+                    }}
+                  >
+                    Discard
+                  </Button>
+                </>
+              ) : (
                 <Button
-                  icon="check"
+                  icon="tool"
                   onClick={() => {
-                    const outcome = edit.stopEditing()
-                    setLeaveError(
-                      outcome.ok
-                        ? null
-                        : `Unsaved: ${outcome.unsaved.join(', ')}. Save or cancel each before leaving edit mode.`,
-                    )
-                  }}
-                >
-                  Done
-                </Button>
-                <Button
-                  icon="close"
-                  variant="ghost"
-                  onClick={() => {
-                    edit.cancelAll()
                     setLeaveError(null)
+                    edit.startEditing()
                   }}
                 >
-                  Discard
+                  Edit Client
                 </Button>
-              </>
-            ) : (
-              <Button
-                icon="tool"
-                onClick={() => {
-                  setLeaveError(null)
-                  edit.startEditing()
-                }}
-              >
-                Edit Client
+              )}
+              <Button icon="checklist" variant="secondary" onClick={() => setIsVerifyKycOpen(true)}>
+                Verify KYC
               </Button>
-            )}
-            <Button icon="checklist" variant="secondary" onClick={() => setIsVerifyKycOpen(true)}>
-              Verify KYC
-            </Button>
-            <Button icon="users" onClick={() => navigate('/clients/duplicates')}>
-              Merge Duplicate
-            </Button>
-            {/*
-              ── CL-06 — Block / Unblock is live ──────────────────────────
-              This control was disabled behind an `Unavailable` reason whose
-              every clause had gone false. Re-checked 6 Sep 2026, each against
-              the file it named:
-
-                · `actions/clients/blockClient.ts` — `implemented: true`, with
-                  a body that writes `client_flags` and verifies the row;
-                · `actions/core.ts` — `case 'client.block': return
-                  rbac.canBlockClient(ctx.role)`, so the capability RESOLVES;
-                  it is no longer one of the strings that falls through to
-                  `undefined`;
-                · `lib/rbac.ts` — `canBlockClient` is Owner, Admin, Manager.
-
-              So the whole path is built and ruled, and the only thing still
-              refusing the verb was this screen — while the same verb was
-              reachable from the directory's own dialog.
-
-              It dispatches the way the other live verbs on these screens do
-              (`createClient` in `AddClient.tsx`, `blockClient` in
-              `ClientsDirectory.tsx`): awaited, success reported from the
-              resolved path ONLY, failure inline and persistent.
-
-              The gate is the capability itself rather than a bare `disabled`,
-              so a role the dispatcher would refuse never gets a live control.
-            */}
-            {canBlock ? (
-              <Button
-                icon={client.isBlocked ? 'checklist' : 'alert_triangle'}
-                variant={client.isBlocked ? 'secondary' : 'danger'}
-                onClick={() => openBlockDialog(client.isBlocked ? 'unblock' : 'block')}
-              >
-                {client.isBlocked ? 'Unblock Client' : 'Block Client'}
+              <Button icon="users" onClick={() => navigate('/clients/duplicates')}>
+                Merge Duplicate
               </Button>
-            ) : (
-              <Unavailable
-                reason={`Blocking a client is Owner, Admin or Manager only — lib/rbac.ts canBlockClient, which actions/core.ts maps the client.block capability to. Your role (${role}) would be refused by the dispatcher before the write, so the control is greyed rather than failing on press.`}
-              >
-                <Button icon={client.isBlocked ? 'checklist' : 'alert_triangle'} variant="secondary" disabled>
+              {/*
+                ── CL-06 — Block / Unblock is live ──────────────────────────
+                This control was disabled behind an `Unavailable` reason whose
+                every clause had gone false. Re-checked 6 Sep 2026, each against
+                the file it named:
+
+                  · `actions/clients/blockClient.ts` — `implemented: true`, with
+                    a body that writes `client_flags` and verifies the row;
+                  · `actions/core.ts` — `case 'client.block': return
+                    rbac.canBlockClient(ctx.role)`, so the capability RESOLVES;
+                    it is no longer one of the strings that falls through to
+                    `undefined`;
+                  · `lib/rbac.ts` — `canBlockClient` is Owner, Admin, Manager.
+
+                So the whole path is built and ruled, and the only thing still
+                refusing the verb was this screen — while the same verb was
+                reachable from the directory's own dialog.
+
+                It dispatches the way the other live verbs on these screens do
+                (`createClient` in `AddClient.tsx`, `blockClient` in
+                `ClientsDirectory.tsx`): awaited, success reported from the
+                resolved path ONLY, failure inline and persistent.
+
+                The gate is the capability itself rather than a bare `disabled`,
+                so a role the dispatcher would refuse never gets a live control.
+              */}
+              {canBlock ? (
+                <Button
+                  icon={client.isBlocked ? 'checklist' : 'alert_triangle'}
+                  variant={client.isBlocked ? 'secondary' : 'danger'}
+                  onClick={() => openBlockDialog(client.isBlocked ? 'unblock' : 'block')}
+                >
                   {client.isBlocked ? 'Unblock Client' : 'Block Client'}
                 </Button>
-              </Unavailable>
-            )}
-            {client.isBlocked ? (
-              <Unavailable reason={`Blocked${client.blockReason ? `: ${client.blockReason}` : ''} — clear the block before starting a rental`}>
-                <Button variant="primary" icon="plus" disabled>
+              ) : (
+                <Unavailable
+                  reason={`Blocking a client is Owner, Admin or Manager only — lib/rbac.ts canBlockClient, which actions/core.ts maps the client.block capability to. Your role (${role}) would be refused by the dispatcher before the write, so the control is greyed rather than failing on press.`}
+                >
+                  <Button icon={client.isBlocked ? 'checklist' : 'alert_triangle'} variant="secondary" disabled>
+                    {client.isBlocked ? 'Unblock Client' : 'Block Client'}
+                  </Button>
+                </Unavailable>
+              )}
+              {client.isBlocked ? (
+                <Unavailable reason={`Blocked${client.blockReason ? `: ${client.blockReason}` : ''} — clear the block before starting a rental`}>
+                  <Button variant="primary" icon="plus" disabled>
+                    Start Rental
+                  </Button>
+                </Unavailable>
+              ) : (
+                <Button
+                  variant="primary"
+                  icon="plus"
+                  onClick={() => navigate(`/rentals?action=new&clientId=${encodeURIComponent(client.id)}`)}
+                >
                   Start Rental
                 </Button>
-              </Unavailable>
-            ) : (
-              <Button variant="primary" icon="plus" onClick={() => navigate('/rentals/new')}>
-                Start Rental
-              </Button>
-            )}
-          </>
-        }
-      />
+              )}
+            </>
+          }
+        />
+      }
+    >
 
       {/* HIS v2.1 §4.4 — the block itself is visible to everyone who tries to
           book; only the reason and who set it are staff information. */}
@@ -1148,45 +1179,47 @@ export default function ClientDetail() {
                 ))}
               </div>
             ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-                <thead>
-                  <tr style={{ background: 'var(--th-bg)' }}>
-                    <th style={th}>Booking</th>
-                    <th style={th}>Project</th>
-                    <th style={th}>Status</th>
-                    <th style={th}>Pickup</th>
-                    <th style={{ ...th, textAlign: 'right' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rentals.rows.map((r) => (
-                    <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                      <td style={td}>
-                        <span className="identifier" style={{ color: 'var(--link)', fontWeight: 600 }}>{r.bookingNo}</span>
-                      </td>
-                      {/* `project` is nullable on `bookings` — the em dash is the
-                          column being empty, not a lookup that failed. */}
-                      <td style={td}>{r.project ?? '—'}</td>
-                      <td style={td}>
-                        <Tone text={r.stage} tone={statusToken(r.stage)} />
-                        {/* §1.9 — Cancelled is a flag that coexists with the
-                            stage, never a stage of its own, so it is a second
-                            mark rather than a replacement for the pill. */}
-                        {r.isCancelled && (
-                          <span style={{ marginLeft: 6, color: 'var(--danger-text)', fontSize: 'var(--t-th)' }}>Cancelled</span>
-                        )}
-                      </td>
-                      <td style={{ ...td, color: 'var(--text2)' }}>{formatAd(new Date(r.pickupAtAd))}</td>
-                      <td style={{ ...td, textAlign: 'right' }}>
-                        <Link to={`/rentals/${r.bookingNo}`} style={{ color: 'var(--link)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}>
-                          Open
-                        </Link>
-                      </td>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--card2)' }}>
+                      <th style={th}>Booking</th>
+                      <th style={th}>Project</th>
+                      <th style={th}>Status</th>
+                      <th style={th}>Pickup</th>
+                      <th style={{ ...th, textAlign: 'right' }}>Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {rentals.rows.map((r) => (
+                      <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={td}>
+                          <span className="identifier" style={{ color: 'var(--link)', fontWeight: 600 }}>{r.bookingNo}</span>
+                        </td>
+                        {/* `project` is nullable on `bookings` — the em dash is the
+                            column being empty, not a lookup that failed. */}
+                        <td style={td}>{r.project ?? '—'}</td>
+                        <td style={td}>
+                          <Tone text={r.stage} tone={statusToken(r.stage)} />
+                          {/* §1.9 — Cancelled is a flag that coexists with the
+                              stage, never a stage of its own, so it is a second
+                              mark rather than a replacement for the pill. */}
+                          {r.isCancelled && (
+                            <span style={{ marginLeft: 6, color: 'var(--danger-text)', fontSize: 'var(--t-th)' }}>Cancelled</span>
+                          )}
+                        </td>
+                        <td style={{ ...td, color: 'var(--text2)' }}>{formatAd(new Date(r.pickupAtAd))}</td>
+                        <td style={{ ...td, textAlign: 'right' }}>
+                          <Link to={`/rentals/${r.bookingNo}`} style={{ color: 'var(--link)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}>
+                            Open
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
             )}
           </PageBody>
@@ -1260,52 +1293,54 @@ export default function ClientDetail() {
                   ))}
                 </div>
               ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
-                  <thead>
-                    <tr style={{ background: 'var(--th-bg)' }}>
-                      <th style={th}>Invoice</th>
-                      <th style={th}>Booking</th>
-                      <th style={{ ...th, textAlign: 'right' }}>Total</th>
-                      <th style={{ ...th, textAlign: 'right' }}>Outstanding</th>
-                      <th style={th}>Status</th>
-                      <th style={th}>Due</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {invoices.rows.map((inv) => (
-                      <tr key={inv.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={td}>
-                          <span className="identifier" style={{ fontWeight: 600 }}>{inv.invoiceNo}</span>
-                        </td>
-                        <td style={td}>
-                          <Link to={`/rentals/${inv.bookingNo}`} className="identifier" style={{ color: 'var(--link)', textDecoration: 'none' }}>
-                            {inv.bookingNo}
-                          </Link>
-                        </td>
-                        {/* Two columns, not one: the invoice carries seven
-                            distinct money columns and collapsing them into a
-                            single "Amount" string is what made `Finance.tsx`
-                            parse "Rs 1,234.50" back as Rs 1,23,450. */}
-                        <td style={{ ...td, textAlign: 'right' }}>
-                          <span className="figure" style={{ fontWeight: 600 }}>{formatMoney(inv.totalAmount)}</span>
-                        </td>
-                        <td style={{ ...td, textAlign: 'right' }}>
-                          <span
-                            className="figure"
-                            style={{ color: inv.outstandingAmount > 0 ? 'var(--danger-text)' : 'var(--text2)' }}
-                          >
-                            {formatMoney(inv.outstandingAmount)}
-                          </span>
-                        </td>
-                        <td style={td}>
-                          <Tone text={inv.status} tone={INVOICE_TOKEN[inv.status]} />
-                        </td>
-                        <td style={{ ...td, color: 'var(--text2)' }}>{inv.dueDateAd}</td>
+              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--card2)' }}>
+                        <th style={th}>Invoice</th>
+                        <th style={th}>Booking</th>
+                        <th style={{ ...th, textAlign: 'right' }}>Total</th>
+                        <th style={{ ...th, textAlign: 'right' }}>Outstanding</th>
+                        <th style={th}>Status</th>
+                        <th style={th}>Due</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {invoices.rows.map((inv) => (
+                        <tr key={inv.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={td}>
+                            <span className="identifier" style={{ fontWeight: 600 }}>{inv.invoiceNo}</span>
+                          </td>
+                          <td style={td}>
+                            <Link to={`/rentals/${inv.bookingNo}`} className="identifier" style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                              {inv.bookingNo}
+                            </Link>
+                          </td>
+                          {/* Two columns, not one: the invoice carries seven
+                              distinct money columns and collapsing them into a
+                              single "Amount" string is what made `Finance.tsx`
+                              parse "Rs 1,234.50" back as Rs 1,23,450. */}
+                          <td style={{ ...td, textAlign: 'right' }}>
+                            <span className="figure" style={{ fontWeight: 600 }}>{formatMoney(inv.totalAmount)}</span>
+                          </td>
+                          <td style={{ ...td, textAlign: 'right' }}>
+                            <span
+                              className="figure"
+                              style={{ color: inv.outstandingAmount > 0 ? 'var(--danger-text)' : 'var(--text2)' }}
+                            >
+                              {formatMoney(inv.outstandingAmount)}
+                            </span>
+                          </td>
+                          <td style={td}>
+                            <Tone text={inv.status} tone={INVOICE_TOKEN[inv.status]} />
+                          </td>
+                          <td style={{ ...td, color: 'var(--text2)' }}>{inv.dueDateAd}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
               )}
             </PageBody>
@@ -1314,21 +1349,61 @@ export default function ClientDetail() {
       )}
 
       {activeTab === 'documents' && (
-        <Card title="Documents">
-          {/*
-            ⛔ This tab used to filter `data/documents.ts`'s hand-typed
-            `DOCUMENTS` array by `client.activeBookings` — a field the database
-            mapper always returns empty, so on a real client it matched nothing
-            while a seed client got seed paperwork. There is no documents query
-            module (`src/lib/queries/` holds bookings, clients, finance and
-            inventory only), so this states the gap instead of dressing an empty
-            seed join as "no documents on file" — which would have told an
-            operator that a client with a signed contract has none.
-          */}
-          <EmptyState
-            title="Documents are not queried yet"
-            description="Nothing on this page reads the document registry — no query module covers it. This is a gap in the app, not a statement about what paperwork exists for this client."
-          />
+        <Card
+          title={`Documents (${documents.rows.length})`}
+          action={
+            <Button
+              variant="secondary"
+              icon="plus"
+              onClick={() => setShowCreateDoc(true)}
+              disabled={client.isBlocked}
+            >
+              Add Document
+            </Button>
+          }
+          bodyStyle={{ padding: documents.rows.length ? 0 : undefined }}
+        >
+          <PageBody
+            loading={documents.loading}
+            error={documents.error}
+            onRetry={documents.refetch}
+            hasRows={documents.rows.length > 0}
+            empty={documents.isEmpty}
+            noun="documents"
+            emptyTitle="No documents on file"
+            emptyMessage="No documents have been recorded against this client yet. Click 'Add Document' to create a quotation, contract, or note."
+          >
+            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--card2)' }}>
+                      <th style={th}>Document No</th>
+                      <th style={th}>Type</th>
+                      <th style={th}>Category</th>
+                      <th style={th}>Date</th>
+                      <th style={th}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {documents.rows.map((doc) => (
+                      <tr key={doc.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={td}>
+                          <span className="figure identifier" style={{ fontWeight: 600 }}>{doc.id}</span>
+                        </td>
+                        <td style={{ ...td, fontWeight: 600 }}>{doc.type}</td>
+                        <td style={{ ...td, color: 'var(--text2)' }}>{doc.category}</td>
+                        <td style={{ ...td, color: 'var(--text2)' }}>{doc.createdTime}</td>
+                        <td style={td}>
+                          <Badge tone="neutral" label={doc.status} size="sm" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </PageBody>
         </Card>
       )}
 
@@ -1408,6 +1483,15 @@ export default function ClientDetail() {
             client={client}
             onSuccess={(newStatus: KycStatus) => {
               setDraft((d) => (d ? { ...d, kycStatus: newStatus } : d))
+            }}
+          />
+          <CreateDocumentModal
+            isOpen={showCreateDoc}
+            onClose={() => setShowCreateDoc(false)}
+            initialClientId={client.id}
+            onSuccess={() => {
+              setShowCreateDoc(false)
+              documents.refetch()
             }}
           />
 
@@ -1509,7 +1593,7 @@ export default function ClientDetail() {
         </>
       )}
 
-    </div>
+    </PageShell>
   )
 }
 

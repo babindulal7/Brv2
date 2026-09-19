@@ -1,7 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { Card, Button, PageHeader, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { PageBody } from '../../components/ui/PageBody'
 import { EditableRows } from '../../components/ui/EditableRows'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -434,43 +435,50 @@ export default function AssetDetail() {
   ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 1400, margin: '0 auto', paddingBottom: 60 }}>
-      {/* Breadcrumbs & Navigation */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-          <Link to="/inventory" style={{ color: 'var(--text2)', textDecoration: 'none' }}>Inventory</Link>
-          <span>›</span>
-          <span style={{ color: 'var(--text2)' }}>{product.category ?? '—'}</span>
-          <span>›</span>
-          <span style={{ color: 'var(--text)', fontWeight: 600 }}>{product.name}</span>
-          <span
-            className="identifier"
-            style={{
-              padding: '2px 8px',
-              borderRadius: 4,
-              background: 'var(--card2)',
-              border: '1px solid var(--border)',
-              fontSize: 'var(--t-th)',
-              color: 'var(--nav-active-accent)',
-            }}
-          >
-            {product.assetCode}
-          </span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Only when there is a real unit to print — the old fallback opened
-              the modal on the non-existent literal 'SN-FX3-001'. */}
-          {units[0] && (
-            <Button variant="secondary" icon="download" onClick={() => setLabelUnit(units[0] ?? null)}>
-              Print Labels
-            </Button>
-          )}
-          <Button variant="primary" icon="checklist" onClick={() => navigate('/rentals/new')}>
-            Book Asset
-          </Button>
-        </div>
-      </div>
+    <PageShell
+      width="full"
+      className="asset-detail-shell"
+      header={
+        <PageHeader
+          title={product.name}
+          breadcrumb={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              <Link to="/inventory" style={{ color: 'var(--text2)', textDecoration: 'none' }}>Inventory</Link>
+              <span>›</span>
+              <span style={{ color: 'var(--text2)' }}>{product.category ?? '—'}</span>
+              <span>›</span>
+              <span style={{ color: 'var(--text)', fontWeight: 600 }}>{product.name}</span>
+              <span
+                className="identifier"
+                style={{
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  background: 'var(--card2)',
+                  border: '1px solid var(--border)',
+                  fontSize: 'var(--t-th)',
+                  color: 'var(--nav-active-accent)',
+                }}
+              >
+                {product.assetCode}
+              </span>
+            </div>
+          }
+          actions={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {units[0] && (
+                <Button variant="secondary" icon="download" onClick={() => setLabelUnit(units[0] ?? null)}>
+                  Print Labels
+                </Button>
+              )}
+              <Button variant="primary" icon="checklist" onClick={() => navigate('/rentals?action=new')}>
+                Book Asset
+              </Button>
+            </div>
+          }
+        />
+      }
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 1400, margin: '0 auto', paddingBottom: 60 }}>
 
       {/* Hero Header Block */}
       <div
@@ -686,127 +694,129 @@ export default function AssetDetail() {
               ))}
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)', minWidth: viewport === 'tablet' ? 720 : 900 }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
-                    <th style={{ padding: '8px', width: 44 }} />
-                    <th style={{ padding: '8px' }}>Asset Tag</th>
-                    <th style={{ padding: '8px' }}>Serial Number</th>
-                    <th style={{ padding: '8px' }}>Condition</th>
-                    <th style={{ padding: '8px' }}>Status</th>
-                    <th style={{ padding: '8px' }}>Location</th>
-                    <th style={{ padding: '8px' }}>Running Hours</th>
-                    <th style={{ padding: '8px' }}>Next Service</th>
-                    <th style={{ padding: '8px', textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {units.map(u => {
-                    const expanded = expandedUnits.has(u.id)
-                    return (
-                      <Fragment key={u.id}>
-                        <tr style={{ borderBottom: expanded ? 'none' : '1px solid var(--border)' }}>
-                          <td style={{ padding: '0 4px' }}>
-                            <button
-                              type="button"
-                              onClick={() => toggleUnit(u.id)}
-                              aria-label={expanded ? `Collapse ${u.assetTag}` : `Expand ${u.assetTag}`}
-                              /* Law 15 — 44px floor, same as the tab strip. */
-                              style={{ minWidth: 44, minHeight: 44, border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', display: 'grid', placeItems: 'center' }}
-                            >
-                              <Icon name={expanded ? 'arrow_down' : 'arrow_right'} size={12} />
-                            </button>
-                          </td>
-                          <td style={{ padding: '10px 8px' }}>
-                            {/* `asset_tag` is the NOT NULL unique key (0004:195);
-                                `serial_no` is nullable, so the tag leads. */}
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
-                              <span className="identifier" style={{ fontWeight: 600, color: 'var(--text)' }}>
-                                {u.assetTag}
+            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)', minWidth: viewport === 'tablet' ? 720 : 900 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
+                      <th style={{ padding: '8px', width: 44 }} />
+                      <th style={{ padding: '8px' }}>Asset Tag</th>
+                      <th style={{ padding: '8px' }}>Serial Number</th>
+                      <th style={{ padding: '8px' }}>Condition</th>
+                      <th style={{ padding: '8px' }}>Status</th>
+                      <th style={{ padding: '8px' }}>Location</th>
+                      <th style={{ padding: '8px' }}>Running Hours</th>
+                      <th style={{ padding: '8px' }}>Next Service</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {units.map(u => {
+                      const expanded = expandedUnits.has(u.id)
+                      return (
+                        <Fragment key={u.id}>
+                          <tr style={{ borderBottom: expanded ? 'none' : '1px solid var(--border)' }}>
+                            <td style={{ padding: '0 4px' }}>
+                              <button
+                                type="button"
+                                onClick={() => toggleUnit(u.id)}
+                                aria-label={expanded ? `Collapse ${u.assetTag}` : `Expand ${u.assetTag}`}
+                                /* Law 15 — 44px floor, same as the tab strip. */
+                                style={{ minWidth: 44, minHeight: 44, border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', display: 'grid', placeItems: 'center' }}
+                              >
+                                <Icon name={expanded ? 'arrow_down' : 'arrow_right'} size={12} />
+                              </button>
+                            </td>
+                            <td style={{ padding: '10px 8px' }}>
+                              {/* `asset_tag` is the NOT NULL unique key (0004:195);
+                                  `serial_no` is nullable, so the tag leads. */}
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
+                                <span className="identifier" style={{ fontWeight: 600, color: 'var(--text)' }}>
+                                  {u.assetTag}
+                                </span>
+                                {/* R-28: warns only. It sits beside the identifier and
+                                    changes nothing about what the unit may do. */}
+                                <ServiceDueBadge row={serviceByUnit.get(u.id)} />
                               </span>
-                              {/* R-28: warns only. It sits beside the identifier and
-                                  changes nothing about what the unit may do. */}
-                              <ServiceDueBadge row={serviceByUnit.get(u.id)} />
-                            </span>
-                          </td>
-                          <td style={{ padding: '10px 8px' }}>
-                            {u.serialNo ? (
-                              <span className="identifier" style={{ color: 'var(--muted)', fontSize: 'var(--t-th)' }}>{u.serialNo}</span>
-                            ) : (
-                              <span style={{ color: 'var(--muted)' }}>—</span>
-                            )}
-                          </td>
-                          <td style={{ padding: '10px 8px' }}>{conditionChip(u.condition)}</td>
-                          <td style={{ padding: '10px 8px' }}>{statusChip(u.state)}</td>
-                          <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>
-                            {unitLocationOf(u) ?? '—'}
-                          </td>
-                          <td style={{ padding: '10px 8px' }}>
-                            <span className="figure">{u.runningHours}h</span>
-                          </td>
-                          <td style={{ padding: '10px 8px', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                            {adDate(u.nextMaintenanceAtAd)}
-                          </td>
-                          <td style={{ padding: '10px 8px', textAlign: 'right' }}>
-                            <div style={{ display: 'inline-flex', gap: 6 }}>
-                              <Button variant="ghost" onClick={() => setLabelUnit(u)}>Label</Button>
-                              <Button variant="ghost" onClick={() => setEditingUnit((s) => (s === u.id ? null : u.id))}>
-                                {editingUnit === u.id ? 'Close' : 'Edit'}
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-
-                        {editingUnit === u.id && (
-                          <tr key={`${u.id}-edit`} style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
-                            <td />
-                            <td colSpan={8} style={{ padding: '8px 12px 14px' }}>
-                              <UnitEditor unit={u} money={money} onDone={() => setEditingUnit(null)} />
                             </td>
-                          </tr>
-                        )}
-
-                        {/* Expanded unit record — the real per-unit columns. The
-                            previous build rendered four Sony FX3 accessories here
-                            under every unit of every asset; accessory checklists
-                            have no table yet, and that is said instead. */}
-                        {expanded && (
-                          <tr key={`${u.id}-detail`} style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
-                            <td />
-                            <td colSpan={8} style={{ padding: '8px 12px 14px' }}>
-                              <div style={{ fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 6 }}>
-                                Unit Record
-                              </div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                                <UnitFact label="Barcode" value={u.barcode ?? '—'} />
-                                <UnitFact label="QR code" value={u.qrCode ?? '—'} />
-                                <UnitFact label="Last maintenance" value={adDate(u.lastMaintenanceAtAd)} />
-                                <UnitFact label="Warranty expires" value={adDate(u.warrantyExpiresAd)} />
-                                <UnitFact label="Insurance expires" value={adDate(u.insuranceExpiresAd)} />
-                                {u.retiredAtAd && (
-                                  <UnitFact label="Retired" value={`${adDate(u.retiredAtAd)}${u.retirementReason ? ` — ${u.retirementReason}` : ''}`} />
-                                )}
-                                {/* Law 6 — money facts are omitted entirely for
-                                    money-blind roles; null means not on record. */}
-                                {money && (
-                                  <UnitFact label="Purchase price" value={u.purchasePrice !== null ? formatMoney(u.purchasePrice) : 'Not on record'} />
-                                )}
-                                {money && (
-                                  <UnitFact label="Replacement value" value={u.replacementValue !== null ? formatMoney(u.replacementValue) : 'Not on record'} />
-                                )}
-                              </div>
-                              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 8 }}>
-                                Accessory checklists per unit are not tracked yet.
+                            <td style={{ padding: '10px 8px' }}>
+                              {u.serialNo ? (
+                                <span className="identifier" style={{ color: 'var(--muted)', fontSize: 'var(--t-th)' }}>{u.serialNo}</span>
+                              ) : (
+                                <span style={{ color: 'var(--muted)' }}>—</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '10px 8px' }}>{conditionChip(u.condition)}</td>
+                            <td style={{ padding: '10px 8px' }}>{statusChip(u.state)}</td>
+                            <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>
+                              {unitLocationOf(u) ?? '—'}
+                            </td>
+                            <td style={{ padding: '10px 8px' }}>
+                              <span className="figure">{u.runningHours}h</span>
+                            </td>
+                            <td style={{ padding: '10px 8px', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                              {adDate(u.nextMaintenanceAtAd)}
+                            </td>
+                            <td style={{ padding: '10px 8px', textAlign: 'right' }}>
+                              <div style={{ display: 'inline-flex', gap: 6 }}>
+                                <Button variant="ghost" onClick={() => setLabelUnit(u)}>Label</Button>
+                                <Button variant="ghost" onClick={() => setEditingUnit((s) => (s === u.id ? null : u.id))}>
+                                  {editingUnit === u.id ? 'Close' : 'Edit'}
+                                </Button>
                               </div>
                             </td>
                           </tr>
-                        )}
-                      </Fragment>
-                    )
-                  })}
-                </tbody>
-              </table>
+
+                          {editingUnit === u.id && (
+                            <tr key={`${u.id}-edit`} style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                              <td />
+                              <td colSpan={8} style={{ padding: '8px 12px 14px' }}>
+                                <UnitEditor unit={u} money={money} onDone={() => setEditingUnit(null)} />
+                              </td>
+                            </tr>
+                          )}
+
+                          {/* Expanded unit record — the real per-unit columns. The
+                              previous build rendered four Sony FX3 accessories here
+                              under every unit of every asset; accessory checklists
+                              have no table yet, and that is said instead. */}
+                          {expanded && (
+                            <tr key={`${u.id}-detail`} style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                              <td />
+                              <td colSpan={8} style={{ padding: '8px 12px 14px' }}>
+                                <div style={{ fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 6 }}>
+                                  Unit Record
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                                  <UnitFact label="Barcode" value={u.barcode ?? '—'} />
+                                  <UnitFact label="QR code" value={u.qrCode ?? '—'} />
+                                  <UnitFact label="Last maintenance" value={adDate(u.lastMaintenanceAtAd)} />
+                                  <UnitFact label="Warranty expires" value={adDate(u.warrantyExpiresAd)} />
+                                  <UnitFact label="Insurance expires" value={adDate(u.insuranceExpiresAd)} />
+                                  {u.retiredAtAd && (
+                                    <UnitFact label="Retired" value={`${adDate(u.retiredAtAd)}${u.retirementReason ? ` — ${u.retirementReason}` : ''}`} />
+                                  )}
+                                  {/* Law 6 — money facts are omitted entirely for
+                                      money-blind roles; null means not on record. */}
+                                  {money && (
+                                    <UnitFact label="Purchase price" value={u.purchasePrice !== null ? formatMoney(u.purchasePrice) : 'Not on record'} />
+                                  )}
+                                  {money && (
+                                    <UnitFact label="Replacement value" value={u.replacementValue !== null ? formatMoney(u.replacementValue) : 'Not on record'} />
+                                  )}
+                                </div>
+                                <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 8 }}>
+                                  Accessory checklists per unit are not tracked yet.
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </Card>
@@ -889,33 +899,35 @@ export default function AssetDetail() {
                 ))}
               </div>
             ) : units.length > 0 ? (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)', minWidth: viewport === 'tablet' ? 640 : 760 }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
-                      <th style={{ padding: '8px' }}>Unit</th>
-                      <th style={{ padding: '8px' }}>Condition</th>
-                      <th style={{ padding: '8px' }}>Running Hours</th>
-                      <th style={{ padding: '8px' }}>Last Maintenance</th>
-                      <th style={{ padding: '8px' }}>Next Due</th>
-                      <th style={{ padding: '8px' }}>Warranty</th>
-                      <th style={{ padding: '8px' }}>Insurance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {units.map((u) => (
-                      <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '10px 8px' }}><span className="identifier">{u.assetTag}</span></td>
-                        <td style={{ padding: '10px 8px' }}>{conditionChip(u.condition)}</td>
-                        <td style={{ padding: '10px 8px' }}><span className="figure">{u.runningHours}h</span></td>
-                        <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{adDate(u.lastMaintenanceAtAd)}</td>
-                        <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{adDate(u.nextMaintenanceAtAd)}</td>
-                        <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{adDate(u.warrantyExpiresAd)}</td>
-                        <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{adDate(u.insuranceExpiresAd)}</td>
+              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)', minWidth: viewport === 'tablet' ? 640 : 760 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
+                        <th style={{ padding: '8px' }}>Unit</th>
+                        <th style={{ padding: '8px' }}>Condition</th>
+                        <th style={{ padding: '8px' }}>Running Hours</th>
+                        <th style={{ padding: '8px' }}>Last Maintenance</th>
+                        <th style={{ padding: '8px' }}>Next Due</th>
+                        <th style={{ padding: '8px' }}>Warranty</th>
+                        <th style={{ padding: '8px' }}>Insurance</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {units.map((u) => (
+                        <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td style={{ padding: '10px 8px' }}><span className="identifier">{u.assetTag}</span></td>
+                          <td style={{ padding: '10px 8px' }}>{conditionChip(u.condition)}</td>
+                          <td style={{ padding: '10px 8px' }}><span className="figure">{u.runningHours}h</span></td>
+                          <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{adDate(u.lastMaintenanceAtAd)}</td>
+                          <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{adDate(u.nextMaintenanceAtAd)}</td>
+                          <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{adDate(u.warrantyExpiresAd)}</td>
+                          <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{adDate(u.insuranceExpiresAd)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : (
               <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No unit rows carry maintenance dates for this product.</div>
@@ -1041,6 +1053,7 @@ export default function AssetDetail() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </PageShell>
   )
 }

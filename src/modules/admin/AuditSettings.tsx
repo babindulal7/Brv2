@@ -395,7 +395,7 @@ export default function AuditSettings() {
             <Card
               title="Audit Categories"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   View all →
                 </span>
               }
@@ -429,7 +429,7 @@ export default function AuditSettings() {
             <Card
               title="Retention Policies"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   Manage Policies →
                 </span>
               }
@@ -482,7 +482,7 @@ export default function AuditSettings() {
             <Card
               title="Audit Rules"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   View all rules →
                 </span>
               }
@@ -535,7 +535,7 @@ export default function AuditSettings() {
             <Card
               title="Compliance Rules"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   View all →
                 </span>
               }
@@ -630,7 +630,7 @@ export default function AuditSettings() {
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={sub}>AI Audit Insights</span>
-                  <span style={{ ...link, marginLeft: 'auto', fontSize: 'var(--t-meta)' }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                  <span style={{ ...link, marginLeft: 'auto', fontSize: 'var(--t-meta)' }} aria-disabled title="Not built yet">
                     View Insights →
                   </span>
                 </div>
@@ -660,7 +660,7 @@ export default function AuditSettings() {
           <Card
             title="Alerts"
             action={
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+              <span style={link} aria-disabled title="Not built yet">
                 View all →
               </span>
             }
@@ -720,7 +720,7 @@ export default function AuditSettings() {
           <Card
             title="Recent Activity"
             action={
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+              <span style={link} aria-disabled title="Not built yet">
                 View all →
               </span>
             }

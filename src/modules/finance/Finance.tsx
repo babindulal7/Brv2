@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
 import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
@@ -36,6 +38,7 @@ import {
   businessNowAd,
   todayDate,
   SPEC_TABS,
+  fetchInvoiceLines,
   type InvoiceRow,
   type InvoiceListRow,
   type PaymentListRow,
@@ -961,6 +964,22 @@ export default function Finance() {
 
   const handleExportPdf = useCallback(async (row: InvoiceListRow) => {
     try {
+      const dbLines = await fetchInvoiceLines(row.id)
+      const lines =
+        dbLines.length > 0
+          ? dbLines.map((l) => ({
+              description: l.description,
+              quantity: l.quantity,
+              totalPaisa: rupees(l.lineTotal),
+            }))
+          : [
+              {
+                description: 'Equipment Rental & Production Services',
+                quantity: 1,
+                totalPaisa: row.totalAmount,
+              },
+            ]
+
       await exportInvoicePdf(
         {
           invoiceNo: row.invoiceNo,
@@ -969,13 +988,7 @@ export default function Finance() {
           dueDateAd: row.dueDateAd,
           bookingNo: row.bookingNo,
           client: { name: row.clientName },
-          lines: [
-            {
-              description: 'Equipment Rental & Production Services',
-              quantity: 1,
-              totalPaisa: row.totalAmount,
-            },
-          ],
+          lines,
           subtotalPaisa: row.totalAmount,
           taxablePaisa: row.totalAmount,
           vatPaisa: row.vatAmount,
@@ -1339,7 +1352,7 @@ export default function Finance() {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
       {/* The three actions are omitted for a money-blind session, not disabled:
           all three operate on records that session may not read. */}
       {/* The header actions belong to the two tabs this file owns: Create
@@ -1362,7 +1375,6 @@ export default function Finance() {
             }
           : { icon: 'card' as const })}
         title="Finance"
-        description="Finance consumes operational data and never creates it."
         {...(money && (tab === 'Dashboard' || tab === 'Invoices') ? { actions: headerActions } : {})}
       />
 
@@ -1375,53 +1387,16 @@ export default function Finance() {
         The labels come from `SPEC_TABS['/finance']`; see `FINANCE_TABS` above
         for why, and for where the deleted fifth "Audit" tab went.
       */}
-      <div
-        role="tablist"
-        aria-label="Finance"
-        className="rsp-chip-scroll"
-        style={{
-          display: 'flex',
-          gap: 'var(--sp-xs)',
-          borderBottom: '1px solid var(--border)',
-          overflowX: 'auto',
-          scrollbarWidth: 'thin',
-        }}
-      >
-        {FINANCE_TABS.map((t) => {
-          const on = tab === t
-          return (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={on}
-              onClick={() => {
-                if (t !== 'Invoices') setInvoiceFiltersOpen(false)
-                setTab(t as FinanceTab)
-              }}
-              style={{
-                /* Law 15 — 44×44 at every width, desktop included. The strip was
-                   34px high, which is a touch target nobody on the tablet this
-                   product targets can hit reliably. */
-                minHeight: 44,
-                padding: '0 13px',
-                flexShrink: 0,
-                border: 'none',
-                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                background: 'transparent',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 700 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                marginBottom: -1,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {t}
-            </button>
-          )
-        })}
+      <div style={{ overflowX: 'auto', paddingBottom: 2, maxWidth: '100%' }}>
+        <SegmentedControl<FinanceTab>
+          ariaLabel="Finance sections"
+          options={FINANCE_TABS.map((t) => ({ id: t as FinanceTab, label: t }))}
+          value={tab}
+          onChange={(next) => {
+            if (next !== 'Invoices') setInvoiceFiltersOpen(false)
+            setTab(next)
+          }}
+        />
       </div>
 
       {/*
@@ -1988,13 +1963,14 @@ export default function Finance() {
           isOpen={!!selectedInvoiceForVoid}
           onClose={() => setSelectedInvoiceForVoid(null)}
           onSuccess={handleVoidSuccess}
-          invoiceId={selectedInvoiceForVoid.invoiceNo}
+          invoiceId={selectedInvoiceForVoid.id}
+          invoiceNo={selectedInvoiceForVoid.invoiceNo}
           client={selectedInvoiceForVoid.clientName}
         />
       )}
 
       <FooterNote extra={['Finance consumes operational data and never creates it']} />
-    </div>
+    </PageShell>
   )
 }
 

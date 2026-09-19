@@ -526,7 +526,7 @@ export default function ClientReports() {
                   </span>
                 </div>
               ))}
-              <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+              <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet">
                 View All High Risk →
               </span>
             </Card>

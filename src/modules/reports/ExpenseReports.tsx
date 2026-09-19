@@ -661,9 +661,11 @@ export default function ExpenseReports() {
           <Card
             title="Upcoming Payments"
             action={
-              <Link to="/automation" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}>
-                View All
-              </Link>
+              <Unavailable reason="Recurring expenses and automation center are not built yet.">
+                <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', cursor: 'not-allowed' }}>
+                  View All
+                </span>
+              </Unavailable>
             }
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
@@ -717,15 +719,23 @@ export default function ExpenseReports() {
               ))}
             </div>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
-              {QUICK_ACTIONS_MORE.map((label) => (
-                <Link
-                  key={label}
-                  to={label === 'Recurring Expenses' ? '/automation' : '/documents'}
-                  style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
-                >
-                  {label} →
-                </Link>
-              ))}
+              {QUICK_ACTIONS_MORE.map((label) =>
+                label === 'Recurring Expenses' ? (
+                  <Unavailable key={label} reason="Recurring expenses scheduler is not built yet.">
+                    <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', cursor: 'not-allowed' }}>
+                      {label} →
+                    </span>
+                  </Unavailable>
+                ) : (
+                  <Link
+                    key={label}
+                    to="/documents"
+                    style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
+                  >
+                    {label} →
+                  </Link>
+                ),
+              )}
             </div>
           </Card>
         </ReflowRail>

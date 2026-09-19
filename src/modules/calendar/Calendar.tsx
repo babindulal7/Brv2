@@ -3395,30 +3395,6 @@ export default function Calendar() {
       <PageHeader
         icon="calendar"
         title="Calendar"
-        /*
-         * ⛔ Was "Plan resources, track availability, and manage operational
-         * schedules." — three promises, none of which this screen keeps.
-         *
-         *  · *plan resources* — there are no resources to plan; `product_units`
-         *    is empty and the Timeline says so.
-         *  · *track availability* — availability is answered per booking at
-         *    confirm time, not tracked here; the Availability tab explains which
-         *    question lives where.
-         *  · *manage operational schedules* — nothing on this page schedules
-         *    anything. It reads.
-         *
-         * A subtitle is the first thing an operator reads and the last thing
-         * anyone checks. This one now says what the page does.
-         *
-         * ⚠ It then over-claimed in the other direction: *"Every confirmed
-         * booking in the window"*. The read maps three stages —Booked and Packed
-         * to `Reserved`, On Rent to `On Rent` — and drops cancellations, so a
-         * quote, a returned booking and a closed one are all absent, and 197 of
-         * the 246 bookings in the database can never appear. "Every" was the
-         * word doing the damage: an operator who trusts it reads an empty day as
-         * "nothing happened", when a returned booking may well have.
-         */
-        description="Bookings that are booked, packed or out — by month or by week, in both calendars. Quotes, returns and closed bookings are not drawn here."
         actions={
           <>
             {navButtons}

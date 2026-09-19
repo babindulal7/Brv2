@@ -465,7 +465,7 @@ export default function ProductReports() {
                   <span className="figure" style={{ textAlign: 'right', color: 'var(--muted)' }}>{s.lead}</span>
                 </div>
               ))}
-              <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+              <span style={{ ...link, display: 'inline-block', marginTop: 6 }} aria-disabled title="Not built yet">
                 View All Suppliers →
               </span>
             </Card>

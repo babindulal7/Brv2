@@ -514,7 +514,9 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
             <Button variant="primary" icon={<Icon name="checklist" size={13} />} disabled={scanBusy} onClick={handleScanSubmit}>
               {scanBusy ? 'Checking…' : 'Scan'}
             </Button>
-            <Button type="button" icon={<Icon name="camera" size={13} />} onClick={() => setShowScannerModal(true)}>
+            {/* variant/size explicit since the Phase-1 default unification:
+                importing from ui/Button no longer implies primary/md. */}
+            <Button type="button" variant="primary" size="md" icon={<Icon name="camera" size={13} />} onClick={() => setShowScannerModal(true)}>
               Camera
             </Button>
           </div>

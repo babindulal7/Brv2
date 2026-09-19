@@ -218,7 +218,7 @@ const SAVED_VIEWS: SavedView[] = [
 const th = {
   textAlign: 'left' as const,
   padding: '9px 12px',
-  fontSize: 'var(--t-th)',
+  fontSize: 'var(--t-meta)',
   fontWeight: 600,
   color: 'var(--text2)',
   whiteSpace: 'nowrap' as const,
@@ -282,18 +282,20 @@ function SortHeader({
           background: 'transparent',
           padding: 0,
           fontFamily: 'inherit',
-          fontSize: 'var(--t-th)',
+          fontSize: 'var(--t-meta)',
           fontWeight: 600,
-          color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+          color: on ? 'var(--text)' : 'var(--text2)',
           cursor: 'pointer',
         }}
       >
-        {label}
-        <Icon
-          name={on && sort.dir === 'asc' ? 'arrow_up' : 'arrow_down'}
-          size={11}
-          style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)' }}
-        />
+        <span>{label}</span>
+        {on && (
+          <Icon
+            name={sort.dir === 'asc' ? 'arrow_up' : 'arrow_down'}
+            size={12}
+            style={{ color: 'var(--text2)' }}
+          />
+        )}
       </button>
     </th>
   )
@@ -1837,14 +1839,19 @@ export function ClientsDirectory({
                                 <span
                                   aria-hidden
                                   style={{
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: 'var(--r-sm)',
+                                    width: 36,
+                                    height: 36,
+                                    borderRadius: 'var(--r-badge)',
                                     display: 'grid',
                                     placeItems: 'center',
+                                    textAlign: 'center',
+                                    lineHeight: 1.05,
                                     background: STATUS[TIER_TONE[client.membership]].bg,
                                     color: STATUS[TIER_TONE[client.membership]].fg,
-                                    fontSize: 'var(--t-th)',
+                                    border: STATUS[TIER_TONE[client.membership]].border
+                                      ? `1px solid ${STATUS[TIER_TONE[client.membership]].border}`
+                                      : undefined,
+                                    fontSize: 'var(--t-meta)',
                                     fontWeight: 700,
                                     flexShrink: 0,
                                   }}
@@ -1853,7 +1860,9 @@ export function ClientsDirectory({
                                 </span>
                                 <span style={{ minWidth: 0 }}>
                                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontWeight: 600, color: 'var(--text)' }}>{client.name}</span>
+                                    <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                                      {client.name}
+                                    </span>
                                     {client.isVip && <Tone text="VIP" entity />}
                                     {client.isVerified && (
                                       <span
@@ -1876,7 +1885,7 @@ export function ClientsDirectory({
                                     )}
                                   </span>
                                   {client.company && (
-                                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 1 }}>
+                                    <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 1 }}>
                                       {client.company}
                                     </span>
                                   )}

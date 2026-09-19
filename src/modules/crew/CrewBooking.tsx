@@ -409,7 +409,6 @@ export function CrewBooking() {
         // and spec 06's own heading all read "Crew Assist". The `<h1>` said
         // "Crew Booking"; three surfaces against one is not a naming question.
         title="Crew Assist"
-        description="Book, coordinate and reconcile production crew — schedule, cost and payouts in one place."
         actions={
           <Unavailable reason={BOOK_CREW_UNAVAILABLE}>
             <Button variant="primary" icon="plus" disabled aria-label="Book Crew">

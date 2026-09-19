@@ -2,6 +2,8 @@ import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { PageHeader } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { Button } from '../../components/ui/Button'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
@@ -104,11 +106,42 @@ type FilterKey = SubRentalStatus | 'All' | 'Overdue'
  * `Unavailable` is this codebase's "grey it out, but say why" control, and it
  * carries the reason on touch as well as on hover.
  */
+function exportSubRentalsCsv(rows: SubRentalRecord[], canViewMoney: boolean) {
+  const head = ['Reference', 'Direction', 'Supplier / Client', 'Equipment', 'Quantity', 'Status', 'Start Date', 'End Date', 'Linked Booking']
+  if (canViewMoney) head.push('Rental Value (NPR)', 'Revenue / Cost (NPR)')
+  const body = rows.map((r) => {
+    const cells = [
+      r.id,
+      r.direction,
+      r.counterparty,
+      r.equipment,
+      String(r.quantity),
+      r.status,
+      r.startDateAd,
+      r.endDateAd,
+      r.linkedBooking ?? '',
+    ]
+    if (canViewMoney) {
+      cells.push(
+        r.rentalValuePaisa ? formatMoney(r.rentalValuePaisa) : '',
+        r.revenuePaisa ? formatMoney(r.revenuePaisa) : (r.costPaisa ? formatMoney(r.costPaisa) : ''),
+      )
+    }
+    return cells
+  })
+  const csv = [head, ...body]
+    .map((cells) => cells.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n')
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `sub-rentals-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 const NEW_SUB_RENTAL_REASON =
   'A sub-rental belongs to the booking it supplies. Open that booking and use Create Sub-Rental there — there is no booking-less path, and no rule yet for who may create one.'
-
-const EXPORT_REASON =
-  'Export is not built — there is no sub-rental report generator in this release, so nothing would be produced.'
 
 /*
  * ── The KPI strip states what it cannot count ──────────────────────────────
@@ -459,43 +492,31 @@ export function SubRental() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      {/* The route's `<h1>` — this screen opened straight on its tab strip,
-          the only Operations screen without a title landmark (A7). */}
+    <PageShell width="full">
       <PageHeader
-        title="Sub Rental"
-        description="Equipment brought in from partner suppliers to cover a booking, and the suppliers it comes from."
+        breadcrumb={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <Link to="/operations" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <Icon name="chevron_left" size={14} />
+              Operations
+            </Link>
+            <span>›</span>
+            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Sub-Rentals</span>
+          </div>
+        }
+        title="Sub-Rentals"
       />
 
-      {/* Suppliers directory — a second tab inside Sub Rental rather than a
-          new top-level route; see SupplierDirectoryTable's doc comment. */}
-      <div style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
-        {(['Transactions', 'Suppliers'] as const).map((t) => {
-          const on = subTab === t
-          return (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setSubTab(t)}
-              aria-current={on ? 'page' : undefined}
-              style={{
-                height: 32,
-                padding: '0 12px',
-                border: 'none',
-                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                background: 'transparent',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 700 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                marginBottom: -1,
-              }}
-            >
-              {t}
-            </button>
-          )
-        })}
+      <div style={{ marginBottom: 'var(--sp-md)' }}>
+        <SegmentedControl
+          ariaLabel="Sub-Rental sections"
+          options={[
+            { id: 'Transactions', label: 'Transactions', icon: 'file' },
+            { id: 'Suppliers', label: 'Suppliers Directory', icon: 'users' },
+          ]}
+          value={subTab}
+          onChange={(val) => setSubTab(val as 'Transactions' | 'Suppliers')}
+        />
       </div>
 
       {subTab === 'Suppliers' ? (
@@ -598,11 +619,13 @@ export function SubRental() {
               icon={<IconSearch size={16} />}
             />
           </div>
-          <Unavailable reason={EXPORT_REASON}>
-            <Button variant="secondary" disabled icon={<IconDownload size={16} />}>
-              Export
-            </Button>
-          </Unavailable>
+          <Button
+            variant="secondary"
+            icon={<IconDownload size={16} />}
+            onClick={() => exportSubRentalsCsv(filteredData, canSeeFinance)}
+          >
+            Export
+          </Button>
           {/* Law 6 / §4.1 — the gate this button never had. A sub-rental is a
               vendor cost against a client charge, so it is `asset-finance`
               work, and the same flag that omits the ₨ tiles and the Revenue &
@@ -786,6 +809,6 @@ export function SubRental() {
       </Card>
         </>
       )}
-    </div>
+    </PageShell>
   )
 }

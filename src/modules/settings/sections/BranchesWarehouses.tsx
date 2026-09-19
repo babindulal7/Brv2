@@ -1234,7 +1234,7 @@ function AddBranchModal({
         background: 'var(--modal)',
         display: 'grid',
         placeItems: 'center',
-        zIndex: 9000,
+        zIndex: 'var(--z-modal)' as unknown as number,
         padding: 20,
       }}
     >

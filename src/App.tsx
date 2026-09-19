@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import Sidebar from './components/shell/Sidebar'
 import BottomBar, { BAR_BOX } from './components/shell/BottomBar'
@@ -112,21 +112,10 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false)
 
   useEffect(() => {
+    installRoutePreload()
     const completed = localStorage.getItem('babin-onboarding-completed')
     if (completed !== 'true') {
       setShowOnboarding(true)
-    }
-  }, [])
-
-  useEffect(() => {
-    const install = () => {
-      localStorage.setItem('babin-onboarding-completed', 'true')
-      setShowOnboarding(false)
-    }
-    if (!localStorage.getItem('babin-onboarding-completed')) {
-      // Show onboarding once after first auth state settles
-      const timer = setTimeout(install, 500)
-      return () => clearTimeout(timer)
     }
   }, [])
 
@@ -484,9 +473,11 @@ export default function App() {
           }
         />
 
+        <Route path="/finance/invoices" element={<Navigate to="/finance?tab=invoices" replace />} />
         <Route path="/finance/payments" element={<Navigate to="/finance?tab=payments" replace />} />
         <Route path="/finance/expenses" element={<Navigate to="/finance?tab=expenses" replace />} />
         <Route path="/finance/documents" element={<Navigate to="/finance?tab=documents" replace />} />
+        <Route path="/finance/reports" element={<Navigate to="/finance?tab=reports" replace />} />
 
         <Route
           path="/reports/pulse"

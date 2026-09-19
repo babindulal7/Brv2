@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { useViewport } from '../../lib/device'
 import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import type { Kpi } from '../../components/ui/Page'
 import { ClientsDirectory } from './ClientsDirectory'
 import { useClients, useMembershipPlans } from '../../lib/queries/useClients'
@@ -140,8 +142,10 @@ export default function Clients() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <PageHeader
+    <PageShell
+      width="full"
+      header={
+        <PageHeader
         {...(activeTab === 'clients'
           ? {
               leading: (
@@ -154,7 +158,6 @@ export default function Clients() {
             }
           : {})}
         title="Clients"
-        description="Manage your clients, memberships, referrals, imports, duplicates and credit"
         actions={
           <>
             <Button variant="primary" icon="plus" aria-label="New Client" onClick={() => setTab('new')}>
@@ -180,46 +183,17 @@ export default function Clients() {
             )}
           </>
         }
-      />
+        />
+      }
+    >
 
-      <div
-        className="rsp-chip-scroll"
-        style={{
-          display: 'flex',
-          gap: 'var(--sp-xs)',
-          borderBottom: '1px solid var(--border)',
-          overflowX: 'auto',
-          flexWrap: 'nowrap',
-          paddingBottom: 1,
-        }}
-      >
-        {visibleTabs.map((t) => {
-          const on = activeTab === t.key
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              aria-current={on ? 'page' : undefined}
-              style={{
-                minHeight: 44,
-                padding: '0 12px',
-                border: 'none',
-                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                background: 'transparent',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 700 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
-                marginBottom: -1,
-              }}
-            >
-              {t.label}
-            </button>
-          )
-        })}
+      <div style={{ overflowX: 'auto', paddingBottom: 2, maxWidth: '100%' }}>
+        <SegmentedControl<TabKey>
+          ariaLabel="Client sections"
+          options={visibleTabs.map((t) => ({ id: t.key, label: t.label }))}
+          value={activeTab}
+          onChange={setTab}
+        />
       </div>
 
       {activeTab === 'clients' && (
@@ -252,7 +226,7 @@ export default function Clients() {
       )}
 
       <FooterNote extra={['Clients are never deleted — a closed account is retained and marked']} />
-    </div>
+    </PageShell>
   )
 }
 

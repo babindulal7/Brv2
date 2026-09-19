@@ -615,7 +615,6 @@ export default function Settings() {
             <PageHeader
               icon="settings"
               title="Settings"
-              description="The organisation, its branches and warehouses, users and roles, money rules, system preferences, apps and security."
               actions={headerActions}
             />
 

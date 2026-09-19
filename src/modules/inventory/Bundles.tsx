@@ -1259,6 +1259,11 @@ export function Bundles() {
                                      same dates this row was measured against. */
                                   onSelect: () => navigate(`/inventory/bundles/${b.id}${windowSearch}`),
                                 },
+                                {
+                                  key: 'edit',
+                                  label: 'Edit bundle',
+                                  onSelect: () => navigate(`/inventory/bundles/${b.id}/edit${windowSearch}`),
+                                },
                               ]}
                             />
                           </td>

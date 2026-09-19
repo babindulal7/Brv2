@@ -141,6 +141,36 @@ export default function OperationsShell({
     [actions?.isDirty, job],
   )
 
+  // Keyboard navigation: 1-4 jumps between unlocked stages
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      const tagName = target?.tagName?.toLowerCase()
+      if (tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target?.isContentEditable) {
+        return
+      }
+
+      if (['1', '2', '3', '4'].includes(e.key)) {
+        const stageIndex = parseInt(e.key, 10) - 1
+        const candidate = JOB_ORDER[stageIndex]
+        if (candidate) {
+          const currentOrder = BOOKING_STATUS[liveStatus]?.order ?? 0
+          const candidateOrder = BOOKING_STATUS[JOBS[candidate].runsAt]?.order ?? 0
+          const isBlocked = currentOrder < candidateOrder
+          if (!isBlocked) {
+            e.preventDefault()
+            requestJob(candidate)
+          }
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen, liveStatus, requestJob])
+
   // Progression upon successful confirmation
   const completed = useCallback(async () => {
     const next = NEXT_JOB[job]
@@ -305,6 +335,65 @@ export default function OperationsShell({
             )
           })}
         </nav>
+
+        {floor && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--sp-md)',
+              flexWrap: 'wrap',
+              padding: '8px 14px',
+              borderRadius: 'var(--r-sm)',
+              background: 'var(--surface-2, rgba(255, 255, 255, 0.04))',
+              border: '1px solid var(--border)',
+              marginBottom: 14,
+              fontSize: 'var(--t-meta)',
+              color: 'var(--text2)',
+            }}
+          >
+            <div>
+              <span style={{ color: 'var(--muted)', marginRight: 4 }}>Booking:</span>
+              <strong style={{ color: 'var(--text)' }}>{bookingNo}</strong>
+            </div>
+            {floor.clientName && (
+              <div>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Client:</span>
+                <strong style={{ color: 'var(--text)' }}>{floor.clientName}</strong>
+              </div>
+            )}
+            {floor.project && (
+              <div>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Project:</span>
+                <strong style={{ color: 'var(--text)' }}>{floor.project}</strong>
+              </div>
+            )}
+            {floor.pickupAtAd && (
+              <div>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Pickup:</span>
+                <span style={{ color: 'var(--text)' }}>{floor.pickupAtAd.slice(0, 10)}</span>
+              </div>
+            )}
+            {floor.returnAtAd && (
+              <div>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Return:</span>
+                <span style={{ color: 'var(--text)' }}>{floor.returnAtAd.slice(0, 10)}</span>
+              </div>
+            )}
+            {floor.deliveryType && (
+              <div>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Delivery:</span>
+                <span style={{ color: 'var(--text)', textTransform: 'capitalize' }}>{floor.deliveryType}</span>
+              </div>
+            )}
+            {floor.lines && floor.lines.length > 0 && (
+              <div style={{ marginLeft: 'auto' }}>
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>Lines:</span>
+                <strong style={{ color: 'var(--text)' }}>{floor.lines.length}</strong>
+              </div>
+            )}
+          </div>
+        )}
 
         {!currentGate.allowed && (
           <p

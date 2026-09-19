@@ -9,6 +9,7 @@ interface VoidInvoiceModalProps {
   onClose: () => void
   onSuccess: (invoiceId: string) => void
   invoiceId: string
+  invoiceNo?: string
   client: string
 }
 
@@ -17,6 +18,7 @@ export function VoidInvoiceModal({
   onClose,
   onSuccess,
   invoiceId,
+  invoiceNo,
   client,
 }: VoidInvoiceModalProps) {
   const { user } = useAuth()
@@ -65,7 +67,7 @@ export function VoidInvoiceModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Void Invoice — ${invoiceId}`}
+      title={`Void Invoice — ${invoiceNo ?? invoiceId}`}
       subtitle={`Safe-cancelling invoice for ${client}. Terminology rule: 'Void', never 'Delete'.`}
       size="md"
       footer={

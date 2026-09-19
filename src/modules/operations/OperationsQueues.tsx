@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, FooterNote, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { PageBody } from '../../components/ui/PageBody'
 import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
 import { FastReturnModal } from '../rentals/modals/FastReturnModal'
@@ -655,15 +656,16 @@ export default function OperationsQueues() {
       : 'No booking is sitting at a stage that has floor work in this range.'
 
   return (
-    <div
-      className="operations-v2"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: showMoreFilters && viewport !== 'phone' ? 'minmax(230px, 280px) minmax(0,1fr)' : 'minmax(0,1fr)',
-        gap: 'var(--sp-md)',
-        alignItems: 'start',
-      }}
-    >
+    <PageShell width="full">
+      <div
+        className="operations-v2"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: showMoreFilters && viewport !== 'phone' ? 'minmax(230px, 280px) minmax(0,1fr)' : 'minmax(0,1fr)',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
       <div style={{ gridColumn: '1 / -1' }}>
         <PageHeader
           leading={
@@ -675,8 +677,18 @@ export default function OperationsQueues() {
             />
           }
           title="Operations"
-          description="Track and manage daily workflow. One floor list for every day."
-          actions={<DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refreshAll} loading={list.loading} />}
+          actions={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+              <Button
+                variant="outline"
+                icon="box"
+                onClick={() => routeNavigate('/operations/sub-rental')}
+              >
+                Sub-Rentals
+              </Button>
+              <DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refreshAll} loading={list.loading} />
+            </div>
+          }
         />
       </div>
 
@@ -851,5 +863,6 @@ export default function OperationsQueues() {
         <FooterNote extra={['Queues are stages — no page defines its own status names']} />
       </div>
     </div>
+    </PageShell>
   )
 }

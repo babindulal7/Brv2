@@ -709,7 +709,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           />
         }
         title="Documents"
-        description="Every rental and finance document in one place. Create, manage, send and track — a document exists once."
         actions={
           <>
             {!phone && (

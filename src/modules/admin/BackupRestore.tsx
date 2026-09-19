@@ -331,7 +331,7 @@ export default function BackupRestore() {
             <Card
               title="Backup Overview"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   View all types →
                 </span>
               }
@@ -533,7 +533,7 @@ export default function BackupRestore() {
             <Card
               title="Restore Center"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   Learn more →
                 </span>
               }
@@ -678,7 +678,7 @@ export default function BackupRestore() {
             <Card
               title="Cloud Storage & Destinations"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   Manage →
                 </span>
               }
@@ -706,7 +706,7 @@ export default function BackupRestore() {
             <Card
               title="Integrity & Verification"
               action={
-                <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+                <span style={link} aria-disabled title="Not built yet">
                   View logs →
                 </span>
               }
@@ -763,7 +763,7 @@ export default function BackupRestore() {
           <Card
             title="Alerts"
             action={
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+              <span style={link} aria-disabled title="Not built yet">
                 View all →
               </span>
             }
@@ -830,7 +830,7 @@ export default function BackupRestore() {
           <Card
             title="Recent Activity"
             action={
-              <span style={link} aria-disabled title="Not built yet — see SCREENS.md for what is done">
+              <span style={link} aria-disabled title="Not built yet">
                 View all →
               </span>
             }
