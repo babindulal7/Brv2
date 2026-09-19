@@ -9,7 +9,7 @@ import { rupees } from '../money'
 export async function getDamageFindings(): Promise<DamageFinding[]> {
   try {
     const { data, error } = await supabase
-      .from('cases')
+      .from('cases_v')
       .select('id, case_no, title, status, priority, created_at, assessed_amount, deposit_held_amount, charged_to_client_amount, counterparty_name')
       .eq('type', 'Damage')
 

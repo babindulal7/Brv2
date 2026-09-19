@@ -1603,19 +1603,26 @@ async function writeDamageFindings(
 ): Promise<number> {
   const damage = line.damage ?? []
   for (const d of damage) {
-    await idempotentInsert('damage_findings', {
-      client_uuid: generateClientUuid(),
-      source: 'Return inspection',
-      return_line_id: returnLineId,
-      unit_id: d.unitId,
-      /* The floor's own word for what it found. There is no ruled damage-type
-         vocabulary anywhere in the specs, and inventing one ('Scratch',
-         'Water', …) would be inventing the vocabulary. TODO(decision). */
-      damage_type: d.condition,
-      description: d.description.trim(),
-      severity: SEVERITY_NOT_ASSESSED,
-      created_by: ctx.userId,
-    })
+    await idempotentInsert(
+      'damage_findings',
+      {
+        client_uuid: generateClientUuid(),
+        source: 'Return inspection',
+        return_line_id: returnLineId,
+        unit_id: d.unitId,
+        /* The floor's own word for what it found. There is no ruled damage-type
+           vocabulary anywhere in the specs, and inventing one ('Scratch',
+           'Water', …) would be inventing the vocabulary. TODO(decision). */
+        damage_type: d.condition,
+        description: d.description.trim(),
+        severity: SEVERITY_NOT_ASSESSED,
+        created_by: ctx.userId,
+      },
+      /* 0130: `damage_findings.estimated_cost` is ungranted once Law 6 arms
+         this table — a default `RETURNING *` would throw 42501 after the row
+         commits. The caller counts finds; it never reads the row. */
+      { returnRow: false },
+    )
   }
   return damage.length
 }
@@ -2011,16 +2018,22 @@ async function completeResetQueue(
      * and the finding is the record until case creation exists.
      */
     if (problem === 'Damaged') {
-      await idempotentInsert('damage_findings', {
-        client_uuid: generateClientUuid(),
-        source: 'Cleaning',
-        cleaning_queue_entry_id: row.id,
-        unit_id: row.unit_id,
-        damage_type: entry.damageType ?? 'Not stated',
-        description: (entry.problemReason ?? '').trim(),
-        severity: entry.damageSeverity ?? SEVERITY_NOT_ASSESSED,
-        created_by: ctx.userId,
-      })
+      await idempotentInsert(
+        'damage_findings',
+        {
+          client_uuid: generateClientUuid(),
+          source: 'Cleaning',
+          cleaning_queue_entry_id: row.id,
+          unit_id: row.unit_id,
+          damage_type: entry.damageType ?? 'Not stated',
+          description: (entry.problemReason ?? '').trim(),
+          severity: entry.damageSeverity ?? SEVERITY_NOT_ASSESSED,
+          created_by: ctx.userId,
+        },
+        /* Same as the 'Return inspection' writer above: no read-back once the
+           money grant mask (0130) makes RETURNING * unanswerable. */
+        { returnRow: false },
+      )
       findings += 1
     }
 

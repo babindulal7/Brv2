@@ -171,7 +171,16 @@ export const approvePurchaseRequestConfig: ActionConfig<ApprovePurchaseRequestIn
 
     /* `as never` — the sanctioned cast from createClient.ts:389-405: the
        hand-written `Database` type has no `purchase_requests` entry. */
-    const updateResult = await safeUpdate('purchase_requests' as never, pr.id, patch as never, input.clientUuid)
+    const updateResult = await safeUpdate(
+      'purchase_requests' as never,
+      pr.id,
+      patch as never,
+      input.clientUuid,
+      /* 0130: the two estimated-cost columns are ungranted once Law 6 arms this
+         table — a default RETURNING * throws 42501 after the row commits. The
+         echo reads identity/state only. */
+      { returningColumns: 'id, pr_no, status' },
+    )
 
     /* PERSISTENCE CHECK — safeUpdate's network branch returns the SENT patch
        plus `id`, which carries no `pr_no`; only a row read back from the store

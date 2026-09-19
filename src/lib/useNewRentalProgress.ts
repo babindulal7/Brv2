@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useState, useRef } from 'react'
 
 /**
  * Tracks which sections of the New Rental form have been visited.
@@ -25,7 +25,7 @@ export function useNewRentalProgress(
   onChange?: (progress: SectionProgress[]) => void
 ) {
   // Initialize progress: all sections start as unvisited
-  const [progress, setProgress] = useState<SectionProgress[]>(
+  const [progress, setProgress] = useState<SectionProgress[]>(() =>
     sectionTitles.map(title => ({
       id: `section-${sectionTitles.indexOf(title)}`,
       title,
@@ -36,24 +36,21 @@ export function useNewRentalProgress(
 
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
-  useEffect(() => {
-    // Mark sections as visited when they become visible via toggle
-    const handleToggle = (sectionIndex: number) => {
-      setProgress(prev => {
-        const updated = [...prev]
-        updated[sectionIndex].visited = true
-        updated[sectionIndex].completed = !updated[sectionIndex].completed // toggle completed state
-        onChange?.(updated)
-        return updated
-      })
-    }
-
-    // We'll attach toggle handlers via the Section component's onToggle prop
-    // The refs are available after render for intersection observation if needed
-    onChange?.(progress)
-
-    return () => {}
-  }, [progress, onChange])
+  const handleToggle = useCallback((sectionIndex: number) => {
+    setProgress(prev => {
+      const updated = [...prev]
+      const target = updated[sectionIndex]
+      if (target) {
+        updated[sectionIndex] = {
+          ...target,
+          visited: true,
+          completed: !target.completed,
+        }
+      }
+      onChange?.(updated)
+      return updated
+    })
+  }, [onChange])
 
   return { progress, sectionRefs, handleToggle }
 }

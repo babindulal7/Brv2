@@ -200,6 +200,14 @@ export async function listDocuments(filters?: ListFilters): Promise<ListQueryRes
       query = query.or(`document_no.ilike.%${term}%,document_type.ilike.%${term}%`)
     }
 
+    if (filters?.chips?.booking_id?.[0]) {
+      query = query.eq('booking_id', filters.chips.booking_id[0])
+    }
+
+    if (filters?.chips?.client_id?.[0]) {
+      query = query.eq('client_id', filters.chips.client_id[0])
+    }
+
     if (filters?.page) {
       const from = filters.page.index * filters.page.size
       query = query.range(from, from + filters.page.size - 1)
@@ -225,4 +233,12 @@ export async function listDocuments(filters?: ListFilters): Promise<ListQueryRes
       total: 0,
     }
   }
+}
+
+export function documentsForBooking(bookingId: string): ListFilters {
+  return { chips: { booking_id: [bookingId] } }
+}
+
+export function documentsForClient(clientId: string): ListFilters {
+  return { chips: { client_id: [clientId] } }
 }

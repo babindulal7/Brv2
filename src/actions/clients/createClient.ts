@@ -386,7 +386,13 @@ export const createClientConfig: ActionConfig<CreateClientInput, CreateClientRes
 
     let result: Awaited<ReturnType<typeof idempotentInsert>>
     try {
-      result = await idempotentInsert('clients' as never, payload as never)
+      result = await idempotentInsert('clients' as never, payload as never, {
+        /* 0130 arms Law 6 column grants on `clients` — a bare `RETURNING *`
+           names the ungranted money columns (approved_credit_limit,
+           payment_terms) and throws 42501 AFTER the row commits. Name the two
+           granted columns the persistence check actually reads. */
+        returningColumns: 'id, client_code',
+      })
     } catch (err) {
       /*
        * `'clients' as never` / `payload as never` — the same cast

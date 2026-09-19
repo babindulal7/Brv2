@@ -37,9 +37,10 @@ import type { Paisa } from '../money'
  * `ClientListItem.outstanding`; a screen gates on the role before rendering and
  * must not coerce it to 0 for display.
  *
- * `bundles.daily_rate` is NOT masked — `bundles` is not one of the four tables
- * 0062 revokes — so the bundle's own advertised rate is always readable. That
- * asymmetry is real and is left visible rather than flattened.
+ * `bundles.daily_rate` IS masked for money-blind roles — this module reads
+ * `bundles_v` (0130 armed the base table's money grants), so the advertised
+ * rate returns `null` for Warehouse rather than leaking. Money-visible roles
+ * get the real figure through the same view.
  */
 
 /** `bundle_items` joined to the product it names. */
@@ -173,7 +174,7 @@ const BUNDLE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
  * `is_active = false`.
  */
 export async function listBundlesWithItems(opts: ListBundlesOptions = {}): Promise<BundleWithItems[]> {
-  let query = supabase.from('bundles').select(BUNDLE_COLUMNS)
+  let query = supabase.from('bundles_v').select(BUNDLE_COLUMNS)
   /* Law 3 — an inactive bundle is retained, never deleted, so it is filtered
      here rather than expected to be absent. `includeArchived` lifts the filter
      for the Bundles pane, which has a shelf for exactly these. */

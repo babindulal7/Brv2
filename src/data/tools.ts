@@ -663,7 +663,10 @@ export const TOOLS: readonly Tool[] = [
     blurb: 'Services, jobs, sync and incidents.',
     icon: 'activity',
     group: 'deeplink',
-    action: { kind: 'link', to: '/system', owner: 'System Monitor' },
+    action: {
+      kind: 'blocked',
+      reason: 'System Monitor is scheduled for a future release — this surface is not built yet.',
+    },
   },
   {
     id: 'serial-lookup',
@@ -679,7 +682,7 @@ export const TOOLS: readonly Tool[] = [
     blurb: 'Service history, warranty and maintenance state.',
     icon: 'tool',
     group: 'deeplink',
-    action: { kind: 'link', to: '/inventory', owner: 'Inventory ▸ Maintenance' },
+    action: { kind: 'link', to: '/inventory?tab=maintenance', owner: 'Inventory ▸ Maintenance' },
   },
   {
     id: 'integrations',

@@ -169,7 +169,7 @@ const CASE_COLUMNS =
 export async function listCases(filters?: CaseFilters): Promise<ListQueryResult<Case>> {
   try {
     let query = supabase
-      .from('cases')
+      .from('cases_v')
       .select(CASE_COLUMNS)
       .order('opened_at', { ascending: false })
 

@@ -71,6 +71,8 @@ export interface ListFilters {
   tiebreak?: string | undefined
   /** Zero-based page index. Absent means no pagination — use only where the row count is bounded. */
   page?: { index: number; size: number } | undefined
+  /** Explicit row range (inclusive). Overrides `page` when provided. */
+  range?: { from: number; to: number } | undefined
 }
 
 /**
@@ -183,8 +185,10 @@ export function applyListFilters<T extends FilterBuilder<T>>(query: T, filters: 
     q = q.order(filters.tiebreak, { ascending: filters.sort?.ascending ?? true })
   }
 
-  // 6. Page. `range` is inclusive at both ends, so the last index is size-1 past the first.
-  if (filters.page) {
+  // 6. Page or range. `range` is inclusive at both ends.
+  if (filters.range) {
+    q = q.range(filters.range.from, filters.range.to)
+  } else if (filters.page) {
     const from = filters.page.index * filters.page.size
     q = q.range(from, from + filters.page.size - 1)
   }

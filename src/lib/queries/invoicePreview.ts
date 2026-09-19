@@ -401,7 +401,7 @@ export async function previewInvoiceForBooking(
 
   /* ── The payment terms, which set the due date ──────────────────────────── */
   const { data: clientRow, error: clientError } = await supabase
-    .from('clients')
+    .from('clients_v')
     .select('id, payment_terms')
     .eq('id', booking.client_id)
     .maybeSingle()

@@ -817,6 +817,7 @@ describe('Law 4 — payments are immutable, and this module offers no way in', (
       'expensesForBranch',
       'expensesForCategory',
       'expensesInPeriod',
+      'fetchInvoiceLines',
       'financeRestriction',
       'invoiceDetailGroups',
       'invoiceGlance',

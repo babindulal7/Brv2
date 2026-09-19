@@ -1644,4 +1644,40 @@ export {
 export { SPEC_TABS } from '../../data/nav'
 export { businessDayAd, businessNowAd, todayDate } from '../../data/today'
 
+export interface InvoiceLineItem {
+  id: string
+  description: string
+  quantity: number
+  days: number
+  unitRate: number
+  discountPercent: number
+  lineTotal: number
+  sortOrder: number
+  lineKind: string
+}
+
+/**
+ * Fetch persisted line items for an invoice.
+ */
+export async function fetchInvoiceLines(invoiceId: string): Promise<InvoiceLineItem[]> {
+  const { data, error } = await supabase
+    .from('invoice_lines')
+    .select('id, description, quantity, days, unit_rate, discount_percent, line_total, sort_order, line_kind')
+    .eq('invoice_id', invoiceId)
+    .order('sort_order', { ascending: true })
+
+  if (error || !data) return []
+  return (data as Array<Record<string, unknown>>).map((r) => ({
+    id: String(r.id),
+    description: String(r.description),
+    quantity: Number(r.quantity ?? 1),
+    days: Number(r.days ?? 1),
+    unitRate: Number(r.unit_rate ?? 0),
+    discountPercent: Number(r.discount_percent ?? 0),
+    lineTotal: Number(r.line_total ?? 0),
+    sortOrder: Number(r.sort_order ?? 0),
+    lineKind: String(r.line_kind ?? 'Equipment Rental'),
+  }))
+}
+
 

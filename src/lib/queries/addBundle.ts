@@ -95,7 +95,7 @@ export type {
 export async function listActiveBundleTemplates(): Promise<typeof TEMPLATE_BUNDLES> {
   try {
     const { data, error } = await supabase
-      .from('bundles')
+      .from('bundles_v')
       .select('id, name, bundle_code, daily_rate, is_active')
       .eq('is_active', true)
 

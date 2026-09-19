@@ -1,5 +1,6 @@
 import { SectionProgress } from './useNewRentalProgress'
-import { Button, Card } from './Page'
+import { Button } from '../components/ui/Button'
+import { Card } from '../components/ui/Card'
 
 /**
  * Summary of section progress across the New Rental workflow.
@@ -37,7 +38,7 @@ function ProgressSummary({ progress }: { progress: SectionProgress[] }) {
           </span>
         )}
         <Button
-          variant="link"
+          variant="ghost"
           style={{ 
             fontSize: 'var(--t-meta)', 
             color: 'var(--primary)', 

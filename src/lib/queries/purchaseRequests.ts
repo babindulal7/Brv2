@@ -126,7 +126,7 @@ const money = (v: number | null): Paisa => rupees(v ?? 0)
  */
 export async function listPurchaseRequests(limit = 200): Promise<PurchaseRequest[]> {
   const { data, error } = await supabase
-    .from('purchase_requests')
+    .from('purchase_requests_v')
     .select(PR_COLUMNS)
     .order('created_at', { ascending: false })
     .limit(limit)

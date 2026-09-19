@@ -340,4 +340,3 @@ if (HANDOVER_SEED_ERROR) {
  * only this constant and the gate that reads it need to change.
  */
 export const EVIDENCE_MIN_PHOTOS_PER_CASE = 1
-1

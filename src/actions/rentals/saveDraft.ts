@@ -6,9 +6,10 @@ import { safeUpdate } from '../../lib/dataAccess'
 /** Complete, versioned snapshot owned by New Rental. */
 export interface RentalDraftData {
   version: 1
-  bookingNo?: string
+  bookingNo?: string | undefined
   selectedClientId: string | null
   clientDbId: string | null
+  clientName?: string | undefined
   project: string
   kind: string
   govId: string
