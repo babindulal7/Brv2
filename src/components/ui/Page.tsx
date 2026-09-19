@@ -61,36 +61,6 @@ export function Card({
 
 /* ── page title block ──────────────────────────────────────────────────── */
 
-const DEFAULT_EYEBROWS: Record<string, string> = {
-  Dashboard: 'Operations HQ',
-  Today: 'Operations HQ',
-  Rentals: 'Rentals & Dispatch',
-  'Rentals List': 'Rentals & Dispatch',
-  Bookings: 'Rentals & Dispatch',
-  Operations: 'Floor Logistics',
-  Inventory: 'Fleet & Asset Registry',
-  Clients: 'Directory & Accounts',
-  Finance: 'Treasury & Ledger',
-  Payments: 'Treasury & Ledger',
-  Expenses: 'Treasury & Ledger',
-  'Daily Closing': 'Cash Audit & Reconcile',
-  Calendar: 'Schedule & Allocations',
-  Documents: 'Contracts & Invoices',
-  Settings: 'System & Preferences',
-  Reports: 'Analytics & Intelligence',
-  Pulse: 'Operations Intelligence',
-  'Expense Reports': 'Cost Accounting',
-  'Audit Log': 'Compliance & Security',
-  'Activity Log': 'System Audit',
-  Numbering: 'System Sequences',
-  Tools: 'Calculators & Utilities',
-  Cases: 'Service & Resolution',
-  Crew: 'Crew & Transport',
-  'Sub-Rental': 'External Sourcing',
-  'Stock Check': 'Asset Audit',
-  Warehouses: 'Storage & Locations',
-}
-
 export function PageHeader({
   leading,
   icon,
@@ -110,7 +80,7 @@ export function PageHeader({
   breadcrumb?: ReactNode
   status?: ReactNode
 }) {
-  const resolvedEyebrow = eyebrow !== undefined ? eyebrow : DEFAULT_EYEBROWS[title]
+  const resolvedEyebrow = eyebrow
 
   return (
     <header className="page-header animate-entrance" style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
@@ -140,7 +110,17 @@ export function PageHeader({
               <Icon name={icon} size={17} fill />
             </span>
           )}
-          <h1 style={{ margin: 0, fontSize: 'var(--t-h1)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', fontFamily: 'var(--font-display)' }}>
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 'clamp(26px, 2.4vw, 34px)',
+              fontWeight: 800,
+              color: 'var(--text)',
+              letterSpacing: '-0.03em',
+              lineHeight: 1.15,
+              fontFamily: 'var(--font-display, inherit)',
+            }}
+          >
             {title}
           </h1>
           {status}

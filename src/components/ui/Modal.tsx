@@ -74,7 +74,7 @@ const SIZE_MAX_WIDTH: Record<NonNullable<ModalProps['size']>, number> = {
   md: 520,
   lg: 720,
   xl: 960,
-  full: 1100,
+  full: 1400,
 }
 
 export function Modal({
@@ -194,7 +194,7 @@ export function Modal({
   const tablet = viewport === 'tablet'
   const maxWidth = phone ? (sheet ? '100%' : 'calc(100% - 24px)') : tablet && sheet ? '60vw' : SIZE_MAX_WIDTH[size]
   /* AUD-016: Constrain to 85dvh on phone & sheet to prevent virtual keyboard modal overflow */
-  const surfaceMaxHeight = phone ? '85dvh' : sheet ? '85dvh' : '85vh'
+  const surfaceMaxHeight = phone ? '85dvh' : sheet ? '85dvh' : size === 'full' ? '92vh' : '85vh'
   const surfaceRadius = phone ? (sheet ? '16px 16px 0 0' : 16) : sheet ? '16px 16px 0 0' : 16
 
   // After every hook: `useViewport` is one, so the early return cannot precede it.

@@ -354,6 +354,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
             type="button"
             onClick={() => openCommandPalette()}
             aria-label="Search"
+            title="Search"
             style={iconBtn}
           >
             <Icon name="search" size={17} />
@@ -367,6 +368,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               type="button"
               onClick={() => setProfileOpen((v) => !v)}
               aria-label="User profile"
+title="User profile"
               aria-expanded={profileOpen}
               style={{
                 ...iconBtn,
@@ -401,6 +403,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                 <div
                   role="dialog"
                   aria-label="User profile"
+title="User profile"
                   style={{
                     position: 'absolute',
                     top: 'calc(100% + 8px)',

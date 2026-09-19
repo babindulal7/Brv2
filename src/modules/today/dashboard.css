@@ -1,77 +1,21 @@
+/* ============================================================================
+   DASHBOARD PAGE — movement board styling (UI Consistency Phase 1)
+
+   This file must NEVER mutate the application-wide theme. It previously held
+   root-scoped theme overrides that repainted global shell tokens (--app, --bg, --sidebar,
+   --brand, --nav-active-*) whenever the Dashboard route was mounted — navigating to
+   Today changed every other screen's chrome. Those blocks are gone: the
+   palette has exactly one home (styles/theme.css), and this page only
+   defines component-scoped aliases that READ the canonical tokens.
+
+   Page-shell width/gap, header typography and button styling are owned by
+   PageShell / PageHeader / Button — not by this file.
+   ========================================================================== */
+
 .rental-dashboard {
-  --dashboard-accent: #2456d6;
-  --dashboard-accent-strong: #1e49b8;
-  --dashboard-accent-soft: rgba(36, 86, 214, 0.1);
-  display: flex;
-  width: 100%;
-  max-width: 100rem;
-  min-width: 0;
-  margin-inline: auto;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-:root[data-theme='dark'] .rental-dashboard {
-  --dashboard-accent: #386af7;
-  --dashboard-accent-strong: #5d86ff;
-  --dashboard-accent-soft: rgba(56, 106, 247, 0.14);
-  --card: #0b1622;
-  --card2: #101e2d;
-  --dropdown: #101e2d;
-  --border: #263849;
-  --text: #f0f4fa;
-  --text2: #b3c2d7;
-  --muted: #9aaec5;
-  --hover-row: #122337;
-}
-
-:root:has(.rental-dashboard) {
-  --brand: #2456d6;
-  --on-brand: #fff;
-  --brand-text: #2456d6;
-  --nav-active-bg: #e7efff;
-  --nav-active-accent: #2456d6;
-  --app: #f5f7fb;
-  --bg: #f5f7fb;
-}
-
-:root[data-theme='dark']:has(.rental-dashboard) {
-  --app: #07111c;
-  --bg: #07111c;
-  --sidebar: #0b1622;
-  --brand: #386af7;
-  --on-brand: #fff;
-  --brand-text: #85b2ff;
-  --nav-active-bg: #102b48;
-  --nav-active-accent: #85b2ff;
-}
-
-.rental-dashboard .page-header h1 {
-  font-family: 'Outfit', var(--font-display);
-  font-size: clamp(2rem, 2.7vw, 2.75rem) !important;
-  font-weight: 700 !important;
-  line-height: 1;
-  letter-spacing: -0.035em;
-}
-
-.rental-dashboard .page-header p {
-  margin-top: 0.45rem !important;
-  color: var(--text2) !important;
-  font-size: 1rem !important;
-}
-
-.rental-dashboard .ui-button--primary {
-  min-height: 3rem;
-  padding-inline: 1.25rem;
-  background: var(--dashboard-accent) !important;
-  color: #fff !important;
-  border-color: transparent !important;
-  box-shadow: 0 0.55rem 1.25rem color-mix(in srgb, var(--dashboard-accent) 24%, transparent);
-}
-
-.rental-dashboard .ui-button--primary:hover:not(:disabled) {
-  background: var(--dashboard-accent-strong) !important;
-  transform: translateY(-1px);
+  --dashboard-accent: var(--primary);
+  --dashboard-accent-strong: var(--primary-text);
+  --dashboard-accent-soft: var(--ext-bg);
 }
 
 /* Two equal columns for desktop (>= 1280px) */
@@ -529,27 +473,15 @@
   background: var(--hover-row);
 }
 
-/* Tablet (768px - 1279px): Single column stacked panels, full-width rows */
-@media (max-width: 1279.98px) {
+/* Tablet (768px – 1279px): Single column stacked panels, full-width rows */
+@media (max-width: 1279px) {
   .rental-dashboard__panels {
     grid-template-columns: 1fr;
   }
 }
 
 /* Phone (<768px): Single column, Pickups top, Returns bottom, compact cards */
-@media (max-width: 767.98px) {
-  .rental-dashboard {
-    gap: 1rem;
-  }
-
-  .rental-dashboard .page-header {
-    align-items: flex-start;
-  }
-
-  .rental-dashboard .page-header h1 {
-    font-size: 2rem !important;
-  }
-
+@media (max-width: 767px) {
   .movement-panel {
     min-height: 0;
   }
@@ -667,5 +599,277 @@
     animation: none;
     transition: none;
   }
+}
+
+/* ─── Specification v1.0: Modern Operational Cards (Spec §4.4 & §4.5) ─── */
+.movement-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.movement-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 1.125rem;
+  border-radius: var(--r-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  outline: none;
+}
+
+.movement-card:hover {
+  border-color: var(--brand);
+  box-shadow: 0 4px 12px rgba(36, 86, 214, 0.08);
+  transform: translateY(-1px);
+}
+
+.movement-card:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.movement-card--overdue {
+  border-left: 4px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 4%, var(--surface));
+}
+
+.movement-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.movement-card__time {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.movement-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.movement-card__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  flex-wrap: wrap;
+}
+
+.movement-card__number {
+  color: var(--brand);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.movement-card__number:hover {
+  text-decoration: underline;
+}
+
+.movement-card__sep {
+  color: var(--muted);
+}
+
+.movement-card__client {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.movement-card__items-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text2);
+  flex-wrap: wrap;
+}
+
+.movement-card__items {
+  font-weight: 500;
+}
+
+.movement-card__subnote {
+  color: var(--warning-text, var(--primary));
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.movement-card__meta-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--text2);
+  align-self: flex-start;
+  margin-top: 0.25rem;
+}
+
+.movement-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 0.35rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-subtle, var(--border));
+}
+
+.movement-card__cta-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: var(--r-btn, 8px);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  border: none;
+}
+
+.movement-card__cta-btn.is-dominant {
+  background: var(--brand);
+  color: var(--on-primary, white);
+}
+
+.movement-card__cta-btn.is-dominant:hover {
+  filter: brightness(1.08);
+}
+
+.movement-card__cta-btn.is-secondary {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.movement-card__cta-btn.is-secondary:hover {
+  background: var(--border);
+}
+
+.movement-card__cta-btn:active {
+  transform: translateY(1px);
+}
+
+/* ─── Mobile Segmented Tabs (Spec §31) ─── */
+.dashboard-mobile-tabs {
+  display: flex;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 1rem;
+}
+
+.dashboard-mobile-tabs__btn {
+  flex: 1;
+  min-height: 40px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dashboard-mobile-tabs__btn.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* ─── Role Dashboard Header Strip (Spec §4.2) ─── */
+.dashboard-header-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.875rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  margin-bottom: 1rem;
+}
+
+.dashboard-header-strip__metrics {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-header-strip__item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.9rem;
+  color: var(--text2);
+}
+
+.dashboard-header-strip__item strong {
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.dashboard-header-strip__item--danger strong {
+  color: var(--danger);
+}
+
+.dashboard-header-strip__right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.dashboard-header-strip__date {
+  font-family: 'JetBrains Mono Variable', monospace;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dashboard-role-switcher {
+  display: flex;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.dashboard-role-switcher__btn {
+  border: none;
+  background: transparent;
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text2);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dashboard-role-switcher__btn.is-active {
+  background: var(--surface);
+  color: var(--brand);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 

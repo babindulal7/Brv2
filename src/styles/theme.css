@@ -521,6 +521,37 @@
      number cannot drift away from the element again. */
   --header-h: 59px;
   --shell-nav-w: 219px;
+
+  /* ── Canonical structural tokens (UI Consistency Phase 1) ────────────────
+     These used to live in ui-v2.css's own :root block, where they sat next to
+     a full re-declaration of the palette. The palette now belongs to THIS
+     file alone; ui-v2.css carries component/layout rules only. */
+
+  /* Spacing scale (paired with --sp-* above; --space-* is the name new
+     page-shell/toolbar/drawer rules use). */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Control-height scale. --control-height IS --tap (the 44px law). */
+  --control-height: 44px;
+  --control-height-lg: 48px;
+
+  /* Page-shell geometry. responsive.css narrows --page-padding below 1280;
+     no other file may change either token. */
+  --page-padding: var(--space-6);
+  --section-gap: var(--space-6);
+
+  /* Brand aliases. ui-v2-era rules and a handful of components read --brand;
+     it aliases the canonical --primary triple (never a fourth colour). */
+  --brand: var(--primary);
+  --brand-ink: var(--on-primary);
+  --brand-text: var(--primary-text);
 }
 
 /* ---- base ---- */
@@ -953,6 +984,11 @@ td,
   worth losing are the two that carry no information the row doesn't repeat:
   the decorative avatar, and the *label* on Open Booking — the icon and its
   aria-label survive, so the primary action never disappears.
+*/
+/*
+   DOCUMENTED COMPONENT-LEVEL EXCEPTION (UI Consistency Phase 1): 1560px is a
+   movement-row density collapse, not a layout band — everything at 768/1280
+   is handled in responsive.css. Do not add more thresholds like this.
 */
 @media (max-width: 1560px) {
   .movement-row {

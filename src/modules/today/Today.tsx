@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import Icon from '../../components/ui/Icon'
 import { PageHeader } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
 import { businessDayAd, businessNowAd, overDays, pickupsQuery, toMovementRow, type MovementRow } from '../../lib/queries/today'
 import { listBookings, operationQueue, todaysOutgoing } from '../../lib/queries/bookings'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { useList, type ListQueryResult, type ListResult } from '../../lib/queries/useList'
+import { useViewport } from '../../lib/device'
 import DashboardMovementPanel from './DashboardMovementPanel'
 import './dashboard.css'
 
@@ -214,6 +217,10 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
 }
 
 export default function Today() {
+  const viewport = useViewport()
+  const isPhone = viewport === 'phone'
+  const [mobileTab, setMobileTab] = useState<'pickups' | 'returns'>('pickups')
+
   const [pickupDateFilter, setPickupDateFilter] = useStoredFilter(STORAGE_PICKUPS)
   const [returnDateFilter, setReturnDateFilter] = useStoredFilter(STORAGE_RETURNS)
   const dayAd = businessDayAd()
@@ -249,14 +256,73 @@ export default function Today() {
   useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refetchMovement)
 
   const isReturnToday = returnDateFilter.kind === 'quick' && returnDateFilter.period === 'Today'
+  const pickupCount = pickups.total ?? pickups.rows.length
+  const returnCount = returns.total ?? returns.rows.length
 
   return (
-    <div className="rental-dashboard animate-entrance">
-      <PageHeader eyebrow="Operations HQ" title="Dashboard" description="Pickups and returns at a glance." />
+    <PageShell
+      className="rental-dashboard"
+      header={<PageHeader title="Dashboard" />}
+    >
+      {/* Spec §31: Mobile Segmented Control */}
+      {isPhone && (
+        <div style={{ marginBottom: 'var(--sp-md)' }}>
+          <SegmentedControl
+            fullWidth
+            ariaLabel="Dashboard Movements"
+            options={[
+              { id: 'pickups', label: 'Pickups', badge: pickupCount },
+              { id: 'returns', label: 'Returns', badge: returnCount },
+            ]}
+            value={mobileTab}
+            onChange={setMobileTab}
+          />
+        </div>
+      )}
+
+      {/* Main 2-Column Movement Panels */}
       <div className="rental-dashboard__panels">
-        <DashboardMovementPanel side="outgoing" title="Pickups" subtitle="Rentals scheduled for pickup" icon="truck" list={pickups} periodLabel={filterLabel(pickupDateFilter).toLowerCase()} onClearFilters={() => setPickupDateFilter({ kind: 'quick', period: 'Today' })} filterControl={<DateFilterControl noun="pickup" filter={pickupDateFilter} onChange={setPickupDateFilter} today={dayAd} />} />
-        <DashboardMovementPanel side="incoming" title="Returns" subtitle={isReturnToday ? 'Today · Overdue included' : 'Rentals expected to be returned'} icon="return_arrow" list={returns} periodLabel={filterLabel(returnDateFilter).toLowerCase()} isToday={isReturnToday} onClearFilters={() => setReturnDateFilter({ kind: 'quick', period: 'Today' })} filterControl={<DateFilterControl noun="return" filter={returnDateFilter} onChange={setReturnDateFilter} today={dayAd} />} />
+        {(!isPhone || mobileTab === 'pickups') && (
+          <DashboardMovementPanel
+            side="outgoing"
+            title="Pickups"
+            subtitle="Rentals scheduled for pickup"
+            icon="truck"
+            list={pickups}
+            periodLabel={filterLabel(pickupDateFilter).toLowerCase()}
+            onClearFilters={() => setPickupDateFilter({ kind: 'quick', period: 'Today' })}
+            filterControl={
+              <DateFilterControl
+                noun="pickup"
+                filter={pickupDateFilter}
+                onChange={setPickupDateFilter}
+                today={dayAd}
+              />
+            }
+          />
+        )}
+
+        {(!isPhone || mobileTab === 'returns') && (
+          <DashboardMovementPanel
+            side="incoming"
+            title="Returns"
+            subtitle={isReturnToday ? 'Today · Overdue included' : 'Rentals expected to be returned'}
+            icon="return_arrow"
+            list={returns}
+            periodLabel={filterLabel(returnDateFilter).toLowerCase()}
+            isToday={isReturnToday}
+            onClearFilters={() => setReturnDateFilter({ kind: 'quick', period: 'Today' })}
+            filterControl={
+              <DateFilterControl
+                noun="return"
+                filter={returnDateFilter}
+                onChange={setReturnDateFilter}
+                today={dayAd}
+              />
+            }
+          />
+        )}
       </div>
-    </div>
+    </PageShell>
   )
 }

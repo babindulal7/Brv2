@@ -1,133 +1,25 @@
-/* Global UI/UX V2. Visual tokens only; status/financial semantics remain in
-   theme.css and lib/status. Loaded after the legacy theme for migration. */
-:root,
-:root[data-theme='light'] {
-  --bg: #f5f7fb;
-  --app: #f5f7fb;
-  --surface: #ffffff;
-  --surface-2: #edf3fa;
-  --card: #ffffff;
-  --card2: #edf3fa;
-  --surface-card: #ffffff;
-  --surface-card-hover: #f8fbff;
-  --sidebar: #ffffff;
-  --text: #10203b;
-  --text2: #52647d;
-  --muted: #6d7e95;
-  --border: #cbd5e1;
-  --border2: #d8e2ee;
-  --divider: #cbd5e1;
-  /* Primary actions use the same blue family as the Pickup & Return dashboard.
-     Yellow remains reserved for semantic warning/ready states in theme.css. */
-  --brand: #2456d6;
-  --brand-ink: #ffffff;
-  --brand-text: #1e49b8;
-  --btn-primary-bg: var(--brand);
-  --btn-primary-fg: var(--brand-ink);
-  --btn-secondary-bg: var(--surface);
-  --btn-secondary-border: var(--border);
-  --nav-active-bg: #e7efff;
-  --nav-active-accent: #2456d6;
-  --hover-row: #eef4fb;
-  --hover-card: #eef4fb;
-  --hover-sidebar: #eef4fb;
-  --input-border: #afc0d4;
-  --input-placeholder: #6d7e95;
-  --bg-gradient-1: var(--app);
-  --bg-gradient-2: var(--app);
-  --shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
-  --shadow-kpi: var(--shadow-card);
-  --shadow-primary-glow: 0 4px 14px 0 rgba(36, 86, 214, 0.22);
-}
+/* Global UI/UX V2 — component and layout rules ONLY.
 
-:root[data-theme='dark'] {
-  --bg: #07111c;
-  --app: #07111c;
-  --surface: #0b1622;
-  --surface-2: #101e2d;
-  --card: #0b1622;
-  --card2: #101e2d;
-  --surface-card: #0b1622;
-  --surface-card-hover: #101e2d;
-  --sidebar: #0b1622;
-  --text: #f0f4fa;
-  --text2: #b3c2d7;
-  --muted: #9aaec5;
-  --border: #263849;
-  --border2: #1d3042;
-  --divider: #263849;
-  --brand: #386af7;
-  --brand-ink: #ffffff;
-  --brand-text: #85b2ff;
-  --btn-primary-bg: var(--brand);
-  --btn-primary-fg: var(--brand-ink);
-  --btn-secondary-bg: var(--surface);
-  --btn-secondary-border: var(--border);
-  --nav-active-bg: #102b48;
-  --nav-active-accent: #85b2ff;
-  --hover-row: #122337;
-  --hover-card: #122337;
-  --hover-sidebar: #122337;
-  --input-bg: #0b1622;
-  --input-border: #38506a;
-  --input-placeholder: #9aaec5;
-  --bg-gradient-1: var(--app);
-  --bg-gradient-2: var(--app);
-  --shadow-card: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
-  --shadow-kpi: var(--shadow-card);
-  --shadow-primary-glow: 0 4px 14px 0 rgba(56, 106, 247, 0.28);
-}
+   UI Consistency Phase 1: this file used to re-declare the entire palette,
+   the type scale, the radius scale, control heights and `html { font-size }`
+   on top of theme.css. That made it a second, silent token authority — a
+   route or a load-order change could repaint the whole app.
 
-:root {
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-12: 48px;
-  --space-16: 64px;
-  --page-padding: var(--space-6);
-  --section-gap: var(--space-6);
-  --control-height: 44px;
-  --control-height-lg: 48px;
-  --r-card: 10px;
-  --r-btn: 8px;
-  --r-input: 8px;
-  --r-modal: 12px;
-  --dur-drawer: 200ms;
-  --font-display: 'Outfit', var(--font-body);
-}
+   All tokens now have exactly one home:
 
-/* Relative units retain browser text preferences and the existing UI scale. */
-html { font-size: calc(1rem * var(--ui-scale, 1)); }
-:root, [data-floor='true'], [data-wall='true'] {
-  --v2-type-step: 1;
-  --t-h1: calc(1.5rem * var(--v2-type-step));
-  --t-h2: calc(1.125rem * var(--v2-type-step));
-  --t-h3: calc(1rem * var(--v2-type-step));
-  --t-h4: calc(0.9375rem * var(--v2-type-step));
-  --t-kpi: calc(1.5rem * var(--v2-type-step));
-  --t-body: calc(0.875rem * var(--v2-type-step));
-  --t-ui: calc(0.875rem * var(--v2-type-step));
-  --t-meta: calc(0.75rem * var(--v2-type-step));
-  --t-th: calc(0.8125rem * var(--v2-type-step));
-  --t-title: var(--t-h3);
-  --t-base: var(--t-body);
-  --t-caption: var(--t-meta);
-}
-[data-floor='true'] { --v2-type-step: 1.1; }
-[data-wall='true'] { --v2-type-step: 1.4; }
+     theme.css        palette (light/dark), radii, shadows, spacing (--space-*/
+                      --sp-*), control heights, type scale, z-index, --brand
+     responsive.css   the only @media layout law (768 / 1280 bands)
 
-body { background: var(--app); }
+   Do NOT add token definitions here. Add component rules that READ tokens.
+   Status/financial semantics remain in lib/status.ts — never in CSS. */
+
 .card, .surface-card {
   box-shadow: var(--shadow-card), var(--specular-rim);
   border: 1px solid var(--border);
   border-radius: var(--r-card);
   position: relative;
 }
-.page-header { gap: var(--space-4); }
-.page-header h1 { font-family: var(--font-display); font-weight: 600 !important; letter-spacing: -0.015em; }
 .surface-card__header { background: var(--surface); }
 .ui-button { will-change: transform; transition: transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
 .ui-button:active:not(:disabled) { transform: translateY(1px) scale(0.98); }
@@ -261,6 +153,7 @@ body { background: var(--app); }
 .data-table__row[aria-selected='true'] { background: color-mix(in srgb, var(--brand) 18%, var(--surface)) !important; }
 .data-table__empty { padding: var(--space-8); color: var(--muted); text-align: center; border-top: 1px solid var(--border); }
 .data-table__mobile-list { display: none; }
+/* Phone band rule — matches responsive.css's 768 threshold. */
 @media (max-width: 767px) {
   .data-table-shell:has(+ .data-table__mobile-list) { display: none; }
   .data-table__mobile-list { display: grid; gap: var(--space-3); }
@@ -279,6 +172,7 @@ body { background: var(--app); }
 .context-drawer__close:focus-visible { outline: 2px solid var(--input-focus); outline-offset: 2px; }
 .context-drawer__body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--space-4); }
 .context-drawer__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border); background: var(--surface); }
+/* Phone band: the drawer becomes a bottom sheet. */
 @media (max-width: 767px) {
   .context-drawer { inset: 0; align-items: flex-end; pointer-events: auto; }
   .context-drawer__scrim { position: absolute; inset: 0; border: 0; background: rgb(0 0 0 / 45%); cursor: default; }
@@ -294,3 +188,300 @@ body { background: var(--app); }
 .page-toolbar__actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
 .skip-to-content { position: fixed; top: 8px; left: 8px; z-index: var(--z-system); padding: 12px 16px; background: var(--surface); color: var(--text); border: 2px solid var(--input-focus); border-radius: var(--r-btn); transform: translateY(-200%); }
 .skip-to-content:focus { transform: none; }
+
+/* ─── Stepper (Spec §8) ─── */
+.rental-stepper {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card, 12px);
+  padding: 1rem 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.05));
+}
+.rental-stepper__list {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 0.5rem;
+}
+.rental-stepper__item {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.rental-stepper__item:last-child {
+  flex: 0 0 auto;
+}
+.rental-stepper__button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: transparent;
+  border: none;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--r-btn, 8px);
+  cursor: pointer;
+  min-height: 44px;
+  text-align: left;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+.rental-stepper__button:disabled {
+  cursor: default;
+}
+.rental-stepper__indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+.rental-stepper__item.is-completed .rental-stepper__indicator {
+  background: var(--brand, #2456d6);
+  color: #fff;
+}
+.rental-stepper__item.is-current .rental-stepper__indicator {
+  background: var(--brand, #2456d6);
+  color: #fff;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand, #2456d6) 20%, transparent);
+}
+.rental-stepper__item.is-upcoming .rental-stepper__indicator {
+  background: var(--surface2, #edf3fa);
+  color: var(--muted, #6d7e95);
+  border: 1px solid var(--border, #dbe5f0);
+}
+.rental-stepper__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.rental-stepper__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text, #10203b);
+  white-space: nowrap;
+}
+.rental-stepper__item.is-upcoming .rental-stepper__label {
+  color: var(--muted, #6d7e95);
+  font-weight: 500;
+}
+.rental-stepper__desc {
+  font-size: 11px;
+  color: var(--muted, #6d7e95);
+  white-space: nowrap;
+}
+.rental-stepper__badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--surface2);
+  color: var(--muted);
+  padding: 1px 5px;
+  border-radius: 4px;
+  align-self: flex-start;
+  margin-top: 2px;
+}
+.rental-stepper__track {
+  flex: 1;
+  height: 2px;
+  background: var(--border, #dbe5f0);
+  margin: 0 0.75rem;
+  min-width: 20px;
+  transition: background 0.2s ease;
+}
+.rental-stepper__track.is-filled {
+  background: var(--brand, #2456d6);
+}
+
+@media (max-width: 900px) {
+  .rental-stepper {
+    overflow-x: auto;
+    padding: 0.75rem 1rem;
+  }
+  .rental-stepper__list {
+    min-width: 600px;
+  }
+}
+
+/* ─── Lifecycle Progress & Universal Next Action (Spec §17 & §18) ─── */
+.lifecycle-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  margin-bottom: 1.5rem;
+}
+.lifecycle-track {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface, #ffffff);
+  border: 1px solid var(--border, #dbe5f0);
+  border-radius: var(--r-card, 12px);
+  padding: 1rem 1.5rem;
+  overflow-x: auto;
+}
+.lifecycle-step {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.lifecycle-step:last-child {
+  flex: 0 0 auto;
+}
+.lifecycle-step__marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 0.5rem;
+}
+.lifecycle-step.is-done .lifecycle-step__marker {
+  background: #1e864a;
+  color: #ffffff;
+}
+.lifecycle-step.is-current .lifecycle-step__marker {
+  background: var(--brand, #2456d6);
+  color: #ffffff;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand, #2456d6) 25%, transparent);
+}
+.lifecycle-step__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+}
+.lifecycle-step.is-future .lifecycle-step__marker {
+  background: var(--surface2, #edf3fa);
+  border: 1px solid var(--border, #dbe5f0);
+}
+.lifecycle-step__circle {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted, #6d7e95);
+  opacity: 0.5;
+}
+.lifecycle-step__label {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text, #10203b);
+}
+.lifecycle-step.is-future .lifecycle-step__label {
+  color: var(--muted, #6d7e95);
+  font-weight: 500;
+}
+.lifecycle-step__connector {
+  flex: 1;
+  height: 2px;
+  background: var(--border, #dbe5f0);
+  margin: 0 0.75rem;
+  min-width: 16px;
+}
+.lifecycle-step__connector.is-filled {
+  background: #1e864a;
+}
+
+/* ─── Universal Next Action Banner (Spec §18) ─── */
+.next-action-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.875rem 1.25rem;
+  border-radius: var(--r-card, 12px);
+  border: 1px solid transparent;
+  min-height: 52px;
+}
+.next-action-banner--neutral {
+  background: var(--surface2, #edf3fa);
+  border-color: var(--border, #dbe5f0);
+}
+.next-action-banner--info {
+  background: color-mix(in srgb, #2456d6 10%, var(--surface));
+  border-color: color-mix(in srgb, #2456d6 30%, transparent);
+}
+.next-action-banner--active {
+  background: color-mix(in srgb, #d96518 10%, var(--surface));
+  border-color: color-mix(in srgb, #d96518 30%, transparent);
+}
+.next-action-banner--success {
+  background: color-mix(in srgb, #1e864a 10%, var(--surface));
+  border-color: color-mix(in srgb, #1e864a 30%, transparent);
+}
+.next-action-banner--warning {
+  background: color-mix(in srgb, #e3b117 12%, var(--surface));
+  border-color: color-mix(in srgb, #e3b117 35%, transparent);
+}
+.next-action-banner--danger {
+  background: color-mix(in srgb, #c73a3a 10%, var(--surface));
+  border-color: color-mix(in srgb, #c73a3a 30%, transparent);
+}
+
+.next-action-banner__left {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  flex-wrap: wrap;
+}
+.status-pill {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 9px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+}
+.status-pill--neutral { background: #72757e; color: #ffffff; }
+.status-pill--info { background: #2456d6; color: #ffffff; }
+.status-pill--active { background: #d96518; color: #ffffff; }
+.status-pill--success { background: #1e864a; color: #ffffff; }
+.status-pill--warning { background: #e3b117; color: #231a05; }
+.status-pill--danger { background: #c73a3a; color: #ffffff; }
+
+.next-action-banner__prompt {
+  font-size: 15px;
+  color: var(--text, #10203b);
+}
+.next-action-banner__prefix {
+  color: var(--muted, #6d7e95);
+  margin-right: 4px;
+}
+.next-action-banner__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 40px;
+  padding: 0 1.25rem;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: var(--r-btn, 8px);
+  border: none;
+  background: var(--brand, #2456d6);
+  color: #ffffff;
+  cursor: pointer;
+  transition: transform 0.1s ease, filter 0.15s ease;
+}
+.next-action-banner__action:hover {
+  filter: brightness(1.08);
+}
+.next-action-banner__action:active {
+  transform: translateY(1px);
+}

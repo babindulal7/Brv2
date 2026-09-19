@@ -20,6 +20,7 @@ import {
   IconArrowRight,
   IconArrowBackUp,
   IconExternalLink,
+  IconEdit,
   IconDownload,
   IconRefresh,
   IconEye,
@@ -99,6 +100,7 @@ const REGISTRY = {
   more_vert: IconDotsVertical,
   arrow_right: IconArrowRight,
   external_link: IconExternalLink,
+  edit: IconEdit,
 
   // sidebar nav
   home: IconHome,

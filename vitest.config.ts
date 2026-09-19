@@ -31,7 +31,14 @@ export default defineConfig({
      *
      * Scoped to the one stylesheet so no other suite starts paying for CSS.
      */
-    css: { include: [/responsive.css/] },
+    css: {
+      include: [
+        /responsive\.css/,
+        /modules[\\/]today[\\/]dashboard\.css/,
+        /modules[\\/]rentals[\\/].*\.css/,
+        /modules[\\/]operations[\\/].*\.css/,
+      ],
+    },
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     /* `src/archive` holds screens ruled out of the application. Their suites
        are kept with them (Law 3 — nothing is deleted) but not run: they assert

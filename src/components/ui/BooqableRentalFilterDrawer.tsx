@@ -79,7 +79,7 @@ export function BooqableRentalFilterDrawer({
       onClose={onClose}
       side="left"
       desktopMode="rail"
-      width={400}
+      width={320}
       resultCount={resultCount}
       noun={resultCount === 1 ? 'rental' : 'rentals'}
       activeCount={activeCount}
@@ -148,7 +148,7 @@ export function BooqableRentalFilterDrawer({
                       width: 28,
                       height: 28,
                       borderRadius: 'var(--r-badge)',
-                      background: isSelected ? 'var(--primary)' : 'var(--chip-neutral-bg, rgba(0,0,0,0.04))',
+                      background: isSelected ? 'var(--primary)' : 'var(--chip-gray-bg)',
                       color: isSelected ? 'var(--on-brand)' : 'var(--text2)',
                       flexShrink: 0,
                     }}

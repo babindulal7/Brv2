@@ -1,6 +1,6 @@
 import { forwardRef } from 'react'
 import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from 'react'
-import Icon from './Icon'
+import Icon, { type IconName } from './Icon'
 
 /**
  * Rewritten from Tailwind utility classNames — `bg-blue-600 hover:bg-blue-700...` —
@@ -14,8 +14,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger'
   size?: 'sm' | 'md' | 'lg'
   loading?: boolean
-  icon?: ReactNode
-  iconRight?: ReactNode
+  icon?: ReactNode | IconName
+  iconRight?: ReactNode | IconName
 }
 
 const SIZE_STYLES: Record<
@@ -72,8 +72,8 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button({
   children,
-  variant = 'primary',
-  size = 'md',
+  variant = 'secondary',
+  size = 'sm',
   loading = false,
   disabled,
   icon,
@@ -84,6 +84,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 }, ref) {
   const sizing = SIZE_STYLES[size]
   const isDisabled = disabled || loading
+  const resolvedIcon = typeof icon === 'string' ? <Icon name={icon as IconName} size={sizing.iconSize} /> : icon
+  const resolvedIconRight = typeof iconRight === 'string' ? <Icon name={iconRight as IconName} size={sizing.iconSize} /> : iconRight
 
   return (
     <button
@@ -143,9 +145,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
           }}
         />
       )}
-      {icon && <span className="ui-button__slot" style={{ display: 'inline-flex', flexShrink: 0, opacity: loading ? 0 : 1 }}>{icon}</span>}
+      {resolvedIcon && <span className="ui-button__slot" style={{ display: 'inline-flex', flexShrink: 0, opacity: loading ? 0 : 1 }}>{resolvedIcon}</span>}
       {children !== undefined && <span className="ui-button__label" style={{ opacity: loading ? 0 : 1 }}>{children}</span>}
-      {iconRight && <span className="ui-button__slot ui-button__trailing-bubble" style={{ opacity: loading ? 0 : 1 }}>{iconRight}</span>}
+      {resolvedIconRight && <span className="ui-button__slot ui-button__trailing-bubble" style={{ opacity: loading ? 0 : 1 }}>{resolvedIconRight}</span>}
     </button>
   )
 })

@@ -4,6 +4,7 @@ import { STATUS } from '../../lib/status'
 import type { AlertRow } from '../../types/today'
 import { cardStyle } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
+import { Unavailable } from '../../components/ui/Unavailable'
 
 /**
  * Dashboard.md §8 — priority-sorted.
@@ -125,12 +126,13 @@ export default function AlertsPanel({
             </span>
           )}
         </span>
-        <Link
-          to="/notifications"
-          style={{ marginLeft: 'auto', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
-        >
-          View all
-        </Link>
+        <Unavailable reason="Notification Center is not built yet — all active operational alerts are displayed in this panel.">
+          <span
+            style={{ marginLeft: 'auto', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', cursor: 'not-allowed' }}
+          >
+            View all
+          </span>
+        </Unavailable>
       </div>
 
       {/*
