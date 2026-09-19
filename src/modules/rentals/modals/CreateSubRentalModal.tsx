@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
-import { Button } from '../../../components/ui/Page'
+import { Button } from '../../../components/ui/Button'
 import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { createSubRental } from '../../../actions/subrentals/createSubRental'

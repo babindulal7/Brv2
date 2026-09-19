@@ -1,10 +1,95 @@
-.rentals-v2 { gap: 18px; }
-.rentals-v2 .page-header { padding: 2px 2px 0; }
-.rentals-v2 .page-header__description { font-size: 14px !important; }
+/* Rentals list — component rules only.
+   Page-level gaps/layout come from PageShell; no local @media breakpoints
+   (canonical bands are 768 / 1280 — see styles/responsive.css). The old
+   720px gap tweak collapsed into the default 768 phone band, which stacks
+   the layout through the shared density rules instead. */
 .rentals-v2 [data-table-scroll] { border-radius: var(--r-card); }
 .rentals-v2 .operations-table > thead > tr > th { height: 50px; font-size: 12px; letter-spacing: 0; text-transform: none; }
 .rentals-v2 .operations-table > tbody > tr { transition: background-color var(--dur-fast) var(--ease); }
 .rentals-v2 .operations-table > tbody > tr:hover { background: color-mix(in srgb, var(--nav-active-bg) 36%, transparent); }
 .rentals-v2 .operations-table > thead > tr > th { position: sticky; top: 0; z-index: 2; }
 .rentals-v2 .page-toolbar { margin-top: 0; }
-@media (max-width: 720px) { .rentals-v2 { gap: 14px; } }
+
+/* ── New Rental Workspace Component Rules ── */
+/* Page width is owned by PageShell (`width="form"`); no local max-width here. */
+
+.new-rental-stage-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+  padding: 8px 12px;
+  border-radius: var(--r-card);
+  background: var(--card);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.new-rental-stage-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.new-rental-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--tap); /* 44px law, Law 15 */
+  padding: 6px 14px;
+  border-radius: var(--r-badge);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--t-meta);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.new-rental-stage-pill:hover {
+  background: var(--nav-active-bg);
+  border-color: var(--border2);
+}
+
+.new-rental-stage-num {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.new-rental-stage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--r-badge);
+  font-size: 11px;
+  font-weight: 600;
+}
+.new-rental-stage-badge.done {
+  background: var(--st-success-bg);
+  color: var(--st-success-fg);
+}
+/* RULING 2026-09-19: was --st-warning-bg/--st-warning-fg — a token pair that
+   does not exist, so the badge rendered transparent with inherited text. The
+   canonical yellow pair is --st-progress-* ("in progress / needs attention"). */
+.new-rental-stage-badge.pending {
+  background: var(--st-progress-bg);
+  color: var(--st-progress-fg);
+}
+.new-rental-stage-badge.neutral {
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.new-rental-section-card {
+  border-radius: var(--r-card);
+  border: 1px solid var(--border);
+  background: var(--card);
+  overflow: hidden;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.new-rental-section-card:hover {
+  border-color: var(--border2);
+}
+

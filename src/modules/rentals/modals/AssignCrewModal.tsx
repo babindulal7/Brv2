@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
-import { Button } from '../../../components/ui/Page'
+import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
 import { listAssignableCrew, type AssignableCrew } from '../../../lib/queries/bookingCrew'
 import { bookCrew } from '../../../actions/crew/bookCrew'

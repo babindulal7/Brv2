@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Modal } from '../../../components/ui/Modal'
-import { Button } from '../../../components/ui/Page'
+import { Button } from '../../../components/ui/Button'
 import Icon from '../../../components/ui/Icon'
 import { supabase } from '../../../lib/supabase'
 import { captureError } from '../../../lib/monitoring'
@@ -177,9 +177,13 @@ export function BarcodeLookupModal({ isOpen, onClose }: BarcodeLookupModalProps)
             style={{
               padding: '10px 14px',
               borderRadius: 'var(--r-sm)',
-              background: 'var(--danger-bg, #fef2f2)',
-              border: '1px solid var(--danger-border, #f87171)',
-              color: 'var(--danger, #dc2626)',
+              /* §21 / ErrorBanner shape: solid status pair, white on danger.
+                 `--danger-bg` aliases to solid --st-danger-bg while
+                 `--danger-border`/`#dc2626` were light-theme literals — the
+                 old triple rendered red text on a solid red fill. */
+              background: 'var(--st-danger-bg)',
+              border: '1px solid var(--st-danger-bg)',
+              color: 'var(--st-danger-fg)',
               fontSize: 'var(--t-meta)',
               display: 'flex',
               alignItems: 'center',

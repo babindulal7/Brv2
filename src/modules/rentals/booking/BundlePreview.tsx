@@ -23,7 +23,7 @@
 import { useMemo } from 'react'
 import Icon from '../../../components/ui/Icon'
 import { Modal } from '../../../components/ui/Modal'
-import { Button } from '../../../components/ui/Page'
+import { Button } from '../../../components/ui/Button'
 import { formatAd } from '../../../lib/bs'
 import { formatMoney } from '../../../lib/money'
 import { STATUS } from '../../../lib/status'

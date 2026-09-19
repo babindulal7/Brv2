@@ -1,4 +1,4 @@
-.rental-timeline { min-width: 0; color: var(--text); }
+.rental-timeline { container-type: inline-size; container-name: timeline; min-width: 0; color: var(--text); }
 .rental-timeline__summary { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-md); padding: 0 16px; border-bottom: 1px solid var(--border); color: var(--text2); font-size: var(--t-meta); }
 .rental-timeline__summary strong { color: var(--text); font-variant-numeric: tabular-nums; }
 .rental-timeline__legend { display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: var(--t-caption); }
@@ -8,7 +8,7 @@
 .rental-timeline__legend-return { background: var(--success); }
 .rental-timeline__notice { display: flex; align-items: center; gap: 7px; padding: 9px 16px; background: var(--nav-active-bg); color: var(--text2); font-size: var(--t-caption); }
 .rental-timeline__scroll { overflow: auto; outline: none; scrollbar-color: var(--border2) transparent; }
-.rental-timeline__scroll:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
+.rental-timeline__scroll:focus-visible { box-shadow: inset 0 0 0 2px var(--input-focus); }
 .rental-timeline__canvas { min-width: calc(240px + var(--timeline-width)); }
 .rental-timeline__corner { position: sticky; left: 0; z-index: 4; width: 240px; height: 58px; display: flex; align-items: flex-end; box-sizing: border-box; padding: 0 16px 12px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--card2); color: var(--muted); font-size: var(--t-caption); font-weight: 700; }
 .rental-timeline__days { height: 58px; display: flex; margin-left: 240px; margin-top: -58px; border-bottom: 1px solid var(--border); background: var(--card2); }
@@ -44,5 +44,8 @@
 .rental-timeline-phone__event strong { display: block; margin-bottom: 2px; color: var(--text); }
 .rental-timeline-phone__dot { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: var(--nav-active-bg); color: var(--primary); }
 .rental-timeline-phone__line { width: 1px; height: 18px; margin: 3px 0 3px 12px; background: var(--border2); }
-@media (max-width: 1100px) { .rental-timeline__corner, .rental-timeline__row { grid-template-columns: 200px var(--timeline-width); } .rental-timeline__corner { width: 200px; } .rental-timeline__days { margin-left: 200px; } }
+/* Component-internal density tweak (UI Consistency Phase 1, Decision 1):
+   Container query preserves column density when the timeline component itself
+   narrows below 1100px, without introducing a non-canonical global viewport band. */
+@container timeline (max-width: 1100px) { .rental-timeline__corner, .rental-timeline__row { grid-template-columns: 200px var(--timeline-width); } .rental-timeline__corner { width: 200px; } .rental-timeline__days { margin-left: 200px; } }
 @media (prefers-reduced-motion: reduce) { .rental-timeline__bar { transition: none; } }

@@ -34,7 +34,7 @@
 import { formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import Icon from '../../../components/ui/Icon'
-import { Button } from '../../../components/ui/Page'
+import { Button } from '../../../components/ui/Button'
 import type { ClientRecord } from '../../../lib/queries/clients'
 import { TOUCH } from './ClientHealthChip'
 import { creditCheck } from './clientHealth'

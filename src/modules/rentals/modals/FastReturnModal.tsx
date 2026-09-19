@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Modal } from '../../../components/ui/Modal'
-import { Button } from '../../../components/ui/Page'
+import { Button } from '../../../components/ui/Button'
 import Icon from '../../../components/ui/Icon'
 import { completeReturn } from '../../../actions/rentals/returnRental'
 import { fetchFloorBooking, type FloorBooking } from '../../../lib/queries/bookings'
@@ -387,9 +387,13 @@ export function FastReturnModal({
             style={{
               padding: '10px 14px',
               borderRadius: 'var(--r-sm)',
-              background: 'var(--danger-bg, #fef2f2)',
-              border: '1px solid var(--danger-border, #f87171)',
-              color: 'var(--danger, #dc2626)',
+              /* §21 / ErrorBanner shape: solid status pair, white on danger.
+                 `--danger-bg` aliases to solid --st-danger-bg while
+                 `--danger-border`/`#dc2626` were light-theme literals — the
+                 old triple rendered red text on a solid red fill. */
+              background: 'var(--st-danger-bg)',
+              border: '1px solid var(--st-danger-bg)',
+              color: 'var(--st-danger-fg)',
               fontSize: 'var(--t-meta)',
               display: 'flex',
               alignItems: 'center',
@@ -407,9 +411,13 @@ export function FastReturnModal({
             style={{
               padding: '10px 14px',
               borderRadius: 'var(--r-sm)',
-              background: 'var(--danger-bg, #fef2f2)',
-              border: '1px solid var(--danger-border, #f87171)',
-              color: 'var(--danger, #dc2626)',
+              /* §21 / ErrorBanner shape: solid status pair, white on danger.
+                 `--danger-bg` aliases to solid --st-danger-bg while
+                 `--danger-border`/`#dc2626` were light-theme literals — the
+                 old triple rendered red text on a solid red fill. */
+              background: 'var(--st-danger-bg)',
+              border: '1px solid var(--st-danger-bg)',
+              color: 'var(--st-danger-fg)',
               fontSize: 'var(--t-meta)',
               display: 'flex',
               alignItems: 'center',
@@ -532,16 +540,16 @@ export function FastReturnModal({
                     padding: '8px 10px',
                     borderRadius: 'var(--r-sm)',
                     background: item.alreadyReturned
-                      ? 'var(--surface-muted, rgba(0,0,0,0.03))'
+                      ? 'var(--card2)'
                       : item.selected
-                      ? 'var(--surface-active, rgba(0,128,0,0.04))'
-                      : 'var(--danger-bg, #fef2f2)',
+                      ? 'var(--nav-active-bg)'
+                      : 'var(--danger-soft)',
                     border: `1px solid ${
                       item.alreadyReturned
                         ? 'var(--border)'
                         : item.selected
                         ? 'var(--border)'
-                        : 'var(--danger-border, #f87171)'
+                        : 'color-mix(in srgb, var(--danger) 35%, transparent)'
                     }`,
                   }}
                 >
@@ -622,7 +630,7 @@ export function FastReturnModal({
                           padding: '0 8px',
                           fontSize: '12px',
                           borderRadius: 'var(--r-input)',
-                          border: '1px solid var(--danger-border, #f87171)',
+                          border: '1px solid var(--danger)',
                           background: 'var(--input-bg)',
                           color: 'var(--text)',
                         }}

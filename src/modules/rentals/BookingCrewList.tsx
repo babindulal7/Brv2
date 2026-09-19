@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { listBookingCrew, type BookingCrewRow } from '../../lib/queries/bookingCrew'
 import { formatAdDateTime } from '../../lib/bs'
 import { formatMoney, rupees } from '../../lib/money'
-import { Button } from '../../components/ui/Page'
+import { Button } from '../../components/ui/Button'
 import { formatGateError } from '../../lib/gates'
 
 export function BookingCrewList({ bookingId, includeMoney, version }: { bookingId: string; includeMoney: boolean; version: number }) {

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Icon from '../../components/ui/Icon'
-import { Button, cardStyle } from '../../components/ui/Page'
+import { cardStyle } from '../../components/ui/Page'
+import { Button } from '../../components/ui/Button'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { settleLateFee, validateWaiver, formatOverage, bandExplanation, WAIVER_REASON_MIN } from '../../lib/lateFee'

@@ -3,9 +3,13 @@ import { useParams, Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
+import './rentals.css'
 import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
 import { Badge } from '../../components/ui/Badge'
+import { LifecycleProgress, getUniversalNextAction } from '../../components/ui/LifecycleProgress'
 import { useViewport } from '../../lib/device'
 import type { Viewport } from '../../lib/device'
 import { BAR_BOX } from '../../components/shell/BottomBar'
@@ -39,6 +43,8 @@ import { CreateSubRentalModal } from './modals/CreateSubRentalModal'
 import { CancelRentalModal } from './modals/CancelRentalModal'
 import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
 import { CreateInvoiceModal } from '../finance/modals/CreateInvoiceModal'
+import { CreateDocumentModal } from '../documents/CreateDocumentModal'
+import { listDocuments, documentsForBooking, type DocRow } from '../../lib/queries/documents'
 import { formatGateError } from '../../lib/gates'
 import type { ActionContext } from '../../actions/core'
 import { useList } from '../../lib/queries/useList'
@@ -68,6 +74,9 @@ import { releaseBookingLineUnit } from '../../actions/rentals/releaseBookingLine
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { deliveryTypeLabel } from '../../lib/format'
 import { rentalDaysBetween, formatRentalDays } from '../../lib/rentalDays'
+import { LateFeePanel } from './LateFeePanel'
+import { lateFee } from '../../lib/lateFee'
+import type { LateFeeOutcome } from '../../lib/lateFee'
 
 /**
  * # Booking Detail — live, for ANY `:bookingNo`
@@ -590,76 +599,43 @@ function Segmented({
   onPick: (s: PhoneSegment) => void
 }) {
   return (
-    <div
-      role="tablist"
-      aria-label="Booking sections"
-      style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${segments.length}, minmax(0,1fr))`,
-        gap: 'var(--sp-xs)',
-        padding: 3,
-        borderRadius: 10,
-        background: 'var(--card2)',
-        border: '1px solid var(--border)',
-      }}
-    >
-      {segments.map((s) => {
-        const on = s === active
-        return (
-          <button
-            key={s}
-            type="button"
-            role="tab"
-            aria-selected={on}
-            onClick={() => onPick(s)}
-            style={{
-              height: 40,
-              borderRadius: 7,
-              border: 'none',
-              background: on ? 'var(--card)' : 'transparent',
-              color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: on ? 700 : 500,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              boxShadow: on ? 'var(--shadow-card)' : 'none',
-            }}
-          >
-            {s}
-          </button>
-        )
-      })}
-    </div>
+    <SegmentedControl<PhoneSegment>
+      ariaLabel="Booking sections"
+      fullWidth
+      options={segments.map((s) => ({ id: s, label: s }))}
+      value={active}
+      onChange={onPick}
+    />
   )
 }
 
-/** Numbered block header — the render splits the page into five of these. */
+/** Numbered block header — styled consistently with new-rental-section-card. */
 function Block({ no, title, children, action }: { no: string; title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <section style={{ ...cardStyle, minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
+    <section className="new-rental-section-card" style={{ ...cardStyle, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--card)' }}>
         <span
           className="figure"
           aria-hidden
           style={{
-            width: 20,
-            height: 20,
-            borderRadius: 5,
+            width: 22,
+            height: 22,
+            borderRadius: 'var(--r-badge, 999px)',
             display: 'grid',
             placeItems: 'center',
             background: 'var(--btn-primary-bg)',
             color: 'var(--btn-primary-fg)',
-            fontSize: 'var(--t-meta)',
+            fontSize: 11,
             fontWeight: 700,
             flexShrink: 0,
           }}
         >
           {no}
         </span>
-        <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
-        {action && <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>{action}</span>}
+        <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>{title}</h2>
+        {action && <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>{action}</span>}
       </div>
-      <div style={{ padding: 14 }}>{children}</div>
+      <div style={{ padding: '14px 16px' }}>{children}</div>
     </section>
   )
 }
@@ -1064,6 +1040,7 @@ export default function BookingDetail() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showCreateInvoice, setShowCreateInvoice] = useState(false)
   const [showCancelModal, setShowCancelModal] = useState(false)
+  const [showCreateDocument, setShowCreateDocument] = useState(false)
   const { showSuccessToast } = useToast()
   const { openOperations } = useOperationsWorkspace()
   const viewport = useViewport()
@@ -1248,6 +1225,13 @@ export default function BookingDetail() {
     { baseline: notesFilters },
   )
 
+  const docFilters = useMemo(() => (bookingId ? documentsForBooking(bookingId) : {}), [bookingId])
+  const documentsList = useList<DocRow>(
+    (f) => (bookingId ? listDocuments(f) : Promise.resolve({ rows: [] })),
+    docFilters,
+    { baseline: docFilters },
+  )
+
   /* Law 3 — a voided invoice still exists, but its money is settled by its
      credit note, so the totals this page states are over the live ones. */
   const liveInvoices = useMemo(() => invoicesList.rows.filter((r) => !r.isVoid), [invoicesList.rows])
@@ -1315,6 +1299,37 @@ export default function BookingDetail() {
     return { subtotal, discount, taxable, vat, total, paid, outstanding }
   }, [liveInvoices])
   const money = (n: number) => formatMoney(n as Paisa)
+
+  const [lateFeeOutcome, setLateFeeOutcome] = useState<LateFeeOutcome | null>(null)
+
+  const lateFeeData = useMemo(() => {
+    if (!booking || !canBookingMoney || totals.total <= 0) return null
+    const isOverdue =
+      booking.stage === 'On Rent' &&
+      !booking.isClosed &&
+      !booking.isCancelled &&
+      booking.actualReturnAtAd === null &&
+      new Date(booking.returnAtAd) < new Date()
+    const actualReturn = booking.actualReturnAtAd
+      ? new Date(booking.actualReturnAtAd)
+      : isOverdue
+      ? new Date()
+      : null
+    if (!actualReturn) return null
+    const due = new Date(booking.returnAtAd)
+    if (actualReturn.getTime() <= due.getTime()) return null
+    const rentalDaysCount = rentalDaysBetween(booking.pickupAtAd, booking.returnAtAd) ?? 1
+    const dailyRatePaisa = Math.max(1, Math.round(totals.total / rentalDaysCount)) as Paisa
+    const result = lateFee({
+      scheduledReturnAt: due,
+      actualReturnAt: actualReturn,
+      dayRatePaisa: dailyRatePaisa,
+    })
+    return {
+      result,
+      basis: `Derived from rental total (${formatMoney(totals.total as Paisa)}) over ${rentalDaysCount} rental day(s)`,
+    }
+  }, [booking, canBookingMoney, totals.total])
 
   /* The invoice a Record Payment settles by default: the first still owed,
      else the newest (the list arrives issue_date desc).
@@ -1613,22 +1628,35 @@ export default function BookingDetail() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         <PageHeader title={id || 'Booking'} />
-        <PageBody
-          loading={head.loading}
-          error={head.error}
-          onRetry={head.refetch}
-          empty={head.isEmpty}
-          noun={`booking ${id}`}
-          skeleton="card"
-          emptyTitle={`No booking numbered ${id}`}
-          emptyMessage={
-            'No bookings row carries this number. If it was just created, the list it came from may be stale — ' +
-            'go back to Rentals and reopen it. Nothing else is shown here because showing another booking under ' +
-            'this number would be worse than showing nothing.'
-          }
-        >
-          {null}
-        </PageBody>
+        {(() => {
+          const isDraftId = Boolean(id && id.toLowerCase().startsWith('draft'))
+          return (
+            <PageBody
+              loading={head.loading}
+              error={head.error}
+              onRetry={head.refetch}
+              empty={head.isEmpty}
+              noun={`booking ${id}`}
+              skeleton="card"
+              emptyTitle={isDraftId ? `Draft "${id}" is not a confirmed booking` : `No booking numbered ${id}`}
+              emptyMessage={
+                isDraftId
+                  ? 'This appears to be an unconfirmed rental draft. Drafts live in the New Rental workspace and can be resumed or edited there.'
+                  : 'No bookings row carries this number. If it was just created, the list it came from may be stale — ' +
+                    'go back to Rentals and reopen it. Nothing else is shown here because showing another booking under ' +
+                    'this number would be worse than showing nothing.'
+              }
+              {...(isDraftId
+                ? {
+                    emptyActionLabel: 'Open New Rental / Drafts',
+                    onEmptyAction: () => window.location.assign('/rentals?action=new'),
+                  }
+                : {})}
+            >
+              {null}
+            </PageBody>
+          )
+        })()}
       </div>
     )
   }
@@ -1949,19 +1977,24 @@ export default function BookingDetail() {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', position: 'relative' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-        <Link to="/rentals" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <Icon name="chevron_left" size={14} />
-          Rentals
-        </Link>
-        <span>›</span>
-        <span style={{ color: 'var(--text)', fontWeight: 600 }}>{booking.bookingNo}</span>
-      </div>
-      <PageHeader
-        title={booking.clientName ? `${booking.bookingNo} · ${booking.clientName}` : booking.bookingNo}
-        description={`${formatAdDateTime(booking.pickupAtAd)} → ${formatAdDateTime(booking.returnAtAd)}${booking.project ? ` · ${booking.project}` : ''}`}
-        actions={
+    <PageShell
+      width="full"
+      className="booking-detail-shell"
+      style={{ position: 'relative' }}
+      header={
+        <PageHeader
+          breadcrumb={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              <Link to="/rentals" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Icon name="chevron_left" size={14} />
+                Rentals
+              </Link>
+              <span>›</span>
+              <span style={{ color: 'var(--text)', fontWeight: 600 }}>{booking.bookingNo}</span>
+            </div>
+          }
+          title={booking.clientName ? `${booking.bookingNo} · ${booking.clientName}` : booking.bookingNo}
+          actions={
           <>
             {/* §8 step 2 — the stage block is <Badge>'s. This assembled it
                 here from `STATUS[statusToken(stage)]`, on `--r-badge` (999,
@@ -2165,20 +2198,66 @@ export default function BookingDetail() {
           </>
         }
       />
+    }
+  >
 
-      <div style={{ ...cardStyle, padding: onPhone ? '12px 14px' : '16px 18px' }}>
+      <div
+        className="new-rental-stepper-container"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          background: 'var(--card-bg, var(--surface))',
+          padding: onPhone ? '12px 14px' : '16px 20px',
+          borderRadius: 'var(--r-card)',
+          border: '1px solid var(--border)',
+        }}
+      >
         <Stepper status={stage} dots={onPhone} />
+        <LifecycleProgress
+          status={stage}
+          meta={{
+            isOverdue:
+              booking.stage === 'On Rent' &&
+              !booking.isClosed &&
+              !booking.isCancelled &&
+              booking.actualReturnAtAd === null &&
+              new Date(booking.returnAtAd) < new Date(),
+            uncheckedCount: missingSerialsCount,
+          }}
+          onActionClick={() => {
+            const next = getUniversalNextAction(stage)
+            if (next.primaryVerb === 'Start Preparation' || next.primaryVerb === 'Continue Preparation') {
+              openOperations(booking.bookingNo, stage, 'Pack')
+            } else if (next.primaryVerb === 'Start Handover') {
+              openOperations(booking.bookingNo, stage, 'Handover')
+            } else if (next.primaryVerb === 'Receive Return' || next.primaryVerb === 'Continue Return') {
+              openOperations(booking.bookingNo, stage, 'Return')
+            } else if (next.primaryVerb === 'Start Inspection') {
+              openOperations(booking.bookingNo, stage, 'Return')
+            } else if (next.primaryVerb === 'Complete Reset') {
+              openOperations(booking.bookingNo, stage, 'Reset')
+            } else if (next.primaryVerb === 'Close Rental') {
+              closeBooking()
+            } else if (next.primaryVerb === 'Confirm Rental') {
+              confirmBooking()
+            }
+          }}
+        />
       </div>
 
       {onPhone && <Segmented segments={segments} active={activeSegment} onPick={setSegment} />}
 
       {/* Facts strip — schedule on the left, money on the right. */}
       <div
+        className="new-rental-section-card"
         style={{
           ...cardStyle,
           display: 'grid',
           gridTemplateColumns: factsCols,
           alignItems: 'stretch',
+          overflow: 'hidden',
+          background: 'var(--card)',
         }}
       >
         <Fact icon="users" label="Client" viewport={viewport}>
@@ -2383,10 +2462,11 @@ export default function BookingDetail() {
                     : 'The lines embed did not come back for this booking, which is a query fault, not an empty booking.'}
                 </NotWiredNote>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-                    <thead>
-                      <tr style={{ background: 'var(--th-bg)' }}>
+                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+                      <thead>
+                        <tr style={{ background: 'var(--card2)' }}>
                         {/*
                           ⚠ No `Rate / Day` and no `Total` for ANY role — not a
                           Law 6 gate but a source gate: this read is
@@ -2558,7 +2638,8 @@ export default function BookingDetail() {
                     </tbody>
                   </table>
                 </div>
-              )}
+              </div>
+            )}
 
               {lines.length > 0 && (
                 <div
@@ -2720,11 +2801,30 @@ export default function BookingDetail() {
                         </p>
                       </>
                     ) : (
-                      <NotWiredNote>
-                        No invoice has been raised against this booking, so there is no charge breakdown to show.
-                        Raise one from Finance — the totals here are the invoice&apos;s own columns, never a figure
-                        this screen computes.
-                      </NotWiredNote>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+                        <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                          No invoice has been raised against this booking yet.
+                        </p>
+                        {canRaiseInvoice && (
+                          <div>
+                            {cancelledReason ? (
+                              <Unavailable reason={cancelledReason}>
+                                <Button icon="file" variant="primary" disabled>
+                                  Raise Draft Invoice
+                                </Button>
+                              </Unavailable>
+                            ) : (
+                              <Button
+                                icon="file"
+                                variant="primary"
+                                onClick={() => setShowCreateInvoice(true)}
+                              >
+                                Raise Draft Invoice
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
@@ -2769,6 +2869,19 @@ export default function BookingDetail() {
                         />
                       </>
                     )}
+
+                    {lateFeeData && (
+                      <div style={{ marginTop: 16 }}>
+                        <h3 style={sub}>Late Return Assessment</h3>
+                        <LateFeePanel
+                          result={lateFeeData.result}
+                          dayRateBasis={lateFeeData.basis}
+                          staffName={user?.name ?? 'Staff'}
+                          outcome={lateFeeOutcome}
+                          onSettle={setLateFeeOutcome}
+                        />
+                      </div>
+                    )}
                     {/* §2.2 — payments and deposit movements are immutable
                         (Law 4); the correction is a reversal row, never an
                         edit. The late-return panel that stood here ran on
@@ -2790,47 +2903,51 @@ export default function BookingDetail() {
                         No payments have been recorded against this booking.
                       </p>
                     ) : (
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                          <tr style={{ background: 'var(--th-bg)' }}>
-                            {['Date', 'Type', 'Amount', 'Method', 'Status'].map((h) => (
-                              <th key={h} style={th}>
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {paymentRows.map(({ key, tone, payment: p, glance, detail }) => (
-                            <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
-                              <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)' }}>
-                                <IntelCard
-                                  glance={glance}
-                                  detail={detail}
-                                  detailTitle={`${p.type} payment`}
-                                  detailSubtitle={`${id} · ${p.date}`}
-                                >
-                                  {p.date}
-                                </IntelCard>
-                              </td>
-                              <td style={{ ...td, fontSize: 'var(--t-meta)' }}>{p.type}</td>
-                              <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)' }}>{p.amount}</td>
-                              {/* '—' = no bank account recorded on the row. It
-                                  is NOT read as Cash — 'Cash' is a channel
-                                  group of its own. New payments carry the
-                                  account picked in the modal. */}
-                              <td style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{p.method}</td>
-                              <td style={{ ...td, fontSize: 'var(--t-meta)' }}>
-                                {/* The row's OWN status, through the one status
-                                    renderer. Hand-assembling the chip here is
-                                    how it came to be green regardless of what
-                                    it said (BD-16). */}
-                                <Badge tone={tone} label={p.status} icon={<Icon name={STATUS_ICON[tone]} size={11} />} size="sm" />
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
+                        <div style={{ overflowX: 'auto' }}>
+                          <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                            <thead>
+                              <tr style={{ background: 'var(--card2)' }}>
+                                {['Date', 'Type', 'Amount', 'Method', 'Status'].map((h) => (
+                                  <th key={h} style={th}>
+                                    {h}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {paymentRows.map(({ key, tone, payment: p, glance, detail }) => (
+                                <tr key={key} style={{ borderBottom: '1px solid var(--border)' }}>
+                                  <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)' }}>
+                                    <IntelCard
+                                      glance={glance}
+                                      detail={detail}
+                                      detailTitle={`${p.type} payment`}
+                                      detailSubtitle={`${id} · ${p.date}`}
+                                    >
+                                      {p.date}
+                                    </IntelCard>
+                                  </td>
+                                  <td style={{ ...td, fontSize: 'var(--t-meta)' }}>{p.type}</td>
+                                  <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)' }}>{p.amount}</td>
+                                  {/* '—' = no bank account recorded on the row. It
+                                      is NOT read as Cash — 'Cash' is a channel
+                                      group of its own. New payments carry the
+                                      account picked in the modal. */}
+                                  <td style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{p.method}</td>
+                                  <td style={{ ...td, fontSize: 'var(--t-meta)' }}>
+                                    {/* The row's OWN status, through the one status
+                                        renderer. Hand-assembling the chip here is
+                                        how it came to be green regardless of what
+                                        it said (BD-16). */}
+                                    <Badge tone={tone} label={p.status} icon={<Icon name={STATUS_ICON[tone]} size={11} />} size="sm" />
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     )}
                     {canTakePayment && <div style={{ marginTop: 10 }}>{recordPaymentButton('Record Payment')}</div>}
                   </div>
@@ -2840,11 +2957,55 @@ export default function BookingDetail() {
           )}
 
           {showSegment('Docs') && (
-            <Block no="5" title="Documents">
+            <Block
+              no="5"
+              title="Documents"
+              action={
+                <Button
+                  variant="secondary"
+                  icon="plus"
+                  onClick={() => setShowCreateDocument(true)}
+                  disabled={booking.isCancelled}
+                >
+                  Add Document
+                </Button>
+              }
+            >
               <NotWiredNote>
                 This booking&apos;s documents live in document_registry, which has no query module yet — nothing is
                 listed rather than documents that belong to another booking.
               </NotWiredNote>
+              {documentsList.rows.length > 0 && (
+                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden', marginTop: 12 }}>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--card2)' }}>
+                          {['Document No', 'Type', 'Date', 'Status'].map((h) => (
+                            <th key={h} style={th}>
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {documentsList.rows.map((doc) => (
+                          <tr key={doc.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                              {doc.id}
+                            </td>
+                            <td style={{ ...td, fontSize: 'var(--t-meta)' }}>{doc.type}</td>
+                            <td style={{ ...td, fontSize: 'var(--t-meta)' }}>{doc.createdTime}</td>
+                            <td style={{ ...td, fontSize: 'var(--t-meta)' }}>
+                              <Badge tone="neutral" label={doc.status} size="sm" />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </Block>
           )}
         </div>
@@ -3118,7 +3279,19 @@ export default function BookingDetail() {
           refetchHead()
         }}
       />
-    </div>
+
+      {showCreateDocument && (
+        <CreateDocumentModal
+          isOpen={showCreateDocument}
+          onClose={() => setShowCreateDocument(false)}
+          initialBookingNo={booking.bookingNo}
+          onSuccess={() => {
+            setShowCreateDocument(false)
+            documentsList.refetch()
+          }}
+        />
+      )}
+    </PageShell>
   )
 }
 
@@ -3135,9 +3308,9 @@ function Fact({
 }) {
   const divider = viewport === 'desktop' ? { borderRight: '1px solid var(--border)' } : { borderBottom: '1px solid var(--border)' }
   return (
-    <div style={{ padding: '14px 16px', minWidth: 0, ...divider }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)', marginBottom: 6 }}>
-        <Icon name={icon} size={14} style={{ color: 'var(--muted)' }} />
+    <div style={{ padding: '14px 16px', minWidth: 0, background: 'var(--card)', ...divider }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text2)', marginBottom: 6 }}>
+        <Icon name={icon} size={13} style={{ color: 'var(--muted)' }} />
         {label}
       </div>
       <div>{children}</div>

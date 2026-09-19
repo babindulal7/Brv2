@@ -1,9 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, FooterNote, cardStyle } from '../../components/ui/Page'
-import { PageBody } from '../../components/ui/PageBody'
+import { Card, PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Button } from '../../components/ui/Button'
 import { PageShell } from '../../components/ui/PageShell'
+import { PageBody } from '../../components/ui/PageBody'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { ContextDrawer } from '../../components/ui/ContextDrawer'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { ActiveFilterChips, FilterButton } from '../../components/ui/FilterDrawer'
@@ -172,11 +174,12 @@ const STAGE_ICON: Record<BookingStatus | 'Draft', IconName> = {
 function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
   const data = d.data
   const bookingNoDisplay = data.bookingNo ? `Draft #${data.bookingNo}` : `Draft ${d.id.slice(0, 8)}`
-  const clientName = data.selectedClientId || 'Draft Client'
+  const clientName = data.clientName || data.selectedClientId || 'Draft Client'
   const pickupDate = data.pickup || ''
   const pickupTime = data.pickupTime || '09:00'
   const returnDate = data.returnDate || ''
   const returnTime = data.returnTime || '18:00'
+  const hasSubRental = Boolean(data.lines?.some((l) => l.lineType === 'Sub-rental'))
 
   return {
     id: d.id,
@@ -203,7 +206,7 @@ function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
     deliveryType: data.deliveryType === 'Babin Delivery' ? 'Babin Delivery' : 'Client Pickup',
     quoteExpires: null,
     deposit: null,
-    isExternal: false,
+    isExternal: hasSubRental,
   }
 }
 
@@ -502,14 +505,14 @@ function RowOperations({
             </button>
           )}
           <Link
-            to={`/rentals/${row.bookingNo}`}
+            to={(row.status as string) === 'Draft' ? `/rentals?action=new&draft=${row.id}` : `/rentals/${row.bookingNo}`}
             role="menuitem"
             style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
-            <Icon name="external_link" size={15} style={{ color: 'var(--text2)' }} />
-            <span style={{ flex: 1 }}>Open Booking</span>
+            <Icon name={(row.status as string) === 'Draft' ? 'edit' : 'external_link'} size={15} style={{ color: 'var(--text2)' }} />
+            <span style={{ flex: 1 }}>{(row.status as string) === 'Draft' ? 'Edit Draft' : 'Open Booking'}</span>
           </Link>
 
           <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
@@ -1022,31 +1025,123 @@ export default function RentalsList() {
         ...(filters.chips?.stage ? { chips: { ...filters.chips, stage: dbStages } } : {}),
       }
 
-      const [res, drafts] = await Promise.all([
-        onlyDraft ? Promise.resolve({ rows: [], total: 0 }) : listBookings({ ...dbFilters, withCount: true, ...(money ? { withDeposit: true } : {}) }),
-        shouldFetchDrafts ? listActiveDrafts().catch(() => []) : Promise.resolve([]),
-      ])
+      const rawDrafts = shouldFetchDrafts ? await listActiveDrafts().catch(() => []) : []
 
-      let filteredDrafts = drafts
+      let filteredDrafts = rawDrafts
+
+      // 1. Search filter
       if (filters.search) {
         const q = filters.search.toLowerCase()
-        filteredDrafts = drafts.filter(
+        filteredDrafts = filteredDrafts.filter(
           (d) =>
             (d.data.bookingNo && d.data.bookingNo.toLowerCase().includes(q)) ||
             (d.data.project && d.data.project.toLowerCase().includes(q)) ||
+            (d.data.clientName && d.data.clientName.toLowerCase().includes(q)) ||
             (d.data.selectedClientId && d.data.selectedClientId.toLowerCase().includes(q)),
         )
       }
 
-      const draftRows = filteredDrafts.map(draftToRentalListRow)
+      // 2. Date range filter (pickup date)
+      if (filters.dateRange) {
+        const { fromAd, toAd } = filters.dateRange
+        filteredDrafts = filteredDrafts.filter((d) => {
+          const pickup = d.data.pickup
+          if (!pickup) return true
+          if (fromAd && pickup < fromAd) return false
+          if (toAd && pickup > toAd) return false
+          return true
+        })
+      }
+
+      // 3. Sub-Rental filter
+      if (subOn) {
+        filteredDrafts = filteredDrafts.filter((d) =>
+          d.data.lines?.some((l) => l.lineType === 'Sub-rental'),
+        )
+      }
+
+      // 4. Client name resolution for drafts missing clientName
+      const missingClientIds = Array.from(
+        new Set(
+          filteredDrafts
+            .filter((d) => !d.data.clientName && (d.data.clientDbId || d.data.selectedClientId))
+            .map((d) => d.data.clientDbId || d.data.selectedClientId)
+            .filter(Boolean) as string[],
+        ),
+      )
+      if (missingClientIds.length > 0) {
+        try {
+          const { data: clientsData } = await supabase
+            .from('clients')
+            .select('id, name')
+            .in('id', missingClientIds)
+          if (clientsData) {
+            const nameMap = new Map(clientsData.map((c: { id: string; name: string }) => [c.id, c.name]))
+            for (const d of filteredDrafts) {
+              const cid = d.data.clientDbId || d.data.selectedClientId
+              const resolvedName = cid ? nameMap.get(cid) : undefined
+              if (resolvedName) {
+                d.data.clientName = resolvedName
+              }
+            }
+          }
+        } catch {
+          // Fallback to existing client info
+        }
+      }
+
+      const totalDrafts = filteredDrafts.length
+
+      // Pagination calculation
+      const pageIndex = filters.page?.index ?? 0
+      const pageSize = filters.page?.size ?? perPage
+      const windowStart = pageIndex * pageSize
+      const windowEnd = windowStart + pageSize
+
+      // Case A: Drafts fall within current page window
+      if (windowStart < totalDrafts) {
+        const pageDrafts = filteredDrafts.slice(windowStart, windowEnd)
+        const draftRows = pageDrafts.map(draftToRentalListRow)
+        const slotsRemaining = pageSize - draftRows.length
+
+        if (onlyDraft || slotsRemaining <= 0) {
+          return { rows: draftRows, total: totalDrafts }
+        }
+
+        const res = await listBookings({
+          ...dbFilters,
+          page: undefined,
+          range: { from: 0, to: slotsRemaining - 1 },
+          withCount: true,
+          ...(money ? { withDeposit: true } : {}),
+        })
+
+        const bookingRows = res.rows.map((r) => toRentalListRow(r, businessNowAd()))
+        const totalCount = totalDrafts + (res.total ?? bookingRows.length)
+
+        return { rows: [...draftRows, ...bookingRows], total: totalCount }
+      }
+
+      // Case B: Current page is beyond drafts
+      if (onlyDraft) {
+        return { rows: [], total: totalDrafts }
+      }
+
+      const bookingOffset = windowStart - totalDrafts
+      const res = await listBookings({
+        ...dbFilters,
+        page: undefined,
+        range: { from: bookingOffset, to: bookingOffset + pageSize - 1 },
+        withCount: true,
+        ...(money ? { withDeposit: true } : {}),
+      })
+
       const bookingRows = res.rows.map((r) => toRentalListRow(r, businessNowAd()))
+      const totalCount = totalDrafts + (res.total ?? bookingRows.length)
 
-      const combinedRows = [...draftRows, ...bookingRows]
-      const totalCount = (res.total ?? bookingRows.length) + draftRows.length
-
-      return { rows: combinedRows, total: totalCount }
+      return { rows: bookingRows, total: totalCount }
     },
-    [query.impossible, money],
+    [query.impossible, money, subOn, perPage],
   )
 
   /* Server-side paging. `withCount: true` is what makes "Showing X to Y of Z"
@@ -1164,7 +1259,8 @@ export default function RentalsList() {
   const show = (c: OptionalColumn) =>
     !hiddenCols.has(c) && (c !== 'Deposit' || money) && !(viewport === 'tablet' && NARROW_COLUMNS.has(c))
   const headers: string[] = [
-    'Booking',
+    'Booking ID',
+    'Created Date',
     'Client / Project',
     ...(show('Items') ? ['Items'] : []),
     ...(show('Pickup') ? ['Pickup'] : []),
@@ -1218,6 +1314,7 @@ export default function RentalsList() {
 
     const csvHeaders = [
       'Booking No',
+      'Created Date',
       'Client',
       'Project',
       'Status',
@@ -1228,6 +1325,7 @@ export default function RentalsList() {
     ]
     const csvLines = rows.map((r) => [
       `"${r.bookingNo}"`,
+      `"${r.createdOn || ''}"`,
       `"${(r.client || '').replace(/"/g, '""')}"`,
       `"${(r.project || '').replace(/"/g, '""')}"`,
       `"${r.status}"`,
@@ -1321,86 +1419,89 @@ export default function RentalsList() {
   }
 
   return (
-    <PageShell className="rentals-v2">
-      <PageHeader
-        leading={
-          <FilterButton
-            onClick={() => setFiltersOpen((open) => !open)}
-            activeCount={f.activeCount}
-            controls="rentals-filters"
-            expanded={filtersOpen}
-          />
-        }
-        title="Rentals"
-        description="Manage bookings and rental lifecycle."
-        actions={
-          <QuickActionBar
-            actions={[
-              ...(canWriteDesk
-                ? [
-                    {
-                      id: 'new-booking',
-                      label: 'New Rental',
-                      icon: 'plus' as const,
-                      variant: 'primary' as const,
-                      onClick: () => {
-                        setRawParams((prev) => {
-                          const next = new URLSearchParams(prev)
-                          next.set('action', 'new')
-                          return next
-                        })
+    <PageShell
+      className="rentals-v2"
+      header={
+        <PageHeader
+          leading={
+            <FilterButton
+              onClick={() => setFiltersOpen((open) => !open)}
+              activeCount={f.activeCount}
+              controls="rentals-filters"
+              expanded={filtersOpen}
+            />
+          }
+          title="Rentals"
+          actions={
+            <QuickActionBar
+              actions={[
+                ...(canWriteDesk
+                  ? [
+                      {
+                        id: 'new-booking',
+                        label: 'New Rental',
+                        icon: 'plus' as const,
+                        variant: 'primary' as const,
+                        onClick: () => {
+                          setRawParams((prev) => {
+                            const next = new URLSearchParams(prev)
+                            next.set('action', 'new')
+                            return next
+                          })
+                        },
                       },
-                    },
-                  ]
-                : []),
-              ...(canOperate
-                ? [
-                    {
-                      id: 'fast-return',
-                      label: '⚡ Fast Return',
-                      icon: 'return_arrow' as const,
-                      variant: 'accent' as const,
-                      onClick: () => setFastReturnOpen(true),
-                    },
-                  ]
-                : []),
-              ...(canRecord
-                ? [
-                    {
-                      id: 'record-payment',
-                      label: 'Record Payment',
-                      icon: 'invoice' as const,
-                      onClick: () => setPaymentModalOpen(true),
-                    },
-                  ]
-                : []),
-              {
-                id: 'quick-scan',
-                label: 'Scan Barcode',
-                icon: 'search' as const,
-                onClick: () => setBarcodeModalOpen(true),
-              },
-            ]}
-            extra={
-              <>
-                <Button icon="refresh" onClick={refreshAll}>
-                  Refresh
-                </Button>
-                {/* Export stays honestly disabled with its reason per wireframe spec §4.1 and PLAN.md §4.22 */}
-                <Unavailable reason="Export is not built yet — nothing settles the file format, or which columns a role may export. A full-column export would also walk around Law 6's money masking, so it needs a role rule before it needs code.">
-                  <Button
-                    icon="download"
-                    variant="secondary"
-                    disabled
-                  >
-                    Export
+                    ]
+                  : []),
+                ...(canOperate
+                  ? [
+                      {
+                        id: 'fast-return',
+                        label: '⚡ Fast Return',
+                        icon: 'return_arrow' as const,
+                        variant: 'accent' as const,
+                        onClick: () => setFastReturnOpen(true),
+                      },
+                    ]
+                  : []),
+                ...(canRecord
+                  ? [
+                      {
+                        id: 'record-payment',
+                        label: 'Record Payment',
+                        icon: 'invoice' as const,
+                        onClick: () => setPaymentModalOpen(true),
+                      },
+                    ]
+                  : []),
+                {
+                  id: 'quick-scan',
+                  label: 'Scan Barcode',
+                  icon: 'search' as const,
+                  onClick: () => setBarcodeModalOpen(true),
+                },
+              ]}
+              extra={
+                <>
+                  <Button icon="refresh" onClick={refreshAll}>
+                    Refresh
                   </Button>
-                </Unavailable>
-              </>
-            }
-          />
-        }
-      />
+                  {/* Export stays honestly disabled with its reason per wireframe spec §4.1 and PLAN.md §4.22 */}
+                  <Unavailable reason="Export is not built yet — nothing settles the file format, or which columns a role may export. A full-column export would also walk around Law 6's money masking, so it needs a role rule before it needs code.">
+                    <Button
+                      icon="download"
+                      variant="secondary"
+                      disabled
+                    >
+                      Export
+                    </Button>
+                  </Unavailable>
+                </>
+              }
+            />
+          }
+        />
+      }
+    >
 
       {/*
         ## The chip row — §4.1's two lines
@@ -1605,46 +1706,19 @@ export default function RentalsList() {
         })}
 
         {tabular && (
-          <span
-            role="group"
-            aria-label="List view"
-            style={{
-              marginLeft: 'auto',
-              display: 'flex',
-              gap: 'var(--sp-xs)',
-              padding: 3,
-              borderRadius: 10,
-              background: 'var(--card2)',
-              border: '1px solid var(--border)',
-              flexShrink: 0,
-            }}
-          >
-            {VIEWS.map((v) => {
-              const on = view === v
-              const btnStyle = {
-                display: 'inline-flex' as const,
-                alignItems: 'center' as const,
-                gap: 5,
-                height: 28,
-                padding: '0 11px',
-                borderRadius: 7,
-                border: 'none',
-                background: on ? 'var(--card)' : 'transparent',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 600 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                boxShadow: on ? 'var(--shadow-card)' : 'none',
-              }
-              return (
-                <button key={v} type="button" onClick={() => setView(v)} aria-pressed={on} style={btnStyle}>
-                  <Icon name={v === 'Table' ? 'checklist' : v === 'Timeline' ? 'calendar' : 'queues'} size={14} />
-                  {v}
-                </button>
-              )
-            })}
-          </span>
+          <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
+            <SegmentedControl
+              size="sm"
+              ariaLabel="List view"
+              options={VIEWS.map((v) => ({
+                id: v,
+                label: v,
+                icon: v === 'Table' ? 'checklist' : v === 'Timeline' ? 'calendar' : 'queues',
+              }))}
+              value={view}
+              onChange={setView}
+            />
+          </div>
         )}
       </div>
 
@@ -1795,21 +1869,47 @@ export default function RentalsList() {
               }
             >
               {((view === 'Cards' && tabular) || !tabular) && (
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div
+                  style={
+                    view === 'Cards' && tabular
+                      ? {
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                          gap: 'var(--sp-md)',
+                          padding: 'var(--sp-md)',
+                        }
+                      : { display: 'flex', flexDirection: 'column' }
+                  }
+                >
                   {rowsWithIntel.map(({ row: r, glance, detail }) => (
                     <div
                       key={r.id}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 'var(--sp-sm)',
-                        padding: '13px 14px',
-                        borderBottom: '1px solid var(--border)',
-                        // §4.1 — "gold outline row = external gear". Fires
-                        // only on a real `true`; `null` is "not answered" and
-                        // leaves the row unmarked (§11.1, Law 11).
-                        ...externalRowStyle(r.isExternal),
-                      }}
+                      style={
+                        view === 'Cards' && tabular
+                          ? {
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              gap: 'var(--sp-sm)',
+                              padding: 'var(--sp-md)',
+                              background: 'var(--card)',
+                              border: '1px solid var(--border)',
+                              borderRadius: 'var(--r-card)',
+                              boxShadow: 'var(--shadow-card)',
+                              ...externalRowStyle(r.isExternal),
+                            }
+                          : {
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 'var(--sp-sm)',
+                              padding: '13px 14px',
+                              borderBottom: '1px solid var(--border)',
+                              // §4.1 — "gold outline row = external gear". Fires
+                              // only on a real `true`; `null` is "not answered" and
+                              // leaves the row unmarked (§11.1, Law 11).
+                              ...externalRowStyle(r.isExternal),
+                            }
+                      }
                     >
                       <span style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                         <input
@@ -1881,6 +1981,11 @@ export default function RentalsList() {
                       </span>
 
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                        <Icon name="file" size={12} style={{ color: 'var(--muted)' }} />
+                        Created <span className="figure">{r.createdOn}</span>
+                      </span>
+
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                         <Icon name="box" size={12} style={{ color: 'var(--muted)' }} />
                         <span className="figure">{r.itemCount}</span> item{r.itemCount === 1 ? '' : 's'}
                       </span>
@@ -1889,6 +1994,13 @@ export default function RentalsList() {
                         <Icon name="calendar" size={12} style={{ color: 'var(--muted)' }} />
                         Pickup <span className="figure">{r.pickup.date}</span> {r.pickup.time}
                       </span>
+
+                      {r.ret.date && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                          <Icon name="return_arrow" size={12} style={{ color: 'var(--muted)' }} />
+                          Return <span className="figure">{r.ret.date}</span> {r.ret.time}
+                        </span>
+                      )}
 
                       {/* §7: "one primary button each" on a phone card row. */}
                       <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginTop: 2 }}>
@@ -2034,14 +2146,6 @@ export default function RentalsList() {
                               >
                                 {r.bookingNo}
                               </Link>
-                              {/* ⛔ "Booked 12 Jul" became "Created …".
-                                  `created_at` is the row's insert instant,
-                                  not the Booked-stage transition — a quote
-                                  confirmed a week later would carry the
-                                  quote's date. */}
-                              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
-                                Created <span className="figure">{r.createdOn}</span>
-                              </div>
                               {(r.isOverdue || r.isCancelled || r.isExternal === true) && (
                                 <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                   {r.isOverdue && <Tag text="Overdue" status="danger" />}
@@ -2052,6 +2156,19 @@ export default function RentalsList() {
                                 </div>
                               )}
                             </IntelCard>
+                          </td>
+
+                          <td style={td}>
+                            <span
+                              className="figure"
+                              style={{
+                                fontSize: 'var(--t-meta)',
+                                color: 'var(--text)',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {r.createdOn}
+                            </span>
                           </td>
 
                           <td style={td}>
@@ -2136,16 +2253,20 @@ export default function RentalsList() {
                                         gap: 4,
                                         padding: '2px 8px',
                                         borderRadius: 'var(--r-badge)',
-                                        background: 'rgba(245, 158, 11, 0.12)',
-                                        border: '1px solid rgba(245, 158, 11, 0.4)',
-                                        color: 'var(--amber-text, #b45309)',
+                                        /* §21 — no literal palette: chip-amber is the canonical
+                                           soft caution pair, themed in both light and dark.
+                                           `--amber-text` was never defined, so the pill
+                                           silently fell back to light-mode #b45309. */
+                                        background: 'var(--chip-amber-bg)',
+                                        border: '1px solid color-mix(in srgb, var(--chip-amber-fg) 40%, transparent)',
+                                        color: 'var(--chip-amber-fg)',
                                         fontWeight: 700,
                                         fontSize: 'var(--t-meta)',
                                       }}
                                       title="Overdue return"
                                       aria-label={`Overdue return: ${m.date}`}
                                     >
-                                      <Icon name="timer" size={12} style={{ color: 'var(--amber-text, #b45309)' }} />
+                                      <Icon name="timer" size={12} style={{ color: 'var(--chip-amber-fg)' }} />
                                       <span className="figure">{m.date}</span>
                                     </span>
                                   ) : (

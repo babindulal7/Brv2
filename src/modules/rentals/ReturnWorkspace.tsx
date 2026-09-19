@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FloorAside } from '../operations/FloorAside'
 import { StickyFloorBar } from '../operations/StickyFloorBar'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
@@ -615,6 +616,16 @@ export default function ReturnWorkspace({
   const outstandingUnits = outstandingRows.reduce((n, r) => n + r.qty, 0)
   const pct = totalUnits > 0 ? Math.round((backUnits / totalUnits) * 100) : 0
 
+  const filterCounts = useMemo<Record<(typeof FILTERS)[number], number>>(
+    () => ({
+      All: rows.length,
+      Outstanding: outstandingRows.length,
+      Returned: rows.filter((r) => stateOf(r) === 'Returned').length,
+      'Not Returned': missingRows.length,
+    }),
+    [rows, outstandingRows.length, missingRows.length, marks],
+  )
+
   /*
    * §1.5 — Return runs at status **On Rent**; the badge shows the CANONICAL
    * stage (never a seventh name). Mid-return is the Return *job* being In
@@ -1203,32 +1214,18 @@ export default function ReturnWorkspace({
               {/* ── centre — the triage list over the real rows ─────────────── */}
               <div style={{ minWidth: 0 }}>
                 <Card title="1 · Equipment Checklist" bodyStyle={{ padding: 0 }}>
-                  <div style={{ display: 'flex', gap: 7, padding: '9px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
-                    {FILTERS.map((f) => {
-                      const on = filter === f
-                      return (
-                        <button
-                          key={f}
-                          type="button"
-                          onClick={() => setFilter(f)}
-                          aria-pressed={on}
-                          style={{
-                            minHeight: phone ? 36 : 26,
-                            padding: phone ? '0 12px' : '0 9px',
-                            borderRadius: 7,
-                            border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                            background: on ? 'var(--nav-active-bg)' : 'transparent',
-                            color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                            fontSize: 'var(--t-meta)',
-                            fontWeight: on ? 600 : 500,
-                            cursor: 'pointer',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          {f}
-                        </button>
-                      )
-                    })}
+                  <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
+                    <SegmentedControl
+                      ariaLabel="Filter return checklist items"
+                      size="sm"
+                      options={FILTERS.map((f) => ({
+                        id: f,
+                        label: f,
+                        badge: filterCounts[f],
+                      }))}
+                      value={filter}
+                      onChange={(val) => setFilter(val as (typeof FILTERS)[number])}
+                    />
                   </div>
 
                   {phone ? (
@@ -1614,22 +1611,49 @@ export default function ReturnWorkspace({
                         Signed · {sigReturning.name} · {formatAdDateTime(sigReturning.atIso)}
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', gap: 'var(--sp-sm)', marginTop: 5 }}>
-                        <input
-                          value={returningName}
-                          onChange={(e) => setReturningName(e.target.value)}
-                          placeholder="Who is returning the gear?"
-                          aria-label="Returning person's name"
-                          style={{ flex: 1, minWidth: 0, minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-                        />
-                        <button
-                          type="button"
-                          onClick={captureReturning}
-                          disabled={returningName.trim() === ''}
-                          style={{ minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', color: returningName.trim() === '' ? 'var(--muted)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: returningName.trim() === '' ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
-                        >
-                          Capture
-                        </button>
+                      <div style={{ marginTop: 5 }}>
+                        <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
+                          <input
+                            value={returningName}
+                            onChange={(e) => setReturningName(e.target.value)}
+                            placeholder="Who is returning the gear?"
+                            aria-label="Returning person's name"
+                            style={{ flex: 1, minWidth: 0, minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={captureReturning}
+                            disabled={returningName.trim() === ''}
+                            style={{ minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', color: returningName.trim() === '' ? 'var(--muted)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: returningName.trim() === '' ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
+                          >
+                            Capture
+                          </button>
+                        </div>
+                        {floor && floor.clientName && floor.clientName.trim() !== '' && (
+                          <div style={{ marginTop: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => setReturningName(floor.clientName!)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                minHeight: 28,
+                                padding: '0 8px',
+                                borderRadius: 'var(--r-btn)',
+                                border: '1px dashed var(--border)',
+                                background: 'transparent',
+                                color: 'var(--text2)',
+                                fontSize: 'var(--t-micro)',
+                                cursor: 'pointer',
+                                fontFamily: 'inherit',
+                              }}
+                            >
+                              <Icon name="check" size={12} />
+                              Use client: <strong style={{ color: 'var(--text)' }}>{floor.clientName}</strong>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

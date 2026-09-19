@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FloorAside } from '../operations/FloorAside'
 import { StickyFloorBar } from '../operations/StickyFloorBar'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
@@ -1292,35 +1293,20 @@ export default function HandoverWorkspace({
                       aria-label="Search equipment"
                       style={{ flex: 1, minWidth: 180, minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                     />
-                    {FILTERS.map((f) => {
-                      const on = filter === f
-                      const count = f === 'All' ? rows.length : rows.filter((r) => stateOf(r.key) === f).length
-                      return (
-                        <button
-                          key={f}
-                          type="button"
-                          onClick={() => setFilter(f)}
-                          aria-pressed={on}
-                          /* HO-14 — the count is ROWS, which is what the filter shows.
-                             The header bar counts units; neither figure is now unlabelled. */
-                          aria-label={`${f} — ${count} row${count === 1 ? '' : 's'}`}
-                          style={{
-                            minHeight: phone ? 36 : 26,
-                            padding: phone ? '0 12px' : '0 9px',
-                            borderRadius: 7,
-                            border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                            background: on ? 'var(--nav-active-bg)' : 'transparent',
-                            color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                            fontSize: 'var(--t-meta)',
-                            fontWeight: on ? 600 : 500,
-                            cursor: 'pointer',
-                            fontFamily: 'inherit',
-                          }}
-                        >
-                          {f} <span className="figure">{count}</span>
-                        </button>
-                      )
-                    })}
+                    <SegmentedControl
+                      ariaLabel="Filter handover checklist items"
+                      size="sm"
+                      options={FILTERS.map((f) => {
+                        const count = f === 'All' ? rows.length : rows.filter((r) => stateOf(r.key) === f).length
+                        return {
+                          id: f,
+                          label: f,
+                          badge: count,
+                        }
+                      })}
+                      value={filter}
+                      onChange={(val) => setFilter(val as (typeof FILTERS)[number])}
+                    />
                     <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                       <span className="figure">{rows.length}</span> row{rows.length === 1 ? '' : 's'} ·{' '}
                       <span className="figure">{totalUnits}</span> unit{totalUnits === 1 ? '' : 's'}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
-import { Button } from '../../../components/ui/Page'
+import { Button } from '../../../components/ui/Button'
 import { useAuth } from '../../../lib/auth'
 import { useToast } from '../../../components/ui/Toast'
 import { newClientUuid } from '../../../lib/supabase'
@@ -139,13 +139,16 @@ export function CancelRentalModal({
             style={{
               padding: '8px 12px',
               borderRadius: 'var(--r-btn)',
-              background: 'rgba(234, 179, 8, 0.1)',
-              border: '1px solid rgba(234, 179, 8, 0.3)',
+              /* §21 — soft caution callout uses the canonical chip-amber pair,
+                 themed in both modes; the rgba(234,179,8) literal stayed
+                 light-mode yellow under the dark theme. */
+              background: 'var(--chip-amber-bg)',
+              border: '1px solid color-mix(in srgb, var(--chip-amber-fg) 35%, transparent)',
               color: 'var(--text)',
               fontSize: 'var(--t-meta)',
             }}
           >
-            <strong>Manager Authority Required:</strong> Because this booking has already been packed, cancellation
+            <strong style={{ color: 'var(--chip-amber-fg)' }}>Manager Authority Required:</strong> Because this booking has already been packed, cancellation
             requires Manager, Admin, or Owner credentials per database gate rule (0115).
           </div>
         )}

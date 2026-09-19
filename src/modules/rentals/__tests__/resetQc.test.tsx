@@ -244,6 +244,60 @@ describe('ResetWorkspace — RS-12, the QC identity', () => {
     expect(entry['qcSkipReason']).toBe('Sole cleaner on shift')
   })
 
+  it('enables Pass when clicking a quick preset button', async () => {
+    await mount()
+    await reachQc()
+
+    expect(passButton().disabled).toBe(true)
+    const presetBtn = [...container.querySelectorAll('button')].find(
+      (b) => b.textContent?.includes('Clean & inspected'),
+    )
+    expect(presetBtn).toBeDefined()
+
+    await click(presetBtn!)
+    expect(passButton().disabled).toBe(false)
+    expect(reasonField()?.value).toBe('Clean & inspected')
+
+    await click(passButton())
+    expect(text()).toContain('QC by Babin Shrestha')
+  })
+
+  it('allows batch pass QC for selected items', async () => {
+    await mount()
+    await reachQc()
+
+    // Select the row again (as reachQc untoggled it or left it in QC)
+    const select = container.querySelector<HTMLInputElement>('input[aria-label="Select Sony FX3"]')
+    if (!select?.checked) await check(select!)
+
+    const batchPassBtn = [...container.querySelectorAll('button')].find(
+      (b) => b.textContent?.includes('Pass QC for All'),
+    )
+    expect(batchPassBtn).toBeDefined()
+    expect(batchPassBtn?.disabled).toBe(false)
+
+    await click(batchPassBtn!)
+    expect(text()).toContain('QC by Babin Shrestha')
+  })
+
+  it('allows 1-tap Complete Checklist & Move to QC without clicking individual task checkboxes', async () => {
+    await mount()
+    const select = container.querySelector<HTMLInputElement>('input[aria-label="Select Sony FX3"]')
+    if (!select) throw new Error('no row checkbox')
+    await check(select)
+
+    // With 0 tasks ticked, Complete Checklist & Move to QC is offered
+    const quickCleanBtn = [...container.querySelectorAll('button')].find(
+      (b) => b.textContent?.includes('Complete Checklist & Move to QC'),
+    )
+    expect(quickCleanBtn).toBeDefined()
+    expect(quickCleanBtn?.disabled).toBe(false)
+
+    await click(quickCleanBtn!)
+    // Now it reached QC!
+    expect(text()).toContain('QC will be recorded as Babin Shrestha')
+  })
+
   /*
    * The positive control. `selfIdOf` is the whole reason a typed name could
    * never be written: restore the old input's behaviour — a name that is not

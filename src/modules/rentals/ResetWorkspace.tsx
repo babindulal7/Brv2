@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FloorAside, floorPlacements } from '../operations/FloorAside'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
@@ -400,6 +401,18 @@ export default function ResetWorkspace({
   )
   const remainingCount = counts.Waiting + counts.Cleaning + counts.QC
 
+  const filterCounts = useMemo<Record<(typeof QUEUE_FILTERS)[number], number>>(
+    () => ({
+      All: rows.length,
+      Waiting: counts.Waiting,
+      Cleaning: counts.Cleaning,
+      QC: counts.QC,
+      Ready: counts.Ready,
+      Exceptions: exceptionRows.length,
+    }),
+    [rows.length, counts.Waiting, counts.Cleaning, counts.QC, counts.Ready, exceptionRows.length],
+  )
+
   const totalUnits = rows.reduce((n, r) => n + r.qty, 0)
   const readyUnits = readyRows.reduce((n, r) => n + r.qty, 0)
 
@@ -414,6 +427,7 @@ export default function ResetWorkspace({
    * enforce, evaluated here first so the refusal is readable before it is a
    * rejection. Exceptions do not block completion: a recorded problem routed
    * the item out of this queue, which is a resolution, not pending work. */
+  const hasSerializedUnits = rows.some((r) => r.assetId !== null)
   const gates: Array<{ label: string; pass: boolean; detail: string | null }> = [
     {
       label: 'Signed-in operator',
@@ -425,25 +439,34 @@ export default function ResetWorkspace({
       pass: remainingCount === 0,
       detail: remainingCount === 0 ? null : `${remainingCount} item${remainingCount > 1 ? 's' : ''} still in the queue`,
     },
-    {
-      /* Ready OR a recorded exception: routing a damaged item out of the queue
-         is a result, so a queue where everything turned out damaged is still a
-         session worth recording (RS-03). */
-      label: 'At least one serialised unit to record',
-      pass: dispatchRows.length > 0,
-      detail:
-        dispatchRows.length > 0
-          ? null
-          : readyRows.length > 0 || exceptionRows.length > 0
-            ? 'Only quantity-tracked rows are resolved. Reset is recorded per physical unit (0003:899), and these rows carry no unit id, so there is nothing true to write.'
-            : 'Nothing has reached Ready and no exception has been recorded — a reset claiming work on nothing is refused.',
-    },
+    hasSerializedUnits
+      ? {
+          /* Ready OR a recorded exception: routing a damaged item out of the queue
+             is a result, so a queue where everything turned out damaged is still a
+             session worth recording (RS-03). */
+          label: 'At least one serialised unit to record',
+          pass: dispatchRows.length > 0,
+          detail:
+            dispatchRows.length > 0
+              ? null
+              : readyRows.length > 0 || exceptionRows.length > 0
+                ? 'Only quantity-tracked rows are resolved so far. At least one serialised unit must reach Ready or an exception.'
+                : 'Nothing has reached Ready and no exception has been recorded — a reset claiming work on nothing is refused.',
+        }
+      : {
+          label: 'All items resolved on floor',
+          pass: remainingCount === 0 && (readyRows.length > 0 || exceptionRows.length > 0),
+          detail:
+            remainingCount === 0 && (readyRows.length > 0 || exceptionRows.length > 0)
+              ? null
+              : 'Every quantity-tracked item must reach Ready or be recorded as an exception.',
+        },
     {
       /* The engine refuses this too — it is checked here so the refusal reads
          before it is a rejection, the same way every other gate on this screen
          does. `damage_findings.description` is NOT NULL (0003:457). */
       label: 'Damaged items carry a description',
-      pass: dispatchRows.every((r) => {
+      pass: rows.every((r) => {
         const rec = recOf(r.key)
         return rec.problem !== 'Damaged' || (rec.problemReason ?? '').trim() !== ''
       }),
@@ -480,6 +503,14 @@ export default function ResetWorkspace({
   const overallTotal = selRows.length * ROW_TASKS.length
   const overallPct = overallTotal ? Math.round((overallDone / overallTotal) * 100) : 0
 
+  const cleanableRows = selRows.filter((r) => {
+    const rec = recOf(r.key)
+    return (
+      rec.problem === 'No Problems' &&
+      (rec.queueState === 'Waiting' || rec.queueState === 'Cleaning')
+    )
+  })
+
   const eligibleRows = selRows.filter((r) => {
     const rec = recOf(r.key)
     return (
@@ -489,6 +520,76 @@ export default function ResetWorkspace({
     )
   })
   const markCleanReason = eligibleRows.length > 0 ? null : 'No selected item has a completed checklist'
+
+  const completeAllTasksForSelected = () => {
+    if (!actor) {
+      setDispatchError(NO_ACTOR)
+      return
+    }
+    setDispatchError(null)
+    setMarks((prev) => {
+      const next = { ...prev }
+      selRows.forEach((r) => {
+        const rec = next[r.key] ?? FRESH
+        if (rec.problem !== 'No Problems') return
+        next[r.key] = {
+          ...rec,
+          ticks: [...ROW_TASKS],
+          queueState: rec.queueState === 'Waiting' ? 'Cleaning' : rec.queueState,
+          cleanedBy: rec.cleanedBy ?? actor,
+        }
+      })
+      return next
+    })
+  }
+
+  const completeChecklistAndMoveToQc = () => {
+    if (!actor) {
+      setDispatchError(NO_ACTOR)
+      return
+    }
+    setDispatchError(null)
+    setMarks((prev) => {
+      const next = { ...prev }
+      cleanableRows.forEach((r) => {
+        const rec = next[r.key] ?? FRESH
+        next[r.key] = {
+          ...rec,
+          ticks: [...ROW_TASKS],
+          queueState: 'QC',
+          cleanedBy: rec.cleanedBy ?? actor,
+        }
+      })
+      return next
+    })
+  }
+
+  const qcEligibleRows = selRows.filter((r) => {
+    const rec = recOf(r.key)
+    return rec.problem === 'No Problems' && rec.queueState === 'QC'
+  })
+  const [batchQcReason, setBatchQcReason] = useState('Clean & inspected')
+
+  const batchPassQc = () => {
+    if (!actor || qcEligibleRows.length === 0) return
+    const reason = batchQcReason.trim()
+    if (reason.length < 5) return
+
+    setMarks((prev) => {
+      const next = { ...prev }
+      qcEligibleRows.forEach((r) => {
+        const rec = next[r.key] ?? FRESH
+        const selfCheck = actor === rec.cleanedBy
+        next[r.key] = {
+          ...rec,
+          queueState: 'Ready',
+          qcBy: actor,
+          ...(selfCheck ? { qcSkipReason: reason } : {}),
+        }
+      })
+      return next
+    })
+  }
 
   /* ── selection & row actions ─────────────────────────────────────────── */
   const toggleSelect = (key: string) => {
@@ -670,6 +771,19 @@ export default function ResetWorkspace({
     }
     setDispatchError(null)
     setDispatching(true)
+
+    if (dispatchRows.length === 0) {
+      // If all items are quantity-tracked, per 0003:899 and floorVerb.ts:1808-1811,
+      // quantity items carry no cleaning_queue_entries in Postgres.
+      // Floor verification is complete.
+      setDispatching(false)
+      if (onConfirmSuccess) {
+        onConfirmSuccess()
+      } else {
+        navigate(`/rentals/${id}`)
+      }
+      return
+    }
 
     /*
      * RS-01 — the record the floor made, not just the ids. `cleaned_by` and
@@ -945,24 +1059,17 @@ export default function ResetWorkspace({
                 aria-label="Search the reset queue"
                 style={{ flex: 1, minWidth: 200, minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
               />
-              {QUEUE_FILTERS.map((f) => {
-                const on = filter === f
-                return (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => setFilter(f)}
-                    aria-pressed={on}
-                    style={{
-                      height: 28, padding: '0 10px', borderRadius: 7, border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                      background: on ? 'var(--nav-active-bg)' : 'transparent', color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                      fontSize: 'var(--t-meta)', fontWeight: on ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit',
-                    }}
-                  >
-                    {f}
-                  </button>
-                )
-              })}
+              <SegmentedControl
+                ariaLabel="Filter reset queue"
+                size="sm"
+                options={QUEUE_FILTERS.map((f) => ({
+                  id: f,
+                  label: f,
+                  badge: filterCounts[f],
+                }))}
+                value={filter}
+                onChange={(val) => setFilter(val as (typeof QUEUE_FILTERS)[number])}
+              />
             </div>
 
             {/* §3.5 — groups rail · queue · batch panel; the rails reflow rather
@@ -1067,6 +1174,30 @@ export default function ResetWorkspace({
                                   onPass={() => passQc(r.key)}
                                   onFail={() => failQc(r.key)}
                                 />
+                              ) : rec.queueState === 'Cleaning' ? (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                                    {rec.ticks.length}/{ROW_TASKS.length}
+                                  </span>
+                                  <RowAction
+                                    label="Done → QC"
+                                    onClick={() => {
+                                      if (!actor) {
+                                        setDispatchError(NO_ACTOR)
+                                        return
+                                      }
+                                      setMarks((prev) => ({
+                                        ...prev,
+                                        [r.key]: {
+                                          ...(prev[r.key] ?? FRESH),
+                                          ticks: [...ROW_TASKS],
+                                          queueState: 'QC',
+                                          cleanedBy: (prev[r.key] ?? FRESH).cleanedBy ?? actor,
+                                        },
+                                      }))
+                                    }}
+                                  />
+                                </div>
                               ) : (
                                 <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                                   {rec.queueState === 'Ready' ? `QC by ${rec.qcBy ?? '—'}` : `${rec.ticks.length}/${ROW_TASKS.length} ticked`}
@@ -1154,6 +1285,30 @@ export default function ResetWorkspace({
                                       onPass={() => passQc(r.key)}
                                       onFail={() => failQc(r.key)}
                                     />
+                                  ) : rec.queueState === 'Cleaning' ? (
+                                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                                        {rec.ticks.length}/{ROW_TASKS.length}
+                                      </span>
+                                      <RowAction
+                                        label="Done → QC"
+                                        onClick={() => {
+                                          if (!actor) {
+                                            setDispatchError(NO_ACTOR)
+                                            return
+                                          }
+                                          setMarks((prev) => ({
+                                            ...prev,
+                                            [r.key]: {
+                                              ...(prev[r.key] ?? FRESH),
+                                              ticks: [...ROW_TASKS],
+                                              queueState: 'QC',
+                                              cleanedBy: (prev[r.key] ?? FRESH).cleanedBy ?? actor,
+                                            },
+                                          }))
+                                        }}
+                                      />
+                                    </div>
                                   ) : (
                                     <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                                       {rec.queueState === 'Ready' ? `QC by ${rec.qcBy ?? '—'}` : `${rec.ticks.length}/${ROW_TASKS.length} ticked`}
@@ -1199,8 +1354,26 @@ export default function ResetWorkspace({
                       {/* Shared tasks cascade to every selected item (§6.1's
                           honest subset — see ROW_TASKS above). */}
                       <div style={{ marginTop: 11, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                        <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
-                          APPLIES TO ALL {selRows.length} SELECTED
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                            APPLIES TO ALL {selRows.length} SELECTED
+                          </span>
+                          <button
+                            type="button"
+                            onClick={completeAllTasksForSelected}
+                            style={{
+                              border: 'none',
+                              background: 'transparent',
+                              color: 'var(--link)',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              padding: '2px 6px',
+                              borderRadius: 'var(--r-xs)',
+                            }}
+                          >
+                            Check All Tasks
+                          </button>
                         </div>
                         {ROW_TASKS.map((task) => {
                           const doneCount = selRows.filter((r) => recOf(r.key).ticks.includes(task)).length
@@ -1340,28 +1513,98 @@ export default function ResetWorkspace({
 
                       {/* Spec 03 — one primary per workspace, and it is the
                           completion gate in the footer. This stays secondary. */}
-                      <button
-                        type="button"
-                        disabled={markCleanReason !== null}
-                        onClick={markCleanMoveToQc}
-                        style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', minHeight: 44, marginTop: 10,
-                          borderRadius: 'var(--r-btn)', fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit',
-                          cursor: markCleanReason === null ? 'pointer' : 'not-allowed',
-                          ...(markCleanReason === null
-                            ? { background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }
-                            : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
-                        }}
-                      >
-                        <Icon name="checklist" size={15} />
-                        Mark Clean &amp; Move to QC
-                      </button>
+                      {cleanableRows.length > 0 && eligibleRows.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={completeChecklistAndMoveToQc}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', minHeight: 44, marginTop: 10,
+                            borderRadius: 'var(--r-btn)', fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit',
+                            cursor: 'pointer',
+                            background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)',
+                          }}
+                        >
+                          <Icon name="checklist" size={15} />
+                          Complete Checklist &amp; Move to QC ({cleanableRows.length})
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={markCleanReason !== null}
+                          onClick={markCleanMoveToQc}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', minHeight: 44, marginTop: 10,
+                            borderRadius: 'var(--r-btn)', fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit',
+                            cursor: markCleanReason === null ? 'pointer' : 'not-allowed',
+                            ...(markCleanReason === null
+                              ? { background: 'var(--btn-secondary-bg)', color: 'var(--text)', border: '1px solid var(--btn-secondary-border)' }
+                              : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+                          }}
+                        >
+                          <Icon name="checklist" size={15} />
+                          Mark Clean &amp; Move to QC
+                        </button>
+                      )}
                       {/* Law 12 — the reason is inline and persistent, never a
                           `title` tooltip and never a toast. */}
-                      {markCleanReason && (
+                      {cleanableRows.length === 0 && markCleanReason && (
                         <p role="status" style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--progress-text)', fontWeight: 600, lineHeight: 1.45 }}>
                           {markCleanReason}
                         </p>
+                      )}
+
+                      {qcEligibleRows.length > 0 && (
+                        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
+                            QC VERDICT FOR {qcEligibleRows.length} SELECTED ITEM{qcEligibleRows.length === 1 ? '' : 'S'}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <input
+                              value={batchQcReason}
+                              onChange={(e) => setBatchQcReason(e.target.value)}
+                              placeholder="Self-QC reason (min 5 chars)"
+                              aria-label="Batch QC reason"
+                              style={{ height: 32, padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+                            />
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {(['Clean & inspected', 'Sole cleaner on shift', 'Routine QC passed'] as const).map((preset) => (
+                                <button
+                                  key={preset}
+                                  type="button"
+                                  onClick={() => setBatchQcReason(preset)}
+                                  style={{
+                                    padding: '2px 7px',
+                                    borderRadius: 4,
+                                    border: '1px solid var(--border)',
+                                    background: 'var(--card2)',
+                                    color: 'var(--link)',
+                                    fontSize: '11px',
+                                    cursor: 'pointer',
+                                    fontFamily: 'inherit',
+                                  }}
+                                >
+                                  + {preset}
+                                </button>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={!actor || batchQcReason.trim().length < 5}
+                              onClick={batchPassQc}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, width: '100%', minHeight: 44, marginTop: 4,
+                                borderRadius: 'var(--r-btn)', fontSize: 'var(--t-ui)', fontWeight: 600, fontFamily: 'inherit',
+                                cursor: (!actor || batchQcReason.trim().length < 5) ? 'not-allowed' : 'pointer',
+                                background: (!actor || batchQcReason.trim().length < 5) ? 'var(--card2)' : 'var(--st-in-bg)',
+                                color: (!actor || batchQcReason.trim().length < 5) ? 'var(--muted)' : 'var(--st-in-fg)',
+                                border: '1px solid var(--st-in-fg)',
+                              }}
+                            >
+                              <Icon name="checklist" size={15} />
+                              Pass QC for All {qcEligibleRows.length} Selected
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </>
                   )}
@@ -1389,8 +1632,17 @@ export default function ResetWorkspace({
                     ))}
                     <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                       Exceptions do not block completion — a recorded problem routed the item out of this queue.
-                      Completing writes <span className="identifier">reset_completed_at</span> on {readyAssetIds.length} unit{readyAssetIds.length === 1 ? '' : 's'} and,
-                      per §1.5, changes no booking status.
+                      {hasSerializedUnits ? (
+                        <>
+                          {' '}Completing writes <span className="identifier">reset_completed_at</span> on {readyAssetIds.length} unit{readyAssetIds.length === 1 ? '' : 's'} and,
+                          per §1.5, changes no booking status.
+                        </>
+                      ) : (
+                        <>
+                          {' '}All items are quantity-tracked. Completing records warehouse floor reset verification and,
+                          per §1.5, changes no booking status.
+                        </>
+                      )}
                     </p>
                   </div>
                 </Card>
@@ -1536,13 +1788,42 @@ function QcRowControls({
           : `QC will be recorded as ${actor}. Only the signed-in operator can be recorded — there is no staff picker yet, so a check by a second person cannot be attributed here.`}
       </span>
       {selfCheck && (
-        <input
-          value={reason}
-          onChange={(e) => onReasonChange(e.target.value)}
-          placeholder="Self-QC reason, audited (min 5)"
-          aria-label="Reason for self-performed QC"
-          style={{ height: 24, padding: '0 6px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <input
+            value={reason}
+            onChange={(e) => onReasonChange(e.target.value)}
+            placeholder="Self-QC reason, audited (min 5)"
+            aria-label="Reason for self-performed QC"
+            style={{ height: 26, padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+          />
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+            {(['Clean & inspected', 'Sole cleaner on shift', 'Routine QC passed'] as const).map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => onReasonChange(preset)}
+                style={{
+                  padding: '2px 7px',
+                  borderRadius: 4,
+                  border: '1px solid var(--border)',
+                  background: 'var(--card2)',
+                  color: 'var(--link)',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  lineHeight: 1.2,
+                }}
+              >
+                + {preset}
+              </button>
+            ))}
+          </div>
+          {blocked && (
+            <span style={{ fontSize: '11px', color: 'var(--warn-text, #f59e0b)' }}>
+              Enter reason (min 5 chars) or tap a preset to enable Pass
+            </span>
+          )}
+        </div>
       )}
       {/*
         The QC verdict. Two opposite outcomes, entered on a tablet by someone who

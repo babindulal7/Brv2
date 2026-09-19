@@ -10,8 +10,20 @@ const DAY_WIDTH = 76
 const MAX_DAYS = 45
 
 function rowTime(date: string, time: string): number | null {
-  const value = Date.parse(`${date} ${time}`)
-  return Number.isFinite(value) ? value : null
+  if (!date) return null
+  const normalizedTime = time?.trim() ? (time.length === 5 ? `${time}:00` : time) : '00:00:00'
+  const isoStr = `${date}T${normalizedTime}`
+  const value = Date.parse(isoStr)
+  if (Number.isFinite(value)) return value
+  const fallback = Date.parse(`${date} ${time}`)
+  return Number.isFinite(fallback) ? fallback : null
+}
+
+function rentalRowHref(row: RentalListRow): string {
+  if ((row.status as string) === 'Draft') {
+    return `/rentals?action=new&draft=${row.id}`
+  }
+  return `/rentals/${row.bookingNo}`
 }
 
 function dayStart(value: number): number {
@@ -48,7 +60,7 @@ function PhoneTimeline({ rows }: { rows: readonly RentalListRow[] }) {
         <article key={row.id} className="rental-timeline-phone__card">
           <div className="rental-timeline-phone__head">
             <div>
-              <Link to={`/rentals/${row.bookingNo}`} className="rental-timeline__booking">{row.bookingNo}</Link>
+              <Link to={rentalRowHref(row)} className="rental-timeline__booking">{row.bookingNo}</Link>
               <div className="rental-timeline__client">{row.client}</div>
               <div className="rental-timeline__project">{row.project ?? 'No project'}</div>
             </div>
@@ -122,7 +134,7 @@ export function RentalTimeline({ rows }: { rows: readonly RentalListRow[] }) {
             return (
               <div key={row.id} className="rental-timeline__row">
                 <div className="rental-timeline__identity">
-                  <Link to={`/rentals/${row.bookingNo}`} className="rental-timeline__booking">{row.bookingNo}</Link>
+                  <Link to={rentalRowHref(row)} className="rental-timeline__booking">{row.bookingNo}</Link>
                   <div className="rental-timeline__client">{row.client}</div>
                   <div className="rental-timeline__project">{row.project ?? 'No project'}</div>
                 </div>
@@ -130,7 +142,7 @@ export function RentalTimeline({ rows }: { rows: readonly RentalListRow[] }) {
                   {days.map((day) => <span key={day} className="rental-timeline__gridline" style={{ width: DAY_WIDTH }} aria-hidden="true" />)}
                   {nowInside && <span className="rental-timeline__today" style={{ left: `${((now - timelineWindow.start) / DAY_MS) * DAY_WIDTH}px` }} aria-label="Today" />}
                   <Link
-                    to={`/rentals/${row.bookingNo}`}
+                    to={rentalRowHref(row)}
                     className="rental-timeline__bar"
                     data-status={row.status}
                     style={{ left, width }}
