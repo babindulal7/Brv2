@@ -618,6 +618,14 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.57 ✅ RULED 19 Sep 2026 (R-39) — fewest clicks is the #1 product priority
+
+Ease of use outranks visual polish and sits just below the seventeen laws. Every flow ships
+with a **tap budget** counted from intent to committed success; a flow over budget is a
+defect. Defaults are doctrine — a field that could be prefilled but is not is a defect.
+Budgets and the measured baseline: `RULINGS-2026-09-19.md` + PROGRESS 2026-09-19 (d). This
+never loosens a law, permission or named-action gate (B-1); it removes avoidable steps only.
+
 ## 4.53 ✅ RULED 8 Sep 2026 (R-26) — reservations are a database fact, written by the Booked transition
 
 `inventory_reservations` is written by `0100`'s trigger on `booking_stage_transitions`, not by the

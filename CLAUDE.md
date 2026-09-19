@@ -11,6 +11,14 @@ was verified**, and what is now blocked. Log verification, not intention — "ty
 
 ---
 
+## The #1 product priority
+
+**Ease of use — fewest clicks possible (ruled 19 Sep 2026, R-39).** Every flow carries a tap
+budget counted from intent to committed success; a flow over budget is a defect. Defaults are
+doctrine: a field that could be prefilled but is not is a defect. This never loosens a law,
+permission or named-action gate — it removes *avoidable* steps only. Budgets:
+`RULINGS-2026-09-19.md`; measured baseline in `PROGRESS.md` under 2026-09-19 (d).
+
 ## Hard rules
 
 - **Stay inside the current phase** in `PLAN.md`. The ordering is dependency-driven.

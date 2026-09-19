@@ -1,4 +1,6 @@
-# Design System: Babin Rentals OS
+# Design System: Babin Rentals OS — **superseded**
+
+The authoritative design direction is now `docs/DESIGN_DIRECTION_SPEC_v4.2.md` (Ruled 31 Aug 2026). This root file is kept for reference only — styling from it produces a different app. See the supersession log in `docs/DESIGN_DIRECTION_SPEC_v4.2.md`.
 
 ## 1. Visual Theme & Atmosphere
 A high-agency, clinical cinema and broadcast equipment rental operating system built for high-stakes rental counters, prep bays, and warehouse floors. The visual language balances high-density data density with an art-directed, calm studio aesthetic.

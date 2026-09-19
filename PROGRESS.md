@@ -2,6 +2,136 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-09-19 (d) — R-39: ease of use ruled the #1 priority; tap budgets set and measured against the real code
+
+**Did**
+- **Ruling recorded (B-2, three places):** `RULINGS-2026-09-19.md` **R-39**, `PLAN.md` §4.57, and a "#1 product priority" note in `CLAUDE.md` so every session opens with it. R-39: **fewest clicks wins; every flow carries a tap budget; defaults are doctrine; gates and laws are never "friction" and are never trimmed (B-1).** No code changed this session; working-tree edits from other sessions untouched.
+- **Measured baseline, derived from code with file:line evidence** (not browser-driven — that pass is
+  listed under Remaining). Budgets are from R-39's table:
+
+| Flow as built today | Taps (code-derived) | Typed fields | Budget | Verdict |
+|---|---|---|---|---|
+| Mark one floor item by scan (Pack/Handover/Return) | 1 act, no per-item confirm — scan commits the mark (`PackingWorkspace.tsx:760`, `markPacked(…, via)`) | 0 | 1 | ✅ |
+| One floor stage from a Today row (e.g. Packing) | 2 beyond scans: row action (`DashboardMovementPanel.tsx:225`) → `Confirm Packing & Next` (`OperationsShell.tsx:188`); no nested confirm dialog exists | 0 | ≤3 | ✅ |
+| Record Payment from booking detail | 3 taps: button (`BookingDetail.tsx:3075`) → confirm (`RecordPaymentModal.tsx:424`); invoice preselected to first still-owed (`BookingDetail.tsx:3134-3143`), method defaults Bank Transfer (`RecordPaymentModal.tsx:136`) | **1 (amount)** | ≤4 | ⚠ in budget, but see defect D1 |
+| Record Payment from the Rentals list | ~5 taps: row action (`RentalsList.tsx:1470`) → modal → **pick invoice** → **[type amount]** → confirm | 1 + 1 pick | ≤4 | ❌ over budget (D1+D2) |
+| Cancel a booking | 3 taps + reason ≥10 chars (`CancelRentalModal.tsx:46`) — a named-action gate, excluded from trimming by law | 1 | gated | ✅ by design |
+| New client inline inside New Rental | modal, 2 required typed fields (name, phone — `AddClientModal.tsx:621,625`), no navigation out of the flow | 2 | ≤3 required | ✅ |
+| New Rental, Dashboard → Booked (existing client, 1 item) | ≈ 6–8: Create ▾ → New Rental → pick client → add item → dates **already defaulted** to business today/tomorrow (`NewRental.tsx:1815-1816`, `?from=`/`?to=` honoured) → Confirm Rental (`NewRental.tsx:5628`) | 0 if defaults take | ⭐ ≤12 | ✅ estimate; browser-verification pending |
+
+- **R-39 defects filed (named, reproducible):**
+  - **D1 — payment amount is not prefilled.** `RecordPaymentModal.tsx:135` is `useState(initialAmount ?? 0)`; neither BookingDetail nor RentalsList passes `initialAmount`. The modal's own comment (:123) records "the honest default would be the selected invoice's outstanding balance". Fix: pass outstanding from both call sites.
+  - **D2 — the list entry preselects nothing.** `RentalsList.tsx:2533` mounts the modal without `initialInvoiceId`, adding an avoidable pick the budget doesn't cover. Fix with D1, same modal.
+  - **D3 — bank account is not defaulted** when method = Bank Transfer (`RecordPaymentModal.tsx:146` starts `''`). Fix: default to the inferred bank's primary account, still changeable.
+- Not measured this session: Check-Availability reachability from the rentals context (entry lives on Calendar); exact Handover extras (signature draw, required photo, up-to-2 gate resolves — all lawful requirements, not friction).
+
+**Ruled**
+- **R-39 (see RULINGS-2026-09-19.md).** ⭐ tap budgets are B-5 defaults; flip any number by replying.
+
+**Verified**
+- Documentation-only session: counts were traced against the code with file:line evidence above; nothing
+  was claimed from memory of past sessions. No browser/device run (see Remaining).
+- Working tree was mid-edit from concurrent sessions; this session edited only the three docs plus this
+  file and left every `src/` file untouched.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 45 · 3 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 18 / 18 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 128 files · check:pglite not run this session (no code changed). Suite: not run (docs only).
+Gates read from .lifecycle-result.json, written 2026-09-18T14:18:56.048Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- **R-39 defect fixes D1–D3** on `RecordPaymentModal` + call sites (small, unblocked).
+- Browser-side verification of the tap counts above (code-derived today), then re-run the five budgets.
+- Check-Availability reachability from rentals context — measure, then rule whether a one-tap entry belongs on the list rows.
+- Earlier entries' gate blocks stand (password rotation N-8, 0129 migration renumber, concurrent-session NewRental edit).
+
+## 2026-09-19 (c) — UI Consistency Phase 2: Rentals list on the canonical foundation
+
+**Did**
+- Verified the Phase 1/Phase 2 in-flight working tree (uncommitted from a prior session) instead of restarting it: canonical `PageShell`/`PageHeader`/`PageBody`/`Button`/`Badge`/`SegmentedControl`/`DataTableShell` adoption in `RentalsList.tsx`, `rentals.css` reduced to 92 lines of component rules, `rental-timeline.css` on container queries. Contract tests `uiPhase1.contract.test.tsx` + `uiPhase2Rentals.contract.test.tsx` were written by that session and pass.
+- Ran an undefined-token scan across all in-scope files (`var(--x)` refs vs `src/styles/*.css` definitions) and fixed every hit — each was either a live rendering bug or a light-mode-only literal:
+  1. `rental-timeline.css:11` — `var(--focus)` undefined → `var(--input-focus)`. The timeline scroller's `:focus-visible` ring painted nothing (a11y).
+  2. `rentals.css:74-75` — `--st-warning-bg/--st-warning-fg` undefined (badge rendered transparent + inherited text) → `--st-progress-bg/--st-progress-fg`, the canonical yellow pair.
+  3. `FastReturnModal.tsx` — two error/permission banners rendered **red text on solid red** (`--danger-bg` aliases to solid `--st-danger-bg` since the v4.1 repaint; text was `var(--danger)`). Moved to the ErrorBanner/RecordPaymentModal shape: `--st-danger-bg` + `--st-danger-fg`. Item-row surfaces off `--surface-muted`/`--surface-active` (undefined, light-only rgba fallbacks) onto `--card2` / `--nav-active-bg` / `--danger-soft` + `color-mix` border.
+  4. `BarcodeLookupModal.tsx` — same red-on-red error banner → same fix.
+  5. `CancelRentalModal.tsx` — "Manager Authority Required" callout was literal `rgba(234,179,8,…)` (stays light-yellow in dark mode) → `--chip-amber-bg`/`--chip-amber-fg` + `color-mix` border.
+  6. `RentalsList.tsx:2258-2267` — overdue-return pill used literal `rgba(245,158,11,…)` and a never-defined `--amber-text` (so the fallback `#b45309` fired in both themes) → `--chip-amber-bg`/`--chip-amber-fg`.
+  7. `BooqableRentalFilterDrawer.tsx:151` — `--chip-neutral-bg` undefined → `--chip-gray-bg` (defined both themes).
+- Zero business logic, query, RBAC, status-mapping, or workflow changes; every edit is a CSS-token substitution only.
+
+**Ruled**
+- R-40 (in `RULINGS-2026-09-19.md`): a `var(--token)` whose token is undefined is a **live rendering bug**, not a style choice — the declaration computes to unset/inherited and fails silently. Fixing it to the canonical pair requires no approval; adding NEW tokens mid-module does. Soft-callout pairs in force: `--chip-amber-bg/fg` (caution), `--danger-soft` + `--danger-text` (danger wash), `--nav-active-bg` (selected), `--card2` (recessed/muted).
+
+**Verified**
+- Undefined-token scan on the 9 in-scope files: **0 remaining** (`--timeline-width` excluded — set inline by `RentalTimeline.tsx:117`).
+- `npx tsc --noEmit`: **0 errors**.
+- Rentals scope: `npx vitest run src/modules/rentals …/uiPhase1.contract` → **26 files, 335/335 green** (incl. 8/16 Phase-1/Phase-2 contract tests).
+- Full suite: `npx vitest run` → **228 files, 3,434/3,434 green** (baseline was 3,402 + the 32 new contract tests).
+- `npm run build`: exit 0 (PWA 235 entries).
+- Not done here: the §25 visual matrix needs a real browser pass per viewport × theme; see Remaining.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 45 · 3 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 18 / 18 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 128 files · check:pglite not run this session (no migrations touched). Suite: full — 228 files · 3,434 tests · 0 failures.
+Gates read from .lifecycle-result.json, written 2026-09-18T14:18:56.048Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- The whole working tree (Phase 1 + Phase 2 + this fix pass) is **uncommitted** — commit decision is Babin's.
+- R-39 tap-count baseline audit (§Enforcement (c)) still owed to this file.
+- §25 visual verification matrix (Desktop/Tablet/Phone × Light/Dark × Table/Cards/Timeline/Drawer/Modal) needs a real browser pass; contract tests cover breakpoints/tokens/imports, not rendered pixels.
+- Prior standing items unchanged: password rotation (N-8), 0129 migration renumber, concurrent-session NewRental edit.
+
+## 2026-09-19 (b) — UI_UX_AUDIT_2026-08-28 closed out: all 11 findings done
+
+**Did**
+- **Finding 9 (operator copy leaking repo vocabulary):** fixed the four live tools that still told users to "see SCREENS.md" — `ProductReports.tsx:468`, `ClientReports.tsx:529`, `AuditSettings.tsx` (×7 tooltips), `BackupRestore.tsx` (×6 tooltips) — all now read simply "Not built yet". Archived copies (`SmsCenter`, `BroadcastCenter`, `EventTriggers`) left as-is; they are not shipped UI. `Placeholder.tsx` itself had already been rewritten off the SCREENS.md phrasing.
+- **Verified, not changed — the rest of the audit was already done in the working tree:**
+  - #10 literal hexes: the only two live hits the audit named (`CasesWorkspace.tsx:241`, `SubRental.tsx:614`) already use `var(--on-primary)` / `var(--on-danger)`. No edit needed.
+  - #11 live-region coverage: now broad — toasts carry `role="status"` at `--z-system` (Toast.tsx:76,216), `aria-live="polite"` on progress regions in Packing/Return/Handover workspaces, `role="alert"` on inline errors app-wide. Audit itself rated this low urgency.
+  - #6 stacked-modal scroll-lock: `Modal.tsx` module-level `scrollLocks`/`modalStack` counter verified correct — only the last-close restores `body.overflow`.
+- **Did NOT redo the compacted session's speculative hex remapping.** `git status` confirms those edits (WhatsAppShareButton, PrintLabelModal, BarcodeScannerModal, DateField) never reached disk, and they should not: `#25D366` is the WhatsApp brand colour (not a theme token), the label-preview `#fff`/`#000` simulate physical label paper in any theme, and the camera viewfinder is intentionally dark. Replacing them with `var(--text)`/`var(--surface)` would have been wrong.
+
+**Ruled**
+- Brand colours (WhatsApp share green) and simulation surfaces (label preview paper, camera viewfinder) are legitimate literals; audit #10 is satisfied by migrating only genuine theme-drift tokens, which was already done.
+
+**Verified**
+- `tsc --noEmit`: exit 0.
+- Vitest `src/modules/reports src/modules/admin`: 71/71 green (8 files) — covers the four edited modules' test suites.
+- Grep: zero matches for the old tooltip text outside `src/archive/`.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 45 · 3 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 18 / 18 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 128 files · check:pglite not run this session. Suite: partial (reports + admin modules, 71/71).
+Gates read from .lifecycle-result.json, written 2026-09-18T14:18:56.048Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Full vitest suite + `check:pglite` + `check:lifecycle` not run this session — run before any commit of this batch.
+- R-29 gates from earlier entries still stand (password rotation, 0129 migration collision, concurrent-session NewRental edit).
+
 ## 2026-09-19 — Committed ~4 sessions of verified work; scrubbed a credential before it entered history
 
 No product code changed this session. The entire audit-fix body of work (Stages 1–8, Sep 14–18) was sitting uncommitted — ~190 files since `c0fb9d5`. It is now in history as 11 thematic commits on `step1-foundation`, ending at the docs commit for this entry.
