@@ -297,27 +297,42 @@ export function DamageTab() {
                       variant="primary"
                       icon="check"
                       disabled={!validation.valid || !mayApprove}
-                      onClick={() => {
+                      onClick={async () => {
                         /* Second gate, deliberately not relying on `disabled`:
                            an edit that loosens the button must not be able to
                            reopen the fabricated-approver path. The refusal is
                            already on the card, so this returns silently. */
                         if (approver === null) return
-                        const effect = approvalEffect(
-                          { description: f.description, photos: f.photos, chargePaisa, replacementPaisa: f.replacementPaisa },
-                          approver,
-                        )
-                        setFindings((prev) =>
-                          prev.map((x) =>
-                            x.id === f.id
-                              ? { ...x, state: 'Approved', chargePaisa, approvedBy: approver }
-                              : x,
-                          ),
-                        )
-                        /* The move and the unavailability are one fact the
-                           engine returns together — the screen reports both or
-                           neither. */
-                        setJustApproved(effect.availableForBooking === false ? { unitName: f.unitName } : null)
+
+                        try {
+                          const effect = approvalEffect(
+                            { description: f.description, photos: f.photos, chargePaisa, replacementPaisa: f.replacementPaisa },
+                            approver,
+                          )
+
+                          // FORMS-05: Call the backend action to persist the resolution
+                          const { resolveDamageFinding } = await import('../../actions/inventory/resolveDamage')
+                          await resolveDamageFinding({
+                            findingId: f.id,
+                            disposition: 'Charge Client', // Hardcoded as the standard path for this UI, could be expanded
+                            chargePaisa
+                          })
+
+                          setFindings((prev) =>
+                            prev.map((x) =>
+                              x.id === f.id
+                                ? { ...x, state: 'Approved', chargePaisa, approvedBy: approver }
+                                : x,
+                            ),
+                          )
+                          /* The move and the unavailability are one fact the
+                             engine returns together — the screen reports both or
+                             neither. */
+                          setJustApproved(effect.availableForBooking === false ? { unitName: f.unitName } : null)
+                        } catch (err) {
+                          console.error('Failed to approve damage', err)
+                          alert('Failed to approve damage: ' + (err instanceof Error ? err.message : String(err)))
+                        }
                       }}
                     >
                       Approve as {validation.approver}

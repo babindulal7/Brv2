@@ -33,6 +33,10 @@ vi.mock('../../../lib/queries/damage', async (orig) => {
   }
 })
 
+vi.mock('../../../actions/inventory/resolveDamage', () => ({
+  resolveDamageFinding: vi.fn().mockResolvedValue({ id: 'DMG-2026-0041', approval_state: 'Approved' }),
+}))
+
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
 const { DamageTab } = await import('../DamageTab')
