@@ -618,6 +618,28 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.58 ⬅ OPEN ×1 — where do the New Rental return-pickup fields get written?
+
+Raised 23 Sep 2026 while fixing the return-pickup select (its `<option>`s carried no `value`,
+so the typed state received the display label and the `'Babin Pickup'` branch never engaged —
+sub-fields unreachable, fee stuck at Rs 0, and the Review summary printed "Client Returns to
+Warehouse" either way; fixed with explicit values, pinned by NR-rpo contract tests).
+
+**What has nowhere to go:** `returnPickupType` · `returnPickupAddress` · `returnPickupTime` ·
+`returnPickupChargePaisa` (`NewRental.tsx:1598-1601`). There is no `booking_transport` column
+for any of them, `createRental`'s transport contract carries only the delivery charge / fuel /
+vehicle block, and the draft schema does not save them. The fee rolls into the on-page
+Transport Total but is **not sent with the booking**. The block is the spec's §3.3 Return
+Pickup Logistics, so it cannot simply be cut.
+
+| Option | Consequence |
+|---|---|
+| (a) Add `boolean return_pickup` + return-side columns to `booking_transport` (or a second `booking_transport` row with a direction marker) and extend `createRental` + the draft schema | One migration + a payload half; booking carries what the form sold |
+| (b) Scope the block to Quote→Booked confirmation only (captured at Handover/Return planning, not at booking) | Smaller schema; moves where the fee is recorded |
+| (c) Drop the block from NewRental until transport owns it | Honest today, but contradicts spec §3.3 |
+
+TODO(decision) sits at the code site (`NewRental.tsx` §"Return Pickup Logistics").
+
 ## 4.57 ✅ RULED 19 Sep 2026 (R-39) — fewest clicks is the #1 product priority
 
 Ease of use outranks visual polish and sits just below the seventeen laws. Every flow ships

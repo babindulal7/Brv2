@@ -29,9 +29,7 @@ actions, because the untested surface is exactly the unbuilt surface. `createRen
 renders one seeded record for every booking number, though it now says so on screen. Green
 means "what exists is correct", not "the system works".
 
-**Where the truth lives:** `PLAN.md` (laws, build order, open decisions — §4 is the blocker
-register) and `PROGRESS.md` (what changed and how it was verified, newest first). Every other
-document in this repo is dated; `DOC_STATUS` records which are still safe to act on.
+**Where the truth lives:** Start with [`docs/00_READ_FIRST.md`](docs/00_READ_FIRST.md) for governance, [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) for verified status, [`PLAN.md`](PLAN.md) (laws, build order, open decisions), and [`PROGRESS.md`](PROGRESS.md) (what changed and how it was verified, newest first). Every other document in this repo is dated; `docs/DOC_MIGRATION_MAP.md` records classifications.
 
 ```
 supabase/migrations/   ← the schema — 62 files, 0001–0062 (0062 written, deliberately unapplied)

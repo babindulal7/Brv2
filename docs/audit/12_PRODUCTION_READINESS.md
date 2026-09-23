@@ -1,3 +1,16 @@
+> [!WARNING] HISTORICAL AUDIT — NOT CURRENT APPLICATION STATE
+> **Status:** SUPERSEDED / HISTORICAL RECORD ONLY (20-21 Sep 2026)
+>
+> This document is a point-in-time audit snapshot. Its findings, blockers, test failure counts, and readiness scores represent the system state at that date and **must not be treated as current runtime truth**.
+>
+> For authoritative implementation state, consult:
+> 1. [`docs/00_READ_FIRST.md`](../00_READ_FIRST.md)
+> 2. [`docs/CURRENT_STATE.md`](../CURRENT_STATE.md)
+> 3. [`PROGRESS.md`](../../PROGRESS.md)
+> 4. [`CLAUDE.md`](../../CLAUDE.md)
+
+---
+
 # Production Readiness Decision
 
 ## Classification: NOT READY

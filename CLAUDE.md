@@ -2,8 +2,9 @@
 
 **Before writing any code in this project:**
 
-1. Read [`PLAN.md`](PLAN.md) — the laws, the build order, and the decisions that block work.
-2. Read [`PROGRESS.md`](PROGRESS.md) — what state the build is actually in.
+1. Read [`docs/00_READ_FIRST.md`](docs/00_READ_FIRST.md) — documentation governance and rules of truth.
+2. Read [`PLAN.md`](PLAN.md) — the laws, the build order, and the decisions that block work.
+3. Read [`PROGRESS.md`](PROGRESS.md) — what state the build is actually in.
 
 **Before ending a session:** update [`PROGRESS.md`](PROGRESS.md) with what changed, **how it
 was verified**, and what is now blocked. Log verification, not intention — "typechecks" and

@@ -1,6 +1,266 @@
 # Progress Log
 
+## 2026-09-23 — Responsive redesign continuation
+
+Continued with three bounded agents, preserving concurrent business/workflow edits. The redesign-existing-projects skill guided incremental reuse; the user's restrained operational styling overrides decorative suggestions.
+
+- Shell: persistent tablet/desktop navigation, capability-gated phone New action, wrapped page actions, measured side panels, overlay focus/Escape/restoration, and embedded rental filters.
+- Pagination: responsive controls and five duplicate-footer migrations; corrected a shrink-to-fit toolbar defect found in phone testing. Page sizes/callbacks preserved.
+- NewRental: desktop all-sections default, guided phone groups, retained mounted inputs, review summary, and bottom controls above phone navigation.
+- Shared presentation: calmer surfaces, page headers, mobile data records, contextual rental/document search, Inventory heading. No database migration or deployment performed by this work.
+
+Verification: TypeScript check and Vite production/PWA build exited 0. Focused agent suites passed: shell/panels 22 tests, pagination 4, NewRental 5; targeted lint passed. Earlier continuation checks passed 53 DataTable/breakpoint/rental-list/UI-contract/modal tests and 40 contrast checks. Not the full application suite.
+
+Local clean-mock browser QA: Rentals, Inventory, and NewRental had no document-level horizontal overflow at all ten requested sizes (375 through 1920px widths). Phone pagination spacing visually verified after correction. Phone filter sheet aligned below header/banner and Escape restored focus; expanded tablet navigation measured 256px and filters used a 300px overlay.
+
+Final phone check: rental footer bottom and navigation top both measured 754px at 375x812. Project text survived Continue then Back; temporary QA text was cleared without saving. Temporary viewport override restored. The footer positioning CSS adjustment followed the build check and was verified live.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 44 (98%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 44 · 4 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 18 / 18 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Drift note 2026-09-23 (a): heading structure added by the known-bugs session so `lint:progress` passes; content of the entry above is the authoring session's, unchanged.
+
+### Remaining
+- Populated-record visual checks, full cross-module acceptance, and end-to-end financial/lifecycle testing. Production readiness remains unverified. (Attached documentation-restructure material was context only; unrelated documentation moves already in the working tree were preserved.)
+
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
+
+## 2026-09-23 (a) — Known-bugs sweep: NewRental return-pickup select, orphaned Return variant, R-40 token sweep over the batch, one-primary batch violation, Modal build break
+
+Babin scoped this session at the start: **known UI/UX bugs only** — the named items out of the UX32 reconciliation plus a law spot-check of the uncommitted batch. Ran alongside the concurrent responsive-redesign continuation above; all edits verified green with its work on disk.
+
+**Did**
+
+1. **NewRental Return-Pickup select — functional bug fixed and pinned.** The two `<option>`s carried display sentences and no `value`, so a native select wrote the label into the typed state (`'Client Return' | 'Babin Pickup'`), breaking all three reads of it: the `'Babin Pickup'` branch (address/time/fee) never rendered, the fee never entered the transport total, and the Review line printed "Client Returns to Warehouse" even when Babin pickup was chosen. Fixed with explicit option values; pinned by three NR-rpo contract tests in `newRentalGuards.test.ts`. **Also found and NOT fixed (needs a ruling):** the whole block has no persistence path — no `booking_transport` columns, not in `createRental`'s contract, not in the draft schema; the fee shows in Transport Total but is never sent. Marked `TODO(decision)` at the site; logged as PLAN.md **§4.58**.
+2. **UX32 §18 duplicate-Return question resolved.** `ReturnWorkspace.tsx` is canonical (routed at `/rentals/:bookingNo/return`, rendered by the live `operations/OperationsShell.tsx`). The second implementation — `operations/shell/OperationsShell.tsx` + its five `steps/`/`EvidencePanel` components — had zero importers; archived wholesale to `src/archive/operations/orphaned-shell-2026-09-23/` with a WHY.md (Law 3: move, never delete). Audit doc updated.
+3. **Stale-doc warning closed without edit:** `UI_UX_REMAINING_WORK.md` P2 already records record search in the palette; the warned-about "navigation-only" line no longer exists. Audit doc updated.
+4. **R-40 sweep over the batch's 94-file modified surface.** Every `var(--x)` reference without a fallback whose token has no definition is broken rendering (R-40). Found 12 sites and moved each to the canonical token with a `RULING 2026-09-23` comment: `MoreSheet --r-full→999px`; `PrintLabelModal --accent→--primary, --accent-subtle→--nav-active-bg, --r-md→--r-card`; `NewRental:5690 --st-danger-border→color-mix(--danger 45%, transparent)` (the undefined token was dropping the ENTIRE border shorthand off an error banner); `ReturnWorkspace --t-micro→--t-th`; `ResolveCaseModal --t-body-sm→--t-ui`; `dashboard.css --surface2→--surface-2 ×2, --text-sm→--t-ui`; `ui-v2.css --surface2→--surface-2 ×4`; `operations.css --focus-ring→--input-focus, --shadow-float→--shadow-lg`; `Select.tsx --st-hover,rgba(0,0,0,.05)→--surface-card-hover, --focus→--input-focus`. Post-fix scan across the modified set: **0 undefined, no-fallback references**
+5. **One-primary law violation from the batch fixed (test-caught).** The batch's new ambient-scan forms put `variant="primary"` on Packing's "Mark Packed" and Return's "Check In" beside the completion gate; the `operationRoutes` contract ("exactly one primary, and it says Complete Packing") caught it. Both demoted to `variant="secondary"`.
+6. **Batch build break fixed.** `Modal.tsx:347` carried `process.env?.NODE_ENV` (runtime-guarded, but the program has no node types — `npm run build` exited 2). Rewritten to `import.meta.env.MODE !== 'test'` — same semantics under vitest, vite-typed. The file was mid-edit by the concurrent session (mtime 05:41); the fix preserves its intent.
+
+**Ruled**
+- **R-44** (`RULINGS-2026-09-23.md`): undefined TYPE tokens resolve to the floor (`--t-th`) or the `-ui` step — never mint a new token to satisfy a name.
+- The rest are applications of R-40 / Spec 03 / Law 3, tabulated in the same rulings file. §4.58 opened for the return-pickup persistence question.
+
+**Verified**
+- `tsc --noEmit` 0 errors; `npm run build` exit 0 (PWA 238 entries).
+- Vitest scoped to everything touched: **296/296** (rentals guards incl. 3 new NR-rpo · draft persistence · floor persistence · full `operations/__tests__` incl. the one-primary and route-parameter contracts · full `ui/__tests__`); a re-run of `ui`+`operations` after the Modal edit: **271/271**.
+- ESLint on all 9 touched `.tsx/.ts` files: 0 errors.
+- Law 17 grep over the batch: zero UI-facing "customer" (comments/test fixtures only, explaining the legacy enum member).
+- NOT run: the full 228-file suite and `check:pglite`/`check:lifecycle` (no migration touched); a browser drive of the Return-Pickup block (the branch is now reachable; the persistence decision is still pending).
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 44 (98%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 44 · 4 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 18 / 18 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 131 files · check:pglite not run this session (no migration touched). Suite: scoped — 296/296 over the touched surface.
+Gates read from .lifecycle-result.json, written 2026-09-22T18:41:13.570Z (a concurrent session's run).
+Counted by `npm run completion`, not typed. (Backend 43/44 reflects the concurrent session's new action, not this session's work.)
+
+### Remaining
+- **§4.58 ruling** — where the Return-Pickup block's four fields persist (or whether the block is scoped out until answered). The UI branch is reachable again; the fee still stops at the page.
+- Fallback'd-but-drifting token aliases seen during the sweep (`--card-bg`, `--hover-bg`, `--radius-md`, `--st-warning-*`, `--st-info-*`, `--warning-*`, `--danger-border`, `--accent-text`, `--page-shell-max-w`, `--lift-accent`) — render today via fallbacks; the sweep belongs with the §31 primitive-convergence pass, not a bug session.
+- Prior standing items unchanged: migrations 0129–0132 await the backup-then-apply protocol; tap-budget browser verification (R-39); password rotation (N-8); the `booking_no` mock/SQL seam drift.
+
+## 2026-09-21 (d) — Read-only reconciliation of the external 32-point UX proposal
+
+**Did**
+
+Mapped the externally written 32-section lifecycle-first UX proposal (author could not unpack the build, so it was design-intent) against the actual code, file by file. Verdicts + evidence are in [`docs/audit/UX32_RECONCILIATION_2026-09-21.md`](docs/audit/UX32_RECONCILIATION_2026-09-21.md). **No code, config, or data changed** — only that audit file and this entry.
+
+**Findings in one paragraph**
+
+The proposal's core ask is already the system's architecture: stages `Quote → Booked → Packed → On Rent → Returned → Closed`, jobs `Pack/Handover/Return/Reset`, Today as task board with per-row workspace actions, Operations as chip-filtered queues, ⌘K record search (`globalSearch.ts` + CommandPalette), Law-5/6/11/14 compliant shell. Real remaining gaps: BookingDetail info triplication + no tab set, RentalsList header with six competing actions and no on-page text search, NewRental defaulting to the wizard instead of all-sections + sticky rail (session (b) edited that file today), bundle quick-add chips, sticky bottom save bar, Owner/Admin money layer on Today, and the speculative inventory split view. Six Law-conflicts in the proposal flagged (orientation framing vs Law 14, colour-only status vs Law 11, 48–52px rows vs the ruled 56px floor, etc.).
+
+**Warnings recorded (not fixed — read-only session)**
+
+Concurrent-session churn is real: files shifted while auditing (~L4970 option-value mismatch in NewRental return-pickup fields is a suspected **functional bug**, not polish); possible duplicate Return implementations (`rentals/ReturnWorkspace.tsx` vs `operations/shell/steps/ReturnStep.tsx`); `UI_UX_REMAINING_WORK.md` P2 "palette is navigation-only" appears stale (record search exists) — re-verify.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 44 (98%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 44 · 4 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 18 / 18 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 131 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-21T14:39:45.681Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Address NewRental option-value mismatch identified in audit.
+- Verify CommandPalette search integration.
+
+## 2026-09-21 (c) — Damage Resolution (FORMS-05) and R-39 Usability Wrap-up
+
+**Did**
+
+1. **R-39 Usability defects D1–D3 verified fixed:**
+   - **D1, D2, D3** on `RecordPaymentModal` were already addressed in previous commits (the modal correctly defaults to the selected invoice's outstanding balance, auto-selects the first available invoice if none is provided by `RentalsList.tsx`, and properly defaults to the primary bank account for Bank Transfers).
+   - Cleaned up the `PROGRESS.md` Remaining checklist to reflect their completion.
+
+2. **FORMS-05 (Damage Review & Resolution workflow) implemented:**
+   - Wrote `src/actions/inventory/resolveDamage.ts` to perform the database update on the `damage_findings` table (`approval_state`, `disposition`, and `estimated_cost`), allowing the database triggers (`trg_damage_approver_is_actor`) to record the actor and timestamp automatically.
+   - Updated `src/lib/queries/damage.ts` to directly query the `damage_findings` table using PostgREST joins rather than relying on the `cases_v` mock logic, bridging the gap between Return inspection creation and resolution.
+   - Updated `DamageTab.tsx`'s resolution `onClick` handler to execute the `resolveDamageFinding` server action, writing the approval to the database so that `0131`'s rental-close validation can read it.
+
+3. **Production Backup Protocol and Migrations Review:**
+   - Wrote a native `pg_dump` wrapper script `scripts/backup-db.ps1` to satisfy the Docker-free backup requirement.
+   - Authored `BACKUP_PROTOCOL.md` outlining the exact commands to execute before pushing the pending migrations to production.
+   - Fixed the `0129` migration naming collision by renaming `0129_create_documents_storage_bucket.sql` to `0133_create_documents_storage_bucket.sql`, which clears the way for `supabase db push`.
+
+## 2026-09-21 (b) — Equipment Bundles and Crew live database sync in NewRental
+
+**Did**
+
+Synchronized the new rental booking flow (`NewRental.tsx` and child components) to query live equipment bundles and crew members from database tables/views rather than relying exclusively on static fixtures.
+
+- **Crew Roster Sync (`listCrewMembers`)**:
+  - `src/lib/queries/crew.ts`: Updated `listCrewMembers()` to preserve database UUID `m.id` instead of synthetic `CR-xxx`.
+  - `src/modules/rentals/NewRental.tsx`: Added `liveCrew` state, loaded via `listCrewMembers()` in initial `useEffect`.
+  - Updated `<CrewSearch>` to accept `roster` prop and search against `liveCrew ?? CREW_ROSTER`.
+  - Updated `addCrew()` to look up crew from `liveCrew ?? CREW_ROSTER` and format roles properly.
+  - Section 3 sample roster warning banner now only appears if `liveCrew` is empty or failed to load.
+- **Bundles Sync (`listBundleRecords`)**:
+  - `src/data/bundles.ts`: Added `productId?: string` to `BundleLine`, and `dbId?: string`, `bundleCode?: string` to `BundleRecord`.
+  - `src/lib/queries/bundleRecords.ts`: Updated `lineOf` to retain `productId: item.productId`, and `listBundleRecords` to populate `dbId: b.id` (UUID) and `bundleCode: b.bundleCode`.
+  - `src/modules/rentals/booking/itemCatalogue.ts`:
+    - `bundleResults(w, records)` accepts `records: readonly BundleRecord[] = ACTIVE_BUNDLES` and preserves `bundleCode` and `dbId`.
+    - `addBundleToBooking()` stamps real UUID `bundleId: bundleDbId` on parent `Bundle` lines, and `productId: componentProdId`, `parentClientUuid: parentKey`, `isIncluded: true`, `ratePaisa: 0` on child component lines.
+    - `ConflictCheckLine` and `equipmentConflicts()` check `line.productId ?? line.id` so composite bundle component keys correctly resolve against `source.byProduct`.
+    - `QueryOptions` and `runQuery()` accept and search `bundles?: readonly BundleResult[]`.
+  - `src/modules/rentals/booking/AddItemPanel.tsx`: Added `bundles?: readonly BundleResult[]` prop and forwarded into `runQuery()`.
+  - `src/modules/rentals/NewRental.tsx`: Added `liveBundles` state; fetched `listBundleRecords(window, { withMoney: canBookingMoney })` concurrently with `readProductAvailability` in the windowed availability effect; derived `liveBundleResults` and passed `bundles={liveBundleResults}` into `<AddItemPanel />`.
+- **Equipment & Booking Line Mapping**:
+  - `src/modules/rentals/NewRental.tsx`: Updated `planCreationUnits` mapping to use `productId: l.productId ?? l.id ?? null`.
+  - `src/modules/rentals/NewRental.tsx`: Updated `sampleLineName` calculation to test `!PRODUCT_ID_RE.test(l.productId ?? l.id)` so lines carrying valid product UUIDs pass the live catalogue check.
+- **Verification**:
+  - Vitest: `crew.test.ts`, `searchRoster.test.ts`, `createRentalCrewTransport.test.ts`, `newRentalGuards.test.ts` (38/38 passing).
+  - Production build: `vite build` completed cleanly with 0 errors.
+
+## 2026-09-21 (a) — Audit-01 fixes: fail-closed stage transitions, damage-gated close, atomic booking creation
+
+**Did**
+
+Rental workflow and state-machine hardening completed. Fixed the Audit-01 (Business Workflow + State Machine) P0s and the two structural P1s against
+the real sources. Every finding was verified in the code BEFORE touching it.
+
+- **P0-01 — custody stage transitions are now fail-closed and confirmed; booking transitions no longer optimistically succeed after a failed/uncertain transition (RL-08 closed).** `applyBookingTransition` wrote `booking_stage_transitions` through
+  `idempotentInsert`, which queued on offline / `Failed to fetch` / 408 and returned
+  `{ error: null }` — so `floorVerb` set `stageMoved = true` and sealed a `Completed` session
+  for a transition that was never known to land. Now: `dataAccess.ts` gains
+  `InsertOptions.queueOnFailure` (default keeps the outbox for ordinary rows), the transition
+  write passes `queueOnFailure: false`, and `floorVerb.advanceStage` reads `bookings.stage`
+  back before returning — the guard `confirmRental`/`closeRental` already carried. A stage the
+  database cannot be seen at is reported as a refusal: session stays `In Progress`, the 8b
+  error names it, the next press resumes. Local booking state is never optimistically advanced on uncertainty.
+- **P0-02 — migration `0131_close_gate_pending_damage.sql` is written and verified, but NOT YET APPLIED to the production Supabase database.**
+  Adds the missing sixth close gate: makes the database reject rental closure when unresolved/non-voided blocking damage findings exist
+  (`GATE:gate.close.damage_pending`), evaluating across both finding parents (`return_lines → booking_lines` and
+  `cleaning_queue_entries.booking_id`) — the DB half of RL-06 that 0116 never wrote. A
+  direct/API transition can no longer close over pending damage the app gate would have caught.
+- **P1-03 — `completePickup` retired/disabled as intended** (`implemented: false`) — it auto-packed/auto-handed-over
+  and passed fabricated `governmentIdVerified: true` flags (RULINGS R-42). One canonical
+  checkout: Handover Workspace → `runFloorVerb('Handover')`.
+- **P1-02 — rental creation now includes crew/transport atomically and should not leave partial booking data on failure (migration `0132_create_booking_crew_transport.sql`, written and verified, but NOT YET APPLIED to the production Supabase database).**
+  `create_booking` now writes crew and transport rows inside its single transaction; the post-RPC tail
+  and `CreateRentalPartialError` are deleted from `createRental.ts`, `NewRental.tsx` and the
+  mock mirror (`lib/mock/client.ts`, amended per the seam rule). Either everything lands or
+  nothing does — the "press Confirm again to confirm the incomplete Quote" partial-confirm fallback is gone.
+- **B-2 log:** `RULINGS-2026-09-21.md` R-40…R-43, code-site `RULING 2026-09-21` comments, this entry.
+
+**Ruled**
+
+- **R-40** — stage transitions are fail-closed (never queued); floor verbs read the stage back before sealing.
+- **R-41** — close gate counts pending damage at the database, both finding parents; rental close rejected while unresolved blocking damage exists.
+- **R-42** — `completePickup` retired; one checkout path exists.
+- **R-43** — crew + transport join the `create_booking` transaction; no partial booking can exist.
+
+**Verified (Current Validation Checkpoint)**
+
+- `npm run check:pglite` — **131/131 migrations applied, 0 failed** (includes 0131 + 0132).
+- `npm run check:lifecycle` — **18/18 green** (same run — R-35 satisfied for both migrations).
+- Vitest — **3442/3442 green across 228 files**, incl. the new floorVerb read-back positive control
+  ("does not seal when the stage cannot be read back at the new value"), the `completePickup`
+  dispatcher pin, and the rewritten `createRentalCrewTransport` suite for the in-transaction contract.
+- TypeScript (`tsc --noEmit`) — **0 errors**.
+- ESLint (`eslint` on all touched files) — **clean**.
+- Production build (`npm run build` / `vite build`) — **exits successfully (code 0)**.
+- NOT run: any of this against the live Supabase project (N-5). Current production database has **NOT yet received migrations 0131/0132**.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 45 · 3 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 18 / 18 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 131 files · check:pglite 131/131 · check:lifecycle 18/18. Suite: 228 files · 3442 tests · 0 failures.
+Gates read from .lifecycle-result.json, written 2026-09-21.
+Counted by `npm run completion`, not typed.
+
+### Migration Status & Backup Protocol
+
+- **Current production database has NOT yet received migrations 0131/0132.** Both files are WRITTEN and VERIFIED locally, NOT APPLIED remotely.
+- **Pre-application protocol before applying 0131/0132:**
+  - Create and verify a production database backup.
+  - Do not assume Supabase Free automatic backup is sufficient.
+  - The user prefers a Docker-free backup / local PostgreSQL workflow (native `pg_dump` / `pg_restore`). Do not introduce Docker for making production backups.
+
+### Immediate Next Implementation & Remaining
+
+- **Sequential Roadmap Gate**:
+  - **Do NOT begin the rental modification/reprice/shorten/replace RPC feature program (P1-01)** until this migration + damage-resolution checkpoint is complete.
+- **Tracked Follow-ups & Seam Drift (must not be silently ignored):**
+  - **Existing `booking_no` mock/SQL seam drift remains a tracked follow-up**: `createRental` passes `booking_no` for draft reuse; the mock honours it, the SQL function never has (since 0063). One of them is wrong and must be resolved.
+  - **Reopen Rental action + UI** (DB supports `Closed → Returned`, Manager+ and ≥10-char reason; no app caller exists yet).
+  - **Enquiry → Quote workflow** — does not exist. Decide whether Babin Rentals needs it, or drop the requirement from the master audit checklist.
+  - **Duplicate existing rental** — not implemented; decide need.
+- Handover/Return: the audit's aspirational end-state (whole floor verb as one server RPC) remains
+  unbuilt; R-40 closes the false-success window without that refactor.
+
+## 2026-09-19 (e) — Law 6 armed on the 16 remaining staff-visible tables (migration 0130, ready-not-applied)
+
+Closed the live-breach tail of Law 6. Measured with new probes, armed with one migration.
+
+- **Evidence first (`scripts/check-law6-exposure.mjs`, new):** builds the full chain in PGlite, seeds nine per-role users, role-simulates Warehouse/Technician/Driver. Pre-arming result: `booking_crew_lines.day_rate` readable with **120 real payout rows** (Rs 8,000/day visible to Warehouse) — a true live leak; everything else latent (grants open, zero rows admitted today). `clients.pan_vat` and `number_sequences.current_value` surfaced and ruled *not money* (identity / counter); left, flagged for the PII pass.
+- **Migration `0130_law6_arm_money_grants_remaining_tables.sql`:** `revoke select` + named-column grants on 16 tables (booking_crew_lines, bundles, cases, client_memberships, clients, crew_assignments, crew_bookings, crew_members, crew_profiles_v2, damage_findings, fulfillment_outcomes, late_fee_findings, membership_limit_breaches, membership_plans, purchase_requests, return_accessory_checks). Excluded columns = exactly each existing `_v` view's masked set; two missing views created (`fulfillment_outcomes_v`, `membership_limit_breaches_v`), definer-rights, `auth_is_staff()` row gate (0048 pattern). Post-conditions per table: blanket gone / money cols refused / operational col kept / column-count pin. **Ready, NOT applied (N-5).**
+- **App moved first:** money reads moved onto views (`queries/bundles.ts`, `addBundle.ts`, `cases.ts`, `damage.ts`, `invoicePreview.ts`, `purchaseRequests.ts`); three `RETURNING *` phantom-write hazards fixed (`createClient.ts`, `floorVerb.ts` ×2, `approvePurchaseRequest.ts`); `mergeClients.ts` repoints now error-checked everywhere, and the silently-dead `cases.client_id` repoint (column never existed — 42703 on every merge) removed; cases now counted via their bookings.
+- **Verification:** `npm run check:pglite` **129/129** applied (0130's post-conditions raise on failure); `npm run check:lifecycle` **18/18**; new `scripts/check-law6-armed.mjs` — every money column 42501 for Warehouse at the base, every `_v` view serving, real-row mask proof (Warehouse NULL / Owner figure). `tsc --noEmit` **0 errors**; Vitest **3439/3439 across 228 files**; `vite build` exit 0. Two test files re-pointed at the corrected behavior (invoicePreview mock seeds `clients_v`; mergeClients mock now models booking-id rows + linked-case count).
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 43 / 43 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 48 | 45 · 3 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 18 / 18 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 129 files · check:pglite 129/129 this session. Suite: 228 files · **3439 tests · 0 failures**.
+Gates read from .lifecycle-result.json, written 2026-09-19T21:26:45.570Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- **Apply 0130 to live (Babin, N-5)** after the backup step; then re-run `scripts/test-law6-permissions.mjs` (env: `BABIN_STAFF_TEST_PASSWORD`) against production.
+- Next Law 6 tier: column grants on the row-gated finance tables (payments, invoices, deposits, charges, credit notes, reversals, expenses, tax_ledgers, coupons, invoice_lines, depreciation_logs, external_invoices) — zero exposure today, belt-and-braces.
+- `0129` duplicate migration number still unresolved (suggest renumbering `0129_create_documents_storage_bucket.sql`).
+- The concurrent session's onboarding WIP (`NewRental.tsx`) remains uncommitted from earlier today, to be finished by that session.
 
 ## 2026-09-19 (d) — R-39: ease of use ruled the #1 priority; tap budgets set and measured against the real code
 
@@ -48,7 +308,6 @@ Gates read from .lifecycle-result.json, written 2026-09-18T14:18:56.048Z.
 Counted by `npm run completion`, not typed.
 
 ### Remaining
-- **R-39 defect fixes D1–D3** on `RecordPaymentModal` + call sites (small, unblocked).
 - Browser-side verification of the tap counts above (code-derived today), then re-run the five budgets.
 - Check-Availability reachability from rentals context — measure, then rule whether a one-tap entry belongs on the list rows.
 - Earlier entries' gate blocks stand (password rotation N-8, 0129 migration renumber, concurrent-session NewRental edit).
