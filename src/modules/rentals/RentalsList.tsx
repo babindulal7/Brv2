@@ -1558,20 +1558,75 @@ export default function RentalsList() {
           />
           Draft
         </button>
-        <button
-          type="button"
-          onClick={() => f.setExtra('sub', subOn ? undefined : 'on')}
-          aria-pressed={subOn}
-          title={SUB_RENTAL_NOTE}
-          style={stageChipStyle(subOn)}
-        >
-          <Icon
-            name="external_link"
-            size={13}
-            style={{ color: subOn ? 'var(--nav-active-accent)' : STATUS.ext.fg }}
-          />
-          Sub-Rental
-        </button>
+        {chip !== 'All' && (
+          <button
+            type="button"
+            onClick={() => pickChip('All')}
+            aria-pressed={true}
+            style={stageChipStyle(true)}
+            title={`Quick filter: ${chip}`}
+          >
+            <Icon
+              name={chip === 'Overdue' ? 'alert_triangle' : 'queues'}
+              size={13}
+              style={{ color: 'var(--nav-active-accent)' }}
+            />
+            {chip}
+          </button>
+        )}
+        {subIds === null && !subPending ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <button
+              type="button"
+              disabled
+              aria-label="Sub-Rental — unavailable"
+              title={SUB_RENTAL_UNANSWERED}
+              style={{ ...stageChipStyle(false), opacity: 0.5, cursor: 'not-allowed' }}
+            >
+              <Icon
+                name="external_link"
+                size={13}
+                style={{ color: 'var(--muted)' }}
+              />
+              Sub-Rental
+            </button>
+            <button
+              type="button"
+              aria-label="Retry loading sub-rentals"
+              title="Retry loading sub-rentals"
+              onClick={() => void refreshSubRentals()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '4px 6px',
+                borderRadius: 'var(--r-btn)',
+                border: '1px solid var(--border)',
+                background: 'var(--card2)',
+                color: 'var(--text)',
+                cursor: 'pointer',
+                fontSize: 11,
+              }}
+            >
+              <Icon name="refresh" size={12} />
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => f.setExtra('sub', subOn ? undefined : 'on')}
+            aria-pressed={subOn}
+            title={SUB_RENTAL_NOTE}
+            style={stageChipStyle(subOn)}
+          >
+            <Icon
+              name="external_link"
+              size={13}
+              style={{ color: subOn ? 'var(--nav-active-accent)' : STATUS.ext.fg }}
+            />
+            Sub-Rental
+          </button>
+        )}
       </div>
 
       <AppPageToolbar

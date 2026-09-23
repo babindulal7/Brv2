@@ -47,13 +47,15 @@ describe('movement board task clarity', () => {
     expect(host.textContent).toContain('8 items booked')
     expect(host.textContent).not.toContain('outstanding')
   })
-  it('shows the pickup date for multi-day filters', async () => {
+  it('shows the pickup date for multi-day filters and allows 1-click packing', async () => {
     await mount({ status: 'Booked' }, 'outgoing')
     expect(host.querySelector('.movement-card__time')?.textContent).toContain('22 Sept')
     const action = host.querySelector<HTMLButtonElement>('.movement-card__cta-btn')!
-    expect(action.textContent).toBe('Open booking')
-    expect(action.getAttribute('aria-label')).toContain('Open booking')
+    expect(action.textContent).toBe('Start Packing')
+    expect(action.getAttribute('aria-label')).toContain('Start Packing')
     expect(host.textContent).not.toContain('unchecked')
+    await act(async () => action.click())
+    expect(openOperations).toHaveBeenCalledWith('B-901', 'Booked', 'Pack')
   })
   it('uses a native detail link separate from the operational action', async () => {
     await mount()

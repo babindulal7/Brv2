@@ -200,9 +200,10 @@ interface IconProps {
   label?: string
   className?: string
   style?: CSSProperties
+  color?: string
 }
 
-export default function Icon({ name, fill = false, size = 20, label, className, style }: IconProps) {
+export default function Icon({ name, fill = false, size = 20, label, className, style, color }: IconProps) {
   const Cmp = REGISTRY[name]
   if (!Cmp) {
     // BUG-001: this branch used to render `[Icon:name]` in bold red UNCONDITIONALLY,
@@ -219,12 +220,14 @@ export default function Icon({ name, fill = false, size = 20, label, className, 
     }
     return null
   }
+  const resolvedClass = ['ui-icon', className].filter(Boolean).join(' ') || undefined
+  const resolvedStyle = color ? { color, ...style } : style
   return (
     <Cmp
       size={size}
       stroke={fill ? 2.4 : 1.9}
-      className={className}
-      style={style}
+      className={resolvedClass}
+      style={resolvedStyle}
       aria-hidden={label ? undefined : true}
       role={label ? 'img' : undefined}
       aria-label={label}

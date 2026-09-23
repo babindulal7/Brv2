@@ -353,108 +353,112 @@ function NavList({
             {group.sections.map((s) => {
               const on = s.to === activeTo
               return (
-                <Link
+                <div
                   key={s.to}
-                  to={s.to}
-                  aria-current={on ? 'page' : undefined}
-                  title={rail ? s.label : undefined}
-                  onMouseEnter={(e) => {
-                    if (rail) show(e.currentTarget, s.label)
-                    else {
-                      if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
-                      e.currentTarget.style.transform = 'translateX(2px)'
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    setHint(null)
-                    if (!rail) {
-                      if (!on) e.currentTarget.style.background = 'transparent'
-                      e.currentTarget.style.transform = 'none'
-                    }
-                  }}
-                  onPointerDown={(e) => {
-                    if (!rail || e.pointerType === 'mouse') return
-                    const el = e.currentTarget
-                    clearPress()
-                    pressTimer.current = window.setTimeout(() => show(el, s.label), LONG_PRESS_MS)
-                  }}
-                  onPointerUp={() => {
-                    clearPress()
-                    setHint(null)
-                  }}
-                  onPointerCancel={() => {
-                    clearPress()
-                    setHint(null)
-                  }}
-                  onBlur={() => setHint(null)}
-                  onFocus={(e) => {
-                    if (rail) show(e.currentTarget, s.label)
-                  }}
                   style={{
+                    position: 'relative',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: rail ? 'center' : 'flex-start',
-                    gap: 10,
-                    /* Law 15 — 44×44 minimum hit area per row, every width. */
-                    minHeight: ROW_H,
-                    minWidth: rail ? ROW_H : undefined,
-                    padding: rail ? 0 : '0 10px',
-                    borderRadius: 'var(--r-btn)',
-                    textDecoration: 'none',
-                    fontSize: 'var(--t-ui)',
-                    fontWeight: on ? 600 : 500,
-                    color: on ? 'var(--text)' : 'var(--text2)',
-                    background: on ? 'var(--nav-active-bg)' : 'transparent',
-                    boxShadow: on ? 'var(--specular-rim), 0 1px 2px rgba(0, 0, 0, 0.04)' : undefined,
-                    position: 'relative',
-                    cursor: 'pointer',
-                    transition:
-                      'transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease)',
+                    width: '100%',
                   }}
                 >
-                  {on && (
-                    <span
-                      aria-hidden
-                      style={{
-                        position: 'absolute',
-                        left: 2,
-                        top: 10,
-                        bottom: 10,
-                        width: 3,
-                        borderRadius: 999,
-                        background: 'var(--nav-active-accent)',
-                        boxShadow: '0 0 6px var(--nav-active-accent)',
-                      }}
+                  <Link
+                    to={s.to}
+                    aria-current={on ? 'page' : undefined}
+                    title={rail ? s.label : undefined}
+                    onMouseEnter={(e) => {
+                      if (rail) show(e.currentTarget, s.label)
+                      else {
+                        if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                        e.currentTarget.style.transform = 'translateX(2px)'
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      setHint(null)
+                      if (!rail) {
+                        if (!on) e.currentTarget.style.background = 'transparent'
+                        e.currentTarget.style.transform = 'none'
+                      }
+                    }}
+                    onPointerDown={(e) => {
+                      if (!rail || e.pointerType === 'mouse') return
+                      const el = e.currentTarget
+                      clearPress()
+                      pressTimer.current = window.setTimeout(() => show(el, s.label), LONG_PRESS_MS)
+                    }}
+                    onPointerUp={() => {
+                      clearPress()
+                      setHint(null)
+                    }}
+                    onPointerCancel={() => {
+                      clearPress()
+                      setHint(null)
+                    }}
+                    onBlur={() => setHint(null)}
+                    onFocus={(e) => {
+                      if (rail) show(e.currentTarget, s.label)
+                    }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: rail ? 'center' : 'flex-start',
+                      gap: 10,
+                      /* Law 15 — 44×44 minimum hit area per row, every width. */
+                      minHeight: ROW_H,
+                      minWidth: rail ? ROW_H : undefined,
+                      width: '100%',
+                      padding: rail ? 0 : s.action ? '0 64px 0 10px' : '0 10px',
+                      borderRadius: 'var(--r-btn)',
+                      textDecoration: 'none',
+                      fontSize: 'var(--t-ui)',
+                      fontWeight: on ? 600 : 500,
+                      color: on ? 'var(--text)' : 'var(--text2)',
+                      background: on ? 'var(--nav-active-bg)' : 'transparent',
+                      boxShadow: on ? 'var(--specular-rim), 0 1px 2px rgba(0, 0, 0, 0.04)' : undefined,
+                      position: 'relative',
+                      cursor: 'pointer',
+                      transition:
+                        'transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease)',
+                    }}
+                  >
+                    {on && (
+                      <span
+                        aria-hidden
+                        style={{
+                          position: 'absolute',
+                          left: 2,
+                          top: 10,
+                          bottom: 10,
+                          width: 3,
+                          borderRadius: 999,
+                          background: 'var(--nav-active-accent)',
+                          boxShadow: '0 0 6px var(--nav-active-accent)',
+                        }}
+                      />
+                    )}
+                    <Icon
+                      name={s.icon}
+                      size={rail ? 20 : 16}
+                      style={{ color: on ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
                     />
-                  )}
-                  <Icon
-                    name={s.icon}
-                    size={rail ? 20 : 16}
-                    style={{ color: on ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
-                  />
-                  {!rail && (
-                    <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {s.label}
-                    </span>
-                  )}
+                    {!rail && (
+                      <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {s.label}
+                      </span>
+                    )}
+                  </Link>
                   {s.action && !rail && (
-                    <span
-                      role="button"
-                      tabIndex={0}
+                    <button
+                      type="button"
                       title={s.action.title ?? s.action.label}
                       onClick={(e) => {
                         e.preventDefault()
                         e.stopPropagation()
                         navigate(s.action!.to)
                       }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          navigate(s.action!.to)
-                        }
-                      }}
                       style={{
+                        position: 'absolute',
+                        right: 8,
                         display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -466,15 +470,14 @@ function NavList({
                         fontWeight: 600,
                         border: '1px solid var(--border)',
                         cursor: 'pointer',
-                        marginLeft: 'auto',
-                        flexShrink: 0,
                         lineHeight: 1.3,
+                        zIndex: 2,
                       }}
                     >
                       {s.action.label}
-                    </span>
+                    </button>
                   )}
-                </Link>
+                </div>
               )
             })}
           </div>

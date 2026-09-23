@@ -63,7 +63,7 @@ describe('Sidebar — Law 13, width decides', () => {
     await mount(<Sidebar active="/dashboard" />)
     const aside = container.querySelector('aside')
     expect(aside?.style.width).toBe('var(--app-sidebar-width)')
-    expect(container.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(7)
+    expect(container.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(10)
     expect(container.textContent).toContain('Dashboard')
     expect(container.textContent).toContain('Rentals')
     expect(container.textContent).toContain('Operations')

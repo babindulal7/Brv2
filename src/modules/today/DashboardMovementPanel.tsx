@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import Icon, { type IconName } from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
 import { PageBody } from '../../components/ui/PageBody'
@@ -20,7 +20,7 @@ interface DashboardMovementPanelProps {
   isToday?: boolean
   onLoadMore?: () => void
   hasMore?: boolean
-  kpiFilter?: 'all' | 'ready' | 'overdue'
+  globalQuery?: string
 }
 
 export function dashboardAction(row: MovementRow, side: 'outgoing' | 'incoming'): {
@@ -54,16 +54,15 @@ export default function DashboardMovementPanel({
   filterControl,
   onLoadMore,
   hasMore = false,
-  kpiFilter = 'all',
+  globalQuery = '',
 }: DashboardMovementPanelProps) {
-  const navigate = useNavigate()
   const { openOperations } = useOperationsWorkspace()
   const count = list.loading || list.error ? '—' : String(list.total ?? list.rows.length)
   const noun = side === 'outgoing' ? 'pickups' : 'returns'
   const today = businessDayAd()
   const [searchQuery, setSearchQuery] = useState('')
 
-  // Visually place overdue returns before normal returns, apply KPI filter and instant search
+  // Visually place overdue returns before normal returns and apply instant search
   const rows = useMemo(() => {
     let baseRows = list.rows
     if (side === 'incoming') {
@@ -76,13 +75,7 @@ export default function DashboardMovementPanel({
       baseRows = [...overdue, ...normal]
     }
 
-    if (kpiFilter === 'ready' && side === 'outgoing') {
-      baseRows = baseRows.filter((r) => r.status === 'Packed' || (r.status ?? '').toLowerCase().includes('packed'))
-    } else if (kpiFilter === 'overdue' && side === 'incoming') {
-      baseRows = baseRows.filter((r) => has(r, 'Overdue') || (r.statusNote ?? '').toLowerCase().includes('late'))
-    }
-
-    const q = searchQuery.trim().toLowerCase()
+    const q = (searchQuery || globalQuery || '').trim().toLowerCase()
     if (!q) return baseRows
 
     return baseRows.filter((r) => {
@@ -92,12 +85,12 @@ export default function DashboardMovementPanel({
       const deliveryMatch = (r.deliveryType ?? '').toLowerCase().includes(q)
       return clientMatch || bookingMatch || projectMatch || deliveryMatch
     })
-  }, [list.rows, side, kpiFilter, searchQuery])
+  }, [list.rows, side, searchQuery, globalQuery])
 
   return (
     <section className="movement-panel" aria-labelledby={`${side}-panel-title`}>
       <header className="movement-panel__header">
-        <span className="movement-panel__icon" aria-hidden="true">
+        <span className={`movement-panel__icon movement-panel__icon--${side}`} aria-hidden="true">
           <Icon name={icon} size={24} />
         </span>
         <div className="movement-panel__heading">
@@ -118,6 +111,12 @@ export default function DashboardMovementPanel({
             placeholder={`Filter ${noun} by client, booking, project...`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && searchQuery) {
+                e.stopPropagation()
+                setSearchQuery('')
+              }
+            }}
             aria-label={`Search ${title} by client, booking number, or project`}
           />
           {searchQuery && (
@@ -154,127 +153,134 @@ export default function DashboardMovementPanel({
           clearLabel="Back to Today"
         >
           {rows.length === 0 ? (
-            <div className="movement-panel__empty-search">
-              <p>No {noun} match {searchQuery ? `"${searchQuery}"` : 'the active filter'}.</p>
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="movement-panel__search-reset-btn"
-                  onClick={() => setSearchQuery('')}
-                >
-                  Clear search query
-                </button>
-              )}
+            <div className="movement-panel__empty-search" role="status">
+              <span className="movement-panel__empty-icon" aria-hidden="true">
+                <Icon name="search" size={24} />
+              </span>
+              <p className="movement-panel__empty-title">
+                No {noun} match {searchQuery ? `"${searchQuery}"` : 'the active filter'}.
+              </p>
+              <p className="movement-panel__empty-desc">
+                {searchQuery
+                  ? 'Check for typos or try clearing the search input.'
+                  : 'Try selecting a different date range or clearing filters.'}
+              </p>
+              <button
+                type="button"
+                className="movement-panel__search-reset-btn"
+                onClick={() => {
+                  setSearchQuery('')
+                  onClearFilters()
+                }}
+              >
+                {searchQuery ? 'Clear search query' : 'Reset filters'}
+              </button>
             </div>
           ) : (
             <div className="movement-cards-list">
               {rows.map((row) => {
-              const action = dashboardAction(row, side)
-              const isOverdue = has(row, 'Overdue')
-              const isReady = row.status === 'Packed'
-              const actionLabel = side === 'outgoing' && !isReady ? 'Open booking' : action.label
-              const isPartial =
-                (row.status ?? '').toLowerCase().includes('partial') ||
-                (row.statusNote ?? '').toLowerCase().includes('partial') ||
-                (row.statusNote ?? '').toLowerCase().includes('still with client')
+                const action = dashboardAction(row, side)
+                const isOverdue = has(row, 'Overdue')
+                const isReady = row.status === 'Packed'
+                const actionLabel = action.label
+                const isPartial =
+                  (row.status ?? '').toLowerCase().includes('partial') ||
+                  (row.statusNote ?? '').toLowerCase().includes('partial') ||
+                  (row.statusNote ?? '').toLowerCase().includes('still with client')
 
-              const displayTime = side === 'outgoing'
-                ? `${row.atDayAd !== today ? `${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${row.atDayAd}T00:00:00Z`))} · ` : ''}${timeOf(row)}`
-                : row.due.replace(/^Due\s+/i, '')
+                const displayTime = side === 'outgoing'
+                  ? `${row.atDayAd !== today ? `${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${row.atDayAd}T00:00:00Z`))} · ` : ''}${timeOf(row)}`
+                  : row.due.replace(/^Due\s+/i, '')
 
-              return (
-                <article
-                  key={row.id}
-                  className={`movement-card movement-card--${side} ${
-                    isOverdue ? 'movement-card--overdue' : ''
-                  }`}
-                  aria-label={`${row.bookingNo}, ${row.client}, ${displayTime}`}
-                >
-                  <div className="movement-card__top">
-                    <span className="movement-card__time figure">{displayTime}</span>
-                    <div className="movement-card__badge-wrap">
-                      {side === 'outgoing' ? (
-                        isReady ? (
-                          <Badge tone="in" label="Ready for pickup" icon={<Icon name="check" size={14} />} />
-                        ) : (
-                          <Badge tone="warning" label="Preparation needed" icon={<Icon name="checklist" size={14} />} />
-                        )
-                      ) : isOverdue ? (
-                        <Badge
-                          tone="danger"
-                          label={row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'}
-                          icon={<Icon name="alert_triangle" size={14} />}
-                        />
-                      ) : isPartial ? (
-                        <Badge tone="warning" label="Partial return" icon={<Icon name="alert_triangle" size={14} />} />
-                      ) : (
-                        <Badge tone="primary" label={row.atDayAd === today ? 'Due today' : 'Return scheduled'} icon={<Icon name="timer" size={14} />} />
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="movement-card__main">
-                    <div className="movement-card__title">
-                      <Link
-                        className="movement-card__booking-link"
-                        to={`/rentals/${row.bookingNo}`}
-                      >
-                        <strong className="movement-card__client">{row.client}</strong>
-                        <span className="movement-card__number identifier">#{row.bookingNo}</span>
-                      </Link>
-                    </div>
-
-                    <div className="movement-card__items-row">
-                      <span className="movement-card__items figure">
+                return (
+                  <article
+                    key={row.id}
+                    className={`movement-card movement-card--${side} ${
+                      isOverdue ? 'movement-card--overdue' : ''
+                    }`}
+                    aria-label={`${row.bookingNo}, ${row.client}, ${displayTime}`}
+                  >
+                    <div className="movement-card__top">
+                      <span className="movement-card__time figure">{displayTime}</span>
+                      <div className="movement-card__badge-wrap">
                         {side === 'outgoing' ? (
-                          row.project ? (
-                            `${row.project} · ${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`
+                          isReady ? (
+                            <Badge tone="in" label="Ready for pickup" icon={<Icon name="check" size={14} />} />
                           ) : (
-                            `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`
+                            <Badge tone="warning" label="Preparation needed" icon={<Icon name="checklist" size={14} />} />
                           )
+                        ) : isOverdue ? (
+                          <Badge
+                            tone="danger"
+                            label={row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'}
+                            icon={<Icon name="alert_triangle" size={14} />}
+                          />
+                        ) : isPartial ? (
+                          <Badge tone="warning" label="Partial return" icon={<Icon name="alert_triangle" size={14} />} />
                         ) : (
-                          `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'} booked`
+                          <Badge tone="primary" label={row.atDayAd === today ? 'Due today' : 'Return scheduled'} icon={<Icon name="timer" size={14} />} />
                         )}
-                      </span>
+                      </div>
+                    </div>
 
-                      {side === 'outgoing' && !isReady && row.statusNote && (
-                        <span className="movement-card__subnote">
-                          {row.statusNote}
+                    <div className="movement-card__main">
+                      <div className="movement-card__title">
+                        <Link
+                          className="movement-card__booking-link"
+                          to={`/rentals/${row.bookingNo}`}
+                        >
+                          <strong className="movement-card__client">{row.client}</strong>
+                          <span className="movement-card__number identifier">#{row.bookingNo}</span>
+                        </Link>
+                      </div>
+
+                      <div className="movement-card__items-row">
+                        <span className="movement-card__items figure">
+                          {side === 'outgoing' ? (
+                            row.project ? (
+                              `${row.project} · ${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`
+                            ) : (
+                              `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`
+                            )
+                          ) : (
+                            `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'} booked`
+                          )}
                         </span>
+
+                        {side === 'outgoing' && !isReady && row.statusNote && (
+                          <span className="movement-card__subnote">
+                            {row.statusNote}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Logistics / Delivery pill if applicable */}
+                      {row.deliveryType && row.deliveryType !== 'Client Pickup' && (
+                        <div className="movement-card__meta-tag">
+                          <Icon name="truck" size={12} />
+                          <span>{row.deliveryType}</span>
+                        </div>
                       )}
                     </div>
 
-                    {/* Logistics / Delivery pill if applicable */}
-                    {row.deliveryType && row.deliveryType !== 'Client Pickup' && (
-                      <div className="movement-card__meta-tag">
-                        <Icon name="truck" size={12} />
-                        <span>{row.deliveryType}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="movement-card__footer">
-                    <button
-                      type="button"
-                      className={`movement-card__cta-btn ${
-                        (side === 'incoming' || isReady) ? 'is-dominant' : 'is-secondary'
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (side === 'outgoing' && !isReady) {
-                          navigate(`/rentals/${row.bookingNo}`)
-                        } else {
+                    <div className="movement-card__footer">
+                      <button
+                        type="button"
+                        className={`movement-card__cta-btn ${
+                          (side === 'incoming' || isReady) ? 'is-dominant' : 'is-prep'
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation()
                           const bookingStatus: BookingStatus =
                             (row.status as BookingStatus) ||
                             (side === 'incoming' ? 'On Rent' : 'Booked')
                           openOperations(row.bookingNo, bookingStatus, action.job)
-                        }
-                      }}
-                      aria-label={`${actionLabel} for ${row.client}, booking ${row.bookingNo}`}
-                    >
-                      <span>{actionLabel}</span><Icon name="arrow_right" size={16} />
-                    </button>
-                  </div>
+                        }}
+                        aria-label={`${actionLabel} for ${row.client}, booking ${row.bookingNo}`}
+                      >
+                        <span>{actionLabel}</span><Icon name="arrow_right" size={16} />
+                      </button>
+                    </div>
                 </article>
               )
             })}

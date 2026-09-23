@@ -10,6 +10,8 @@ import { listBookings, operationQueue, todaysOutgoing } from '../../lib/queries/
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { useList, type ListQueryResult, type ListResult } from '../../lib/queries/useList'
 import { useViewport } from '../../lib/device'
+import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
+import type { BookingStatus } from '../../lib/workflow'
 import DashboardMovementPanel from './DashboardMovementPanel'
 import './dashboard.css'
 
@@ -250,6 +252,9 @@ export default function Today() {
   const viewport = useViewport()
   const isPhone = viewport === 'phone'
   const [mobileTab, setMobileTab] = useState<'pickups' | 'returns'>('pickups')
+  const { openOperations } = useOperationsWorkspace()
+  const [globalSearch, setGlobalSearch] = useState('')
+  const counterInputRef = useRef<HTMLInputElement>(null)
 
   const [pickupDateFilter, setPickupDateFilter] = useStoredFilter(STORAGE_PICKUPS)
   const [returnDateFilter, setReturnDateFilter] = useStoredFilter(STORAGE_RETURNS)
@@ -293,16 +298,15 @@ export default function Today() {
   const pickupCount = pickups.loading || pickups.error ? undefined : pickups.total ?? pickups.rows.length
   const returnCount = returns.loading || returns.error ? undefined : returns.total ?? returns.rows.length
 
-  const readyForHandoverCount = useMemo(
-    () => pickups.rows.filter((r) => r.status === 'Packed' || r.status?.toLowerCase().includes('packed')).length,
-    [pickups.rows]
-  )
   const overdueCount = useMemo(
     () => returns.rows.filter((r) => r.flags.includes('Overdue') || (r.statusNote && r.statusNote.includes('late'))).length,
     [returns.rows]
   )
 
-  const [kpiFilter, setKpiFilter] = useState<'all' | 'ready' | 'overdue'>('all')
+  const readyForHandoverCount = useMemo(
+    () => pickups.rows.filter((r) => r.status === 'Packed' || r.status?.toLowerCase().includes('packed')).length,
+    [pickups.rows]
+  )
 
   const isDispatchToday = pickupDateFilter.kind === 'quick' && pickupDateFilter.period === 'Today'
 
@@ -329,6 +333,57 @@ export default function Today() {
     }
   }
 
+  const handleGlobalSearchKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      const q = globalSearch.trim().toLowerCase()
+      if (!q) return
+      // Check if there is an exact booking number match in pickups or returns
+      const exactPickup = pickups.rows.find((r) => r.bookingNo.toLowerCase() === q || r.bookingNo.toLowerCase() === `b-${q}`)
+      if (exactPickup) {
+        const isReady = exactPickup.status === 'Packed'
+        openOperations(exactPickup.bookingNo, (exactPickup.status as BookingStatus) || 'Booked', isReady ? 'Handover' : 'Pack')
+        return
+      }
+      const exactReturn = returns.rows.find((r) => r.bookingNo.toLowerCase() === q || r.bookingNo.toLowerCase() === `b-${q}`)
+      if (exactReturn) {
+        openOperations(exactReturn.bookingNo, (exactReturn.status as BookingStatus) || 'On Rent', 'Return')
+        return
+      }
+    }
+  }
+
+  // Rapid keyboard navigation for dispatch operators: [ (prev), ] (next), t (today), / (search)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target instanceof Element ? e.target : null
+      if (
+        target &&
+        (target.matches('input, textarea, select') ||
+          (target as HTMLElement).isContentEditable ||
+          target.closest?.('[role="dialog"]'))
+      ) {
+        return
+      }
+
+      if (e.key === '/') {
+        e.preventDefault()
+        counterInputRef.current?.focus()
+      } else if (e.key === '[' || e.key === 'p' || e.key === 'P') {
+        e.preventDefault()
+        stepDay(-1)
+      } else if (e.key === ']' || e.key === 'n' || e.key === 'N') {
+        e.preventDefault()
+        stepDay(1)
+      } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault()
+        goToToday()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [dayAd, pickupDateFilter, globalSearch, pickups.rows, returns.rows, openOperations])
+
   const syncBothPanels = (nextFilter: DateFilter) => {
     setPickupPage(0)
     setReturnPage(0)
@@ -351,6 +406,7 @@ export default function Today() {
                   type="button"
                   className="dashboard-day-pager__btn"
                   aria-label="Previous day"
+                  title="Previous day (Shortcut: [ or P)"
                   onClick={() => stepDay(-1)}
                 >
                   <Icon name="chevron_left" size={16} />
@@ -359,6 +415,7 @@ export default function Today() {
                   type="button"
                   className={`dashboard-day-pager__btn dashboard-day-pager__btn--today ${isDispatchToday ? 'is-current' : ''}`}
                   aria-label="Today"
+                  title="Today (Shortcut: T)"
                   onClick={goToToday}
                 >
                   Today
@@ -367,6 +424,7 @@ export default function Today() {
                   type="button"
                   className="dashboard-day-pager__btn"
                   aria-label="Next day"
+                  title="Next day (Shortcut: ] or N)"
                   onClick={() => stepDay(1)}
                 >
                   <Icon name="chevron_right" size={16} />
@@ -383,81 +441,104 @@ export default function Today() {
         />
       }
     >
+      {/* Universal Express Counter Bar (Quick Search / Barcode Scanner) */}
+      <div className="dashboard-counter-bar" role="search" aria-label="Express Counter Lookup">
+        <div className="dashboard-counter-bar__search">
+          <Icon name="search" size={18} className="dashboard-counter-bar__icon" />
+          <input
+            ref={counterInputRef}
+            type="search"
+            className="dashboard-counter-bar__input"
+            placeholder="Scan barcode, serial #, or search client / booking # across pickups and returns..."
+            value={globalSearch}
+            onChange={(e) => setGlobalSearch(e.target.value)}
+            onKeyDown={handleGlobalSearchKeyDown}
+            aria-label="Universal express counter search"
+          />
+          {globalSearch && (
+            <button
+              type="button"
+              className="dashboard-counter-bar__clear"
+              onClick={() => {
+                setGlobalSearch('')
+                counterInputRef.current?.focus()
+              }}
+              aria-label="Clear counter search"
+            >
+              <Icon name="close" size={16} />
+            </button>
+          )}
+        </div>
+        <div className="dashboard-counter-bar__hint" aria-hidden="true">
+          <span className="dashboard-counter-bar__kbd-hint">Press <kbd>/</kbd> to focus</span>
+        </div>
+      </div>
+
       {/* Critical Overdue Warning Alert */}
       {overdueCount > 0 && (
         <div
           role="alert"
-          style={{
-            marginBottom: 'var(--sp-md)',
-            padding: '12px 16px',
-            background: 'var(--st-danger-bg)',
-            border: '1px solid var(--st-danger-fg)',
-            borderRadius: 'var(--r-card)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--sp-sm)',
-            color: 'var(--st-danger-fg)',
-          }}
+          className="dashboard-alert dashboard-alert--overdue"
         >
-          <Icon name="alert_circle" size={18} />
-          <span style={{ fontWeight: 700 }}>Action Required:</span>
-          <span>
-            {overdueCount} rental return{overdueCount > 1 ? 's are' : ' is'} overdue. Follow up with client or initiate return check-in.
+          <span className="dashboard-alert__icon" aria-hidden="true">
+            <Icon name="alert_circle" size={18} />
           </span>
+          <div className="dashboard-alert__body">
+            <strong className="dashboard-alert__title">Action Required:</strong>
+            <span className="dashboard-alert__text">
+              {overdueCount} rental return{overdueCount > 1 ? 's are' : ' is'} overdue. Follow up with client or initiate return check-in.
+            </span>
+          </div>
         </div>
       )}
 
-      {/* Operational KPI Metric Strip */}
+      {/* Operational KPI Metric Strip with Strategic Colorized Icons */}
       <div
         className="dashboard-kpi-strip"
         role="region"
         aria-label="Movement KPI summary"
       >
-        <button
-          type="button"
-          className={`dashboard-kpi-card ${kpiFilter === 'all' ? 'is-active' : ''}`}
-          onClick={() => setKpiFilter('all')}
-          aria-pressed={kpiFilter === 'all'}
-          aria-label={`Scheduled Pickups: ${pickupCount ?? 'none'}. Click to view all.`}
-        >
-          <span className="dashboard-kpi-card__label">Scheduled Pickups</span>
+        <div className="dashboard-kpi-card">
+          <div className="dashboard-kpi-card__header">
+            <span className="dashboard-kpi-card__label">Scheduled Pickups</span>
+            <span className="dashboard-kpi-card__icon dashboard-kpi-card__icon--pickup" aria-hidden="true">
+              <Icon name="truck" size={16} />
+            </span>
+          </div>
           <span className="dashboard-kpi-card__val figure">{pickupCount ?? '—'}</span>
-        </button>
-        <button
-          type="button"
-          className={`dashboard-kpi-card ${kpiFilter === 'ready' ? 'is-active' : ''}`}
-          onClick={() => setKpiFilter((prev) => (prev === 'ready' ? 'all' : 'ready'))}
-          aria-pressed={kpiFilter === 'ready'}
-          aria-label={`Ready for Handover: ${readyForHandoverCount}. Click to filter ready pickups.`}
-        >
-          <span className="dashboard-kpi-card__label">Ready for Handover</span>
+        </div>
+        <div className="dashboard-kpi-card">
+          <div className="dashboard-kpi-card__header">
+            <span className="dashboard-kpi-card__label">Ready for Handover</span>
+            <span className="dashboard-kpi-card__icon dashboard-kpi-card__icon--ready" aria-hidden="true">
+              <Icon name="check" size={16} />
+            </span>
+          </div>
           <span className="dashboard-kpi-card__val dashboard-kpi-card__val--success figure">{readyForHandoverCount}</span>
-        </button>
-        <button
-          type="button"
-          className={`dashboard-kpi-card ${kpiFilter === 'all' ? 'is-active' : ''}`}
-          onClick={() => setKpiFilter('all')}
-          aria-pressed={kpiFilter === 'all'}
-          aria-label={`Expected Returns: ${returnCount ?? 'none'}. Click to view all.`}
-        >
-          <span className="dashboard-kpi-card__label">Expected Returns</span>
+        </div>
+        <div className="dashboard-kpi-card">
+          <div className="dashboard-kpi-card__header">
+            <span className="dashboard-kpi-card__label">Expected Returns</span>
+            <span className="dashboard-kpi-card__icon dashboard-kpi-card__icon--return" aria-hidden="true">
+              <Icon name="return_arrow" size={16} />
+            </span>
+          </div>
           <span className="dashboard-kpi-card__val figure">{returnCount ?? '—'}</span>
-        </button>
-        <button
-          type="button"
-          className={`dashboard-kpi-card ${overdueCount > 0 ? 'dashboard-kpi-card--danger' : ''} ${kpiFilter === 'overdue' ? 'is-active' : ''}`}
-          onClick={() => setKpiFilter((prev) => (prev === 'overdue' ? 'all' : 'overdue'))}
-          aria-pressed={kpiFilter === 'overdue'}
-          aria-label={`Overdue Returns: ${overdueCount}. Click to filter overdue returns.`}
-        >
-          <span className="dashboard-kpi-card__label">Overdue Returns</span>
+        </div>
+        <div className={`dashboard-kpi-card ${overdueCount > 0 ? 'dashboard-kpi-card--danger' : ''}`}>
+          <div className="dashboard-kpi-card__header">
+            <span className="dashboard-kpi-card__label">Overdue Returns</span>
+            <span className="dashboard-kpi-card__icon dashboard-kpi-card__icon--danger" aria-hidden="true">
+              <Icon name="alert_circle" size={16} />
+            </span>
+          </div>
           <span className="dashboard-kpi-card__val dashboard-kpi-card__val--danger figure">{overdueCount}</span>
-        </button>
+        </div>
       </div>
 
       {/* Spec §31: Mobile Segmented Control */}
       {isPhone && (
-        <div style={{ marginBottom: 'var(--sp-md)' }}>
+        <div className="dashboard-mobile-nav">
           <SegmentedControl
             fullWidth
             ariaLabel="Dashboard Movements"
@@ -481,7 +562,7 @@ export default function Today() {
             icon="truck"
             list={pickups}
             periodLabel={filterLabel(pickupDateFilter).toLowerCase()}
-            kpiFilter={kpiFilter}
+            globalQuery={globalSearch}
             onClearFilters={() => { setPickupPage(0); setPickupDateFilter({ kind: 'quick', period: 'Today' }) }}
             onLoadMore={() => setPickupPage((page) => page + 1)}
             hasMore={pickups.total !== null && pickups.rows.length < pickups.total}
@@ -505,7 +586,7 @@ export default function Today() {
             list={returns}
             periodLabel={filterLabel(returnDateFilter).toLowerCase()}
             isToday={isReturnToday}
-            kpiFilter={kpiFilter}
+            globalQuery={globalSearch}
             onClearFilters={() => { setReturnPage(0); setReturnDateFilter({ kind: 'quick', period: 'Today' }) }}
             onLoadMore={() => setReturnPage((page) => page + 1)}
             hasMore={returns.total !== null && returns.rows.length < returns.total}

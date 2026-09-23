@@ -44,13 +44,13 @@ interface PresetOption {
 }
 
 const BOOQABLE_PRESETS: PresetOption[] = [
-  { key: 'All', label: 'All Rentals', icon: 'queues' },
-  { key: 'Upcoming', label: 'Needs Packing / Upcoming', icon: 'box', description: 'Bookings awaiting warehouse packing' },
-  { key: 'Tomorrow', label: 'Pickup Tomorrow', icon: 'truck', description: 'Starts tomorrow' },
-  { key: 'Returning', label: 'Due for Return', icon: 'queues', description: 'Expected return' },
-  { key: 'On Rent', label: 'Currently On Rent', icon: 'truck', description: 'Gear active with clients' },
-  { key: 'Overdue', label: 'Overdue Returns', icon: 'alert_triangle', description: 'Past return deadline and not checked in' },
-  { key: 'Payment Due', label: 'Awaiting Payment', icon: 'invoice', description: 'Unpaid or partial deposits' },
+  { key: 'All', label: 'All', icon: 'queues' },
+  { key: 'Upcoming', label: 'Upcoming', icon: 'box', description: 'Bookings awaiting warehouse packing' },
+  { key: 'Tomorrow', label: 'Tomorrow', icon: 'truck', description: 'Starts tomorrow' },
+  { key: 'Returning', label: 'Returning', icon: 'queues', description: 'Expected return' },
+  { key: 'On Rent', label: 'On Rent', icon: 'truck', description: 'Gear active with clients' },
+  { key: 'Overdue', label: 'Overdue', icon: 'alert_triangle', description: 'Past return deadline and not checked in' },
+  { key: 'Payment Due', label: 'Payment Due', icon: 'invoice', description: 'Unpaid or partial deposits' },
 ]
 
 export function BooqableRentalFilterDrawer({
@@ -112,6 +112,7 @@ export function BooqableRentalFilterDrawer({
                   key={p.key}
                   type="button"
                   className="tap"
+                  aria-pressed={isSelected}
                   onClick={() => onSelectQuickFilter(p.key)}
                   style={{
                     display: 'flex',
