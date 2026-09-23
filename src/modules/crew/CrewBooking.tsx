@@ -2,13 +2,14 @@ import { Fragment, useMemo, useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import { Card, Button, PageHeader, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { thStyle } from '../../components/ui/TableHeaderCell'
 import { Input } from '../../components/ui/Input'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { formatMoney, crewBilling } from '../../lib/money'
+import { formatMoney } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
 import { gateContext, canViewMoneyField, canViewPII } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
@@ -24,8 +25,6 @@ import {
   CREW_DATA,
   CREW_ROSTER,
   OPEN_ROLE_REQUESTS,
-  FEE_PER_CREW_DAY_PAISA,
-  CREW_EXPENSES_THIS_MONTH_PAISA,
   ROSTER_CHIPS,
   detectConflicts,
   conflictedAssignmentIds,
@@ -208,6 +207,9 @@ export function CrewBooking() {
   const [crewAssignments, setCrewAssignments] = useState<CrewAssignment[]>(CREW_DATA)
   const [crewMembers, setCrewMembers] = useState<CrewMember[]>(CREW_ROSTER)
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+  /* A failed read, never swallowed: the seed stays on screen behind the banner,
+     and the banner says the data did not load live. */
+  const [rosterLoadError, setRosterLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -215,13 +217,17 @@ export function CrewBooking() {
       if (active && res.rows.length > 0) {
         setCrewAssignments(res.rows)
       }
-    }).catch(() => {})
+    }).catch((err: unknown) => {
+      if (active) setRosterLoadError(err instanceof Error ? err.message : String(err))
+    })
 
     listCrewMembers().then((res) => {
       if (active && res.rows.length > 0) {
         setCrewMembers(res.rows)
       }
-    }).catch(() => {})
+    }).catch((err: unknown) => {
+      if (active) setRosterLoadError(err instanceof Error ? err.message : String(err))
+    })
 
     return () => {
       active = false
@@ -248,17 +254,6 @@ export function CrewBooking() {
   const roster = useMemo(() => rosterSummary(crewMembers), [crewMembers])
   const crewDays = useMemo(() => crewDaysBooked(crewAssignments), [crewAssignments])
   const fill = useMemo(() => fillRate(crewAssignments, OPEN_ROLE_REQUESTS), [crewAssignments])
-
-  const billing = useMemo(() => {
-    const payoutsPaisa = crewAssignments.filter((a) => !a.cancelled).reduce((sum, a) => sum + a.totalCostPaisa, 0) as CrewAssignment['totalCostPaisa']
-    return crewBilling({
-      crewDays,
-      payoutsPaisa,
-      feePerCrewDayPaisa: FEE_PER_CREW_DAY_PAISA,
-      expensesPaisa: CREW_EXPENSES_THIS_MONTH_PAISA,
-      rechargeExpenses: true, // §2.3 Model A — recharge at cost (spec's recommendation)
-    })
-  }, [crewAssignments, crewDays])
 
   const crewBookedToday = useMemo(() => crewAssignments.filter((a) => onShootToday(a)).length, [crewAssignments])
   const ledger = useMemo(() => payoutLedger(crewAssignments), [crewAssignments])
@@ -329,7 +324,7 @@ export function CrewBooking() {
    */
   const railContent = (
     <>
-      <RailSection title="Roster summary" badge={roster.reconciles ? undefined : 'invariant failed'}>
+      <RailSection title="Roster summary" badge={roster.reconciles ? undefined : 'Counts mismatch — refresh'}>
         <SummaryRows
           rows={[
             { label: 'Available', value: String(roster.available) },
@@ -402,7 +397,7 @@ export function CrewBooking() {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
       <PageHeader
         icon="crew"
         // The nav item (`data/nav.ts:73`), the route breadcrumb (`App.tsx:264`)
@@ -418,6 +413,31 @@ export function CrewBooking() {
         }
       />
 
+      {rosterLoadError && (
+        <p
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 7,
+            margin: 0,
+            padding: '9px 11px',
+            borderRadius: 'var(--r-sm)',
+            border: '1px solid var(--danger)',
+            background: 'var(--st-danger-bg)',
+            fontSize: 'var(--t-meta)',
+            color: 'var(--danger-text)',
+            lineHeight: 1.5,
+          }}
+        >
+          <Icon name="alert_triangle" size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>
+            The live crew roster could not be loaded, so the roster and assignments below are the built-in
+            reference set — not a live record. {rosterLoadError}
+          </span>
+        </p>
+      )}
+
       {/*
         The Booking/Directory/Timesheets/Payouts tab strip that used to sit here
         is removed by Rulings §1's binding table ("06 §6.1 draws none"), and
@@ -425,18 +445,18 @@ export function CrewBooking() {
         single surface: chips, CREW, ASSIGNMENTS, rail.
       */}
       <>
-          {/* KPI row — §10, exactly six cards. Money cards omitted (not hidden) without asset-finance.
-              Clamped per band the way `KpiStrip` (Page.tsx:204) does: six 1fr
-              columns on a 375px phone is six unreadable slivers. */}
+          {/* RULING 2026-09-20: KPI cap ≤4 (Foundation page-type rule) over crew spec §10 six-tiles line — four shown, timesheet copy moved.
+              Clamped per band the way `KpiStrip` (Page.tsx:204) does: four 1fr
+              columns keep every tile legible on a 375px phone. */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: `repeat(${kpiColumns(canCrewMoney ? 6 : 5, viewport)}, minmax(0,1fr))`,
+              gridTemplateColumns: `repeat(${kpiColumns(4, viewport)}, minmax(0,1fr))`,
               gap: 'var(--sp-md)',
             }}
           >
-            <KpiTile label="Crew Booked Today" value={String(crewBookedToday)} note="Confirmed, shoot day is today" icon="crew" accent="primary" />
-            <KpiTile label="Available Today" value={String(roster.available)} note={`${roster.total} on the roster`} icon="check" accent="in" />
+            <KpiTile label="Booked Today" value={String(crewBookedToday)} note="Confirmed, shoot day is today" icon="crew" accent="primary" />
+            <KpiTile label="Available" value={String(roster.available)} note={`${roster.total} on the roster`} icon="check" accent="in" />
             <KpiTile
               label="Conflicts"
               value={String(conflicts.length + travelWarnings.length)}
@@ -444,10 +464,8 @@ export function CrewBooking() {
               icon="alert_triangle"
               accent={conflicts.length > 0 ? 'danger' : 'neutral'}
             />
-            <KpiTile label="Timesheets Outstanding" value="—" note="Not tracked yet — see Timesheets tab" icon="calendar" accent="neutral" />
-            {canCrewMoney && <BillingKpiTile billing={billing} />}
             <KpiTile
-              label="Crew-Days · Fill Rate"
+              label="Fill Rate"
               value={`${crewDays} · ${fill.pct}%`}
               note={`${fill.filled} of ${fill.requested} roles filled this month`}
               icon="users"
@@ -591,7 +609,20 @@ export function CrewBooking() {
                 )}
               </Card>
 
-              <Card title="Assignments" style={{ overflow: 'hidden' }}>
+              <Card
+                title="Assignments"
+                /* The selection drives no outcome until bulk actions exist —
+                   said where it happens, rather than letting ticks read as
+                   armed. */
+                action={
+                  selectedRowIds.size > 0 ? (
+                    <span role="status" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                      {selectedRowIds.size} selected — bulk actions not built yet
+                    </span>
+                  ) : undefined
+                }
+                style={{ overflow: 'hidden' }}
+              >
                 {filteredCrew.length === 0 ? (
                   <EmptyState
                     title="No crew assignments found"
@@ -623,12 +654,17 @@ export function CrewBooking() {
                       <thead>
                         <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 'var(--t-th)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           <th style={{ ...thStyle, width: 36 }}>
-                            <input
-                              type="checkbox"
-                              checked={selectedRowIds.size === filteredCrew.length && filteredCrew.length > 0}
-                              onChange={(e) => handleSelectAll(e.target.checked)}
-                              style={{ accentColor: 'var(--nav-active-accent)' }}
-                            />
+                            {/* Law 15 — the native box is ~13px; the hit area
+                                wraps it to the --tap floor. */}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 'var(--tap)', minHeight: 'var(--tap)' }}>
+                              <input
+                                type="checkbox"
+                                aria-label="Select all assignments"
+                                checked={selectedRowIds.size === filteredCrew.length && filteredCrew.length > 0}
+                                onChange={(e) => handleSelectAll(e.target.checked)}
+                                style={{ accentColor: 'var(--nav-active-accent)' }}
+                              />
+                            </span>
                           </th>
                           <th style={thStyle}>Crew Member</th>
                           {/* Tablet drops the three widest columns — §6.1's tablet
@@ -653,12 +689,15 @@ export function CrewBooking() {
                               style={{ borderBottom: '1px solid var(--border)', background: inConflict ? 'var(--st-danger-bg)' : 'transparent' }}
                             >
                               <td style={{ padding: '12px 14px' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={selectedRowIds.has(c.id)}
-                                  onChange={() => handleToggleRow(c.id)}
-                                  style={{ accentColor: 'var(--nav-active-accent)' }}
-                                />
+                                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 'var(--tap)', minHeight: 'var(--tap)' }}>
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Select ${c.name}`}
+                                    checked={selectedRowIds.has(c.id)}
+                                    onChange={() => handleToggleRow(c.id)}
+                                    style={{ accentColor: 'var(--nav-active-accent)' }}
+                                  />
+                                </span>
                               </td>
                               <td style={{ padding: '12px 14px' }}>
                                 <IntelCard
@@ -723,7 +762,7 @@ export function CrewBooking() {
                               )}
                               <td style={{ padding: '12px 14px', textAlign: 'right' }}>
                                 <Button variant="secondary" onClick={() => navigate(`/rentals/${c.linkedBooking}`)}>
-                                  View
+                                  View booking
                                 </Button>
                               </td>
                             </tr>
@@ -748,14 +787,14 @@ export function CrewBooking() {
             )}
           </div>
       </>
-    </div>
+    </PageShell>
   )
 }
 
 /**
- * Six KPI cards across a 375px phone is six unreadable slivers. Same clamp
- * `KpiStrip` applies at `Page.tsx:204`, kept local because this screen's tiles
- * are bespoke (`BillingKpiTile` carries three linked figures).
+ * Four KPI tiles across a 375px phone is already two columns of reading; the
+ * clamp pattern matches `KpiStrip` (Page.tsx:204), kept local because this
+ * screen's tiles are bespoke.
  */
 function kpiColumns(count: number, viewport: 'phone' | 'tablet' | 'desktop'): number {
   if (viewport === 'phone') return Math.min(count, 2)
@@ -877,47 +916,11 @@ function KpiTile({ label, value, note, icon, accent }: { label: string; value: s
         <span style={{ width: 30, height: 30, borderRadius: 'var(--r-sm)', background: c.bg, color: c.fg, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
           <Icon name={icon} size={16} fill />
         </span>
-        <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+        <div title={label} style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
       </div>
       <div className="figure" style={{ marginTop: 9, fontSize: 'clamp(16px, 1.5vw, 22px)', fontWeight: 700, color: 'var(--text)' }}>{value}</div>
-      <div style={{ marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</div>
+      <div title={note} style={{ marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</div>
     </article>
-  )
-}
-
-/**
- * §2.4 — Billed · Cost · Margin, side by side, from the Financial Engine.
- * No `Kpi` shape fits three linked numbers, so this is bespoke — the same
- * move `Finance.tsx`'s `PL_CHAIN` makes for its P&L chain.
- */
-function BillingKpiTile({ billing }: { billing: ReturnType<typeof crewBilling> }) {
-  return (
-    <article className="lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
-      <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>Billed · Cost · Margin</div>
-      <div style={{ marginTop: 9, display: 'flex', gap: 'var(--sp-md)' }}>
-        <MoneyStat label="Billed" value={billing.billedPaisa} />
-        <MoneyStat label="Cost" value={billing.costPaisa} />
-        {/* MoneyStat spends `tone` as a bare `color:` on the figure (see its
-            definition below), so it takes the TEXT-safe pair. --st-danger-fg /
-            --st-in-fg are --on-danger / --on-success — both #ffffff in BOTH
-            themes, ink for a solid fill — and this card has no fill, so the
-            Margin figure rendered white on the card and was invisible either
-            side of zero on the now-default light theme. */}
-        <MoneyStat label="Margin" value={billing.marginPaisa} tone={billing.marginPaisa !== null && billing.marginPaisa < 0 ? 'var(--danger-text)' : 'var(--success-text)'} />
-      </div>
-      <div style={{ marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>This month</div>
-    </article>
-  )
-}
-
-function MoneyStat({ label, value, tone }: { label: string; value: number | null; tone?: string }) {
-  return (
-    <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{label}</div>
-      <div className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: tone ?? 'var(--text)' }}>
-        {value === null ? 'Not configured' : formatMoney(value as never)}
-      </div>
-    </div>
   )
 }
 
@@ -1037,6 +1040,7 @@ function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignmen
                         // production, status and conflict in words — the treatment
                         // `Calendar.tsx:755` gives its day cells.
                         <div
+                          role="img"
                           aria-label={`${block.production} — ${block.status}${conflictIds.has(block.id) ? ', conflict' : ''}`}
                           title={`${block.production} — ${block.status}${conflictIds.has(block.id) ? ' · CONFLICT' : ''}`}
                           style={{

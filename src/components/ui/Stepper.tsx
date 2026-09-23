@@ -12,6 +12,8 @@ export interface StepperProps {
   currentStep: number // 1-indexed
   onStepClick?: (step: number) => void
   maxClickableStep?: number
+  /** Completion must come from validation, never from which section was visited. */
+  completedStepIds?: ReadonlyArray<StepItem['id']>
   className?: string
 }
 
@@ -20,6 +22,7 @@ export function Stepper({
   currentStep,
   onStepClick,
   maxClickableStep = steps.length,
+  completedStepIds = [],
   className = '',
 }: StepperProps) {
   return (
@@ -27,7 +30,7 @@ export function Stepper({
       <ol className="rental-stepper__list">
         {steps.map((step, index) => {
           const stepNumber = index + 1
-          const isCompleted = stepNumber < currentStep
+          const isCompleted = completedStepIds.includes(step.id)
           const isCurrent = stepNumber === currentStep
           const canClick = onStepClick && (stepNumber <= maxClickableStep || stepNumber <= currentStep)
 

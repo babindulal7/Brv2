@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
+const device = vi.hoisted(() => ({ viewport: 'desktop' }))
 
 vi.mock('../../../actions/rentals/saveDraft', () => ({
   saveDraft: vi.fn(),
@@ -20,7 +21,7 @@ vi.mock('../../../lib/auth', () => ({
 vi.mock('../../../components/ui/Toast', () => ({ useToast: () => ({ showSuccessToast: vi.fn() }) }))
 vi.mock('../../../lib/network', () => ({ useNetwork: () => true }))
 vi.mock('../../../lib/device', () => ({
-  useViewport: () => 'desktop',
+  useViewport: () => device.viewport,
   useCapability: () => ({ coarsePointer: false, hasHover: true, standalone: false, reducedMotion: false }),
 }))
 vi.mock('../../../lib/supabase', () => ({
@@ -45,6 +46,38 @@ window.matchMedia = ((query: string) => ({
 import NewRental from '../NewRental'
 
 describe('NewRental simplification (Part A - D)', () => {
+  it('guides phone stages without remounting fields and opens the selected group', async () => {
+    device.viewport = 'phone'
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => root.render(<MemoryRouter><NewRental /></MemoryRouter>))
+      const clientSection = container.querySelector('#section-0')!
+      const clientInput = clientSection.querySelector('input')!
+      expect(clientInput).not.toBeNull()
+      const progress = container.querySelector('.new-rental-mobile-progress')!
+      expect(progress.textContent).toContain('Step 1 of 5')
+      const summary = container.querySelector('#rail-booking-summary')!
+      expect(summary.parentElement?.hidden).toBe(true)
+      const actions = container.querySelector('.new-rental-mobile-actions')!
+      const next = () => [...actions.querySelectorAll('button')].find((button) => button.textContent === 'Continue')!
+      await act(async () => next().click())
+      expect(progress.textContent).toContain('Equipment & Bundles')
+      expect(container.querySelector('#section-2')?.parentElement?.style.display).toBe('flex')
+      expect(document.activeElement).toBe(container.querySelector('.new-rental-stepper-container'))
+      await act(async () => [...actions.querySelectorAll('button')].find((button) => button.textContent === 'Back')!.click())
+      expect(container.querySelector('#section-0 input')).toBe(clientInput)
+      await act(async () => (actions.querySelector('[aria-label="Review rental summary"]') as HTMLButtonElement).click())
+      expect(progress.textContent).toContain('Review & Confirm')
+      expect(summary.parentElement?.hidden).toBe(false)
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+      device.viewport = 'desktop'
+    }
+  })
+
   it('renders a consolidated Booking Summary card and removed legacy rail cards', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -62,6 +95,9 @@ describe('NewRental simplification (Part A - D)', () => {
     const bookingSummary = container.querySelector('#rail-booking-summary')
     expect(bookingSummary).not.toBeNull()
     expect(bookingSummary?.textContent).toContain('Booking Summary')
+    expect(bookingSummary?.textContent).toContain('Pickup')
+    expect(bookingSummary?.textContent).toContain('Return')
+    expect(bookingSummary?.textContent).toContain('0 items')
 
     const attentionStatus = container.querySelector('[data-testid=booking-attention-status]')
     expect(attentionStatus).not.toBeNull()
@@ -85,6 +121,22 @@ describe('NewRental simplification (Part A - D)', () => {
     expect(pricingSection?.textContent).toContain('Pricing & Terms')
     expect(pricingSection?.textContent).not.toContain('Payments — rental only')
     expect(pricingSection?.textContent).not.toContain('Payment History')
+
+    const openEquipment = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Open Equipment')!
+    const scroll = vi.fn()
+    const oldScroll = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = scroll
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      queueMicrotask(() => callback(0))
+      return 1
+    })
+    await act(async () => openEquipment.click())
+    expect(container.querySelector('[aria-current="step"]')?.textContent).toContain('Equipment & Bundles')
+    expect(container.querySelector('#section-2')?.parentElement?.style.display).not.toBe('none')
+    expect(container.querySelectorAll('.rental-stepper__item.is-completed')).toHaveLength(0)
+    expect(scroll).toHaveBeenCalled()
+    Element.prototype.scrollIntoView = oldScroll
+    vi.unstubAllGlobals()
 
     await act(async () => root.unmount())
     container.remove()

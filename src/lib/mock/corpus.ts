@@ -146,7 +146,45 @@ const EXPENSE_CATEGORIES: Row[] = [
 
 /* ── Corpus → rows ─────────────────────────────────────────────────────── */
 
-export function buildStore(): Store {
+export interface BuildStoreOptions {
+  seeded?: boolean
+}
+
+export function buildStore(options?: BuildStoreOptions): Store {
+  const isSeeded = options?.seeded ?? (import.meta.env?.['VITE_MOCK_SEEDED'] === 'true')
+
+  if (!isSeeded) {
+    const emptyStore: Store = {
+      users: USERS,
+      branches: BRANCHES,
+      warehouses: WAREHOUSES,
+      inventory_categories: CATEGORIES,
+      storage_zones: ZONES,
+      expense_categories: EXPENSE_CATEGORIES,
+      clients: [],
+      products: [],
+      product_units: [],
+      bookings: [],
+      booking_lines: [],
+      booking_line_units: [],
+      booking_crew_lines: [],
+      invoices: [],
+      payments: [],
+      security_deposits: [],
+      booking_stage_transitions: [],
+      bundles: [],
+      bundle_items: [],
+      inventory_reservations: [],
+      suppliers: [],
+      purchase_requests: [],
+      stock_transfers: [],
+      stock_transfer_lines: [],
+    }
+    for (const t of UNSERVED) emptyStore[t] = []
+    emptyStore['probe'] = []
+    return emptyStore
+  }
+
   const corpus = buildCorpus()
 
   const clients: Row[] = corpus.clients.map((c) => {

@@ -107,7 +107,7 @@ export interface CreateInvoiceModalProps {
 export const DRAFT_NO_NUMBER = 'Draft (no number)'
 
 const fieldStyle = {
-  height: 36,
+  minHeight: 'var(--tap)',
   padding: '0 12px',
   borderRadius: 'var(--r-btn)',
   border: '1px solid var(--border)',
@@ -335,7 +335,7 @@ export function CreateInvoiceModal({ isOpen, onClose, bookingNo, onSuccess }: Cr
     if (preview.kind === 'refused') return preview.reason
     if (preview.kind === 'already-invoiced') {
       return (
-        `${preview.bookingNo} already has an invoice, and a rental has one (R-03). Damage and late fees append as ` +
+        `${preview.bookingNo} already has an invoice, and a rental has one. Damage and late fees append as ` +
         'lines to that Draft; a correction after issue is Void + Credit Note.'
       )
     }
@@ -443,8 +443,8 @@ export function CreateInvoiceModal({ isOpen, onClose, bookingNo, onSuccess }: Cr
             <Row label="Outstanding" value={formatMoney(preview.existing.outstandingPaisa)} strong />
             <Row label="Due" value={<BsAdDate date={preview.existing.dueDateAd} layout="inline" />} />
             <p style={{ margin: '6px 0 0', color: 'var(--muted)' }}>
-              One invoice per rental (R-03). Damage and late fees append as lines to this Draft, and a correction after
-              it is issued is a Void plus a Credit Note (R-04) — never a second invoice.
+              One invoice per rental. Damage and late fees append as lines to this Draft, and a correction after it is
+              issued is a Void plus a Credit Note — never a second invoice.
             </p>
           </div>
         )}
@@ -502,8 +502,8 @@ export function CreateInvoiceModal({ isOpen, onClose, bookingNo, onSuccess }: Cr
               </div>
               <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                 Read from the booking and copied onto the invoice as a snapshot — a later change to a product’s rate
-                does not re-price this bill (SPEC-P0-1 §3.1). Nothing here is editable from this screen: a charge is
-                added by editing the booking, and damage and late fees append at return.
+                does not re-price this bill. Nothing here is editable from this screen: a charge is added by editing
+                the booking, and damage and late fees append at return.
                 {!preview.transportKnown && ' Transport lines are missing from this list because your role cannot read them.'}
               </span>
             </div>
@@ -556,8 +556,8 @@ export function CreateInvoiceModal({ isOpen, onClose, bookingNo, onSuccess }: Cr
               </div>
               <span style={{ color: 'var(--muted)' }}>
                 Computed by the money engine. The invoice’s stored figures are the database’s, derived when the lines
-                land, and the two can differ by a rupee until migration 0098 aligns the trigger with the engine
-                (SPEC-P0-1 §2.2) — so the saved invoice is read back from the ledger, never assumed from here.
+                land, and the two can differ by up to a rupee until a pending totals alignment lands — so the saved
+                invoice is read back from the ledger, never assumed from here.
               </span>
             </div>
 
@@ -567,9 +567,9 @@ export function CreateInvoiceModal({ isOpen, onClose, bookingNo, onSuccess }: Cr
               <Row label="Payment terms" value={preview.paymentTerms} />
               <Row label="Due" value={<BsAdDate date={preview.dueDateAd} layout="inline" />} />
               <span style={{ color: 'var(--muted)' }}>
-                R-02 — an invoice is created as a Draft and stays a Draft for the whole rental, so damage and late fees
-                can still be added to it. R-15 — a Draft carries no number; it is minted by the database at issue, so
-                the tax-invoice sequence has no gap for a draft that was abandoned.
+                An invoice is created as a Draft and stays a Draft for the whole rental, so damage and late fees can
+                still be added to it. A Draft carries no number — it is minted at issue, so the numbering has no gap
+                for a draft that was abandoned.
               </span>
             </div>
 

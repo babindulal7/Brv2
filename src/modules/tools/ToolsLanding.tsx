@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { useViewport } from '../../lib/device'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { isMoneySurface, getToolsStatus } from '../../lib/queries/tools'
@@ -116,7 +117,7 @@ export default function ToolsLanding() {
   ]
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
       <PageHeader
         icon="tool"
         title="Tools"
@@ -263,6 +264,6 @@ export default function ToolsLanding() {
       {activeTab === 'cinematography' && <CineTools />}
 
       <FooterNote extra={['All calculators run locally within Tools without navigating away']} />
-    </div>
+    </PageShell>
   )
 }

@@ -207,8 +207,8 @@ async function mountAt(path: string, element: ReactNode, pattern: string) {
   )
 }
 
-const buttons = () => [...container.querySelectorAll('button')]
-const text = () => container.textContent ?? ''
+const buttons = () => [...document.body.querySelectorAll('button')]
+const text = () => document.body.textContent ?? ''
 
 /**
  * The workspace primary is `--cat-1` filled (`BLUE_PRIMARY` in each file), and
@@ -228,6 +228,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
+  document.body.innerHTML = ''
 })
 
 describe('Spec 03 §3.1 — queue chips filter ONE time-ordered list', () => {
@@ -297,7 +298,7 @@ describe('Spec 03 §3.1 — queue chips filter ONE time-ordered list', () => {
       filters?.click()
     })
     expect(filters?.getAttribute('aria-expanded')).toBe('true')
-    expect(container.querySelector('#operations-filters')).not.toBeNull()
+    expect(document.querySelector('#operations-filters')).not.toBeNull()
     const expandAlerts = buttons().find((b) => b.getAttribute('aria-label') === 'Expand Alerts')
     await act(async () => {
       expandAlerts?.click()

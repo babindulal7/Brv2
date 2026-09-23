@@ -37,7 +37,11 @@ import AlertsPanel from '../today/AlertsPanel'
 import { useViewport } from '../../lib/device'
 import { kathmanduCivil, NPT_OFFSET_MIN, getBusinessToday } from '../../lib/bs'
 import { CalendarPopover, DateField } from '../../components/ui/DateField'
-import { FilterButton, FilterDrawer, FilterSection } from '../../components/ui/FilterDrawer'
+import { FilterButton, FilterSection } from '../../components/ui/FilterDrawer'
+import { AppSidePanel } from '../../components/shell/AppSidePanel'
+import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { Pagination } from '../../components/ui/Pagination'
 import './operations.css'
 import { useOperationsWorkspace } from './OperationsWorkspaceContext'
 
@@ -88,6 +92,18 @@ const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-met
  *    (`CollapsibleAside`) at this width, because that hides it behind a 28px
  *    handle, which is not what §3.1's tablet drawing shows;
  *  - **phone <768** — the table becomes card rows, rail content still inline.
+ *
+ * ## Consolidated 22 Sep 2026 (owner review)
+ *
+ * The day scope, client and project filters had grown three surfaces — a
+ * topline row, a filters row, and the drawer — so the same control appeared
+ * two or three times on one screen. There is now exactly one of each: the
+ * header holds page actions only (Scan, More), the chip row selects the
+ * queue, and one toolbar below it carries day scope, search, client,
+ * project and the drawer's Filters button. The drawer keeps only what has
+ * no toolbar home (queue side, exception facets, alerts). The dead
+ * "All staff" select — one option, no handler — was removed rather than
+ * shipped as a disabled promise.
  *
  * ## What changed on 12 Aug, and why
  *
@@ -605,8 +621,6 @@ export default function OperationsQueues() {
   const currentPage = Math.min(page, pageCount - 1)
   const pagedJobs = visibleJobs.slice(currentPage * pageSize, currentPage * pageSize + pageSize)
   const allVisibleSelected = pagedJobs.length > 0 && pagedJobs.every((job) => selectedBookingNos.has(job.bookingNo))
-  const resultStart = visibleJobs.length === 0 ? 0 : currentPage * pageSize + 1
-  const resultEnd = Math.min((currentPage + 1) * pageSize, visibleJobs.length)
   const operationFilterCount = [
     scope !== 'today',
     group !== null,
@@ -615,11 +629,6 @@ export default function OperationsQueues() {
     projectFilter !== 'all',
     search.trim() !== '',
   ].filter(Boolean).length
-  const pageNumbers = Array.from({ length: Math.min(pageCount, 5) }, (_, index) => {
-    if (pageCount <= 5) return index
-    const start = Math.min(Math.max(currentPage - 2, 0), pageCount - 5)
-    return start + index
-  })
   useEffect(() => {
     setPage(0)
   }, [search, clientFilter, projectFilter, selected, group, exception, scope, pageSize])
@@ -661,7 +670,7 @@ export default function OperationsQueues() {
         className="operations-v2"
         style={{
           display: 'grid',
-          gridTemplateColumns: showMoreFilters && viewport !== 'phone' ? 'minmax(230px, 280px) minmax(0,1fr)' : 'minmax(0,1fr)',
+          gridTemplateColumns: 'minmax(0,1fr)',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
@@ -694,7 +703,7 @@ export default function OperationsQueues() {
 
       <div
         style={{
-          gridColumn: showMoreFilters && viewport !== 'phone' ? 2 : 1,
+          gridColumn: 1,
           gridRow: 2,
           minWidth: 0,
           display: 'flex',
@@ -754,33 +763,55 @@ export default function OperationsQueues() {
         {(isFiltered || search || clientFilter !== 'all' || projectFilter !== 'all') && <Button variant="ghost" onClick={clearOperationFilters}>Clear filters</Button>}
       </div>
 
+      <AppPageToolbar
+        bulkActions={selectedBookingNos.size > 0 ? <span className="figure">{selectedBookingNos.size} selected</span> : undefined}
+        pagination={
+          <Pagination
+            page={currentPage + 1}
+            total={visibleJobs.length}
+            pageSize={pageSize}
+            pageSizeOptions={[20, 50, 100]}
+            onPageChange={(nextPage) => setPage(nextPage - 1)}
+            onPageSizeChange={setPageSize}
+          />
+        }
+      />
+
       {selected === 'Cases' ? <CasesWorkspace embedded /> : (
         <Card style={{ overflow: 'hidden' }} bodyStyle={{ padding: 0 }}>
           <PageBody loading={list.loading} error={list.error} onRetry={refreshAll} hasRows={jobs.length > 0} empty={list.isEmpty} emptyIsFiltered={list.isFiltered} onClearFilters={clearOperationFilters} noun="jobs" skeleton="table" skeletonRows={6} emptyTitle={emptyTitle} emptyMessage={emptyMessage}>
             {!tabular && <div style={{ padding: 10, display: 'grid', gap: 8 }}>{pagedJobs.map((job) => <article key={job.id} style={{ ...cardStyle, padding: 14, display: 'grid', gap: 8 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><Link to={`/rentals/${job.bookingNo}`} className="identifier">{job.bookingNo}</Link><StageBadge stage={job.stage} /></div><div>{job.clientName} · {job.project ?? '—'}</div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span>{formatDueAt(job.dueAtAd)} · {job.itemCount} items</span><Button size="sm" onClick={() => navigate(jobRoute(job.bookingNo, job.job))}>{job.job}</Button></div></article>)}</div>}
             {tabular && <div style={{ overflowX: 'auto' }}><table className="operations-v2__table"><thead><tr><th style={{ ...th, width: 44 }}><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleBookings} aria-label="Select visible bookings" /></th>{['Booking', 'Client', 'Project', 'Items', 'Stage', 'Time', 'Action', ''].map((heading, index) => <th key={heading || index} style={th}>{heading}</th>)}</tr></thead><tbody>{pagedJobs.map((job) => <tr key={job.id} style={{ borderLeft: job.isPastDue ? '2px solid var(--danger)' : '2px solid transparent' }}><td style={{ ...td, width: 44 }}><input type="checkbox" checked={selectedBookingNos.has(job.bookingNo)} onChange={() => toggleBooking(job.bookingNo)} aria-label={`Select ${job.bookingNo}`} /></td><td style={td}><Link to={`/rentals/${job.bookingNo}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 700, textDecoration: 'none' }}>{job.bookingNo}</Link></td><td style={td}><Link to={`/clients/${job.clientId}`} style={{ color: 'inherit', textDecoration: 'none' }}>{job.clientName}</Link></td><td style={{ ...td, color: 'var(--text2)' }}>{job.project ?? '—'}</td><td className="figure" style={td}>{job.itemCount}</td><td style={td}><StageBadge stage={job.stage} /></td><td className="figure" style={{ ...td, fontWeight: job.isPastDue ? 700 : 500, color: job.isPastDue ? 'var(--danger-text)' : 'var(--text)' }}>{formatDueAt(job.dueAtAd)}</td><td style={td}><Button size="sm" variant="secondary" onClick={() => navigate(jobRoute(job.bookingNo, job.job))}>{job.job}</Button></td><td style={{ ...td, width: 44 }}><Link to={`/rentals/${job.bookingNo}`} aria-label={`More for booking ${job.bookingNo}`} style={{ color: 'var(--muted)' }}><Icon name="chevron_right" size={18} /></Link></td></tr>)}</tbody></table>{jobs.length > 0 && visibleJobs.length === 0 && <div className="operations-v2__empty-search">No jobs match “{search}”.</div>}</div>}
           </PageBody>
-          <div className="operations-v2__resultbar"><span>{list.total === null ? 'Loading results…' : `Showing ${resultStart}–${resultEnd} of ${visibleJobs.length} ${visibleJobs.length === 1 ? 'job' : 'jobs'}`}{selectedBookingNos.size > 0 ? ` · ${selectedBookingNos.size} selected` : ''}</span><div className="operations-v2__pagination"><label>Rows per page <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>{[20, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>{pageCount > 1 && <><Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={currentPage === 0} aria-label="Previous page" icon="chevron_left"> </Button>{pageNumbers.map((number) => <Button key={number} variant={number === currentPage ? 'secondary' : 'outline'} size="sm" onClick={() => setPage(number)} aria-current={number === currentPage ? 'page' : undefined}>{number + 1}</Button>)}<Button variant="outline" size="sm" onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={currentPage === pageCount - 1} aria-label="Next page" icon="chevron_right"> </Button></>}</div></div>
+          <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+            <Pagination
+              page={currentPage + 1}
+              total={visibleJobs.length}
+              pageSize={pageSize}
+              pageSizeOptions={[20, 50, 100]}
+              onPageChange={(nextPage) => setPage(nextPage - 1)}
+              onPageSizeChange={setPageSize}
+            />
+          </div>
         </Card>
       )}
       </div>
 
       <FastReturnModal isOpen={fastReturnOpen} onClose={() => setFastReturnOpen(false)} onSuccess={refreshAll} />
       <BarcodeLookupModal isOpen={barcodeModalOpen} onClose={() => setBarcodeModalOpen(false)} />
-      <FilterDrawer
+      <WorkspaceLeftPanel>
+      <AppSidePanel
         id="operations-filters"
-        open={showMoreFilters}
-        onClose={() => setShowMoreFilters(false)}
-        desktopMode="rail"
-        railStyle={{ gridColumn: 1, gridRow: 2 }}
         side="left"
-        width={360}
-        resultCount={list.loading ? null : visibleJobs.length}
-        noun={visibleJobs.length === 1 ? 'job' : 'jobs'}
-        activeCount={operationFilterCount}
-        onClearAll={clearOperationFilters}
-        standardFooter
-        onApply={() => setShowMoreFilters(false)}
+        title={`Filters · ${visibleJobs.length} ${visibleJobs.length === 1 ? 'job' : 'jobs'}`}
+        isOpen={showMoreFilters}
+        onClose={() => setShowMoreFilters(false)}
+        footer={
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
+            <Button onClick={clearOperationFilters} disabled={operationFilterCount === 0}>Reset</Button>
+            <Button variant="primary" onClick={() => setShowMoreFilters(false)}>Apply</Button>
+          </div>
+        }
       >
         <div style={{ display: 'grid', gap: 'var(--sp-xs)' }}>
           <FilterSection title="Date range">
@@ -858,7 +889,8 @@ export default function OperationsQueues() {
             <AlertsPanel alerts={alertRows} loading={alertsQ.loading || quotesQ.loading} error={alertsQ.error ?? quotesQ.error} onRetry={retryAlerts} />
           </FilterSection>
         </div>
-      </FilterDrawer>
+      </AppSidePanel>
+      </WorkspaceLeftPanel>
       <div style={{ gridColumn: '1 / -1' }}>
         <FooterNote extra={['Queues are stages — no page defines its own status names']} />
       </div>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Card, PageHeader, Button, FooterNote } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { PageBody } from '../../components/ui/PageBody'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
@@ -365,7 +366,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
 
   if (!user || !canUpdateBundle(user.role)) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+      <PageShell width="full">
         <PageHeader icon="queues" title="Edit bundle" description={bundleRef ?? ''} />
         <PageBody
           restricted
@@ -375,13 +376,13 @@ export default function EditBundle(props: EditBundleProps = {}) {
         >
           {null}
         </PageBody>
-      </div>
+      </PageShell>
     )
   }
 
   if (!bundle || !draft) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+      <PageShell width="full">
         <PageHeader icon="queues" title="Edit bundle" description={bundleRef ?? ''} />
         <PageBody
           loading={record.loading}
@@ -397,7 +398,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
         >
           {null}
         </PageBody>
-      </div>
+      </PageShell>
     )
   }
 
@@ -503,7 +504,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
           : null
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)', paddingBottom: 60 }}>
+    <PageShell width="full">
       <PageHeader
         icon="queues"
         title={`Edit ${bundle.name}`}
@@ -801,6 +802,6 @@ export default function EditBundle(props: EditBundleProps = {}) {
           'A component edit is recorded against the bundle, not the row — bundle_items has no updated_by.',
         ]}
       />
-    </div>
+    </PageShell>
   )
 }

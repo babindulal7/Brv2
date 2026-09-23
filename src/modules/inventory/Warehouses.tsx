@@ -1,3 +1,4 @@
+import { Pagination } from '../../components/ui/Pagination'
 import { useMemo, useRef, useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
@@ -5,6 +6,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Input, Select } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend, HBars, GroupedBars } from '../../components/ui/Charts'
@@ -993,7 +995,7 @@ export default function Warehouses() {
   /* ── render ──────────────────────────────────────────────────────────── */
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
       <PageHeader
         icon="home"
         title="Warehouse Management"
@@ -1502,91 +1504,7 @@ export default function Warehouses() {
                   borderTop: '1px solid var(--border)',
                 }}
               >
-                <span>
-                  Showing {filtered.length === 0 ? 0 : start + 1} to {start + visible.length} of {filtered.length} warehouses
-                </span>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  Rows per page
-                  <Select
-                    value={rowsPerPage}
-                    onChange={(e) => {
-                      setRowsPerPage(Number(e.target.value))
-                      setPage(1)
-                    }}
-                    aria-label="Rows per page"
-                    style={selectStyle}
-                  >
-                    {ROWS_PER_PAGE_OPTIONS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: 3, alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={() => setPage(safePage - 1)}
-                    disabled={safePage === 1}
-                    aria-label="Previous page"
-                    style={{
-                      minWidth: 26,
-                      height: 26,
-                      borderRadius: 7,
-                      border: '1px solid var(--border)',
-                      background: 'transparent',
-                      color: safePage === 1 ? 'var(--disabled)' : 'var(--text2)',
-                      cursor: safePage === 1 ? 'not-allowed' : 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    ‹
-                  </button>
-                  {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => {
-                    const on = n === safePage
-                    return (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setPage(n)}
-                        aria-current={on ? 'page' : undefined}
-                        style={{
-                          minWidth: 26,
-                          height: 26,
-                          borderRadius: 7,
-                          border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
-                          background: on ? 'var(--btn-primary-bg)' : 'transparent',
-                          color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
-                          fontSize: 'var(--t-meta)',
-                          fontWeight: on ? 700 : 500,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        {n}
-                      </button>
-                    )
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => setPage(safePage + 1)}
-                    disabled={safePage === pageCount}
-                    aria-label="Next page"
-                    style={{
-                      minWidth: 26,
-                      height: 26,
-                      borderRadius: 7,
-                      border: '1px solid var(--border)',
-                      background: 'transparent',
-                      color: safePage === pageCount ? 'var(--disabled)' : 'var(--text2)',
-                      cursor: safePage === pageCount ? 'not-allowed' : 'pointer',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    ›
-                  </button>
-                </span>
+                <Pagination page={safePage} total={filtered.length} pageSize={rowsPerPage} onPageChange={setPage} pageSizeOptions={ROWS_PER_PAGE_OPTIONS} onPageSizeChange={(size) => { setRowsPerPage(size); setPage(1) }} />
               </div>
             </Card>
           </div>
@@ -2400,6 +2318,6 @@ export default function Warehouses() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   )
 }

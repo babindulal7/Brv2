@@ -13,6 +13,7 @@ import { STATUS, jobStateChip } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
 import { BarcodeScannerModal, type ScanOutcome } from '../../components/ui/BarcodeScannerModal'
+import { Input } from '../../components/ui/Input'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { CompactButton } from '../../components/ui/TouchTarget'
 import { useViewport } from '../../lib/device'
@@ -473,6 +474,7 @@ export interface PackingWorkspaceProps {
     complete: () => void
     isDirty: boolean
     label?: string
+    error?: string | null
   }) => void
 }
 
@@ -820,6 +822,27 @@ export default function PackingWorkspace({
     return { ok: true, message: `${how} — nothing is recorded until Complete Packing.` }
   }
 
+  const [ambientBarcode, setAmbientBarcode] = useState('')
+  const handleAmbientBarcodeSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const code = ambientBarcode.trim().toLowerCase()
+    if (!code) return
+    const match = rows.find(
+      (r) =>
+        (r.serial && r.serial.toLowerCase() === code) ||
+        r.key.toLowerCase() === code ||
+        (r.name && r.name.toLowerCase() === code) ||
+        (r.assetId && r.assetId.toLowerCase() === code)
+    )
+    if (match) {
+      pack(match.key, 'scan')
+      setAmbientBarcode('')
+    } else {
+      setScanLog((p) => [`✕ No equipment matching "${ambientBarcode.trim()}" in this booking`, ...p].slice(0, 5))
+      setAmbientBarcode('')
+    }
+  }
+
   /**
    * PK-07 — this is what the button labelled **"Bulk Scan"** did: mark every
    * row Packed, with no scan, no serial read and no verification of any kind.
@@ -969,9 +992,10 @@ export default function PackingWorkspace({
       complete: completePacking,
       isDirty,
       label: 'Confirm & Next →',
+      error: dispatchError,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onRegisterActions, canComplete, dispatching, isDirty])
+  }, [onRegisterActions, canComplete, dispatching, isDirty, dispatchError])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
 
@@ -1344,6 +1368,47 @@ export default function PackingWorkspace({
                     )
                   }
                 >
+                  <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                    <form
+                      onSubmit={handleAmbientBarcodeSubmit}
+                      style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', width: '100%' }}
+                    >
+                      <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+                        <span style={{ position: 'absolute', left: 12, color: 'var(--primary)', display: 'grid', placeItems: 'center' }}>
+                          <Icon name="barcode" size={18} />
+                        </span>
+                        <Input
+                          type="text"
+                          value={ambientBarcode}
+                          onChange={(e) => setAmbientBarcode(e.target.value)}
+                          placeholder="Scan or type barcode/serial number and press Enter…"
+                          aria-label="Scan or type barcode"
+                          style={{
+                            width: '100%',
+                            minHeight: 44,
+                            paddingLeft: 38,
+                            borderRadius: 'var(--r-btn)',
+                            background: 'var(--surface)',
+                            fontSize: 'var(--t-meta)',
+                            border: '1px solid var(--primary)',
+                          }}
+                        />
+                      </div>
+                      <Button type="submit" variant="secondary" style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}>
+                        {/* RULING 2026-09-23: one filled primary per workspace, and it is the completion gate (Complete Packing). The ambient scan-into-mark control is auxiliary — secondary, not primary. */}
+                        Mark Packed
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setShowScanner(true)}
+                        style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
+                      >
+                        <Icon name="camera" size={16} />
+                        Camera
+                      </Button>
+                    </form>
+                  </div>
                   <div style={{ display: 'flex', gap: 7, padding: '9px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
                     <input
                       value={queryInput}

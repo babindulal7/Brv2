@@ -45,6 +45,7 @@ export interface WorkspaceActions {
   complete: () => void
   isDirty: boolean
   label?: string
+  error?: string | null
 }
 
 export interface OperationsShellProps {
@@ -257,28 +258,51 @@ export default function OperationsShell({
             style={{
               width: '100%',
               display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              gap: 12,
-              flexWrap: 'wrap',
+              flexDirection: 'column',
+              gap: 8,
             }}
           >
-            <Button
-              variant="secondary"
-              onClick={requestPrev}
-              disabled={actions?.dispatching}
-              style={{ minHeight: 'var(--tap)' }}
+            {actions?.error && (
+              <div
+                role="alert"
+                style={{
+                  color: 'var(--danger-text)',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 600,
+                  textAlign: 'right',
+                  padding: '4px 0',
+                }}
+              >
+                {actions.error}
+              </div>
+            )}
+            <div
+              style={{
+                width: '100%',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
             >
-              {leftLabel}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => actions?.complete()}
-              disabled={isCurrentJobCompleted || !actions?.canComplete || actions?.dispatching}
-              style={{ minHeight: 'var(--tap)' }}
-            >
-              {rightLabel}
-            </Button>
+              <Button
+                variant="secondary"
+                onClick={requestPrev}
+                disabled={actions?.dispatching}
+                style={{ minHeight: 'var(--tap)' }}
+              >
+                {leftLabel}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => actions?.complete()}
+                disabled={isCurrentJobCompleted || !actions?.canComplete || actions?.dispatching}
+                style={{ minHeight: 'var(--tap)' }}
+              >
+                {rightLabel}
+              </Button>
+            </div>
           </div>
         }
       >

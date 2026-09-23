@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
+import { InfoTooltip } from '../../components/ui/InfoTooltip'
 import { Card, PageHeader, Button, Rail, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { thStyle } from '../../components/ui/TableHeaderCell'
@@ -112,9 +113,11 @@ const controlStyle: CSSProperties = {
 function FieldShell({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-      <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>{label}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>{label}</span>
+        {hint && <InfoTooltip content={hint} />}
+      </div>
       {children}
-      {hint && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</span>}
     </label>
   )
 }

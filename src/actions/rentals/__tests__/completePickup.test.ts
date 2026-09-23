@@ -96,6 +96,17 @@ describe('completePickup', () => {
     db.state.floorVerbCalls = [];
   });
 
+  describe('retired 21 Sep 2026 (Audit-01 P1-03)', () => {
+    /* The dispatcher fails closed on anything that is not `implemented: true`,
+       so this flag is the only thing keeping a checkout path with fabricated
+       `governmentIdVerified: true` / `bookingAuthorizationVerified: true`
+       inputs from running. The execute tests below call the config directly —
+       they document what the retired body did, NOT a path the app can reach. */
+    it('is not implemented — the dispatcher refuses it before validation', () => {
+      expect(completePickupConfig.implemented).toBe(false);
+    });
+  });
+
   describe('validation', () => {
     it('throws when rentalId is missing or empty', () => {
       expect(() =>

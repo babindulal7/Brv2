@@ -1,29 +1,6 @@
 import React, { forwardRef, useState, useRef, useEffect, useId, ReactNode, useImperativeHandle } from 'react'
 import Icon from './Icon'
-
-/**
- * Rebuilt 28 Aug 2026 (UI_UX_AUDIT_2026-08-28 §2, §7). The custom dropdown had
- * ZERO keyboard handling — no Escape, no arrows, no typeahead — and no ARIA
- * state, and the `<label htmlFor>` pointed at the hidden native `<select>`
- * (opacity 0, width 0), which was still in the tab order: a keyboard user
- * could land on an invisible element while the visible trigger had no
- * programmatic name at all.
- *
- * Now the "select-only combobox" pattern (ARIA APG): focus stays on the
- * trigger; Arrow/Home/End move an active-descendant highlight through a
- * `role="listbox"` popup; Enter/Space commit; Escape closes the popup and —
- * critically — STOPS PROPAGATION, so pressing Escape to dismiss the dropdown
- * inside a form Modal no longer closes the whole modal with the half-filled
- * form (the audit's §7). Single-character typeahead jumps by label.
- *
- * ── What deliberately did NOT change ────────────────────────────────────────
- * The hidden native `<select>` stays, with the same `id`, options, and change
- * dispatch: seven module tests reach it via `querySelectorAll('select')` and
- * fire native change events on it, and it is what a `<form>` submits. It is
- * now `tabIndex={-1}` + `aria-hidden` — a form/test bridge, not a focus trap.
- * The prop API, the visual style values, and the controlled/uncontrolled
- * behaviour are unchanged; all ten consuming screens compile as-is.
- */
+import { InfoTooltip } from './InfoTooltip'
 
 export interface SelectOption {
   value: string
@@ -35,13 +12,14 @@ export interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectE
   label?: string
   error?: string | null
   helperText?: string
+  info?: ReactNode
   options?: SelectOption[]
   icon?: React.ReactNode
   placeholder?: string
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, error, helperText, options, icon, children, className, style, id, value, defaultValue, onChange, ...props }, ref) => {
+  ({ label, error, helperText, info, options, icon, children, className, style, id, value, defaultValue, onChange, ...props }, ref) => {
     const selectId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined)
     const reactId = useId()
     /* Stable ids for the ARIA wiring. The native select keeps `selectId`
@@ -232,26 +210,28 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
           }
       }
     }
-
     return (
       <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
         {label && (
-          <label
-            id={labelId}
-            /* Points at the TRIGGER now, not the invisible native select —
-               clicking the label focuses the control a user can actually see. */
-            htmlFor={triggerId}
-            style={{
-              fontSize: 'var(--t-th)',
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-              color: 'var(--muted)',
-            }}
-          >
-            {label}
-            {props.required && <span style={{ color: 'var(--danger-text)', marginLeft: 'var(--sp-xs)' }}>*</span>}
-          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <label
+              id={labelId}
+              /* Points at the TRIGGER now, not the invisible native select —
+                 clicking the label focuses the control a user can actually see. */
+              htmlFor={triggerId}
+              style={{
+                fontSize: 'var(--t-th)',
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                color: 'var(--muted)',
+              }}
+            >
+              {label}
+              {props.required && <span style={{ color: 'var(--danger-text)', marginLeft: 'var(--sp-xs)' }}>*</span>}
+            </label>
+            {info && <InfoTooltip content={info} />}
+          </div>
         )}
 
         <div ref={containerRef} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -325,7 +305,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
               borderRadius: 'var(--r-input)',
               background: 'var(--input-bg)',
               border: '1px solid',
-              borderColor: error ? 'var(--danger)' : isOpen ? 'var(--focus, var(--primary))' : 'var(--input-border)',
+              borderColor: error ? 'var(--danger)' : isOpen ? 'var(--input-focus)' : 'var(--input-border)',
               color: activeValue !== undefined && activeValue !== '' ? 'var(--text)' : 'var(--muted)',
               transition: 'border-color 0.15s ease',
               cursor: props.disabled ? 'not-allowed' : 'pointer',
@@ -406,7 +386,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
                       background: isSelected
                         ? 'var(--st-primary-bg)'
                         : isHighlighted
-                          ? 'var(--st-hover, rgba(0,0,0,0.05))'
+                          ? 'var(--surface-card-hover)' // RULING 2026-09-23: --st-hover never existed; its rgba(0,0,0,.05) fallback is invisible on the dark theme
                           : 'transparent',
                       color: isSelected ? 'var(--st-primary-fg)' : opt.disabled ? 'var(--muted)' : 'var(--text)',
                       borderRadius: 'var(--r-xs)',

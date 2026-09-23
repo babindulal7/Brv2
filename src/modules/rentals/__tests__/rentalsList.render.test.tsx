@@ -150,6 +150,10 @@ function LocationProbe() {
 
 /** v4.1 §7.7's breakpoints — 768 and 1280. Width only (Law 14). */
 async function mount(width: number, entry = '/rentals') {
+  if (root) {
+    await act(async () => root.unmount())
+    container?.remove()
+  }
   Object.defineProperty(window, 'innerWidth', { value: width, configurable: true, writable: true })
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -171,14 +175,15 @@ async function mount(width: number, entry = '/rentals') {
 afterEach(async () => {
   if (root) await act(async () => root.unmount())
   container?.remove()
+  document.body.innerHTML = ''
   stub.total = 1
   lines.rows = []
   lines.shouldFail = false
   authStub.role = 'Owner'
 })
 
-const text = () => container.textContent ?? ''
-const allButtons = () => [...container.querySelectorAll('button')]
+const text = () => document.body.textContent ?? ''
+const allButtons = () => [...document.body.querySelectorAll('button')]
 const button = (label: string) => allButtons().find((b) => b.textContent?.trim() === label)
 
 describe('§4.1 — one list, no tabs', () => {
@@ -358,27 +363,20 @@ describe('§18 — this screen’s filters are the query string', () => {
 })
 
 describe('the three layouts, from one width reading (Law 14)', () => {
-  it('desktop ≥1280 — the collapsed panel costs no width and expands as an in-flow rail', async () => {
+  it('desktop ≥1280 — the shared panel is absent when closed and uses the global width token when open', async () => {
     await mount(1280)
     expect(container.querySelector('table')).not.toBeNull()
 
-    // Closed means the rail is absent and the table gets the full track.
-    const grid = [...container.querySelectorAll<HTMLDivElement>('div')].find(
-      (d) => d.style.display === 'grid' && d.style.gridTemplateColumns !== '',
-    )
-    expect(grid?.style.gridTemplateColumns).toBe('minmax(0,1fr)')
-
-    // Closed by default, and nothing of the panel is in the tree until asked for.
+    // Closed by default, so it consumes no workspace track.
     expect(filterButton()?.getAttribute('aria-expanded')).toBe('false')
+    expect(container.querySelector('.app-side-panel')).toBeNull()
     expect(text()).not.toContain('Save as new filter')
 
     await act(async () => filterButton()!.click())
-    const rail = container.querySelector<HTMLElement>('.filter-rail')
-    expect(rail?.style.position).toBe('sticky')
-    expect(rail?.querySelector('[role="region"]')).not.toBeNull()
-    expect(
-      [...container.querySelectorAll<HTMLElement>('div')].some((d) => d.style.gridTemplateColumns.includes('240px')),
-    ).toBe(true)
+    const panel = container.querySelector<HTMLElement>('.app-side-panel.left')
+    expect(panel?.style.width).toBe('var(--app-panel-width, 320px)')
+    expect(panel?.style.position).toBe('relative')
+    expect(panel?.querySelector('[role="region"]')).not.toBeNull()
   })
 
   it('tablet 768–1279 — fewer columns, and the filter panel is reachable at this width too', async () => {
@@ -564,6 +562,5 @@ describe('§Step 10 & 11 — Sub-Rental refresh and retry', () => {
     expect(liveSubBtn?.disabled).toBe(false)
   })
 })
-
 
 

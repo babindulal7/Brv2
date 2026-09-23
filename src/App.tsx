@@ -23,6 +23,7 @@ import { useViewport } from './lib/device'
 import { canViewMoney, isStaff } from './lib/rbac'
 import { installRoutePreload } from './lib/routePreload'
 import { OperationsWorkspaceProvider } from './modules/operations/OperationsWorkspaceContext'
+import { WorkspaceProvider, useWorkspace } from './lib/workspaceContext'
 
 /* ── lazy-loaded route pages (code-splitting) ─────────────────────────── */
 const Today             = lazy(() => import('./modules/today/Today'))
@@ -312,7 +313,7 @@ export default function App() {
         <Route
           path="/inventory/purchase-requests"
           element={
-            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Purchase Requests' }]} search="Search request, item, supplier…">
+            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Purchase Requests' }]} search="Search request, item, supplier…">
               <PurchaseRequests />
             </Shell>
           }
@@ -328,7 +329,7 @@ export default function App() {
         <Route
           path="/inventory/:assetId"
           element={
-            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Asset' }]} search="Search equipment, serial, SKU, category…">
+            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Asset' }]} search="Search equipment, serial, SKU, category…">
               <AssetDetail />
             </Shell>
           }
@@ -356,7 +357,7 @@ export default function App() {
         <Route
           path="/inventory/bundles/:bundleRef"
           element={
-            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Bundles' }, { label: 'Bundle' }]} search="Search inventory, category…">
+            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Bundles', to: '/inventory?tab=bundles' }, { label: 'Bundle' }]} search="Search inventory, category…">
               <BundleDetail />
             </Shell>
           }
@@ -412,7 +413,7 @@ export default function App() {
         <Route
           path="/inventory/cases"
           element={
-            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Cases' }]} search="Search case ID, title, client…">
+            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Cases' }]} search="Search case ID, title, client…">
               <CasesWorkspace />
             </Shell>
           }
@@ -423,7 +424,7 @@ export default function App() {
         <Route
           path="/inventory/cases/:id"
           element={
-            <Shell crumbs={[{ label: 'Inventory' }, { label: 'Cases' }]} search="Search case ID, title, client…">
+            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Cases' }]} search="Search case ID, title, client…">
               <CasesWorkspace />
             </Shell>
           }
@@ -440,7 +441,7 @@ export default function App() {
         <Route
           path="/operations/sub-rental"
           element={
-            <Shell crumbs={[{ label: 'Operations' }, { label: 'Sub Rental' }]} search="Search SR ID, equipment, partner…">
+            <Shell crumbs={[{ label: 'Operations', to: '/operations' }, { label: 'Sub Rental' }]} search="Search SR ID, equipment, partner…">
               <SubRental />
             </Shell>
           }
@@ -467,7 +468,7 @@ export default function App() {
         <Route
           path="/finance/closing"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Daily Closing' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Daily Closing' }]}>
               <DailyClosing />
             </Shell>
           }
@@ -476,13 +477,13 @@ export default function App() {
         <Route path="/finance/invoices" element={<Navigate to="/finance?tab=invoices" replace />} />
         <Route path="/finance/payments" element={<Navigate to="/finance?tab=payments" replace />} />
         <Route path="/finance/expenses" element={<Navigate to="/finance?tab=expenses" replace />} />
-        <Route path="/finance/documents" element={<Navigate to="/finance?tab=documents" replace />} />
+        <Route path="/finance/documents" element={<Navigate to="/documents" replace />} />
         <Route path="/finance/reports" element={<Navigate to="/finance?tab=reports" replace />} />
 
         <Route
           path="/reports/pulse"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Pulse' }]} search="Search reports…">
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Pulse' }]} search="Search reports…">
               <Pulse />
             </Shell>
           }
@@ -492,7 +493,7 @@ export default function App() {
           path="/reports/expenses"
           element={
             <Shell
-              crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Expense Reports' }]}
+              crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Expense Reports' }]}
               search="Search expense, vendor, category, staff, note…"
             >
               <ExpenseReports />
@@ -503,7 +504,7 @@ export default function App() {
         <Route
           path="/reports/clients"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Client Ledger' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Client Ledger' }]}>
               <ClientReports />
             </Shell>
           }
@@ -512,7 +513,7 @@ export default function App() {
         <Route
           path="/reports/promotions"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Promotions' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Promotions' }]}>
               <PromotionsReports />
             </Shell>
           }
@@ -521,7 +522,7 @@ export default function App() {
         <Route
           path="/reports/staff"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Staff Performance' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Staff Performance' }]}>
               <StaffReports />
             </Shell>
           }
@@ -530,7 +531,7 @@ export default function App() {
         <Route
           path="/reports/inventory"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Inventory Reports' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Inventory Reports' }]}>
               <InventoryReports />
             </Shell>
           }
@@ -543,7 +544,7 @@ export default function App() {
         <Route
           path="/reports/products"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Product Reports' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Product Reports' }]}>
               <ProductReports />
             </Shell>
           }
@@ -552,7 +553,7 @@ export default function App() {
         <Route
           path="/reports/equipment-performance"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Equipment Performance' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Equipment Performance' }]}>
               <EquipmentPerformance />
             </Shell>
           }
@@ -561,7 +562,7 @@ export default function App() {
         <Route
           path="/reports/forecasting"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Forecasting & AI' }]}>
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Forecasting & AI' }]}>
               <ForecastingReports />
             </Shell>
           }
@@ -570,7 +571,7 @@ export default function App() {
         <Route
           path="/reports/cash-flow"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Cash Flow' }]} search="Search reports…">
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Cash Flow' }]} search="Search reports…">
               <CashFlowReport />
             </Shell>
           }
@@ -579,7 +580,7 @@ export default function App() {
         <Route
           path="/reports/working-capital"
           element={
-            <Shell crumbs={[{ label: 'Finance' }, { label: 'Reports' }, { label: 'Working Capital' }]} search="Search reports…">
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Working Capital' }]} search="Search reports…">
               <WorkingCapital />
             </Shell>
           }
@@ -596,7 +597,7 @@ export default function App() {
         <Route
           path="/clients/:id"
           element={
-            <Shell crumbs={[{ label: 'Clients' }, { label: 'Client Profile' }]} search="Search client, company, PAN, phone…">
+            <Shell crumbs={[{ label: 'Clients', to: '/clients' }, { label: 'Client Profile' }]} search="Search client, company, PAN, phone…">
               <ClientDetail />
             </Shell>
           }
@@ -622,7 +623,7 @@ export default function App() {
         <Route
           path="/admin/audit"
           element={
-            <Shell crumbs={[{ label: 'Administration' }, { label: 'Immutable Audit Trail' }]}>
+            <Shell crumbs={[{ label: 'Administration', to: '/settings?tab=system' }, { label: 'Immutable Audit Trail' }]}>
               <AuditSettings />
             </Shell>
           }
@@ -631,7 +632,7 @@ export default function App() {
         <Route
           path="/admin/audit-settings"
           element={
-            <Shell crumbs={[{ label: 'Admin' }, { label: 'Audit Settings' }]}>
+            <Shell crumbs={[{ label: 'Admin', to: '/settings?tab=system' }, { label: 'Audit Settings' }]}>
               <AuditSettings />
             </Shell>
           }
@@ -656,7 +657,7 @@ export default function App() {
         <Route
           path="/admin/audit-log"
           element={
-            <Shell crumbs={[{ label: 'Settings' }, { label: 'Audit Log' }]}>
+            <Shell crumbs={[{ label: 'Settings', to: '/settings' }, { label: 'Audit Log' }]}>
               <AuditLog />
             </Shell>
           }
@@ -665,7 +666,7 @@ export default function App() {
         <Route
           path="/admin/activity-log"
           element={
-            <Shell crumbs={[{ label: 'Settings' }, { label: 'Activity Log' }]}>
+            <Shell crumbs={[{ label: 'Settings', to: '/settings' }, { label: 'Activity Log' }]}>
               <ActivityLog />
             </Shell>
           }
@@ -674,7 +675,7 @@ export default function App() {
         <Route
           path="/admin/numbering"
           element={
-            <Shell crumbs={[{ label: 'Settings' }, { label: 'Numbering Sequences' }]}>
+            <Shell crumbs={[{ label: 'Settings', to: '/settings' }, { label: 'Numbering Sequences' }]}>
               <NumberingSequences />
             </Shell>
           }
@@ -683,7 +684,7 @@ export default function App() {
         <Route
           path="/admin/backup"
           element={
-            <Shell crumbs={[{ label: 'Settings' }, { label: 'Backup & Restore' }]}>
+            <Shell crumbs={[{ label: 'Settings', to: '/settings' }, { label: 'Backup & Restore' }]}>
               <BackupRestore />
             </Shell>
           }
@@ -861,20 +862,47 @@ function MockBanner() {
       style={{
         background: 'var(--st-progress-bg)',
         color: 'var(--st-progress-fg)',
-        padding: '8px 16px',
+        padding: '6px 16px',
         fontSize: 'var(--t-meta)',
         fontWeight: 600,
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'space-between',
         gap: 8,
         borderBottom: '1px solid var(--border)',
       }}
     >
-      <Icon name="error" size={16} />
-      <span style={{ minWidth: 0 }}>
-        Mock data — local corpus, not your Supabase project. Nothing here is real
-        and nothing you change leaves this browser.
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <Icon name="error" size={16} />
+        <span style={{ minWidth: 0 }}>
+          Mock mode (clean database) — all pre-seeded demo records removed. Login with owner@babinrentals.com.
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={() => {
+          try {
+            localStorage.removeItem('babin.mock.overlay.v1')
+            localStorage.removeItem('babin.mock.session.v1')
+            window.location.reload()
+          } catch {
+            /* ignore */
+          }
+        }}
+        style={{
+          background: 'transparent',
+          border: '1px solid currentColor',
+          color: 'inherit',
+          padding: '2px 8px',
+          borderRadius: 4,
+          cursor: 'pointer',
+          fontSize: '11px',
+          fontWeight: 600,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Reset Local Cache
+      </button>
     </div>
   )
 }
@@ -930,9 +958,11 @@ function BookingShell({
   children: ReactNode
 }) {
   const { bookingNo } = useParams()
+  // Non-last crumbs link; the current page (the booking itself, or its
+  // workspace step) keeps no `to` — Header renders the last one inert.
   const crumbs: Crumb[] = [
-    { label: 'Rentals List' },
-    { label: 'Bookings' },
+    { label: 'Rentals List', to: '/rentals' },
+    { label: 'Bookings', to: '/rentals' },
     { label: bookingNo ?? 'Booking' },
     ...(tail ? [{ label: tail }] : []),
   ]
@@ -1007,56 +1037,111 @@ function Shell({
     (!isStaff(user.role) && isStaffSurface(pathname))
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        minHeight: '100dvh',
-        /* v4.2 §3 — the shell is TRANSPARENT so <body>'s fixed canvas gradient
-           is the app's backdrop. Painting --app here was hiding the canvas
-           behind an opaque flat fill, which also left the glass surfaces
-           nothing to blur. Theme transition moved to body (theme.css). */
-        background: 'transparent',
-      }}
-    >
-      <a className="skip-to-content" href="#main-content">Skip to content</a>
-      {!phone && <Sidebar active={pathname + query} />}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+    <WorkspaceProvider>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100dvh',
+          overflow: 'hidden',
+          /* v4.2 §3 — the shell is TRANSPARENT so <body>'s fixed canvas gradient
+             is the app's backdrop. Painting --app here was hiding the canvas
+             behind an opaque flat fill, which also left the glass surfaces
+             nothing to blur. Theme transition moved to body (theme.css). */
+          background: 'transparent',
+        }}
+      >
+        <a className="skip-to-content" href="#main-content">Skip to content</a>
         <MockBanner />
         <OfflineBanner />
-        <HeaderBar crumbs={crumbs} {...(search ? { searchPlaceholder: search } : {})} />
-        <main
-          id="main-content"
-          tabIndex={-1}
-          data-floor={isFloor ? 'true' : undefined}
-          style={{
-            flex: 1,
-            /* `BAR_BOX`, not `BOTTOM_BAR_HEIGHT`: the bar occupies its 58px plus
-               the home-indicator inset, so reserving only the 58 leaves the last
-               row of content under the bar on a notched phone. Floor routes add
-               another 64px on phone for StickyFloorBar. */
-            padding: phone
-              ? `var(--page-padding) var(--page-padding) calc(${hasElevatedStickyBar ? '88px' : '24px'} + ${BAR_BOX})`
-              : 'var(--page-padding)',
-          }}
-        >
-          {isForbidden ? (
-            <div style={{ maxWidth: 420, margin: '10vh auto 0' }}>
-              <RestrictedState reason={`Your role (${user.role}) does not have access to this module.`} />
-            </div>
-          ) : (
-            <ErrorBoundary>
-              <Suspense fallback={<LoadingSkeleton type="card" label="Loading…" />}>
-                {children}
-              </Suspense>
-            </ErrorBoundary>
-          )}
-        </main>
-      </div>
-      {phone && <BottomBar active={pathname + query} />}
-      <ScannerFab />
 
-      {/* Screen Lock Overlay */}
-      {isLocked && <ScreenLock onUnlock={() => setLocked(false)} />}
+        {/* Global Header spans 100% width, WorkspaceContext provides dynamic actions */}
+        <WorkspaceContextConsumer search={search} crumbs={crumbs} />
+
+        <div className="app-workspace" style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+          {!phone && <Sidebar active={pathname + query} />}
+
+          <WorkspaceContent isForbidden={isForbidden} user={user} phone={phone} hasElevatedStickyBar={hasElevatedStickyBar} isFloor={isFloor}>
+            {children}
+          </WorkspaceContent>
+        </div>
+
+        {phone && <BottomBar active={pathname + query} />}
+        <ScannerFab />
+
+        {/* Screen Lock Overlay */}
+        {isLocked && <ScreenLock onUnlock={() => setLocked(false)} />}
+      </div>
+    </WorkspaceProvider>
+  )
+}
+
+function WorkspaceContextConsumer({ crumbs, search }: { crumbs: Crumb[], search?: string | undefined }) {
+  return (
+    <HeaderBar
+      crumbs={crumbs}
+      {...(search !== undefined ? { searchPlaceholder: search } : {})}
+    />
+  )
+}
+
+interface WorkspaceContentProps {
+  isForbidden: boolean
+  user: ReturnType<typeof useAuth>['user']
+  phone: boolean
+  hasElevatedStickyBar: boolean
+  isFloor: boolean
+  children: ReactNode
+}
+
+function WorkspaceContent({
+  isForbidden,
+  user,
+  phone,
+  hasElevatedStickyBar,
+  isFloor,
+  children
+}: WorkspaceContentProps) {
+  const { setLeftPanelElement, setRightPanelElement, setHeaderActionsElement } = useWorkspace()
+
+  return (
+    <div className="workspace-content" style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
+      {/* Left Panel Mount Point */}
+      <div ref={setLeftPanelElement} style={{ display: 'contents' }} />
+
+      <main
+        id="main-content"
+        className="app-workspace-main"
+        tabIndex={-1}
+        data-floor={isFloor ? 'true' : undefined}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          padding: phone
+            ? `var(--page-padding) var(--page-padding) calc(${hasElevatedStickyBar ? '88px' : '24px'} + ${BAR_BOX})`
+            : 'var(--page-padding)',
+          overflowY: 'auto',
+          overflowX: 'hidden'
+        }}
+      >
+        <div className="workspace-page-actions" ref={setHeaderActionsElement} />
+        {isForbidden ? (
+          <div style={{ maxWidth: 420, margin: '10vh auto 0' }}>
+            <RestrictedState reason={`Your role (${user?.role ?? 'unknown'}) does not have access to this module.`} />
+          </div>
+        ) : (
+          <ErrorBoundary>
+            <Suspense fallback={<LoadingSkeleton type="card" label="Loading…" />}>
+              {children}
+            </Suspense>
+          </ErrorBoundary>
+        )}
+      </main>
+
+      {/* Right Panel Mount Point */}
+      <div ref={setRightPanelElement} style={{ display: 'contents' }} />
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject } from 'react'
 import Icon from '../../../components/ui/Icon'
 import type { IconName } from '../../../components/ui/Icon'
+import { InfoTooltip } from '../../../components/ui/InfoTooltip'
 import { useToast } from '../../../components/ui/Toast'
 import { useCanViewMoney } from '../../../lib/moneyVisibility'
 import { createClient } from '../../../actions/clients/createClient'
@@ -310,17 +311,20 @@ function Field({
   const labelStyle: CSSProperties = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-      {group ? (
-        <span id={`${id}-label`} style={labelStyle}>
-          {labelContent}
-        </span>
-      ) : (
-        <label htmlFor={id} style={labelStyle}>
-          {labelContent}
-        </label>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {group ? (
+          <span id={`${id}-label`} style={labelStyle}>
+            {labelContent}
+          </span>
+        ) : (
+          <label htmlFor={id} style={labelStyle}>
+            {labelContent}
+          </label>
+        )}
+        {help && <InfoTooltip content={help} />}
+      </div>
       {children}
-      {error ? (
+      {error && (
         <span
           id={`${id}-error`}
           role="alert"
@@ -336,12 +340,6 @@ function Field({
           <Icon name="error" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
           {error}
         </span>
-      ) : (
-        help && (
-          <span id={`${id}-help`} style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-            {help}
-          </span>
-        )
       )}
     </div>
   )

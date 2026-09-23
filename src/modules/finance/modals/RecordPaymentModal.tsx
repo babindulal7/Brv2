@@ -69,7 +69,24 @@ interface RecordPaymentModalProps {
     amount: string
     status: string
     booking?: string
+    /**
+     * **R-39 fix (defaults are doctrine):** the invoice's outstanding balance
+     * in RUPEES (the unit the operator types), used as the Amount field's
+     * prefill while that field is untouched. Optional so a caller reading a
+     * narrower source can still compile; when absent the field opens empty,
+     * exactly as it always has. `undefined` is *not* Rs 0 — a caller that
+     * cannot compute outstanding must omit it rather than pass 0.
+     */
+    outstandingRupees?: number
   }>
+  /**
+   * Present when the invoice list itself failed to load (the modal renders
+   * the reason inline with the picker, never an empty picker in silence).
+   * Pair with `onRetryInvoices`.
+   */
+  invoicesError?: string | null
+  /** Re-runs the caller's invoice fetch — rendered as a link beside the error. */
+  onRetryInvoices?: () => void
 }
 
 /**
@@ -96,6 +113,8 @@ export function RecordPaymentModal({
   initialInvoiceId = '',
   initialAmount,
   invoices,
+  invoicesError = null,
+  onRetryInvoices,
 }: RecordPaymentModalProps) {
   const { user } = useAuth()
   const isOnline = useNetwork()
@@ -108,31 +127,33 @@ export function RecordPaymentModal({
     prevInvoicesLen.current = invoices.length
   }, [invoices, initialInvoiceId, invoiceId])
   /*
-   * Was `useState<number>(initialAmount || 50000)`.
+   * The amount default — was Rs 50,000, invented; then 0/empty, honest but a
+   * typed field the caller already knows the answer to (R-39 defect D1):
+   * "a field that could be prefilled but is not is a defect."
    *
-   * That Rs 50,000 was nobody's figure: no caller passes `initialAmount`
-   * (`Finance.tsx` ~789 and `BookingDetail.tsx` ~1008 both omit it, checked),
-   * so **every** operator opened this modal on **every** invoice with the same
-   * invented amount pre-filled, bearing no relation to what was owed. Same
-   * class of defect as the hardcoded `amountPaisa: 500000` the audit removed
-   * from BookingDetail — and now that the typed figure actually reaches
-   * `recordPayment`, it is an invented figure that would be *written*, not
-   * merely displayed. A stray Enter would record Rs 50,000 against a bill for
-   * anything.
-   *
-   * The honest default would be the selected invoice's outstanding balance,
-   * and it is deliberately **not** used, because the modal cannot compute one:
-   * `invoices` carries a pre-formatted total string (`amount`) and no paid
-   * figure at all, and BookingDetail's row is a *booking* that has no invoice
-   * behind it (its own TODO(decision) at ~996). Widening the prop to demand
-   * `paidPaisa` would invent a contract that caller cannot satisfy. So the
-   * field starts empty and the operator types the amount; the submit guard
-   * rejects it while it is empty.
-   *
-   * `??`, not `||`: `||` treats a legitimate 0 as absent. 0 is not a payment
-   * either way, but the guard is what refuses it, not a silent substitution.
+   * The outstanding balance of the selected invoice is the one figure both
+   * true and useful, and it is now carried in from `listInvoices`
+   * (`outstanding_amount`) by every caller. While the field is UNTOUCHED it
+   * follows the selected invoice's outstanding; the moment the operator types,
+   * the figure becomes theirs and invoice switches stop re-writing it.
+   * A caller that genuinely has no outstanding figure omits it and the field
+   * opens empty — `undefined` never means Rs 0.
    */
-  const [amount, setAmount] = useState<number>(initialAmount ?? 0)
+  const outstandingOf = (id: string) =>
+    invoices.find((i) => i.id === id)?.outstandingRupees
+  const [amount, setAmount] = useState<number>(
+    initialAmount ?? outstandingOf(initialInvoiceId || invoices[0]?.id || '') ?? 0,
+  )
+  const [amountTouched, setAmountTouched] = useState(false)
+  useEffect(() => {
+    if (amountTouched) return
+    const o = outstandingOf(invoiceId)
+    if (typeof o === 'number') setAmount(o)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceId, invoices, amountTouched])
+  useEffect(() => {
+    if (isOpen) setAmountTouched(initialAmount !== undefined)
+  }, [isOpen, initialAmount])
   const [method, setMethod] = useState<PaymentMethod>('Bank Transfer')
   /*
    * The ACCOUNT the money landed in — `bank_accounts.id`, the structured half
@@ -144,6 +165,10 @@ export function RecordPaymentModal({
    * account appears without a reload.
    */
   const [bankAccountId, setBankAccountId] = useState('')
+  /* True once the operator has exercised the account picker; the D3 default
+     below never fires after that, so a deliberate "No account recorded"
+     survives the account list arriving later. */
+  const accountTouched = useRef(false)
   const [accounts, setAccounts] = useState<BankAccountRow[]>([])
   const [accountsError, setAccountsError] = useState<string | null>(null)
   const [reference, setReference] = useState('')
@@ -174,8 +199,32 @@ export function RecordPaymentModal({
       // A fresh open must not inherit the previous payment's account choice —
       // an account is per-receipt, and a stale one silently credits it again.
       setBankAccountId('')
+      accountTouched.current = false
     }
   }, [isOpen])
+
+  /*
+   * R-39 D3 — the bank-account default that was missing. When the method is a
+   * bank transfer and the account list has arrived, the desk's PRIMARY account
+   * is the default (`listBankAccounts` sorts `is_primary` first). It fires once
+   * per untampered form: a deliberate change — including deliberately picking
+   * "No account recorded" — stops it re-applying.
+   */
+  useEffect(() => {
+    if (!isOpen || method !== 'Bank Transfer' || accountTouched.current || bankAccountId) return
+    if (accounts.length === 0) return
+    setBankAccountId((accounts.find((a) => a.isPrimary) ?? accounts[0]!).id)
+  }, [isOpen, method, accounts, bankAccountId])
+  /*
+   * …and its mirror: a machine-applied default is retracted when the method
+   * moves off Bank Transfer (a cash receipt attached to NIC Asia Main is a
+   * wrong ledger fact). The operator's OWN choice is never retracted —
+   * `accountTouched` is what separates "the screen picked this" from "the
+   * desk did".
+   */
+  useEffect(() => {
+    if (method !== 'Bank Transfer' && !accountTouched.current) setBankAccountId('')
+  }, [method])
 
   /*
    * The account list, fetched while the modal is open. A failure here must not
@@ -211,10 +260,11 @@ export function RecordPaymentModal({
       return
     }
     /*
-     * The field now opens empty (see the state initialiser), so this guard is
-     * the only thing standing between an untouched form and a Rs 0 write —
-     * it has to hold. `Number.isFinite` is not decoration: `NaN <= 0` is
-     * `false`, so a non-finite amount would slip past a bare `amount <= 0`
+     * The field opens with the invoice's outstanding pre-filled where a caller
+     * can supply one (R-39 D1), and empty where it cannot; either way this
+     * guard is the only thing standing between an untouched form and a Rs 0
+     * write — it has to hold. `Number.isFinite` is not decoration: `NaN <= 0`
+     * is `false`, so a non-finite amount would slip past a bare `amount <= 0`
      * and reach `rupees()`, which would hand the action `NaN` paisa.
      */
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -459,6 +509,39 @@ export function RecordPaymentModal({
           </div>
         )}
 
+        {invoicesError && invoices.length === 0 && (
+          <div
+            role="alert"
+            style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--r-btn)',
+              background: 'var(--st-danger-bg)',
+              color: 'var(--st-danger-fg)',
+              fontSize: 'var(--t-meta)',
+            }}
+          >
+            The open invoices could not be loaded ({invoicesError}).{' '}
+            {onRetryInvoices && (
+              <button
+                type="button"
+                onClick={onRetryInvoices}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 0,
+                  minHeight: 'var(--tap)',
+                  color: 'inherit',
+                  font: 'inherit',
+                  fontWeight: 700,
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
+                }}
+              >
+                Try again
+              </button>
+            )}
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
             Select Invoice <span style={{ color: 'var(--danger)' }}>*</span>
@@ -467,7 +550,7 @@ export function RecordPaymentModal({
             value={invoiceId}
             onChange={(e) => setInvoiceId(e.target.value)}
             style={{
-              height: 36,
+              minHeight: 'var(--tap)',
               padding: '0 12px',
               borderRadius: 'var(--r-btn)',
               border: '1px solid var(--border)',
@@ -510,9 +593,12 @@ export function RecordPaymentModal({
                 // the NaN that `rupees()` would happily convert.
                 const next = Number(e.target.value)
                 setAmount(Number.isFinite(next) ? next : 0)
+                // The field is now the operator's, not the invoice's — a
+                // picker switch must not overwrite a figure they typed.
+                setAmountTouched(true)
               }}
               style={{
-                height: 36,
+                minHeight: 'var(--tap)',
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -541,7 +627,7 @@ export function RecordPaymentModal({
               value={method}
               onChange={(e) => setMethod(e.target.value as PaymentMethod)}
               style={{
-                height: 36,
+                minHeight: 'var(--tap)',
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -571,12 +657,15 @@ export function RecordPaymentModal({
             embed). Optional: "No account recorded" is the honest row for cash
             in hand or a desk with no accounts entered, and it is DIFFERENT
             from the method label above — a label is the operator's word, this
-            is the ledger fact. Law 15's 44px floor on the new control; the
-            sibling 36px fields predate the rule and are not this edit's.
+            is the ledger fact. Law 15's 44px floor now applies to every field
+             in this modal (`minHeight: var(--tap)`).
           */}
           <select
             value={bankAccountId}
-            onChange={(e) => setBankAccountId(e.target.value)}
+            onChange={(e) => {
+              accountTouched.current = true
+              setBankAccountId(e.target.value)
+            }}
             aria-label="Deposit to account"
             style={{
               minHeight: 44,
@@ -614,7 +703,7 @@ export function RecordPaymentModal({
             value={reference}
             onChange={(e) => setReference(e.target.value)}
             style={{
-              height: 36,
+              minHeight: 'var(--tap)',
               padding: '0 12px',
               borderRadius: 'var(--r-btn)',
               border: '1px solid var(--border)',

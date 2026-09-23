@@ -101,13 +101,19 @@ export function QuickCreateMenu({ role, compact = false }: { role: SystemRole | 
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
               event.preventDefault()
               items[(current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus()
+            } else if (event.key === 'Tab') {
+              /* Tab means "leaving" — close so the menu does not hang open,
+                 invisibly, over whatever just received focus. */
+              setOpen(false)
             }
           }}
           style={{
             position: 'absolute',
             top: 'calc(100% + 8px)',
             right: 0,
-            zIndex: 40,
+            /* A dropdown on the declared token scale, not the literal 40 that
+               pre-dated it (theme.css --z-dropdown). */
+            zIndex: 'var(--z-dropdown)' as unknown as number,
             width: 272,
             padding: 6,
             background: 'var(--card)',

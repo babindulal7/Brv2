@@ -1,6 +1,7 @@
 import type { ReactNode, CSSProperties } from 'react'
 import Icon from './Icon'
 import type { IconName } from './Icon'
+import { InfoTooltip } from './InfoTooltip'
 import { BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { FOOTER_NOTE } from '../../data/nav'
@@ -21,8 +22,6 @@ import { Card as SharedCard } from './Card'
 
 export const cardStyle = {
   background: 'var(--card)',
-  backdropFilter: 'blur(14px)',
-  WebkitBackdropFilter: 'blur(14px)',
   border: '1px solid var(--border)',
   borderRadius: 'var(--r-card)',
   boxShadow: 'var(--shadow-card), var(--specular-rim)',
@@ -113,8 +112,8 @@ export function PageHeader({
           <h1
             style={{
               margin: 0,
-              fontSize: 'clamp(26px, 2.4vw, 34px)',
-              fontWeight: 800,
+              fontSize: 'clamp(22px, 2vw, 28px)',
+              fontWeight: 600,
               color: 'var(--text)',
               letterSpacing: '-0.03em',
               lineHeight: 1.15,
@@ -123,11 +122,9 @@ export function PageHeader({
           >
             {title}
           </h1>
+          {description && <InfoTooltip content={description} size={16} />}
           {status}
         </div>
-        {description && (
-          <p className="page-header__description" style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>{description}</p>
-        )}
       </div>
       {actions && <div className="page-header__actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap', maxWidth: '100%' }}>{actions}</div>}
     </header>

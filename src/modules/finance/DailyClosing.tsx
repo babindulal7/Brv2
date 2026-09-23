@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { InfoTooltip } from '../../components/ui/InfoTooltip'
+import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -50,7 +52,7 @@ import { buildWaLink } from '../../lib/whatsapp'
  * counted drawer against the day's CASH total alone. Everything else is shown
  * for the position, not for the reconciliation.
  */
-export default function DailyClosing() {
+export default function DailyClosing({ embedded = false }: { embedded?: boolean } = {}) {
   const { user } = useAuth()
   const vp = useViewport()
   const onPhone = vp === 'phone'
@@ -200,17 +202,20 @@ export default function DailyClosing() {
   }
 
   if (!maySeeMoney) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-        <ScreenHeader embedded={false} icon="card" title="Daily Closing" description={dateLabel} />
+    const restrictedContent = (
+      <>
+        <ScreenHeader embedded={embedded} icon="card" title="Daily Closing" description={dateLabel} />
         <Card title="Not your screen">
           <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
             A closing is entirely money — takings, receivables, deposits held. Law 6 keeps those off this role
             everywhere, and a closing with the money removed would be a blank page rather than a smaller one.
           </p>
         </Card>
-      </div>
+      </>
     )
+
+    if (embedded) return <div>{restrictedContent}</div>
+    return <PageShell width="full">{restrictedContent}</PageShell>
   }
 
   const row = (label: string, value: string, hint?: string) => (
@@ -225,19 +230,17 @@ export default function DailyClosing() {
         borderBottom: '1px solid var(--border)',
       }}
     >
-      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         {label}
-        {hint && (
-          <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{hint}</span>
-        )}
+        {hint && <InfoTooltip content={hint} />}
       </span>
       <span style={{ fontSize: 'var(--t-body)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
     </div>
   )
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <ScreenHeader embedded={false} icon="card" title="Daily Closing" description={dateLabel} />
+  const bodyContent = (
+    <>
+      <ScreenHeader embedded={embedded} icon="card" title="Daily Closing" description={dateLabel} />
 
       <PageBody loading={loading} error={error} onRetry={load} empty={false}>
         {figures && (
@@ -393,6 +396,11 @@ export default function DailyClosing() {
           </div>
         )}
       </PageBody>
-    </div>
+    </>
   )
+
+  if (embedded) {
+    return <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>{bodyContent}</div>
+  }
+  return <PageShell width="full">{bodyContent}</PageShell>
 }

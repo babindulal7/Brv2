@@ -111,7 +111,7 @@ function seedBooking(over: Row = {}): void {
       ...over,
     },
   ])
-  db.state.tables.set('clients', [{ id: CLIENT_ID, payment_terms: '15 days' }])
+  db.state.tables.set('clients_v', [{ id: CLIENT_ID, payment_terms: '15 days' }])
   db.state.tables.set('invoices', [])
   db.state.tables.set('booking_lines_v', [])
   db.state.tables.set('booking_crew_lines_v', [])
@@ -281,7 +281,7 @@ describe('previewInvoiceForBooking — it bills the booking, not a form', () => 
 
   it('falls back to Immediate when the terms cannot be read — due today, not 30 days of credit', async () => {
     seedBooking()
-    db.state.tables.set('clients', [])
+    db.state.tables.set('clients_v', [])
     db.state.tables.set('booking_lines_v', [equipmentLine()])
     const p = await previewInvoiceForBooking('B-715', 'Owner', NOW)
     if (p.kind !== 'preview') throw new Error(`expected a preview, got ${p.kind}`)

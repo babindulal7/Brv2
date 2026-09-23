@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { Button } from '../../components/ui/Button'
 import { TouchTarget } from '../../components/ui/TouchTarget'
 import { EmptyState } from '../../components/ui/StateViews'
@@ -303,7 +304,7 @@ export default function PurchaseRequests() {
 
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 60 }}>
+    <PageShell width="full">
       {/* Header & Metrics */}
       <PageHeader
         title="Purchase Requests"
@@ -725,6 +726,6 @@ export default function PurchaseRequests() {
           setRequestsList((prev) => [newPr, ...prev])
         }}
       />
-    </div>
+    </PageShell>
   )
 }

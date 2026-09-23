@@ -1,3 +1,4 @@
+import { Pagination } from '../../../components/ui/Pagination'
 import { Fragment, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../../components/ui/Icon'
@@ -960,69 +961,7 @@ export function BranchesPane({
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap', marginTop: 'var(--sp-md)' }}>
-              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                Showing {filtered.length === 0 ? 0 : (current - 1) * perPage + 1} to {Math.min(current * perPage, filtered.length)} of{' '}
-                {filtered.length} branches
-              </span>
-              <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                Rows per page
-                <select
-                  value={perPage}
-                  onChange={(e) => {
-                    setPerPage(Number(e.target.value))
-                    setPage(1)
-                  }}
-                  style={{
-                    minHeight: 28,
-                    padding: '0 6px',
-                    borderRadius: 'var(--r-input)',
-                    border: '1px solid var(--input-border)',
-                    background: 'var(--input-bg)',
-                    color: 'var(--text)',
-                    fontSize: 'var(--t-meta)',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {[10, 25, 50].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                {/* The pagination pair is the case §5 wrote the exception for:
-                    28x28 arrows in a dense strip, kept compact on screen and
-                    given their 44 underneath. Square and under 44 both ways, so
-                    `tap` inflates both axes — 8px of reach on each side. That
-                    is checked against its neighbours rather than assumed: the
-                    "Rows per page" select sits 12px away and the two arrows are
-                    84px apart centre to centre with the page count between
-                    them, so nothing overlaps. */}
-                <button
-                  type="button"
-                  className="tap"
-                  onClick={() => setPage(current - 1)}
-                  disabled={current === 1}
-                  aria-label="Previous page"
-                  style={{ ...controlStyle, minHeight: 28, width: 28, padding: 0, justifyContent: 'center', opacity: current === 1 ? 0.45 : 1 }}
-                >
-                  <Icon name="chevron_left" size={13} />
-                </button>
-                <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600, minWidth: 46, textAlign: 'center' }}>
-                  {current} / {pageCount}
-                </span>
-                <button
-                  type="button"
-                  className="tap"
-                  onClick={() => setPage(current + 1)}
-                  disabled={current === pageCount}
-                  aria-label="Next page"
-                  style={{ ...controlStyle, minHeight: 28, width: 28, padding: 0, justifyContent: 'center', opacity: current === pageCount ? 0.45 : 1 }}
-                >
-                  <Icon name="chevron_right" size={13} />
-                </button>
-              </span>
+              <Pagination page={current} total={filtered.length} pageSize={perPage} onPageChange={setPage} pageSizeOptions={[10, 25, 50]} onPageSizeChange={(size) => { setPerPage(size); setPage(1) }} />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 'var(--sp-md)', paddingTop: 'var(--sp-sm)', borderTop: '1px solid var(--border)' }}>

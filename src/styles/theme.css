@@ -25,8 +25,13 @@
   --z-sticky-nav: 1200;  /* sticky headers / sub-navigation bars */
   --z-overlay: 1300;     /* backdrops, full-screen scrims behind a modal/drawer */
   --z-modal: 1400;       /* modal dialogs and drawers, above their own overlay */
-  --z-system: 10500;     /* system-critical: screen lock, system restore, toasts —
-                             above everything, including legacy 9999/10000 literals */
+  --z-system: 10500;     /* system-critical: screen lock, system restore, toasts */
+
+  /* Global Layout Tokens */
+  --app-sidebar-width: 256px;
+  --app-sidebar-collapsed-width: 64px;
+  --global-header-height: 60px;
+  --app-panel-width: 320px;
 }
 
 /* ============================================================================
@@ -65,11 +70,11 @@
   /* Shared cool canvas, matched to the Pickup & Return dashboard. */
   --bg-gradient-1: #f5f7fb;
   --bg-gradient-2: #edf2f9;
-  --bg-radial-mesh: radial-gradient(ellipse at 15% 0%, rgba(36, 86, 214, 0.05) 0px, transparent 65%), radial-gradient(ellipse at 85% 10%, rgba(30, 134, 74, 0.03) 0px, transparent 55%);
-  --surface-card: rgba(255, 255, 255, 0.88);
-  --surface-card-hover: rgba(255, 255, 255, 0.96);
+  --bg-radial-mesh: none;
+  --surface-card: var(--surface);
+  --surface-card-hover: var(--surface-2);
   --glass-tint: 0.88;
-  --specular-rim: inset 0 1px 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.02);
+  --specular-rim: 0 0 0 transparent;
   --bezel-outer-ring: 0 0 0 1px rgba(16, 32, 59, 0.06);
   --bezel-outer-bg: rgba(16, 32, 59, 0.025);
 
@@ -149,8 +154,8 @@
   --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-  --shadow-card: var(--shadow);
-  --shadow-kpi: var(--shadow);
+  --shadow-card: 0 0 0 transparent;
+  --shadow-kpi: 0 0 0 transparent;
   --shadow-md: 0 8px 20px -3px rgba(15, 23, 42, 0.08);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.10), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
@@ -191,11 +196,11 @@
   /* DESIGN_DIRECTION_SPEC v4.2 §3 Canvas Gradients (Navy Dark) */
   --bg-gradient-1: #050B12;
   --bg-gradient-2: #07111C;
-  --bg-radial-mesh: radial-gradient(ellipse at 20% 0%, rgba(56, 106, 247, 0.12) 0px, transparent 65%), radial-gradient(ellipse at 80% 20%, rgba(56, 106, 247, 0.05) 0px, transparent 55%);
-  --surface-card: rgba(11, 22, 34, 0.88);
-  --surface-card-hover: rgba(16, 30, 46, 0.95);
+  --bg-radial-mesh: none;
+  --surface-card: var(--surface);
+  --surface-card-hover: var(--surface-2);
   --glass-tint: 0.88;
-  --specular-rim: inset 0 1px 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 1px 0 rgba(0, 0, 0, 0.4);
+  --specular-rim: 0 0 0 transparent;
   --bezel-outer-ring: 0 0 0 1px rgba(255, 255, 255, 0.08);
   --bezel-outer-bg: rgba(255, 255, 255, 0.03);
 
@@ -273,7 +278,7 @@
   --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
   --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
   --shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.5), 0 2px 6px -1px rgba(0, 0, 0, 0.3);
-  --shadow-card: 0 2px 8px 0 rgba(0, 0, 0, 0.4), 0 8px 24px -4px rgba(0, 0, 0, 0.55);
+  --shadow-card: 0 0 0 transparent;
   --shadow-kpi: var(--shadow-card);
   --shadow-md: 0 14px 28px -4px rgba(0, 0, 0, 0.6), 0 6px 12px -2px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 20px 36px -6px rgba(0, 0, 0, 0.65), 0 8px 14px -3px rgba(0, 0, 0, 0.45);
@@ -306,11 +311,9 @@
 /* ---- scale: identical in both themes ---- */
 :root {
   /* radius */
-  /* v4.2 §2.4 radius map 6/8/14/999 — chip 6, btn/input 8, card 14, badge 999.
-     §6: "Radius stays 14 (--r-card); Miraz's 12/16 not adopted." The earlier
-     v3.1-era "this language is 8" note applied to buttons/inputs, which stay 8. */
+  /* Operational UI: restrained corners, with round badges reserved for counts. */
   --r-btn: 8px;
-  --r-card: 14px;
+  --r-card: 10px;
   --r-input: 8px;
   --r-modal: 12px;
   --r-chip: 6px;    /* status blocks */
@@ -519,8 +522,8 @@
      border) — so every sticky rail in the app sat 5px lower than the header it
      was clearing. `Header.tsx` sets its own `min-height` FROM this token, so the
      number cannot drift away from the element again. */
-  --header-h: 59px;
-  --shell-nav-w: 219px;
+  --header-h: var(--global-header-height);
+  --shell-nav-w: var(--app-sidebar-width);
 
   /* ── Canonical structural tokens (UI Consistency Phase 1) ────────────────
      These used to live in ui-v2.css's own :root block, where they sat next to
@@ -533,8 +536,10 @@
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
+  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-10: 40px;
   --space-12: 48px;
   --space-16: 64px;
 
@@ -545,7 +550,7 @@
   /* Page-shell geometry. responsive.css narrows --page-padding below 1280;
      no other file may change either token. */
   --page-padding: var(--space-6);
-  --section-gap: var(--space-6);
+  --section-gap: var(--space-4);
 
   /* Brand aliases. ui-v2-era rules and a handful of components read --brand;
      it aliases the canonical --primary triple (never a fourth colour). */
@@ -719,7 +724,7 @@ html {
 body {
   margin: 0;
   background-color: var(--app);
-  background-image: var(--bg-radial-mesh), linear-gradient(160deg, var(--bg-gradient-1), var(--bg-gradient-2));
+  background-image: none;
   background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-body);

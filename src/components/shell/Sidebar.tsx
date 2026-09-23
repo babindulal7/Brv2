@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../ui/Icon'
 import { useTheme } from '../../lib/theme'
-import { BRANCH, permittedNav, permittedMoreNav, activeNavTo } from '../../data/nav'
-import type { NavSection } from '../../data/nav'
+import { BRANCH, permittedNav, permittedMoreNav, permittedNavGroups, activeNavTo } from '../../data/nav'
+import type { NavSection, NavGroup } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
 import { useCollapsed } from '../../lib/collapse'
 import { useViewport } from '../../lib/device'
 
 /**
- * Widths are the wireframe's, not ours. "Shell — identical on every page":
- * desktop rail **219**, tablet icon rail **72**. 219 rather than the 220 this
- * file carried since the Generation C transcription — the spec draws `│219│`.
+ * The application navigation is part of the same shell system as filters and
+ * action panels. Expanded navigation therefore reads the shared sidebar token;
+ * only the intentionally collapsed icon rail has its own token.
  */
-const SIDEBAR_W = 219
-const RAIL_W = 72
+const SIDEBAR_W = 'var(--app-sidebar-width)'
+const RAIL_W = 'var(--app-sidebar-collapsed-width)'
 
 /** Law 15 — 44×44 at every width, desktop included. Applies to the rows too. */
 const ROW_H = 44
@@ -32,8 +32,8 @@ interface SidebarProps {
  *
  * The wireframe shell block, identical in all eleven specs:
  *
- * > DESKTOP ≥1280 `│nav│219│` · TABLET 768–1279 `│▮│72│`, "labels on
- * > hover/long-press" · PHONE <768 — no sidebar, a bottom bar instead.
+ * Desktop and tablet share the token-sized expanded navigation or compact
+ * icon rail. Phone uses the bottom bar instead.
  *
  * Law 13 — width decides, never platform. `useViewport()` is the only source of
  * the band; this component adds no breakpoint of its own. Phone renders
@@ -41,14 +41,8 @@ interface SidebarProps {
  * mounts this, and the early return here means a stale mount cannot leak a rail
  * onto a phone either.
  *
- * The manual collapse toggle (`useCollapsed('sidebar:main')`) predates the
- * width-driven rail and would otherwise fight it — a user who expanded the rail
- * on a desktop would drag the window to 900px and get a 219px sidebar in a band
- * the spec says is 72px. So collapse is now a **desktop-only affordance**: at
- * tablet the rail is forced by width, the toggle is not rendered, and the
- * persisted preference is ignored until the viewport is wide enough to honour
- * it again. The preference is kept, not cleared — it is the user's desktop
- * choice, and a resize is not a decision to discard it.
+ * Tablets default to the compact rail on the first visit. Both tablet and
+ * desktop retain the user's manual preference across navigation and reloads.
  *
  * The active accent is theme-dependent (blue in light, gold in dark); both
  * resolve through `--nav-active-accent`, so this component never branches on
@@ -60,21 +54,22 @@ export default function Sidebar({ active }: SidebarProps) {
   const viewport = useViewport()
   /* Persisted independently of any one rail — this is the app shell, not a
      page panel, so it gets its own fixed key rather than a route-derived one. */
-  const [collapsed, toggleCollapsed] = useCollapsed('sidebar:main', false)
+  const [collapsed, toggleCollapsed] = useCollapsed('sidebar:main', viewport === 'tablet')
 
-  /* Tablet is always a rail. Desktop is a rail only if the user asked for one. */
-  const rail = viewport === 'tablet' || (viewport === 'desktop' && collapsed)
+  /* A resize must not override a deliberate navigation preference. */
+  const rail = collapsed
 
   /* Page-level filter drawers begin after the app navigation, matching the
      two-rail Booqable layout instead of covering the primary navigation. */
   useEffect(() => {
     const root = document.documentElement
-    root.style.setProperty('--shell-nav-w', `${rail ? RAIL_W : SIDEBAR_W}px`)
+    root.style.setProperty('--shell-nav-w', rail ? RAIL_W : SIDEBAR_W)
     return () => {
       root.style.removeProperty('--shell-nav-w')
     }
   }, [rail])
 
+  const allowedGroups = permittedNavGroups(user?.role)
   const allowedNav = permittedNav(user?.role)
   const allowedMore = permittedMoreNav(user?.role)
   const allPermitted = [...allowedNav, ...allowedMore]
@@ -86,6 +81,7 @@ export default function Sidebar({ active }: SidebarProps) {
 
   return (
     <aside
+      className="app-navigation"
       style={{
         width: rail ? RAIL_W : SIDEBAR_W,
         flexShrink: 0,
@@ -93,7 +89,7 @@ export default function Sidebar({ active }: SidebarProps) {
         borderRight: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
-        height: '100vh',
+        height: '100%',
         position: 'sticky',
         top: 0,
         /* v4.2 §5 — the collapse animates at 240ms on the app easing token.
@@ -129,18 +125,18 @@ export default function Sidebar({ active }: SidebarProps) {
             </span>
           </span>
         )}
-        {/* Desktop only. At tablet the 72px rail is the spec, not a preference. */}
-        {viewport === 'desktop' && !collapsed && (
+        {/* Manual collapse remains available on tablet and desktop. */}
+        {!collapsed && (
           <CollapseButton onClick={toggleCollapsed} direction="collapse" />
         )}
       </div>
-      {viewport === 'desktop' && collapsed && (
+      {collapsed && (
         <div style={{ display: 'flex', justifyContent: 'center', paddingBottom: 'var(--sp-sm)', flexShrink: 0 }}>
           <CollapseButton onClick={toggleCollapsed} direction="expand" />
         </div>
       )}
 
-      <NavList sections={allowedNav} moreSections={allowedMore} activeTo={activeTo} rail={rail} />
+      <NavList groups={allowedGroups} moreSections={allowedMore} activeTo={activeTo} rail={rail} />
 
       <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', padding: 10 }}>
         {!rail && (
@@ -251,26 +247,24 @@ export default function Sidebar({ active }: SidebarProps) {
 /* ── rows ──────────────────────────────────────────────────────────────── */
 
 /**
- * The eleven rows.
+ * Grouped navigation across 3 operational domains.
  *
  * In the rail there is no label to read, so one is produced on demand: `title`
  * for a mouse that stops moving, a rendered tooltip on hover for one that has
- * not, and the same tooltip after a {@link LONG_PRESS_MS} press for a finger —
- * the wireframe's "labels on hover/long-press". The tooltip is positioned
- * `fixed` from the row's own rect because the scroll container has
- * `overflow-y: auto`, which clips a sibling positioned at `left: 100%`.
+ * not, and the same tooltip after a LONG_PRESS_MS press for a finger.
  */
 function NavList({
-  sections,
+  groups,
   moreSections,
   activeTo,
   rail,
 }: {
-  sections: NavSection[]
+  groups: NavGroup[]
   moreSections: NavSection[]
   activeTo: string | null
   rail: boolean
 }) {
+  const navigate = useNavigate()
   const [hint, setHint] = useState<{ label: string; top: number } | null>(null)
   const isMoreActive = moreSections.some((m) => m.to === activeTo)
   const [moreOpen, setMoreOpen] = useState(isMoreActive)
@@ -325,97 +319,166 @@ function NavList({
     <>
       <nav
         aria-label="Main"
-        style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 1 }}
+        style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}
       >
-        {sections.map((s) => {
-          const on = s.to === activeTo
-          return (
-            <Link
-              key={s.to}
-              to={s.to}
-              aria-current={on ? 'page' : undefined}
-              title={rail ? s.label : undefined}
-              onMouseEnter={(e) => {
-                if (rail) show(e.currentTarget, s.label)
-                else {
-                  if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
-                  e.currentTarget.style.transform = 'translateX(2px)'
-                }
-              }}
-              onMouseLeave={(e) => {
-                setHint(null)
-                if (!rail) {
-                  if (!on) e.currentTarget.style.background = 'transparent'
-                  e.currentTarget.style.transform = 'none'
-                }
-              }}
-              onPointerDown={(e) => {
-                if (!rail || e.pointerType === 'mouse') return
-                const el = e.currentTarget
-                clearPress()
-                pressTimer.current = window.setTimeout(() => show(el, s.label), LONG_PRESS_MS)
-              }}
-              onPointerUp={() => {
-                clearPress()
-                setHint(null)
-              }}
-              onPointerCancel={() => {
-                clearPress()
-                setHint(null)
-              }}
-              onBlur={() => setHint(null)}
-              onFocus={(e) => {
-                if (rail) show(e.currentTarget, s.label)
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: rail ? 'center' : 'flex-start',
-                gap: 10,
-                /* Law 15 — 44×44 minimum hit area per row, every width. */
-                minHeight: ROW_H,
-                minWidth: rail ? ROW_H : undefined,
-                padding: rail ? 0 : '0 10px',
-                borderRadius: 'var(--r-btn)',
-                textDecoration: 'none',
-                fontSize: 'var(--t-ui)',
-                fontWeight: on ? 600 : 500,
-                color: on ? 'var(--text)' : 'var(--text2)',
-                background: on ? 'var(--nav-active-bg)' : 'transparent',
-                boxShadow: on ? 'var(--specular-rim), 0 1px 2px rgba(0, 0, 0, 0.04)' : undefined,
-                position: 'relative',
-                cursor: 'pointer',
-                transition: 'transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease)',
-              }}
-            >
-              {on && (
-                <span
+        {groups.map((group, groupIdx) => (
+          <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {rail ? (
+              groupIdx > 0 && (
+                <div
                   aria-hidden
                   style={{
-                    position: 'absolute',
-                    left: 2,
-                    top: 10,
-                    bottom: 10,
-                    width: 3,
-                    borderRadius: 999,
-                    background: 'var(--nav-active-accent)',
-                    boxShadow: '0 0 6px var(--nav-active-accent)',
+                    height: 1,
+                    background: 'var(--border)',
+                    margin: '6px 8px',
+                    opacity: 0.6,
                   }}
                 />
-              )}
-              <Icon
-                name={s.icon}
-                size={rail ? 20 : 16}
-                style={{ color: on ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
-              />
-              {!rail && (
-                <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {s.label}
-                </span>
-              )}
-            </Link>
-          )
-        })}
+              )
+            ) : (
+              <div
+                style={{
+                  padding: groupIdx === 0 ? '4px 10px 4px' : '12px 10px 4px',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--muted)',
+                  userSelect: 'none',
+                }}
+              >
+                {group.title}
+              </div>
+            )}
+            {group.sections.map((s) => {
+              const on = s.to === activeTo
+              return (
+                <Link
+                  key={s.to}
+                  to={s.to}
+                  aria-current={on ? 'page' : undefined}
+                  title={rail ? s.label : undefined}
+                  onMouseEnter={(e) => {
+                    if (rail) show(e.currentTarget, s.label)
+                    else {
+                      if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                      e.currentTarget.style.transform = 'translateX(2px)'
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    setHint(null)
+                    if (!rail) {
+                      if (!on) e.currentTarget.style.background = 'transparent'
+                      e.currentTarget.style.transform = 'none'
+                    }
+                  }}
+                  onPointerDown={(e) => {
+                    if (!rail || e.pointerType === 'mouse') return
+                    const el = e.currentTarget
+                    clearPress()
+                    pressTimer.current = window.setTimeout(() => show(el, s.label), LONG_PRESS_MS)
+                  }}
+                  onPointerUp={() => {
+                    clearPress()
+                    setHint(null)
+                  }}
+                  onPointerCancel={() => {
+                    clearPress()
+                    setHint(null)
+                  }}
+                  onBlur={() => setHint(null)}
+                  onFocus={(e) => {
+                    if (rail) show(e.currentTarget, s.label)
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: rail ? 'center' : 'flex-start',
+                    gap: 10,
+                    /* Law 15 — 44×44 minimum hit area per row, every width. */
+                    minHeight: ROW_H,
+                    minWidth: rail ? ROW_H : undefined,
+                    padding: rail ? 0 : '0 10px',
+                    borderRadius: 'var(--r-btn)',
+                    textDecoration: 'none',
+                    fontSize: 'var(--t-ui)',
+                    fontWeight: on ? 600 : 500,
+                    color: on ? 'var(--text)' : 'var(--text2)',
+                    background: on ? 'var(--nav-active-bg)' : 'transparent',
+                    boxShadow: on ? 'var(--specular-rim), 0 1px 2px rgba(0, 0, 0, 0.04)' : undefined,
+                    position: 'relative',
+                    cursor: 'pointer',
+                    transition:
+                      'transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease)',
+                  }}
+                >
+                  {on && (
+                    <span
+                      aria-hidden
+                      style={{
+                        position: 'absolute',
+                        left: 2,
+                        top: 10,
+                        bottom: 10,
+                        width: 3,
+                        borderRadius: 999,
+                        background: 'var(--nav-active-accent)',
+                        boxShadow: '0 0 6px var(--nav-active-accent)',
+                      }}
+                    />
+                  )}
+                  <Icon
+                    name={s.icon}
+                    size={rail ? 20 : 16}
+                    style={{ color: on ? 'var(--nav-active-accent)' : 'var(--nav-icon)', flexShrink: 0 }}
+                  />
+                  {!rail && (
+                    <span style={{ flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {s.label}
+                    </span>
+                  )}
+                  {s.action && !rail && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      title={s.action.title ?? s.action.label}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        navigate(s.action!.to)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          navigate(s.action!.to)
+                        }
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '2px 8px',
+                        borderRadius: 'var(--r-btn)',
+                        background: on ? 'var(--nav-active-accent)' : 'var(--card2)',
+                        color: on ? '#fff' : 'var(--text2)',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        border: '1px solid var(--border)',
+                        cursor: 'pointer',
+                        marginLeft: 'auto',
+                        flexShrink: 0,
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {s.action.label}
+                    </span>
+                  )}
+                </Link>
+              )
+            })}
+          </div>
+        ))}
 
         {/* Secondary navigation under More */}
         {moreSections.length > 0 && (
@@ -488,7 +551,7 @@ function NavList({
                   aria-label="More modules"
                   style={{
                     position: 'fixed',
-                    left: RAIL_W + 6,
+                    left: `calc(${RAIL_W} + 6px)`,
                     top: moreFlyoutTop,
                     transform: 'translateY(-50%)',
                     padding: '6px 8px',
@@ -677,7 +740,7 @@ function NavList({
           role="tooltip"
           style={{
             position: 'fixed',
-            left: RAIL_W + 6,
+            left: `calc(${RAIL_W} + 6px)`,
             top: hint.top,
             transform: 'translateY(-50%)',
             padding: '6px 10px',

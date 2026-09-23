@@ -4,6 +4,7 @@ import Icon from '../ui/Icon'
 import { moreNav } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
 import { usePwaInstall } from '../../lib/usePwaInstall'
+import { toggleScanner } from './ScannerFab'
 
 // Matches --dur in theme.css (the app's generic transition-duration token),
 // the same constant and the same reason as `components/ui/Modal.tsx`: the
@@ -93,13 +94,14 @@ export default function MoreSheet({ open, onClose }: { open: boolean; onClose: (
       }
     }
 
+    const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     window.addEventListener('keydown', onKeyDown)
     /* After the mount, so the row exists to receive it. */
     const focusTimer = window.setTimeout(() => focusables()[0]?.focus(), 0)
 
     return () => {
-      document.body.style.overflow = ''
+      document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', onKeyDown)
       window.clearTimeout(focusTimer)
       if (opener.current instanceof HTMLElement) opener.current.focus()
@@ -182,6 +184,7 @@ export default function MoreSheet({ open, onClose }: { open: boolean; onClose: (
         </div>
 
         <nav aria-label="More" style={{ flex: 1, overflowY: 'auto', padding: '6px 8px 12px' }}>
+          <button type="button" data-scanner onClick={() => { onClose(); toggleScanner() }} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: ROW_H, width: '100%', padding: '0 10px', border: 'none', borderRadius: 'var(--r-sm)', background: 'transparent', color: 'var(--text)', font: 'inherit', textAlign: 'left', cursor: 'pointer' }}><Icon name="search" size={20} /><span>Scan equipment</span></button>
           {items.map((s) => (
             <Link
               key={s.to}
@@ -247,7 +250,7 @@ export default function MoreSheet({ open, onClose }: { open: boolean; onClose: (
                   style={{
                     fontSize: 'var(--t-th)',
                     padding: '2px 8px',
-                    borderRadius: 'var(--r-full)',
+                    borderRadius: 999, // RULING 2026-09-23: --r-full never existed; a pill is 999px here, --r-badge is reserved for numeric count badges
                     background: 'var(--primary)',
                     color: '#fff',
                     fontWeight: 600,

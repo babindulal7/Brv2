@@ -16,6 +16,7 @@ const columns = [
 
 let root: Root | undefined
 let container: HTMLDivElement | undefined
+const originalWidth = window.innerWidth
 
 function mount(node: React.ReactNode) {
   container = document.createElement('div')
@@ -29,6 +30,7 @@ afterEach(() => {
   container?.remove()
   root = undefined
   container = undefined
+  Object.defineProperty(window, 'innerWidth', { value: originalWidth, configurable: true })
 })
 
 describe('DataTable', () => {
@@ -54,5 +56,31 @@ describe('DataTable', () => {
   it('has a visible empty state', () => {
     mount(<DataTable ariaLabel="Rentals" columns={columns} rows={[]} getRowId={(row) => row.id} emptyState="No rentals found" />)
     expect(container?.textContent).toContain('No rentals found')
+  })
+
+  it('renders phone records with selection and opening actions, without a desktop table', () => {
+    Object.defineProperty(window, 'innerWidth', { value: 375, configurable: true })
+    let opened = ''
+    mount(<DataTable ariaLabel="Rentals" columns={columns} rows={rows} getRowId={(row) => row.id} onRowOpen={(row) => { opened = row.id }} />)
+    expect(container?.querySelector('table')).toBeNull()
+    expect(container?.querySelector('article')?.textContent).toContain('Himalayan Films')
+    act(() => (container?.querySelector('button') as HTMLButtonElement).click())
+    expect(opened).toBe('BR-1')
+  })
+
+  it('reports sorting and does not open rows from nested links', () => {
+    let direction = ''
+    const sortable = [{ id: 'client', header: 'Client', sortable: true, cell: (row: Row) => <a href="#client">{row.name}</a> }]
+    mount(<DataTable ariaLabel="Rentals" columns={sortable} rows={rows} getRowId={(row) => row.id} sort={{ columnId: 'client', direction: 'asc' }} onSortChange={(next) => { direction = next.direction }} onRowOpen={() => { throw new Error('nested link must not open row') }} />)
+    expect(container?.querySelector('th')?.getAttribute('aria-sort')).toBe('ascending')
+    act(() => (container?.querySelector('th button') as HTMLButtonElement).click())
+    expect(direction).toBe('desc')
+    act(() => container?.querySelector('a')?.click())
+  })
+
+  it('does not display stale rows when loading fails', () => {
+    mount(<DataTable ariaLabel="Rentals" columns={columns} rows={rows} getRowId={(row) => row.id} error="Could not load rentals. Retry." />)
+    expect(container?.querySelector('[role="alert"]')?.textContent).toContain('Could not load rentals')
+    expect(container?.querySelector('table')).toBeNull()
   })
 })

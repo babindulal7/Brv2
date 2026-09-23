@@ -27,6 +27,11 @@ export interface CapacitorConfig {
     appendUserAgent?: string;
     backgroundColor?: string;
   };
+  ios?: {
+    contentInset?: 'automatic' | 'scrollable' | 'never' | 'always';
+    backgroundColor?: string;
+    preferredContentMode?: 'mobile' | 'desktop';
+  };
 }
 
 const config: CapacitorConfig = {
@@ -42,6 +47,11 @@ const config: CapacitorConfig = {
     captureInput: true,
     webContentsDebuggingEnabled: false,
     backgroundColor: '#0A0D14',
+  },
+  ios: {
+    contentInset: 'always',
+    backgroundColor: '#0A0D14',
+    preferredContentMode: 'mobile',
   },
 };
 

@@ -1,4 +1,5 @@
 import Icon from './Icon'
+import { InfoTooltip } from './InfoTooltip'
 import { Button } from './Button'
 import { BRAND_TEXT } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
@@ -110,9 +111,12 @@ export function EditableRows({
 
         return (
           <div key={r.label} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <label style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }} htmlFor={`edit-${key}`}>
-              {r.label}
-            </label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <label style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }} htmlFor={`edit-${key}`}>
+                {r.label}
+              </label>
+              {r.hint && <InfoTooltip content={r.hint} />}
+            </div>
 
             {r.as === 'textarea' ? (
               <textarea
@@ -135,10 +139,6 @@ export function EditableRows({
                 }
                 style={{ ...inputStyle, borderColor: error ? 'var(--danger)' : 'var(--border)' }}
               />
-            )}
-
-            {r.hint && !error && (
-              <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{r.hint}</span>
             )}
 
             {/* Law: errors inline, never colour alone — the message carries the meaning. */}

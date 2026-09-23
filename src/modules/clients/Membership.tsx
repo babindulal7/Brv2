@@ -1,3 +1,4 @@
+import { Pagination } from '../../components/ui/Pagination'
 import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -282,32 +283,6 @@ const th = {
  * anyway and reads better at the same rhythm.
  */
 const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const, verticalAlign: 'top' as const }
-
-function PageBtn({ label, active, disabled, onClick }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-current={active ? 'page' : undefined}
-      style={{
-        minWidth: 26,
-        height: 26,
-        borderRadius: 7,
-        border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
-        background: active ? 'var(--btn-primary-bg)' : 'transparent',
-        color: active ? 'var(--btn-primary-fg)' : 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: active ? 700 : 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.45 : 1,
-        fontFamily: 'inherit',
-      }}
-    >
-      {label}
-    </button>
-  )
-}
 
 /* ── screen ────────────────────────────────────────────────────────────── */
 
@@ -721,33 +696,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
               Clear selection
             </button>
           )}
-          <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            Rows per page
-            <select
-              value={perPage}
-              onChange={(e) => {
-                setPerPage(Number(e.target.value))
-                resetPage()
-              }}
-              className="figure"
-              style={{
-                height: 26,
-                padding: '0 6px',
-                borderRadius: 7,
-                border: '1px solid var(--border)',
-                background: 'var(--input-bg)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-                fontFamily: 'inherit',
-              }}
-            >
-              {MEMBER_ROWS_PER_PAGE.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Pagination page={current} total={rows.length} pageSize={perPage} onPageChange={setPage} pageSizeOptions={MEMBER_ROWS_PER_PAGE} onPageSizeChange={(size) => { setPerPage(size); resetPage() }} />
         </div>
 
         <div style={{ overflowX: 'auto' }}>
@@ -967,11 +916,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
             color: 'var(--text2)',
           }}
         >
-          <span>
-            {rows.length === 0
-              ? 'Showing 0 members'
-              : `Showing ${(current - 1) * perPage + 1} to ${Math.min(current * perPage, rows.length)} of ${rows.length} members`}
-          </span>
+          <Pagination page={current} total={rows.length} pageSize={perPage} onPageChange={setPage} pageSizeOptions={MEMBER_ROWS_PER_PAGE} onPageSizeChange={(size) => { setPerPage(size); resetPage() }} />
           <span style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
             {LEGEND.map((l) => (
               <span key={l.text} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
@@ -979,13 +924,6 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                 {l.text}
               </span>
             ))}
-          </span>
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
-            <PageBtn label="‹" disabled={current === 1} onClick={() => setPage(current - 1)} />
-            {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-              <PageBtn key={p} label={String(p)} active={p === current} onClick={() => setPage(p)} />
-            ))}
-            <PageBtn label="›" disabled={current === pageCount} onClick={() => setPage(current + 1)} />
           </span>
         </div>
       </Card>

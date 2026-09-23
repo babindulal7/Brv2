@@ -25,18 +25,28 @@ const access = vi.hoisted(() => {
 
   const queryMock = () => {
     let currentTable = '';
+    let lastCols: unknown = null;
 
     const chain: Record<string, any> = {
       from: (table: string) => {
         currentTable = table;
         return chain;
       },
-      select: (_cols?: string, _opts?: { count?: string; head?: boolean }) => {
+      select: (cols?: string, _opts?: { count?: string; head?: boolean }) => {
+        lastCols = cols;
         return chain;
       },
       eq: (_field: string, _val: unknown) => {
+        /* bookings read now asks for rows (`.select('id')`), not a count — the
+           ids feed the linked-cases count below. */
+        if (currentTable === 'bookings' && lastCols === 'id') {
+          return Promise.resolve({ data: [{ id: 'bbbb-b1' }, { id: 'bbbb-b2' }], error: null });
+        }
         return Promise.resolve({ count: 2, error: null });
       },
+      /* cases follow their booking (linked_booking_id) — the summary counts
+         those; the mock rows' booking ids don't matter, the count does. */
+      in: (_field: string, _vals: unknown[]) => Promise.resolve({ count: 1, error: null }),
       update: (patch: Record<string, unknown>) => {
         return {
           eq: (field: string, val: unknown) => {
@@ -173,15 +183,18 @@ describe('MERGE_CLIENTS action', () => {
     expect(res.result.duplicateId).toBe('22222222-2222-4222-8222-222222222222');
     expect(res.result.movedSummary.bookings).toBe(2);
 
-    // Verify related tables were updated to survivorId
+    // Verify related tables were updated to survivorId. Cases are not
+    // repointed directly — the table has no client_id column; they follow
+    // their booking (linked_booking_id), and the summary counts them there.
     const repointedTables = access.state.supabaseUpdates.map((u) => u.table);
     expect(repointedTables).toContain('bookings');
     expect(repointedTables).toContain('invoices');
     expect(repointedTables).toContain('security_deposits');
-    expect(repointedTables).toContain('cases');
+    expect(repointedTables).not.toContain('cases');
     expect(repointedTables).toContain('client_contacts');
     expect(repointedTables).toContain('client_documents');
     expect(repointedTables).toContain('client_notes');
+    expect(res.result.movedSummary.cases).toBe(1);
 
     for (const update of access.state.supabaseUpdates) {
       expect(update.patch.client_id).toBe('11111111-1111-4111-8111-111111111111');

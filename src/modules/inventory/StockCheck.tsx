@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, KpiStrip } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import type { Kpi } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
@@ -861,7 +862,7 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
   const restriction = stockAuditRestriction(user?.role)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)', paddingBottom: phone ? 76 : 'var(--sp-3xl)' }}>
+    <PageShell width="full">
       {/* §5 — breadcrumb only. The Shell carries the crumb trail and PLAN.md
           Phase 5 forbids a Back button. Embedded, the tab strip above already
           says where we are. */}
@@ -1036,6 +1037,6 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
           setScanInput(item.serial ?? item.assetTag ?? item.id)
         }}
       />
-    </div>
+    </PageShell>
   )
 }

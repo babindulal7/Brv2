@@ -611,6 +611,7 @@ export interface EquipmentConflictSummary {
 /** The shape this needs off a booking line, and nothing else. */
 export interface ConflictCheckLine {
   readonly id: string
+  readonly productId?: string | null
   readonly name: string
   readonly qty: number
 }
@@ -666,7 +667,8 @@ export function equipmentConflicts(
   const verdictByLineId = new Map<string, AvailabilityVerdict>()
   let unchecked = 0
   for (const line of lines) {
-    const answer = source.byProduct.get(line.id)
+    const prodId = line.productId ?? line.id
+    const answer = source.byProduct.get(prodId)
     /* `unitsOwned === 0` is bulk stock: no unit rows, so the overlap check has
        nothing to answer with. Not a conflict, and not a clean bill either. */
     if (answer === undefined || answer.unitsOwned === 0) {
@@ -676,14 +678,14 @@ export function equipmentConflicts(
         unknownVerdict(
           'Not checked',
           answer === undefined
-            ? 'Not in the availability read for these dates'
+            ? 'Not in the live catalogue'
             : 'Not unit-tracked — no units to check against these dates',
         ),
       )
       continue
     }
-    const held = wanted.get(line.id)
-    if (held === undefined) wanted.set(line.id, { name: line.name, qty: line.qty })
+    const held = wanted.get(prodId)
+    if (held === undefined) wanted.set(prodId, { name: line.name, qty: line.qty })
     else held.qty += line.qty
   }
 
@@ -809,12 +811,16 @@ export function componentSummaryOf(b: BundleRecord, max = 3): string {
 }
 
 /** Bundle rows, rebuilt per window because availability depends on the dates. */
-export function bundleResults(w: BookingWindow): readonly BundleResult[] {
-  return ACTIVE_BUNDLES.map((b): BundleResult => {
+export function bundleResults(
+  w: BookingWindow,
+  records: readonly BundleRecord[] = ACTIVE_BUNDLES,
+): readonly BundleResult[] {
+  return records.map((b): BundleResult => {
     const facts = factsOf(b)
+    const displayId = b.bundleCode ?? b.id
     return {
       kind: 'bundle',
-      id: b.id,
+      id: displayId,
       name: b.name,
       category: b.category,
       tags: b.tags,
@@ -825,6 +831,7 @@ export function bundleResults(w: BookingWindow): readonly BundleResult[] {
       componentSummary: componentSummaryOf(b),
       haystack: [
         b.name,
+        displayId,
         b.id,
         b.category,
         ...b.tags,
@@ -958,6 +965,12 @@ export interface QueryOptions {
    * so every line carries a real `products.id`.
    */
   equipment?: readonly EquipmentResult[]
+  /**
+   * The bundles pool to search.
+   *
+   * Omitted, it falls back to ACTIVE_BUNDLES.
+   */
+  bundles?: readonly BundleResult[]
 }
 
 export interface QueryGroup {
@@ -992,7 +1005,7 @@ export function runQuery(w: BookingWindow, o: QueryOptions): QueryOutcome {
   const searching = q.length >= o.minQueryChars
 
   const pool: CatalogueResult[] = [
-    ...(o.kinds.has('bundle') ? bundleResults(w) : []),
+    ...(o.kinds.has('bundle') ? (o.bundles ?? bundleResults(w)) : []),
     ...(o.equipment ?? EQUIPMENT_RESULTS).filter((e) => o.kinds.has(e.kind)),
   ]
 
@@ -1136,14 +1149,18 @@ export function addBundleToBooking(
     })
   }
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   const parentKey = mintDraftUuid()
-  if (!existing.has(b.id)) {
+  const bundleCode = b.bundleCode ?? b.id
+  const bundleDbId = b.dbId ?? (UUID_RE.test(b.id) ? b.id : null)
+
+  if (!existing.has(bundleCode) && !existing.has(b.id)) {
     lines.push({
-      id: b.id,
+      id: bundleDbId ?? b.id,
       clientUuid: parentKey,
       lineType: 'Bundle',
-      bundleId: b.id,
-      bundleCode: b.id,
+      bundleId: bundleDbId,
+      bundleCode,
       bundleName: b.name,
       name: b.name,
       serial: '—',
@@ -1168,8 +1185,9 @@ export function addBundleToBooking(
       continue
     }
 
-    // Stable and readable: the bundle code scopes the component name.
-    const id = `${b.id}::${l.model}`
+    const componentProdId = l.productId ?? null
+    // Stable and readable: the bundle code scopes the component name or composite key.
+    const id = componentProdId ? `${parentKey}::${componentProdId}` : `${b.id}::${l.model}`
     if (existing.has(id)) {
       skipped.push({ model: l.model, reason: 'Already on this booking' })
       continue
@@ -1184,7 +1202,9 @@ export function addBundleToBooking(
       parentClientUuid: parentKey,
       lineType: 'Equipment',
       isIncluded: true,
-      bundleCode: b.id,
+      productId: componentProdId,
+      bundleId: bundleDbId,
+      bundleCode,
       bundleName: b.name,
       name: l.model,
       // A bundle stores models, never serials (bundle seed §10) — packing assigns the unit.

@@ -12,6 +12,7 @@ import type { StatusKey } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
 import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
+import { Input } from '../../components/ui/Input'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
@@ -450,6 +451,7 @@ export interface ReturnWorkspaceProps {
     complete: () => void
     isDirty: boolean
     label?: string
+    error?: string | null
   }) => void
 }
 
@@ -620,7 +622,7 @@ export default function ReturnWorkspace({
     () => ({
       All: rows.length,
       Outstanding: outstandingRows.length,
-      Returned: rows.filter((r) => stateOf(r) === 'Returned').length,
+      Returned: rows.filter((r) => r.alreadyReturned || marks[r.key]?.state === 'Returned').length,
       'Not Returned': missingRows.length,
     }),
     [rows, outstandingRows.length, missingRows.length, marks],
@@ -756,7 +758,14 @@ export default function ReturnWorkspace({
 
   /* ── mark helpers ────────────────────────────────────────────────────── */
   const markReturned = (key: string) =>
-    setMarks((p) => ({ ...p, [key]: { state: 'Returned', returnedAtIso: new Date().toISOString() } }))
+    setMarks((p) => ({
+      ...p,
+      [key]: {
+        state: 'Returned',
+        returnedAtIso: new Date().toISOString(),
+        condition: p[key]?.condition ?? 'Good',
+      },
+    }))
   const markNotReturned = (key: string) => setMarks((p) => ({ ...p, [key]: { state: 'Not Returned', reason: '' } }))
   const clearMark = (key: string) =>
     setMarks((p) => {
@@ -776,6 +785,27 @@ export default function ReturnWorkspace({
       if (!cur) return p
       return { ...p, [key]: { ...cur, damagePhotos: (cur.damagePhotos ?? 0) + 1 } }
     })
+
+  const [ambientBarcode, setAmbientBarcode] = useState('')
+  const handleAmbientBarcodeSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const code = ambientBarcode.trim().toLowerCase()
+    if (!code) return
+    const match = rows.find(
+      (r) =>
+        (r.serial && r.serial.toLowerCase() === code) ||
+        r.key.toLowerCase() === code ||
+        (r.name && r.name.toLowerCase() === code) ||
+        (r.assetId && r.assetId.toLowerCase() === code)
+    )
+    if (match) {
+      receive(match.key)
+      setAmbientBarcode('')
+    } else {
+      setScanLog((p) => [`✕ No equipment matching "${ambientBarcode.trim()}" in this booking`, ...p].slice(0, 5))
+      setAmbientBarcode('')
+    }
+  }
 
   const receive = (key: string) => {
     const row = rows.find((r) => r.key === key)
@@ -883,9 +913,10 @@ export default function ReturnWorkspace({
       complete: completeSession,
       isDirty,
       label: 'Confirm & Next →',
+      error: dispatchError,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onRegisterActions, canComplete, dispatching, isDirty])
+  }, [onRegisterActions, canComplete, dispatching, isDirty, dispatchError])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
 
@@ -1185,7 +1216,7 @@ export default function ReturnWorkspace({
 
                   One button opens the scanner, where the mode selector lives.
                 */}
-                <button type="button" onClick={() => setShowScanner(true)} style={{ ...bigScanBtn, ...ACCENT_OUTLINE }}>
+                <button type="button" onClick={() => setShowScanner(true)} aria-label="Scan an item to mark it received" style={{ ...bigScanBtn, ...ACCENT_OUTLINE }}>
                   <Icon name="queues" size={16} /> Scan Item
                 </button>
                 <div style={{ flex: 1, minWidth: 180, display: 'flex', alignItems: 'center' }}>
@@ -1214,6 +1245,47 @@ export default function ReturnWorkspace({
               {/* ── centre — the triage list over the real rows ─────────────── */}
               <div style={{ minWidth: 0 }}>
                 <Card title="1 · Equipment Checklist" bodyStyle={{ padding: 0 }}>
+                  <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                    <form
+                      onSubmit={handleAmbientBarcodeSubmit}
+                      style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', width: '100%' }}
+                    >
+                      <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
+                        <span style={{ position: 'absolute', left: 12, color: 'var(--primary)', display: 'grid', placeItems: 'center' }}>
+                          <Icon name="barcode" size={18} />
+                        </span>
+                        <Input
+                          type="text"
+                          value={ambientBarcode}
+                          onChange={(e) => setAmbientBarcode(e.target.value)}
+                          placeholder="Scan or type barcode/serial number to check in gear…"
+                          aria-label="Scan or type barcode to receive"
+                          style={{
+                            width: '100%',
+                            minHeight: 44,
+                            paddingLeft: 38,
+                            borderRadius: 'var(--r-btn)',
+                            background: 'var(--surface)',
+                            fontSize: 'var(--t-meta)',
+                            border: '1px solid var(--primary)',
+                          }}
+                        />
+                      </div>
+                      <Button type="submit" variant="secondary" style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}>
+                        {/* RULING 2026-09-23: one filled primary per workspace, and it is the completion gate. The ambient scan-to-check-in control is auxiliary — secondary, not primary. */}
+                        Check In
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setShowScanner(true)}
+                        style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
+                      >
+                        <Icon name="camera" size={16} />
+                        Camera
+                      </Button>
+                    </form>
+                  </div>
                   <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
                     <SegmentedControl
                       ariaLabel="Filter return checklist items"
@@ -1644,7 +1716,7 @@ export default function ReturnWorkspace({
                                 border: '1px dashed var(--border)',
                                 background: 'transparent',
                                 color: 'var(--text2)',
-                                fontSize: 'var(--t-micro)',
+                                 fontSize: 'var(--t-th)', // RULING 2026-09-23: --t-micro never existed; --t-th is the floor, nothing renders below it
                                 cursor: 'pointer',
                                 fontFamily: 'inherit',
                               }}

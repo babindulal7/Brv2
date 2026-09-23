@@ -61,10 +61,10 @@ export function PrintLabelModal({ isOpen, onClose, labelData }: PrintLabelModalP
                   style={{
                     padding: '8px 10px',
                     borderRadius: 'var(--r-sm)',
-                    border: active ? '2px solid var(--accent)' : '1px solid var(--border)',
-                    background: active ? 'var(--accent-subtle)' : 'var(--card2)',
-                    color: active ? 'var(--accent)' : 'var(--text)',
-                    fontSize: 'var(--t-body-sm)',
+                    border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
+                    background: active ? 'var(--nav-active-bg)' : 'var(--card2)',
+                    color: active ? 'var(--primary)' : 'var(--text)',
+                    fontSize: 'var(--t-meta)',
                     fontWeight: active ? 700 : 500,
                     cursor: 'pointer',
                     textAlign: 'center',
@@ -100,7 +100,7 @@ export function PrintLabelModal({ isOpen, onClose, labelData }: PrintLabelModalP
               alignItems: 'center',
               background: '#e2e8f0',
               padding: 24,
-              borderRadius: 'var(--r-md)',
+                    borderRadius: 'var(--r-card)', // RULING 2026-09-23: --r-md never existed; --r-card is the canonical 10px
               minHeight: 180,
             }}
           >

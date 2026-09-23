@@ -87,6 +87,29 @@ export interface InsertOptions {
    * predicate (0048 pattern) — do not "fix" the linter warning on them.
    */
   returningColumns?: string
+  /**
+   * ⛔ **Custody writes only. Defaults to `true` — the queue stays on.**
+   *
+   * When `false`, this insert is NEVER diverted into the offline outbox and
+   * NEVER returns an optimistic success: it either commits to the database
+   * (and, with `returnRow`, hands back the row the commit produced) or it
+   * throws. This is the answer to RL-08 / Audit-01 P0-01: a queued write
+   * returns `{ error: null }` for a row the database never saw, and a caller
+   * that acts on that — sealing a Handover session, closing a Return — has
+   * just reported a custody event that did not happen.
+   *
+   * RULING 2026-09-21: `booking_stage_transitions` is the sole writer of
+   * `bookings.stage` (0021/0094), so it is the first and mandatory user of
+   * this flag — a stage transition MUST NOT be queued. Ordinary operational
+   * rows (session lines, movements, notes) keep the default: they may ride
+   * the outbox and drain later, because nothing downstream of them claims a
+   * stage moved.
+   *
+   * Retry safety is unchanged: the row still carries the caller's Law 8
+   * `client_uuid`, so a retry after a network-cut commit hits the 23505
+   * duplicate branch and resolves to the row that landed, not a second write.
+   */
+  queueOnFailure?: boolean
 }
 
 /** Read-back options for {@link safeUpdate} — same 0062 rationale as `InsertOptions`. */
@@ -113,6 +136,15 @@ export async function idempotentInsert<
   }
 
   if (shouldQueueOffline()) {
+    /* `queueOnFailure: false` — a custody write must fail loudly, not queue
+       and smile. The caller's catch decides the truthful residue (floorVerb:
+       the session stays In Progress; the stage is never claimed). */
+    if (options.queueOnFailure === false) {
+      throw new Error(
+        `[DataAccess] The device is offline and ${String(table)} is not queueable (custody write — RULING ` +
+          '2026-09-21). NOTHING was written. Retry when the connection is back.',
+      )
+    }
     console.warn(`[DataAccess] Device offline. Queuing insert for ${String(table)}.`)
     await enqueueMutation(String(table), 'insert', finalPayload, finalPayload.client_uuid)
     return { data: finalPayload, error: null } // Optimistic response
@@ -126,6 +158,18 @@ export async function idempotentInsert<
   if (error) {
     // If it's a network error from Supabase, queue it instead
     if (error.message === 'Failed to fetch' || error.code === '408') {
+       /* Same custody rule on the second failure path: no queue, no
+          optimistic success. If the line dropped AFTER the commit the row
+          exists — which the unique `client_uuid` makes safe: the retry hits
+          the 23505 branch above and resolves to the row that landed. */
+       if (options.queueOnFailure === false) {
+         throw new Error(
+           `[DataAccess] The ${String(table)} write could not be confirmed (${error.message}) and is not ` +
+             'queueable (custody write — RULING 2026-09-21). Treat it as NOT written; if the write did land ' +
+             'before the drop, the retry\'s unchanged client_uuid rejects the duplicate and returns the ' +
+             'original row.',
+         )
+       }
        console.warn(`[DataAccess] Network failure during insert. Queuing ${String(table)}.`)
        await enqueueMutation(String(table), 'insert', finalPayload, finalPayload.client_uuid)
        return { data: finalPayload, error: null }

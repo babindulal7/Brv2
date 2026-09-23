@@ -1,3 +1,4 @@
+import { Pagination } from '../../components/ui/Pagination'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -584,35 +585,7 @@ export default function ExpenseReports() {
 
             {rows.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                  Showing {(current - 1) * perPage + 1} to {Math.min(current * perPage, rows.length)} of {rows.length}
-                </span>
-                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Button onClick={() => setPage(Math.max(1, current - 1))} disabled={current === 1}>
-                    Previous
-                  </Button>
-                  <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', padding: '0 4px' }}>
-                    {current} / {pageCount}
-                  </span>
-                  <Button onClick={() => setPage(Math.min(pageCount, current + 1))} disabled={current === pageCount}>
-                    Next
-                  </Button>
-                  <select
-                    value={perPage}
-                    onChange={(e) => {
-                      setPerPage(Number(e.target.value))
-                      setPage(1)
-                    }}
-                    aria-label="Rows per page"
-                    style={selStyle}
-                  >
-                    {ROWS_PER_PAGE.map((n) => (
-                      <option key={n} value={n}>
-                        {n} / page
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <Pagination page={current} total={rows.length} pageSize={perPage} onPageChange={setPage} pageSizeOptions={ROWS_PER_PAGE} onPageSizeChange={(size) => { setPerPage(size); setPage(1) }} />
               </div>
             )}
           </Card>

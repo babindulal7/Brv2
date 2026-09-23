@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, FooterNote } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow, ReportCompare } from '../../components/ui/ReportToolbar'
 import { EmptyState } from '../../components/ui/StateViews'
@@ -203,7 +204,7 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
       {crumbs}
 
       {report.unresolved && (
@@ -377,7 +378,7 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
             : ['Period not resolved — no as-of date can be stated.']
         }
       />
-    </div>
+    </PageShell>
   )
 }
 

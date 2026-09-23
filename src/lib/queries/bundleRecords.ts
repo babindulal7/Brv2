@@ -137,6 +137,7 @@ function lineOf(
        Boxes & Bags cannot arise here at all. */
     group: item.category ?? 'Uncategorised',
     model: item.productName,
+    productId: item.productId,
     kind: 'equipment',
     quantity: item.quantity,
     unitsStock: owned.length,
@@ -285,6 +286,8 @@ export async function listBundleRecords(
          `id` is what it renders — matching `ClientRecord`, whose `id` is the
          client code while the uuid travels separately. */
       id: b.bundleCode,
+      dbId: b.id,
+      bundleCode: b.bundleCode,
       name: b.name,
       category: b.category ?? 'Uncategorised',
       /* No column. §4.44 — absent, not invented. */

@@ -210,7 +210,7 @@ export function ClientCombobox({
   const pool = useMemo(() => clients.filter((c) => !c.mergedIntoId), [clients])
 
   const selected = useMemo(
-    () => pool.find((c) => c.id === selectedClientId) ?? null,
+    () => pool.find((c) => c.id === selectedClientId || (c.dbId && c.dbId === selectedClientId)) ?? null,
     [pool, selectedClientId],
   )
 

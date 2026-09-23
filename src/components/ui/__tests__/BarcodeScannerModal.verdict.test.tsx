@@ -19,7 +19,7 @@
  *
  * Environment pragma per `vitest.config.ts`, which keeps the suite on `node`.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { BarcodeScannerModal, type ScanOutcome, type ScannableItem } from '../BarcodeScannerModal'
@@ -50,12 +50,22 @@ const ITEMS: ScannableItem[] = [
 let root: Root | null = null
 let host: HTMLDivElement | null = null
 
+let mockNow = 1700000000000
+beforeEach(() => {
+  mockNow = 1700000000000
+  vi.spyOn(Date, 'now').mockImplementation(() => {
+    mockNow += 3000
+    return mockNow
+  })
+})
+
 afterEach(() => {
   act(() => root?.unmount())
   host?.remove()
   root = null
   host = null
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
 async function mount(onItemScanned: (item: ScannableItem) => ScanOutcome | void) {

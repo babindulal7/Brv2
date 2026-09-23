@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { PageHeader, Card, ReflowRail, FooterNote, Button, cardStyle, useRailGridColumns } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { LineChart, GroupedBars } from '../../components/ui/Charts'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
@@ -799,7 +800,7 @@ export default function Pulse() {
   const bodyCols = railGridColumns
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
       {header}
       {assertions}
       {disclosure}
@@ -1277,7 +1278,7 @@ export default function Pulse() {
           'Reports reads its figures from the owning engine; it never defines a metric',
         ]}
       />
-    </div>
+    </PageShell>
   )
 }
 

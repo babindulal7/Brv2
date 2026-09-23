@@ -10,6 +10,8 @@ import type { ChipKey } from '../../lib/queries/bookings'
 import { DateRangePresets } from './DateRangePresets'
 
 export interface BooqableRentalFilterDrawerProps {
+  /** Render only filter contents when hosted by the shared app panel. */
+  embedded?: boolean
   id?: string
   open: boolean
   onClose: () => void
@@ -52,6 +54,7 @@ const BOOQABLE_PRESETS: PresetOption[] = [
 ]
 
 export function BooqableRentalFilterDrawer({
+  embedded = false,
   id,
   open,
   onClose,
@@ -72,22 +75,7 @@ export function BooqableRentalFilterDrawer({
   const generatedDrawerId = useId()
   const drawerId = id ?? generatedDrawerId
 
-  return (
-    <FilterDrawer
-      id={drawerId}
-      open={open}
-      onClose={onClose}
-      side="left"
-      desktopMode="rail"
-      width={320}
-      resultCount={resultCount}
-      noun={resultCount === 1 ? 'rental' : 'rentals'}
-      activeCount={activeCount}
-      onClearAll={onClearAll}
-      standardFooter
-      onApply={onClose}
-      applyLabel={resultCount !== null && resultCount !== undefined ? `Show ${resultCount} Results` : 'Apply'}
-    >
+  const content = (
       <div style={{ display: 'grid', gap: 'var(--sp-xs)', paddingBottom: 'var(--sp-md)' }}>
         {/* Section 1: Booqable Quick Presets / Views */}
         <FilterSection
@@ -324,6 +312,9 @@ export function BooqableRentalFilterDrawer({
           </Unavailable>
         </div>
       </div>
-    </FilterDrawer>
   )
+
+  if (embedded) return open ? <>{content}<div style={{ display: 'flex', gap: 8, paddingTop: 12, borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}><Button onClick={onClearAll}>Clear All</Button><Button variant="primary" onClick={onClose}>{resultCount !== null ? `Show ${resultCount} Results` : 'Apply'}</Button></div></> : null
+
+  return <FilterDrawer id={drawerId} open={open} onClose={onClose} side="left" desktopMode="rail" width={320} resultCount={resultCount} noun={resultCount === 1 ? 'rental' : 'rentals'} activeCount={activeCount} onClearAll={onClearAll} standardFooter onApply={onClose} applyLabel={resultCount !== null ? `Show ${resultCount} Results` : 'Apply'}>{content}</FilterDrawer>
 }

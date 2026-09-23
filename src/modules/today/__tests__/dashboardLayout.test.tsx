@@ -88,4 +88,27 @@ describe('focused pickup and return dashboard', () => {
     await mount()
     expect(container.textContent).toContain('Today · Overdue included')
   })
+
+  it('restores focus after choosing a filter and after Escape', async () => {
+    await mount()
+    const pickup = buttonByLabel('Choose pickup date filter')!
+    await act(async () => pickup.click())
+    expect(document.activeElement?.getAttribute('role')).toBe('dialog')
+    await act(async () => buttons().find((button) => button.textContent === 'Tomorrow')!.click())
+    expect(document.activeElement).toBe(pickup)
+    await act(async () => pickup.click())
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(pickup)
+  })
+
+  it.each([
+    { from: '2026-99-99', to: '2026-99-99' },
+    { from: '2026-02-30', to: '2026-03-02' },
+    { from: '2026-09-22', to: '2026-09-21' },
+  ])('recovers from invalid stored date ranges: %j', async (range) => {
+    window.sessionStorage.setItem('dashboard.pickupDateFilter', JSON.stringify({ kind: 'custom', ...range }))
+    await mount()
+    expect(buttonByLabel('Choose pickup date filter')?.textContent).toContain('Today')
+  })
 })

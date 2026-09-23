@@ -6,10 +6,13 @@ import { Card, Button, KpiStrip, cardStyle, Rail } from '../../components/ui/Pag
 import type { Kpi } from '../../components/ui/Page'
 import {
   ActiveFilterChips,
-  FilterDrawer,
   FilterOptionList,
   filterGroupStyle,
 } from '../../components/ui/FilterDrawer'
+import { AppSidePanel } from '../../components/shell/AppSidePanel'
+import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { Pagination } from '../../components/ui/Pagination'
 import type { ActiveFilter } from '../../components/ui/FilterDrawer'
 import {
   clientFacetsFor,
@@ -1003,7 +1006,11 @@ export function ClientsDirectory({
         run: () => navigate(booking ? `/rentals/${booking}` : '/rentals'),
       }
     }
-    return { label: 'New Rental', variant: 'primary' as const, run: () => navigate('/rentals/new') }
+    return {
+      label: 'New Rental',
+      variant: 'primary' as const,
+      run: () => navigate(`/rentals/new?clientId=${encodeURIComponent(client.id)}`),
+    }
   }
 
   const kpis: Kpi[] = [
@@ -1325,7 +1332,7 @@ export function ClientsDirectory({
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: filtersOpen && !phone ? 'minmax(230px, 280px) minmax(0,1fr)' : 'minmax(0,1fr)',
+          gridTemplateColumns: 'minmax(0,1fr)',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
@@ -1461,23 +1468,23 @@ export function ClientsDirectory({
             </>
           )
           return (
-            <FilterDrawer
-              id="clients-filters"
-              open={filtersOpen}
-              onClose={() => setFiltersOpen(false)}
-              desktopMode="rail"
-              /* No `null` branch: `clients` arrives as a prop already resolved
-                 by `Clients.tsx`, so this screen has no in-flight state of its
-                 own to report — unlike RentalsList, which pages server-side. */
-              resultCount={filteredClients.length}
-              noun={filteredClients.length === 1 ? 'client' : 'clients'}
-              activeCount={selectionCount(facetSel)}
-              onClearAll={clearAll}
-              standardFooter
-              onApply={() => setFiltersOpen(false)}
-            >
-              {filtersContent}
-            </FilterDrawer>
+            <WorkspaceLeftPanel>
+              <AppSidePanel
+                id="clients-filters"
+                side="left"
+                title={`Filters · ${filteredClients.length} ${filteredClients.length === 1 ? 'client' : 'clients'}`}
+                isOpen={filtersOpen}
+                onClose={() => setFiltersOpen(false)}
+                footer={
+                  <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
+                    <Button onClick={clearAll} disabled={selectionCount(facetSel) === 0}>Reset</Button>
+                    <Button variant="primary" onClick={() => setFiltersOpen(false)}>Apply</Button>
+                  </div>
+                }
+              >
+                {filtersContent}
+              </AppSidePanel>
+            </WorkspaceLeftPanel>
           )
         })()}
         </>
@@ -1491,6 +1498,21 @@ export function ClientsDirectory({
           }}
         >
           <Card bodyStyle={{ padding: 0 }}>
+            <AppPageToolbar
+              pagination={
+                <Pagination
+                  page={current}
+                  total={filteredClients.length}
+                  pageSize={perPage}
+                  pageSizeOptions={CLIENT_ROWS_PER_PAGE}
+                  onPageChange={setPage}
+                  onPageSizeChange={(size) => {
+                    setPerPage(size)
+                    resetPage()
+                  }}
+                />
+              }
+            />
             <div
               style={{
                 display: 'flex',
@@ -1512,11 +1534,6 @@ export function ClientsDirectory({
                 color: 'var(--text2)',
               }}
             >
-              <span>
-                {filteredClients.length === 0
-                  ? 'Showing 0 clients'
-                  : `Showing ${(current - 1) * perPage + 1} to ${Math.min(current * perPage, filteredClients.length)} of ${filteredClients.length} clients`}
-              </span>
               {selectedRowIds.size > 0 && (
                 <>
                   <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>
@@ -1595,36 +1612,6 @@ export function ClientsDirectory({
                 </button>
               )}
 
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                Show
-                <select
-                  value={perPage}
-                  onChange={(e) => {
-                    setPerPage(Number(e.target.value))
-                    resetPage()
-                  }}
-                  className="figure"
-                  style={{
-                    // Law 15 — 44×44 at every width, desktop included. A real
-                    // <select> the operator has to hit; it was 26px tall.
-                    minHeight: 44,
-                    padding: '0 6px',
-                    borderRadius: 7,
-                    border: '1px solid var(--border)',
-                    background: 'var(--input-bg)',
-                    color: 'var(--text)',
-                    fontSize: 'var(--t-meta)',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  {CLIENT_ROWS_PER_PAGE.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                per page
-              </label>
             </div>
 
             {filteredClients.length === 0 ? (
@@ -2039,7 +2026,7 @@ export function ClientsDirectory({
                                     {
                                       label: 'Start a new rental',
                                       icon: 'plus' as const,
-                                      run: () => navigate('/rentals/new'),
+                                      run: () => navigate(`/rentals/new?clientId=${encodeURIComponent(client.id)}`),
                                     },
                                     ...(client.activeBookings[0]
                                       ? [
@@ -2100,28 +2087,18 @@ export function ClientsDirectory({
               </div>
             )}
 
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--sp-md)',
-                padding: '10px 14px',
-                flexWrap: 'wrap',
-                fontSize: 'var(--t-meta)',
-                color: 'var(--text2)',
-                borderTop: '1px solid var(--border)',
-              }}
-            >
-              <span>
-                Page <span className="figure">{current}</span> of <span className="figure">{pageCount}</span>
-              </span>
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
-                <PageBtn label="‹" disabled={current === 1} onClick={() => setPage(current - 1)} />
-                {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-                  <PageBtn key={p} label={String(p)} active={p === current} onClick={() => setPage(p)} />
-                ))}
-                <PageBtn label="›" disabled={current === pageCount} onClick={() => setPage(current + 1)} />
-              </span>
+            <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+              <Pagination
+                page={current}
+                total={filteredClients.length}
+                pageSize={perPage}
+                pageSizeOptions={CLIENT_ROWS_PER_PAGE}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setPerPage(size)
+                  resetPage()
+                }}
+              />
             </div>
           </Card>
 
@@ -2450,7 +2427,11 @@ export function ClientsDirectory({
                       </Button>
                     </Unavailable>
                   ) : (
-                    <Button variant="primary" icon="plus" onClick={() => navigate('/rentals/new')}>
+                    <Button
+                      variant="primary"
+                      icon="plus"
+                      onClick={() => navigate(`/rentals/new?clientId=${encodeURIComponent(selectedClient.id)}`)}
+                    >
                       Start rental
                     </Button>
                   )}
@@ -2584,34 +2565,5 @@ export function ClientsDirectory({
         </div>
       </Modal>
     </div>
-  )
-}
-
-function PageBtn({ label, active, disabled, onClick }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-current={active ? 'page' : undefined}
-      style={{
-        // Law 15 — pagination is a real target on the tablet this product
-        // runs on; 26×26 was 18px under the floor.
-        minWidth: 44,
-        minHeight: 44,
-        padding: '0 6px',
-        borderRadius: 7,
-        border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
-        background: active ? 'var(--btn-primary-bg)' : 'transparent',
-        color: active ? 'var(--btn-primary-fg)' : 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: active ? 700 : 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.45 : 1,
-        fontFamily: 'inherit',
-      }}
-    >
-      {label}
-    </button>
   )
 }

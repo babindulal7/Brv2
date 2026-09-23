@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
+import { Unavailable } from '../../../components/ui/Unavailable'
 import { rupees, toRupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { refundPayment } from '../../../actions/payments/refundPayment'
@@ -264,7 +265,7 @@ export function RefundPaymentModal({
                 setRefundAmount(Number.isFinite(next) ? next : 0)
               }}
               style={{
-                height: 36,
+                minHeight: 'var(--tap)',
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',
@@ -289,30 +290,34 @@ export function RefundPaymentModal({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {/* ⚠ This control currently goes nowhere. `RefundPaymentInput` has
-                no field for the method (see the dispatch block above), so the
-                choice is collected and dropped. It is left rendered rather than
-                removed because the reversal genuinely has a method and the
-                operator must state it — but nobody should read this select as
-                evidence that the ledger knows how the money went back. */}
+            {/* ⚠ This control goes nowhere — the refund action carries no
+                method field, so a choice typed here would be collected and
+                dropped. It used to stay interactive anyway, with the reason
+                living only in this comment. It now sits disabled behind
+                `Unavailable` like every other collected-but-unwritten control:
+                greyed, and the operator sees why before they pick. */}
             <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Reversal Method</label>
-            <select
-              value={method}
-              onChange={(e) => setMethod(e.target.value as RefundMethod)}
-              style={{
-                height: 36,
-                padding: '0 12px',
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'var(--card)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-              }}
-            >
-              <option value="Bank Reversal">Bank Reversal</option>
-              <option value="Cash Return">Cash Return</option>
-              <option value="Wallet Credit">Wallet Credit</option>
-            </select>
+            <Unavailable reason="Choosing a method changes nothing on the record yet — the refund write has no field for it, so the choice would not be stored">
+              <select
+                value={method}
+                onChange={(e) => setMethod(e.target.value as RefundMethod)}
+                disabled
+                style={{
+                  minHeight: 'var(--tap)',
+                  padding: '0 12px',
+                  borderRadius: 'var(--r-btn)',
+                  border: '1px solid var(--border)',
+                  background: 'var(--card)',
+                  color: 'var(--muted)',
+                  fontSize: 'var(--t-meta)',
+                  cursor: 'not-allowed',
+                }}
+              >
+                <option value="Bank Reversal">Bank Reversal</option>
+                <option value="Cash Return">Cash Return</option>
+                <option value="Wallet Credit">Wallet Credit</option>
+              </select>
+            </Unavailable>
           </div>
         </div>
 

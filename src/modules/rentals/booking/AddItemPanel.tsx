@@ -208,6 +208,12 @@ export interface AddItemPanelProps {
    */
   equipment?: readonly EquipmentResult[]
   /**
+   * The bundles pool to search, from `bundleResults(w, liveBundles)`.
+   *
+   * Omitted, this panel searches ACTIVE_BUNDLES from data/bundles.ts.
+   */
+  bundles?: readonly BundleResult[]
+  /**
    * The state of the windowed availability read behind `equipment` (NR-09).
    *
    * Only the hint line reads it — every row already carries its own verdict.
@@ -239,6 +245,7 @@ export function AddItemPanel({
   days,
   existingLineIds,
   equipment,
+  bundles,
   availability: availabilitySource,
   onAdd,
   showPrices = true,
@@ -288,8 +295,9 @@ export function AddItemPanel({
         minQueryChars,
         existingLineIds: existing,
         ...(equipment ? { equipment } : {}),
+        ...(bundles ? { bundles } : {}),
       }),
-    [bookingWindow, query, tab, category, availability, sort, minQueryChars, existing, equipment],
+    [bookingWindow, query, tab, category, availability, sort, minQueryChars, existing, equipment, bundles],
   )
 
   const options = useMemo(() => flatten(outcome.groups), [outcome.groups])

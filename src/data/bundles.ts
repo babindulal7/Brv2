@@ -83,6 +83,8 @@ export interface BundleLine {
    * actually pack today.
    */
   substitutes?: string[]
+  /** Live product UUID (`products.id`) when bundle line is backed by database product. */
+  productId?: string
 
   /*
    * ── deliberately NOT seeded ──────────────────────────────────────────────
@@ -112,6 +114,10 @@ export interface BundleBooking {
 
 export interface BundleRecord {
   id: string
+  /** Database UUID (`bundles.id`) for saving to booking lines. */
+  dbId?: string
+  /** The human-readable bundle code (`BND-23`). */
+  bundleCode?: string
   name: string
   /** §4.1 — one value, labelled `(Primary)`. The full mix is in the preview. */
   category: string

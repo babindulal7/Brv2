@@ -3,10 +3,13 @@ import type { ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, Button, PageHeader, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
-import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
+import { AppSidePanel } from '../../components/shell/AppSidePanel'
+import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
+import { Pagination } from '../../components/ui/Pagination'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
@@ -65,7 +68,6 @@ import {
   INV_ORDER,
   SORTS,
   SORT_UNAVAILABLE,
-  ROWS_PER_PAGE_OPTIONS,
   breakdownOf,
   conditionOf,
   stockLabel,
@@ -254,12 +256,6 @@ function countOf(list: { loading: boolean; error: string | null }, value: number
  * always. Over a client-side array of eight rows that was one button; over a
  * server-side count it is one button per twenty-five models.
  */
-function pageWindow(current: number, pageCount: number, span = 5): number[] {
-  const start = Math.max(1, Math.min(current - Math.floor(span / 2), pageCount - span + 1))
-  const end = Math.min(pageCount, start + span - 1)
-  return Array.from({ length: end - start + 1 }, (_, i) => start + i)
-}
-
 /* ── small pieces ──────────────────────────────────────────────────────── */
 
 /**
@@ -1520,10 +1516,7 @@ export default function Inventory() {
 
   /** Checkbox, chevron, Equipment, Category, Stock, Status, Location, Condition, [money], Actions. */
   const tableColumns = money ? 10 : 9
-  const firstOnPage = (page - 1) * rowsPerPage + 1
-  const lastOnPage = firstOnPage + list.rows.length - 1
   /** Units on THIS PAGE. Never presented as a fleet total — see the KPI note. */
-  const unitsOnPage = list.rows.reduce((a, r) => a + r.unitCount, 0)
   const countedTitle = total === null ? 'Equipment' : `${grouped(total)} ${total === 1 ? 'Model' : 'Models'} found`
 
   /*
@@ -1536,7 +1529,7 @@ export default function Inventory() {
   const equipmentActions =
     tab === 'Equipment' ? (
       <>
-        <Button icon="refresh" onClick={refreshAll}>
+        <Button icon="refresh" onClick={refreshAll} aria-label="Refresh equipment">
           {phone ? '' : 'Refresh'}
         </Button>
         {!phone && (
@@ -1552,7 +1545,7 @@ export default function Inventory() {
           style={{ display: 'inline-flex' }}
           title={`Exports the ${list.rows.length} models on this page. The list is paged server-side, so the file is the page, not the catalogue.`}
         >
-          <Button icon="download" onClick={() => exportCsv(list.rows, money)}>
+          <Button icon="download" onClick={() => exportCsv(list.rows, money)} aria-label="Export equipment on this page">
             {phone ? '' : 'Export'}
           </Button>
         </span>
@@ -1566,6 +1559,7 @@ export default function Inventory() {
         <Button
           icon="plus"
           variant="primary"
+          aria-label="Add Equipment"
           onClick={() => {
             const p = new URLSearchParams(params)
             p.set('tab', 'new')
@@ -1575,30 +1569,27 @@ export default function Inventory() {
           {phone ? '' : 'Add Equipment'}
         </Button>
       </>
-    ) : null
+    ) : null;
 
   return (
-    <PageShell
-      width="full"
-      header={
-        <PageHeader
-          {...(!isNew && tab === 'Equipment'
-            ? {
-                leading: (
-                  <FilterButton
-                    onClick={() => setFiltersOpen(!filtersOpen)}
-                    activeCount={activeFacetCount}
-                    controls="inventory-filters"
-                    expanded={filtersOpen}
-                  />
-                ),
-              }
-            : { icon: 'box' as const })}
-          title="Inventory"
-          {...(equipmentActions ? { actions: equipmentActions } : {})}
-        />
-      }
-    >
+    <PageShell>
+      <PageHeader
+        title="Inventory"
+        description="Find equipment, check availability, and manage stock."
+        actions={equipmentActions}
+      />
+      <WorkspaceLeftPanel>
+        <AppSidePanel id="inventory-filters" side="left" title="Filters" isOpen={filtersOpen && tab === 'Equipment' && !isNew} onClose={() => setFiltersOpen(false)}>
+          <FilterRail
+            facets={facets}
+            onToggle={toggleFacet}
+            onReset={clearFilters}
+            money={money}
+            activeCount={activeFacetCount}
+            counts={facetCounts}
+          />
+        </AppSidePanel>
+      </WorkspaceLeftPanel>
 
       {/*
         §7 closing note — **"Tabs scroll horizontally rather than wrapping at any
@@ -1808,7 +1799,7 @@ export default function Inventory() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: filtersOpen && !phone ? 'minmax(240px, 300px) minmax(0, 1fr)' : 'minmax(0, 1fr)',
+              gridTemplateColumns: 'minmax(0, 1fr)',
               gap: 'var(--sp-md)',
               alignItems: 'start',
             }}
@@ -1822,30 +1813,6 @@ export default function Inventory() {
               `FilterDrawer` is `position: fixed`, so the grid is one column and
               the table keeps the width the rail was taking.
             */}
-            <FilterDrawer
-              id="inventory-filters"
-              open={filtersOpen}
-              onClose={() => setFiltersOpen(false)}
-              desktopMode="rail"
-              side="left"
-              width={380}
-              resultCount={list.loading ? null : (list.total ?? null)}
-              noun={list.total === 1 ? 'item' : 'items'}
-              activeCount={activeFacetCount}
-              onClearAll={clearFilters}
-              standardFooter
-              onApply={() => setFiltersOpen(false)}
-            >
-              <FilterRail
-                facets={facets}
-                onToggle={toggleFacet}
-                onReset={clearFilters}
-                money={money}
-                activeCount={activeFacetCount}
-                counts={facetCounts}
-              />
-            </FilterDrawer>
-
             <Card
               title={countedTitle}
               action={
@@ -1925,6 +1892,20 @@ export default function Inventory() {
               }
               bodyStyle={{ padding: 0 }}
             >
+              {total !== null && (
+                <AppPageToolbar
+                  pagination={
+                    <Pagination
+                      page={page}
+                      total={total}
+                      pageSize={rowsPerPage}
+                      pageSizeOptions={[25, 50, 100]}
+                      onPageChange={setPage}
+                      onPageSizeChange={setRowsPerPage}
+                    />
+                  }
+                />
+              )}
               {selected.size > 0 && (
                 <div
                   style={{
@@ -2167,139 +2148,18 @@ export default function Inventory() {
               </PageBody>
 
               {/* §7.5 — state both counts; the table paginates models, not units. */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--sp-md)',
-                  padding: '10px 14px',
-                  flexWrap: 'wrap',
-                  fontSize: 'var(--t-meta)',
-                  color: 'var(--text2)',
-                  borderTop: '1px solid var(--border)',
-                }}
-              >
-                <span>
-                  Showing {list.rows.length === 0 ? 0 : firstOnPage} to {list.rows.length === 0 ? 0 : lastOnPage} of{' '}
-                  {total === null ? '—' : grouped(total)} models ·{' '}
-                  {/* Page-scoped, and labelled page-scoped. The fleet-wide unit
-                      total is an aggregate no query here returns. */}
-                  {grouped(unitsOnPage)} units on this page
-                </span>
-
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  Rows per page
-                  <select
-                    value={rowsPerPage}
-                    onChange={(e) => {
-                      setRowsPerPage(Number(e.target.value))
-                      setPage(1)
-                    }}
-                    aria-label="Rows per page"
-                    style={{
-                      height: 28,
-                      padding: '0 24px 0 8px',
-                      borderRadius: 'var(--r-sm)',
-                      border: '1px solid var(--border)',
-                      background: 'var(--card)',
-                      color: 'var(--text)',
-                      fontSize: 'var(--t-meta)',
-                      fontFamily: 'inherit',
-                      cursor: 'pointer',
-                      appearance: 'none',
-                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'right 6px center',
-                    }}
-                  >
-                    {ROWS_PER_PAGE_OPTIONS.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: 3, alignItems: 'center' }}>
-                  {[
-                    { label: '«', to: 1, disabled: page === 1, name: 'First page' },
-                    { label: '‹', to: page - 1, disabled: page === 1, name: 'Previous page' },
-                  ].map((b) => (
-                    <button
-                      key={b.name}
-                      type="button"
-                      onClick={() => setPage(b.to)}
-                      disabled={b.disabled}
-                      aria-label={b.name}
-                      style={{
-                        minWidth: 26,
-                        height: 26,
-                        borderRadius: 7,
-                        border: '1px solid var(--border)',
-                        background: 'transparent',
-                        color: b.disabled ? 'var(--disabled)' : 'var(--text2)',
-                        fontSize: 'var(--t-meta)',
-                        cursor: b.disabled ? 'not-allowed' : 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      {b.label}
-                    </button>
-                  ))}
-
-                  {pageWindow(page, pageCount).map((n) => {
-                    const on = n === page
-                    return (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setPage(n)}
-                        aria-current={on ? 'page' : undefined}
-                        style={{
-                          minWidth: 26,
-                          height: 26,
-                          borderRadius: 7,
-                          border: `1px solid ${on ? 'transparent' : 'var(--border)'}`,
-                          background: on ? 'var(--btn-primary-bg)' : 'transparent',
-                          color: on ? 'var(--btn-primary-fg)' : 'var(--text2)',
-                          fontSize: 'var(--t-meta)',
-                          fontWeight: on ? 700 : 500,
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        {n}
-                      </button>
-                    )
-                  })}
-
-                  {[
-                    { label: '›', to: page + 1, disabled: page === pageCount, name: 'Next page' },
-                    { label: '»', to: pageCount, disabled: page === pageCount, name: 'Last page' },
-                  ].map((b) => (
-                    <button
-                      key={b.name}
-                      type="button"
-                      onClick={() => setPage(b.to)}
-                      disabled={b.disabled}
-                      aria-label={b.name}
-                      style={{
-                        minWidth: 26,
-                        height: 26,
-                        borderRadius: 7,
-                        border: '1px solid var(--border)',
-                        background: 'transparent',
-                        color: b.disabled ? 'var(--disabled)' : 'var(--text2)',
-                        fontSize: 'var(--t-meta)',
-                        cursor: b.disabled ? 'not-allowed' : 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      {b.label}
-                    </button>
-                  ))}
-                </span>
-              </div>
+              {list.rows.length > 0 && total !== null && (
+                <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+                  <Pagination
+                    page={page}
+                    total={total}
+                    pageSize={rowsPerPage}
+                    pageSizeOptions={[25, 50, 100]}
+                    onPageChange={setPage}
+                    onPageSizeChange={setRowsPerPage}
+                  />
+                </div>
+              )}
             </Card>
 
             {/*

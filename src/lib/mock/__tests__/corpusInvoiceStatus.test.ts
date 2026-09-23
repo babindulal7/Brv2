@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest'
 import { buildStore } from '../corpus'
 import { STORED_INVOICE_STATUSES } from '../../queries/finance'
 
-const invoices = () => (buildStore()['invoices'] ?? []) as Array<Record<string, unknown>>
+const invoices = () => (buildStore({ seeded: true })['invoices'] ?? []) as Array<Record<string, unknown>>
 
 describe('the mock corpus invoices carry a real invoice_status', () => {
   it('serves invoices at all — an empty table would pass every check below', () => {
@@ -59,5 +59,29 @@ describe('the mock corpus invoices carry a real invoice_status', () => {
   it('leaves at least one invoice unsettled, so the Outstanding KPI has rows', () => {
     const unsettled = invoices().filter((i) => i['status'] === 'Sent' || i['status'] === 'Partially Paid')
     expect(unsettled.length).toBeGreaterThan(0)
+  })
+})
+
+describe('unseeded mock store defaults to empty operational tables', () => {
+  const store = buildStore()
+
+  it('keeps essential reference data intact', () => {
+    expect((store['users'] ?? []).length).toBeGreaterThan(0)
+    expect((store['branches'] ?? []).length).toBeGreaterThan(0)
+    expect((store['warehouses'] ?? []).length).toBeGreaterThan(0)
+    expect((store['inventory_categories'] ?? []).length).toBeGreaterThan(0)
+  })
+
+  it('clears all operational records so the database starts completely clean', () => {
+    expect((store['clients'] ?? []).length).toBe(0)
+    expect((store['products'] ?? []).length).toBe(0)
+    expect((store['product_units'] ?? []).length).toBe(0)
+    expect((store['bookings'] ?? []).length).toBe(0)
+    expect((store['booking_lines'] ?? []).length).toBe(0)
+    expect((store['invoices'] ?? []).length).toBe(0)
+    expect((store['payments'] ?? []).length).toBe(0)
+    expect((store['security_deposits'] ?? []).length).toBe(0)
+    expect((store['purchase_requests'] ?? []).length).toBe(0)
+    expect((store['stock_transfers'] ?? []).length).toBe(0)
   })
 })

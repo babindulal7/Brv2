@@ -19,6 +19,8 @@ import { BOOKING_STATUS, STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import BookingOperationsMenu from './BookingOperationsMenu'
 import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useAuth } from '../../lib/auth'
 import { newClientUuid } from '../../lib/supabase'
@@ -1124,6 +1126,27 @@ export default function BookingDetail() {
     }
   }, [id, floorVersion])
 
+  const refreshBookingData = useCallback(() => {
+    refetchHead()
+    setFloorVersion((v) => v + 1)
+  }, [refetchHead])
+
+  useDomainEvent<{ bookingNo?: string }>(EVENT_TYPES.RENTAL_PACKED, (p) => {
+    if (!p?.bookingNo || p.bookingNo === id) refreshBookingData()
+  })
+  useDomainEvent<{ bookingNo?: string }>(EVENT_TYPES.RENTAL_HANDED_OVER, (p) => {
+    if (!p?.bookingNo || p.bookingNo === id) refreshBookingData()
+  })
+  useDomainEvent<{ bookingNo?: string }>(EVENT_TYPES.RENTAL_PICKED_UP, (p) => {
+    if (!p?.bookingNo || p.bookingNo === id) refreshBookingData()
+  })
+  useDomainEvent<{ bookingNo?: string }>(EVENT_TYPES.RENTAL_RETURNED, (p) => {
+    if (!p?.bookingNo || p.bookingNo === id) refreshBookingData()
+  })
+  useDomainEvent<{ bookingNo?: string }>(EVENT_TYPES.RENTAL_RESET_COMPLETED, (p) => {
+    if (!p?.bookingNo || p.bookingNo === id) refreshBookingData()
+  })
+
   /* ── unit release — §4.38 ruled (a), the serial chip's × ──────────────────
    *
    * Gate mirrors `unit.release`'s rule (`canWriteBookingDesk` =
@@ -1617,6 +1640,44 @@ export default function BookingDetail() {
     })
   }, [booking, user, clientPhone, floor, canBookingMoney, hasInvoice, totals])
 
+  const stage = (booking?.stage ?? 'Draft') as BookingStatus
+  const lines: FloorLine[] = floor?.lines ?? []
+  const missingSerialsCount = lines
+    .filter((l) => l.lineType === 'Equipment')
+    .reduce((sum, l) => sum + Math.max(0, l.qty - l.units.length), 0)
+
+  const universalNext = useMemo(() => {
+    return getUniversalNextAction(stage, {
+      isOverdue:
+        booking?.stage === 'On Rent' &&
+        !booking?.isClosed &&
+        !booking?.isCancelled &&
+        booking?.actualReturnAtAd === null &&
+        Boolean(booking?.returnAtAd && new Date(booking.returnAtAd) < new Date()),
+      uncheckedCount: missingSerialsCount,
+    })
+  }, [stage, booking, missingSerialsCount])
+
+  const handleUniversalNextAction = useCallback(() => {
+    if (!booking) return
+    const verb = universalNext.primaryVerb
+    if (verb === 'Start Preparation' || verb === 'Continue Preparation') {
+      openOperations(booking.bookingNo, stage, 'Pack')
+    } else if (verb === 'Start Handover') {
+      openOperations(booking.bookingNo, stage, 'Handover')
+    } else if (verb === 'Receive Return' || verb === 'Continue Return') {
+      openOperations(booking.bookingNo, stage, 'Return')
+    } else if (verb === 'Start Inspection') {
+      openOperations(booking.bookingNo, stage, 'Return')
+    } else if (verb === 'Complete Reset') {
+      openOperations(booking.bookingNo, stage, 'Reset')
+    } else if (verb === 'Close Rental') {
+      closeBooking()
+    } else if (verb === 'Confirm Rental') {
+      confirmBooking()
+    }
+  }, [booking, universalNext.primaryVerb, stage, openOperations, closeBooking, confirmBooking])
+
   if (!booking) {
     /*
      * Loading / error / not-found, through PageBody's fixed ladder. An unknown
@@ -1664,7 +1725,6 @@ export default function BookingDetail() {
   /* Both vocabularies are the canonical six (0015; pinned against the
      generated types in queries/bookings.ts's header), so the DB stage IS the
      workflow status. */
-  const stage = booking.stage as BookingStatus
 
   /* ── Cancelled — the mark and the refusal (BD-03) ────────────────────────
    *
@@ -1749,7 +1809,6 @@ export default function BookingDetail() {
               }
 
   const days = rentalDaysBetween(booking.pickupAtAd, booking.returnAtAd)
-  const lines: FloorLine[] = floor?.lines ?? []
   const allUnits = lines.flatMap((l) => l.units)
   const subRental = isSubRentalBooking(lines.map((l) => ({ lineType: l.lineType })))
 
@@ -1780,10 +1839,6 @@ export default function BookingDetail() {
       value: booking.depositRequired !== null ? formatMoney(booking.depositRequired) : 'Not recorded',
     },
   ]
-
-  const missingSerialsCount = lines
-    .filter((l) => l.lineType === 'Equipment')
-    .reduce((sum, l) => sum + Math.max(0, l.qty - l.units.length), 0)
 
   const blockers: string[] = []
   if (missingSerialsCount > 0 && stage !== 'Returned' && stage !== 'Closed' && !booking.isCancelled) {
@@ -2093,6 +2148,15 @@ export default function BookingDetail() {
                 )}
               </>
             )}
+            {canOperate && stage !== 'Quote' && !booking.isClosed && !booking.isCancelled && (
+              <Button
+                variant="primary"
+                onClick={handleUniversalNextAction}
+                style={{ fontWeight: 700 }}
+              >
+                {universalNext.primaryVerb}
+              </Button>
+            )}
             <BookingOperationsMenu
               bookingNo={id}
               bookingStatus={stage}
@@ -2225,24 +2289,7 @@ export default function BookingDetail() {
               new Date(booking.returnAtAd) < new Date(),
             uncheckedCount: missingSerialsCount,
           }}
-          onActionClick={() => {
-            const next = getUniversalNextAction(stage)
-            if (next.primaryVerb === 'Start Preparation' || next.primaryVerb === 'Continue Preparation') {
-              openOperations(booking.bookingNo, stage, 'Pack')
-            } else if (next.primaryVerb === 'Start Handover') {
-              openOperations(booking.bookingNo, stage, 'Handover')
-            } else if (next.primaryVerb === 'Receive Return' || next.primaryVerb === 'Continue Return') {
-              openOperations(booking.bookingNo, stage, 'Return')
-            } else if (next.primaryVerb === 'Start Inspection') {
-              openOperations(booking.bookingNo, stage, 'Return')
-            } else if (next.primaryVerb === 'Complete Reset') {
-              openOperations(booking.bookingNo, stage, 'Reset')
-            } else if (next.primaryVerb === 'Close Rental') {
-              closeBooking()
-            } else if (next.primaryVerb === 'Confirm Rental') {
-              confirmBooking()
-            }
-          }}
+          onActionClick={handleUniversalNextAction}
         />
       </div>
 
@@ -3143,6 +3190,9 @@ export default function BookingDetail() {
             amount: formatMoney(inv.totalAmount),
             status: inv.status,
             booking: inv.bookingNo,
+            // R-39 D1 — the Amount field prefill is what the invoice still
+            // owes; the operator edits it, the prefill only removes typing.
+            outstandingRupees: toRupees(inv.outstandingAmount),
           }))}
           initialInvoiceId={primaryInvoice.id}
           onSuccess={(p) => {

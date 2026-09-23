@@ -2,11 +2,12 @@ import React, { useState, useEffect, useRef, useId } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../ui/Icon'
 import type { IconName } from '../ui/Icon'
-import { permittedNav } from '../../data/nav'
+import * as nav from '../../data/nav'
 import { useAuth } from '../../lib/auth'
 import { useTheme } from '../../lib/theme'
 import { toggleScanner } from './ScannerFab'
 import { quickCreateActions } from './QuickCreateMenu'
+import { searchRecords, type GlobalSearchResult } from '../../lib/queries/globalSearch'
 
 /**
  * The global ⌘K / Ctrl-K palette.
@@ -44,7 +45,7 @@ interface PaletteAction {
   id: string
   title: string
   subtitle?: string
-  category: 'Navigation' | 'Actions'
+  category: 'Navigation' | 'Actions' | 'Records'
   icon: IconName
   onSelect: () => void
 }
@@ -59,6 +60,7 @@ export const CommandPalette: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [recordResults, setRecordResults] = useState<GlobalSearchResult[]>([])
   const navigate = useNavigate()
   const { user } = useAuth()
   const hasUser = Boolean(user)
@@ -102,6 +104,21 @@ export const CommandPalette: React.FC = () => {
   }, [isOpen, hasUser])
 
   useEffect(() => {
+    const userRole = user?.role
+    if (!isOpen || !userRole || search.trim().length < 2) {
+      setRecordResults([])
+      return
+    }
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      void searchRecords({ role: userRole, term: search, limit: 4 })
+        .then((rows) => { if (!cancelled) setRecordResults(rows) })
+        .catch(() => { if (!cancelled) setRecordResults([]) })
+    }, 180)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [isOpen, search, user?.role])
+
+  useEffect(() => {
     if (isOpen) {
       document.getElementById(`${resultsId}-${selectedIndex}`)?.scrollIntoView?.({ block: 'nearest' })
     }
@@ -113,7 +130,7 @@ export const CommandPalette: React.FC = () => {
      roles, staff surfaces dropped for Client, by the same filter the sidebar
      and phone bar read. Rebuilt per open; permittedNav is a cheap filter. */
   const actions: PaletteAction[] = [
-    ...permittedNav(user.role).map(
+    ...(nav.permittedAllNav?.(user.role) ?? nav.permittedNav(user.role)).map(
       (s): PaletteAction => ({
         id: `nav-${s.to}`,
         title: s.label,
@@ -131,6 +148,16 @@ export const CommandPalette: React.FC = () => {
         category: 'Actions',
         icon: action.icon,
         onSelect: () => navigate(action.to),
+      }),
+    ),
+    ...recordResults.map(
+      (result): PaletteAction => ({
+        id: `record-${result.kind}-${result.id}`,
+        title: result.label,
+        subtitle: `${result.kind} · ${result.detail}`,
+        category: 'Records',
+        icon: result.kind === 'client' ? 'users' : result.kind === 'equipment' ? 'box' : result.kind === 'invoice' ? 'card' : 'checklist',
+        onSelect: () => navigate(result.to),
       }),
     ),
     {

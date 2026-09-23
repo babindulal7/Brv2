@@ -161,8 +161,14 @@ export function BarcodeScannerModal({
     if (!code) return
 
     const now = Date.now()
+    /*
+     * D30 — the cooldown is not a camera-only rule. It was gated on
+     * `fromCamera`, so a keyboard-wedge scanner (which submits through the
+     * form path) re-fired the identical code instantly — the double-scan the
+     * guard exists to stop, re-admitted through the second door. The source
+     * of the code does not change the answer to "did we just see this one".
+     */
     if (
-      fromCamera &&
       lastScannedCodeRef.current &&
       lastScannedCodeRef.current.code.toLowerCase() === code.toLowerCase() &&
       now - lastScannedCodeRef.current.timestamp < SAME_CODE_COOLDOWN_MS

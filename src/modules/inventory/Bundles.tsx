@@ -1,3 +1,4 @@
+import { Pagination } from '../../components/ui/Pagination'
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -1313,38 +1314,7 @@ export function Bundles() {
                 </span>
               )}
 
-              <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap' }}>
-                <span className="figure">
-                  Showing {filtered.length === 0 ? 0 : start + 1} to {Math.min(start + rowsPerPage, filtered.length)} of{' '}
-                  {filtered.length} bundles
-                </span>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, ...subtle }}>
-                  Rows per page
-                  <Select
-                    value={rowsPerPage}
-                    onChange={(e) => {
-                      setRowsPerPage(Number(e.target.value))
-                      setPage(1)
-                    }}
-                    style={selectStyle}
-                  >
-                    {ROWS_PER_PAGE.map((n) => (
-                      <option key={n} value={n}>{n}</option>
-                    ))}
-                  </Select>
-                </label>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Button icon="chevron_left" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>
-                    Prev
-                  </Button>
-                  <span className="figure" style={{ minWidth: 58, textAlign: 'center' }}>
-                    {safePage} / {pageCount}
-                  </span>
-                  <Button icon="chevron_right" disabled={safePage >= pageCount} onClick={() => setPage(safePage + 1)}>
-                    Next
-                  </Button>
-                </span>
-              </span>
+              <Pagination page={safePage} total={filtered.length} pageSize={rowsPerPage} onPageChange={setPage} pageSizeOptions={ROWS_PER_PAGE} onPageSizeChange={(size) => { setRowsPerPage(size); setPage(1) }} />
             </div>
             </PageBody>
           </Card>

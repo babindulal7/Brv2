@@ -1,26 +1,20 @@
 import { forwardRef, useId } from 'react'
 import type { InputHTMLAttributes, ReactNode } from 'react'
 import Icon from './Icon'
-
-/**
- * Rewritten from Tailwind utility classNames to the app's real inline-style +
- * CSS-variable system — see `Toast.tsx` for the full explanation of why every
- * Tailwind class in this file used to compile to nothing. Same prop API as
- * before, so every existing call site (`CasesWorkspace.tsx`, `CrewBooking.tsx`,
- * `SubRental.tsx`) is unaffected.
- */
+import { InfoTooltip } from './InfoTooltip'
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string
   error?: string | null
   helperText?: string
+  info?: ReactNode
   icon?: ReactNode
   iconRight?: ReactNode
   onClear?: () => void
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, error, helperText, icon, iconRight, onClear, className, style, id, value, 'aria-describedby': describedBy, ...props },
+  { label, error, helperText, info, icon, iconRight, onClear, className, style, id, value, 'aria-describedby': describedBy, ...props },
   ref
 ) {
   const generatedId = useId()
@@ -33,17 +27,20 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   return (
     <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
       {label && (
-        <label
-          htmlFor={inputId}
-          style={{
-            fontSize: 'var(--t-ui)',
-            fontWeight: 600,
-            color: 'var(--text2)',
-          }}
-        >
-          {label}
-          {props.required && <span style={{ color: 'var(--danger-text)', marginLeft: 'var(--sp-xs)' }}>*</span>}
-        </label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <label
+            htmlFor={inputId}
+            style={{
+              fontSize: 'var(--t-ui)',
+              fontWeight: 600,
+              color: 'var(--text2)',
+            }}
+          >
+            {label}
+            {props.required && <span style={{ color: 'var(--danger-text)', marginLeft: 'var(--sp-xs)' }}>*</span>}
+          </label>
+          {info && <InfoTooltip content={info} />}
+        </div>
       )}
 
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Input, Select } from '../../components/ui'
+import { Input, Select, InfoTooltip } from '../../components/ui'
 import { Card, PageHeader, Button } from '../../components/ui/Page'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -85,9 +85,11 @@ function suggestCode(clientName: string): string {
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <label style={{ display: 'block', minWidth: 0 }}>
-      <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', marginBottom: 4 }}>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', marginBottom: 4 }}>
+        {label}
+        {hint && <InfoTooltip content={hint} />}
+      </span>
       {children}
-      {hint && <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 4 }}>{hint}</span>}
     </label>
   )
 }

@@ -2,7 +2,6 @@ import { createAction, type ActionConfig, type ActionContext } from '../core'
 import { EVENT_TYPES } from '../../events/eventBus'
 import { supabase } from '../../lib/supabase'
 import { newClientUuid } from '../../lib/supabase'
-import { idempotentInsert } from '../../lib/dataAccess'
 import type { CrewRoleDb } from '../../types/database'
 
 /**
@@ -30,6 +29,12 @@ import type { CrewRoleDb } from '../../types/database'
  * mode is a booking header with some of its lines and none of its discounts —
  * a row that reconciles to nothing and that nobody can tell apart from a
  * correctly-priced one.
+ *
+ * The same is true of the crew and transport rows (`booking_crew_lines`,
+ * `booking_transport`), which used to be written AFTER the RPC and could leave
+ * a Quote with no crew and no delivery that no screen could repair (NR-02's
+ * `CreateRentalPartialError`). 0132 folded both into the same transaction, so
+ * a booking is created whole or not at all.
  *
  * So the whole payload goes to `create_booking(p_payload jsonb)`, which does it
  * under one commit. **That function exists twice, deliberately:**
@@ -186,27 +191,6 @@ export interface CreateRentalTransport {
 }
 
 /**
- * Thrown when the header, lines and discounts landed (one transaction in
- * `create_booking`) but a crew or transport row written AFTER it did not. The
- * booking exists and is named, so a caller can say so instead of "nothing was
- * written" — which would be false.
- */
-export class CreateRentalPartialError extends Error {
-  constructor(
-    public readonly bookingId: string,
-    public readonly bookingNo: string,
-    public readonly unwritten: string,
-    cause: unknown,
-  ) {
-    super(
-      `Booking ${bookingNo} was created as a Quote, but its ${unwritten} could not be written: ` +
-        `${cause instanceof Error ? cause.message : String(cause)}. The Quote exists without it.`,
-    )
-    this.name = 'CreateRentalPartialError'
-  }
-}
-
-/**
  * The `crew_role` enum members this action accepts, in one place.
  *
  * Exported because a screen that staffs a booking has to be able to *say*, on
@@ -257,10 +241,11 @@ export type CreateRentalInput = {
   lines: CreateRentalLine[]
   discounts?: CreateRentalDiscount[]
   /**
-   * Written AFTER `create_booking` returns, each row with its own Law 8 key,
-   * so a retry of the same press lands the same rows once. They are not in the
-   * RPC's transaction: a failure here raises `CreateRentalPartialError`, which
-   * names the Quote that does exist (BUG_AUDIT_LIFECYCLE NR-02).
+   * Written INSIDE the `create_booking` transaction, each row with its own Law
+   * 8 key. 0132 closed the post-RPC tail: there is no longer a state where the
+   * booking exists but the crew does not — a crew row that cannot be written
+   * rolls the whole booking back, so `CreateRentalPartialError` no longer
+   * exists either (Audit-01 P1-02 / RULING 2026-09-21).
    */
   crew?: CreateRentalCrewLine[]
   transport?: CreateRentalTransport | null
@@ -528,6 +513,33 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
         approver_id: d.approverId ?? null,
         coupon_id: d.couponId ?? null,
       })),
+      /* 0132 (Audit-01 P1-02): crew and transport ride the SAME transaction.
+         A failure here rolls the booking back with everything else — there is
+         no "the Quote exists without its crew" state to name or heal. One Law
+         8 key per row, minted at the press like every sibling row. */
+      crew: (input.crew ?? []).map((c) => ({
+        client_uuid: c.clientUuid ?? newClientUuid(),
+        crew_member_id: c.crewMemberId ?? null,
+        name: c.name.trim(),
+        crew_role: c.role,
+        phone: c.phone ?? null,
+        day_rate: c.dayRate,
+        days: c.days,
+        overtime: c.overtime ?? 0,
+        accommodation: c.accommodation ?? 0,
+        meals: c.meals ?? 0,
+      })),
+      transport: input.transport
+        ? {
+            client_uuid: input.transport.clientUuid ?? newClientUuid(),
+            delivery_charge: input.transport.deliveryCharge,
+            fuel_charge: input.transport.fuelCharge,
+            vehicle: input.transport.vehicle ?? null,
+            number_plate: input.transport.numberPlate ?? null,
+            driver_contact: input.transport.driverContact ?? null,
+            special_instructions: input.transport.specialInstructions ?? null,
+          }
+        : null,
     }
 
     /* `p_payload` is the function's named parameter. Passing the payload
@@ -550,7 +562,15 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
      * shapeless answer means something returned success without writing, which
      * is the exact class this action layer was rebuilt to stop reporting.
      */
-    const row = data as { booking_id?: unknown; booking_no?: unknown; stage?: unknown; line_count?: unknown; replayed?: unknown } | null
+    const row = data as {
+      booking_id?: unknown
+      booking_no?: unknown
+      stage?: unknown
+      line_count?: unknown
+      crew_lines?: unknown
+      transport_written?: unknown
+      replayed?: unknown
+    } | null
     if (!row || typeof row.booking_id !== 'string' || typeof row.booking_no !== 'string') {
       throw new Error(
         'create_booking returned no booking, so treat this as NOT created even though no error was raised. ' +
@@ -560,63 +580,9 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
 
     const replayed = row.replayed === true
 
-    /* Crew and transport, after the header. Each row carries its own key, so a
-       retry of the same press (same keys) resolves to the rows already there
-       rather than a second set — `idempotentInsert` treats the client_uuid
-       duplicate as the replay it is. On a replay of the header these are
-       attempted too, for the same reason: the first attempt may have died
-       between the RPC and here. */
-    let crewLines = 0
-    let transportWritten = false
-    try {
-      for (const c of input.crew ?? []) {
-        await idempotentInsert(
-          'booking_crew_lines',
-          {
-            client_uuid: c.clientUuid ?? newClientUuid(),
-            booking_id: row.booking_id,
-            crew_member_id: c.crewMemberId ?? null,
-            name: c.name.trim(),
-            crew_role: c.role,
-            phone: c.phone ?? null,
-            day_rate: c.dayRate,
-            days: c.days,
-            overtime: c.overtime ?? 0,
-            accommodation: c.accommodation ?? 0,
-            meals: c.meals ?? 0,
-            created_by: ctx.userId,
-          },
-          { returnRow: false },
-        )
-        crewLines += 1
-      }
-    } catch (cause) {
-      throw new CreateRentalPartialError(row.booking_id, row.booking_no, `crew lines (${crewLines} of ${(input.crew ?? []).length} written)`, cause)
-    }
-    if (input.transport) {
-      try {
-        const t = input.transport
-        await idempotentInsert(
-          'booking_transport',
-          {
-            client_uuid: t.clientUuid ?? newClientUuid(),
-            booking_id: row.booking_id,
-            delivery_charge: t.deliveryCharge,
-            fuel_charge: t.fuelCharge,
-            vehicle: t.vehicle ?? null,
-            number_plate: t.numberPlate ?? null,
-            driver_contact: t.driverContact ?? null,
-            special_instructions: t.specialInstructions ?? null,
-            created_by: ctx.userId,
-          },
-          { returnRow: false },
-        )
-        transportWritten = true
-      } catch (cause) {
-        throw new CreateRentalPartialError(row.booking_id, row.booking_no, 'transport row', cause)
-      }
-    }
-
+    /* Crew and transport counts come FROM the transaction (0132). On a replay
+       the function reports neither — it wrote nothing, on any axis — so the
+       counts are zero: "you already did this" never re-claims work. */
     const result: CreateRentalResult = {
       success: true as const,
       bookingId: row.booking_id,
@@ -627,8 +593,8 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
          this call did not do. */
       lineCount: typeof row.line_count === 'number' ? row.line_count : 0,
       replayed,
-      crewLines,
-      transportWritten,
+      crewLines: typeof row.crew_lines === 'number' ? row.crew_lines : 0,
+      transportWritten: row.transport_written === true,
     }
 
     return {

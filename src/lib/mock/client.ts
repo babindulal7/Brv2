@@ -337,9 +337,10 @@ function nextDocumentNumber(key: string): string {
  * in both modes and there must not be two implementations of what a booking is.
  *
  * Kept deliberately in step with `supabase/migrations/0063_create_booking_function.sql`
- * as revised by 0070 (parent linkage) and 0071 (units at creation — D5):
- * same payload shape, same return shape, same Law 8 replay behaviour. If one
- * changes, both change.
+ * as revised by 0070 (parent linkage), 0071 (units at creation — D5), 0099,
+ * 0119 (server-side prices) and 0132 (crew + transport INSIDE the one
+ * transaction — Audit-01 P1-02): same payload shape, same return shape, same
+ * Law 8 replay behaviour. If one changes, both change.
  *
  * Prices nothing (Law 1 — `lib/money.ts` owns the order). Sets no stage: a new
  * booking is a Quote, and Confirm is a separate act.
@@ -597,6 +598,73 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
     })
   }
 
+  /* 0132 — crew and transport, built beside everything else and committed with
+     it, with the same constraint mirror the discounts get: name present, days
+     whole and ≥ 1, money non-negative (`booking_crew_lines_*` CHECKs), charges
+     non-negative (`booking_transport_charges_non_negative`). A refused row
+     tells the caller nothing was created — locally as in Postgres. */
+  const crew = Array.isArray(payload['crew']) ? (payload['crew'] as Array<Record<string, unknown>>) : []
+  const builtCrew: Row[] = []
+  for (const c of crew) {
+    if (!c['client_uuid']) {
+      return { data: null, error: { code: '23502', message: 'create_booking: every crew row needs its own client_uuid (Law 8, one per ROW)', details: '', hint: '' } }
+    }
+    if (typeof c['name'] !== 'string' || c['name'].trim() === '') {
+      return { data: null, error: { code: '23514', message: 'new row for relation "booking_crew_lines" violates check constraint "booking_crew_lines_name_present"', details: '', hint: '' } }
+    }
+    const money = [c['day_rate'], c['overtime'], c['accommodation'], c['meals']]
+    if (money.some((v) => Number(v ?? 0) < 0)) {
+      return { data: null, error: { code: '23514', message: 'new row for relation "booking_crew_lines" violates check constraint "booking_crew_lines_money_non_negative"', details: '', hint: '' } }
+    }
+    builtCrew.push({
+      id: crypto.randomUUID(),
+      client_uuid: c['client_uuid'],
+      booking_id: bookingId,
+      crew_member_id: c['crew_member_id'] ?? null,
+      name: c['name'],
+      crew_role: c['crew_role'] ?? null,
+      phone: c['phone'] ?? null,
+      day_rate: c['day_rate'] ?? 0,
+      days: c['days'] ?? 1,
+      overtime: c['overtime'] ?? 0,
+      accommodation: c['accommodation'] ?? 0,
+      meals: c['meals'] ?? 0,
+      voided_at: null,
+      created_at: now,
+      created_by: actor,
+    })
+  }
+
+  /* The SQL gate is `jsonb_typeof(...) = 'object'`: an absent key AND an
+     explicit JSON null both mean "no transport" — never an insert. */
+  const rawTransport = payload['transport']
+  const transport =
+    rawTransport !== null && typeof rawTransport === 'object' && !Array.isArray(rawTransport)
+      ? (rawTransport as Record<string, unknown>)
+      : null
+  let builtTransport: Row | null = null
+  if (transport !== null) {
+    if (!transport['client_uuid']) {
+      return { data: null, error: { code: '23502', message: 'create_booking: the transport row needs its own client_uuid (Law 8)', details: '', hint: '' } }
+    }
+    if (Number(transport['delivery_charge'] ?? 0) < 0 || Number(transport['fuel_charge'] ?? 0) < 0) {
+      return { data: null, error: { code: '23514', message: 'new row for relation "booking_transport" violates check constraint "booking_transport_charges_non_negative"', details: '', hint: '' } }
+    }
+    builtTransport = {
+      id: crypto.randomUUID(),
+      client_uuid: transport['client_uuid'],
+      booking_id: bookingId,
+      vehicle: transport['vehicle'] ?? null,
+      number_plate: transport['number_plate'] ?? null,
+      driver_contact: transport['driver_contact'] ?? null,
+      delivery_charge: transport['delivery_charge'] ?? 0,
+      fuel_charge: transport['fuel_charge'] ?? 0,
+      special_instructions: transport['special_instructions'] ?? null,
+      created_at: now,
+      created_by: actor,
+    }
+  }
+
   ;(store['bookings'] ??= []).push(header)
   overlay.inserts.push({ table: 'bookings', row: header })
   for (const d of builtDiscounts) {
@@ -611,6 +679,14 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
     ;(store['booking_line_units'] ??= []).push(row)
     overlay.inserts.push({ table: 'booking_line_units', row })
   }
+  for (const row of builtCrew) {
+    ;(store['booking_crew_lines'] ??= []).push(row)
+    overlay.inserts.push({ table: 'booking_crew_lines', row })
+  }
+  if (builtTransport !== null) {
+    ;(store['booking_transport'] ??= []).push(builtTransport)
+    overlay.inserts.push({ table: 'booking_transport', row: builtTransport })
+  }
   saveOverlay(overlay)
 
   return {
@@ -620,6 +696,8 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
       stage: 'Quote',
       line_count: built.length,
       unit_count: builtUnits.length,
+      crew_lines: builtCrew.length,
+      transport_written: builtTransport !== null,
       replayed: false,
     } as Row,
     error: null,

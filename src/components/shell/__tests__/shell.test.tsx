@@ -27,6 +27,7 @@ vi.mock('../../../lib/device', async (orig) => ({
 }))
 vi.mock('../../../lib/auth', () => ({ useAuth: () => ({ user: { role: 'Owner' } }) }))
 vi.mock('../../../lib/theme', () => ({ useTheme: () => ({ theme: 'dark', setMode: () => {} }) }))
+vi.mock('../../../lib/syncContext', () => ({ useSync: () => ({ syncStatus: 'synced', pendingCount: 0, triggerSync: vi.fn() }) }))
 vi.mock('../../../lib/collapse', () => ({ useCollapsed: () => [collapsedPref, () => {}] }))
 
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
@@ -58,10 +59,10 @@ afterEach(async () => {
 })
 
 describe('Sidebar — Law 13, width decides', () => {
-  it('is 219px at desktop, with all 7 primary labels and More readable', async () => {
+  it('uses the expanded sidebar token at desktop, with all primary labels readable', async () => {
     await mount(<Sidebar active="/dashboard" />)
     const aside = container.querySelector('aside')
-    expect(aside?.style.width).toBe('219px')
+    expect(aside?.style.width).toBe('var(--app-sidebar-width)')
     expect(container.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(7)
     expect(container.textContent).toContain('Dashboard')
     expect(container.textContent).toContain('Rentals')
@@ -69,17 +70,19 @@ describe('Sidebar — Law 13, width decides', () => {
     expect(container.textContent).toContain('More')
   })
 
-  it('is a 72px icon rail at tablet, with no labels and no collapse toggle', async () => {
+  it('keeps a manual expand toggle available on a collapsed tablet rail', async () => {
     viewport = 'tablet'
+    collapsedPref = true
     await mount(<Sidebar active="/dashboard" />)
-    expect(container.querySelector('aside')?.style.width).toBe('72px')
+    expect(container.querySelector('aside')?.style.width).toBe('var(--app-sidebar-collapsed-width)')
     expect(container.textContent).not.toContain('Crew Assist')
     expect(container.querySelector('[aria-label="Collapse navigation"]')).toBeNull()
-    expect(container.querySelector('[aria-label="Expand navigation"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Expand navigation"]')).not.toBeNull()
   })
 
   it('still speaks each primary label in the rail — title on every row', async () => {
     viewport = 'tablet'
+    collapsedPref = true
     await mount(<Sidebar active="/dashboard" />)
     const titles = [...container.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.getAttribute('title'))
     expect(titles).toContain('Rentals')
@@ -87,19 +90,19 @@ describe('Sidebar — Law 13, width decides', () => {
     expect(titles.every((t) => t !== null && t.length > 0)).toBe(true)
   })
 
-  it('does not let a stored desktop collapse widen — or narrow — against the width band', async () => {
+  it('honours an expanded navigation preference on tablet', async () => {
     /* The conflict Law 13 exists to settle: preference says "expanded", the
        768–1279 band says 72. Width wins. */
     collapsedPref = false
     viewport = 'tablet'
     await mount(<Sidebar active="/dashboard" />)
-    expect(container.querySelector('aside')?.style.width).toBe('72px')
+    expect(container.querySelector('aside')?.style.width).toBe('var(--app-sidebar-width)')
   })
 
   it('honours the manual collapse only at desktop', async () => {
     collapsedPref = true
     await mount(<Sidebar active="/dashboard" />)
-    expect(container.querySelector('aside')?.style.width).toBe('72px')
+    expect(container.querySelector('aside')?.style.width).toBe('var(--app-sidebar-collapsed-width)')
     expect(container.querySelector('[aria-label="Expand navigation"]')).not.toBeNull()
   })
 
@@ -144,18 +147,20 @@ describe('BottomBar — five fixed slots', () => {
     viewport = 'phone'
   })
 
-  it('is Today · Rentals · Scan · Inventory · More, in that order', async () => {
+  it('is Today · Rentals · New · Inventory · More for booking-capable roles', async () => {
     await mount(<BottomBar active="/dashboard" />)
     const nav = container.querySelector('nav[aria-label="Main"]')
     const slots = [...(nav?.children ?? [])].map((el) => el.textContent)
-    expect(slots).toEqual(['Dashboard', 'Rentals', 'Scan', 'Inventory', 'More'])
+    expect(slots).toEqual(['Today', 'Rentals', 'New', 'Inventory', 'More'])
   })
 
   it('triggers the one Scanner rather than carrying its own', async () => {
     await mount(<BottomBar active="/dashboard" />)
+    const more = [...container.querySelectorAll('button')].find(button => button.textContent === 'More')
+    await act(async () => more?.click())
     const fired = vi.fn()
     window.addEventListener(SCANNER_TOGGLE_EVENT, fired)
-    const scan = container.querySelector<HTMLButtonElement>('[aria-label="Scan"]')
+    const scan = container.querySelector<HTMLButtonElement>('[data-scanner]')
     await act(async () => scan?.click())
     window.removeEventListener(SCANNER_TOGGLE_EVENT, fired)
     expect(fired).toHaveBeenCalledTimes(1)

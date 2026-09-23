@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import Icon from '../../components/ui/Icon'
+import { InfoTooltip } from '../../components/ui/InfoTooltip'
 import { Card, PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { LineChart } from '../../components/ui/Charts'
@@ -476,12 +477,14 @@ function Field({
 }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-        {label}
-        {required && <span style={{ color: 'var(--danger-text)' }}> *</span>}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+          {label}
+          {required && <span style={{ color: 'var(--danger-text)' }}> *</span>}
+        </span>
+        {hint && <InfoTooltip content={hint} />}
+      </div>
       {children}
-      {hint && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</span>}
     </label>
   )
 }

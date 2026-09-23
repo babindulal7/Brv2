@@ -1,23 +1,28 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, FooterNote, PageHeader } from '../../components/ui/Page'
+import { Input } from '../../components/ui/Input'
 import { Button } from '../../components/ui/Button'
-import { PageShell } from '../../components/ui/PageShell'
 import { PageBody } from '../../components/ui/PageBody'
+import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { ContextDrawer } from '../../components/ui/ContextDrawer'
 import { DataTableShell } from '../../components/ui/DataTable'
-import { ActiveFilterChips, FilterButton } from '../../components/ui/FilterDrawer'
+import { ActiveFilterChips } from '../../components/ui/FilterDrawer'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { SavedViewsMenu, type SavedListView } from '../../components/ui/SavedViewsMenu'
-import { RentalTimeline } from './RentalTimeline'
-import { supabase } from '../../lib/supabase'
+import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
+import { AppSidePanel } from '../../components/shell/AppSidePanel'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { Pagination } from '../../components/ui/Pagination'
 import { Badge } from '../../components/ui/Badge'
 import { STATUS, BRAND } from '../../lib/status'
 import type { IconName } from '../../components/ui/Icon'
 import type { StatusKey, BrandKey } from '../../lib/status'
-import { formatMoney } from '../../lib/money'
+import { formatMoney, toRupees } from '../../lib/money'
+import { listInvoices, payableInvoices } from '../../lib/queries/finance'
+import { businessNowAd } from '../../lib/queries/today'
 import { formatAd, getBusinessToday } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import {
@@ -29,22 +34,19 @@ import {
 import { STATUS_ORDER, statusToken } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import { useAuth } from '../../lib/auth'
+import { supabase } from '../../lib/supabase'
 import { useViewport } from '../../lib/device'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import {
   listBookings,
   OPERATIONS,
-  businessNowAd,
-  VIEWS,
   ROWS_PER_PAGE,
   OPTIONAL_COLUMNS,
   CHIP_MEANS,
   RENTAL_DEPOSIT_NOTE,
   SUB_RENTAL_NOTE,
-  SUB_RENTAL_PENDING,
   SUB_RENTAL_UNANSWERED,
-  chipsFor,
   rentalGlance,
   rentalDetailGroups,
   rentalsQuery,
@@ -57,9 +59,7 @@ import {
 } from '../../lib/queries/bookings'
 import { useList, type ListQueryResult } from '../../lib/queries/useList'
 import { useFilters } from '../../lib/queries/useFilters'
-import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { ListFilters } from '../../lib/queries/listQuery'
-import { DateField } from '../../components/ui/DateField'
 import { LoadingSkeleton } from '../../components/ui/StateViews'
 import { listActiveDrafts, type RentalDraftRecord } from '../../actions/rentals/saveDraft'
 const NewRental = lazy(() => import('./NewRental'))
@@ -690,12 +690,6 @@ function ColumnMenu({
  * render a wrapping wall of them. A fixed window keeps the control the same size
  * whatever the count is.
  */
-function pageWindow(current: number, pageCount: number, span = 5): number[] {
-  const start = Math.max(1, Math.min(current - Math.floor(span / 2), pageCount - span + 1))
-  const end = Math.min(pageCount, start + span - 1)
-  return Array.from({ length: end - start + 1 }, (_, i) => start + i)
-}
-
 /**
  * Rentals List — Page Type: List. Built from render `77B52333` / `Rentals.PNG`.
  *
@@ -734,7 +728,7 @@ export default function RentalsList() {
    */
   const gctx = useMemo(() => gateContext(role), [role])
 
-  const [view, setView] = useState<(typeof VIEWS)[number]>('Table')
+  const [view, setView] = useState<'Table' | 'Cards'>('Table')
   const [hiddenCols, setHiddenCols] = useState<Set<OptionalColumn>>(new Set())
   const [cancellingRental, setCancellingRental] = useState<RentalListRow | null>(null)
   const [inspectingRental, setInspectingRental] = useState<RentalListRow | null>(null)
@@ -952,8 +946,6 @@ export default function RentalsList() {
    */
   const viewport = useViewport()
   const tabular = viewport !== 'phone'
-
-  const chips = useMemo(() => chipsFor(money), [money])
 
   /** §8.3 — Deposit is not offerable as a column when money is not visible. */
   const optionalColumns = useMemo(() => OPTIONAL_COLUMNS.filter((c) => c !== 'Deposit' || money), [money])
@@ -1190,30 +1182,6 @@ export default function RentalsList() {
    *
    * NEITHER call passes `withDeposit` (Law 6) — a count carries no money.
    */
-  const statusCountBase = useMemo(
-    () => rentalsQuery(chip, { from, to }, [], anchor, { on: subOn, bookingIds: subIds }).filters,
-    [chip, from, to, subOn, subIds, anchor],
-  )
-  const statusCountRows = useCallback(
-    async (filters: ListFilters): Promise<number | null> => {
-      const probe = (filters.chips?.['status'] ?? []) as readonly BookingStatus[]
-      const q = rentalsQuery(chip, { from, to }, probe, businessNowAd(), { on: subOn, bookingIds: subIds })
-      if (q.impossible) {
-        /*
-         * Two different refusals share this flag. A stage the chip does not
-         * carry (`Quote` under `Active`) is a COMPUTED zero — ticking it
-         * renders the empty state, and 0 is the §10 sentence for that. The
-         * Sub-Rental set still being unanswered (`bookingIds === null`) is
-         * not a zero of any kind, so it stays a dash.
-         */
-        return subOn && subIds === null ? null : 0
-      }
-      const res = await listBookings({ ...q.filters, headOnly: true })
-      return res.total ?? null
-    },
-    [chip, from, to, subOn, subIds],
-  )
-  const { counts: stageCounts } = useFacetCounts(statusCountRows, statusCountBase, 'status', STATUS_ORDER, filtersOpen)
   /* `useList` memoises `refetch`; naming it keeps refresh stable while the
      table remains the only default data surface on this list. */
   const { refetch: refetchList } = list
@@ -1350,42 +1318,49 @@ export default function RentalsList() {
   // physical floor operations requiring equipment resolution and stage gates in
   // PackingWorkspace / HandoverWorkspace, never blind row selection.
 
+  /*
+   * The invoice picker behind "Record Payment". Read through `listInvoices`
+   * with the `payableInvoices` filter set (Law 2) — Draft + unsettled,
+   * non-voided, most-urgent-due first — rather than a direct table read: the
+   * named set is the one definition of "what may money be taken against".
+   *
+   * The fetch's own error state is rendered INSIDE the modal
+   * (`invoicesError` + `onRetryInvoices`): before this, a failed read landed
+   * as an empty picker that looked like "nothing is owed" (UIUX sweep D6).
+   */
   const [availableInvoices, setAvailableInvoices] = useState<
-    Array<{ id: string; invoiceNo: string | null; client: string; amount: string; status: string; booking?: string }>
+    Array<{
+      id: string
+      invoiceNo: string | null
+      client: string
+      amount: string
+      status: string
+      booking?: string
+      outstandingRupees?: number
+    }>
   >([])
+  const [availableInvoicesError, setAvailableInvoicesError] = useState<string | null>(null)
   const fetchAvailableInvoices = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('invoices')
-        .select('id, invoice_no, total_amount, status, client_id, clients:client_id(name), booking_id, bookings:booking_id(booking_no)')
-        .neq('status', 'Paid')
-        .order('created_at', { ascending: false })
-        .limit(20)
-
-      if (error) throw error
-      if (data) {
-        setAvailableInvoices(
-          data.map((inv) => {
-            const raw = inv as Record<string, unknown>
-            const clients = raw['clients'] as { name?: string } | { name?: string }[] | null
-            const bookings = raw['bookings'] as { booking_no?: string } | { booking_no?: string }[] | null
-            const clientName = Array.isArray(clients) ? clients[0]?.name : clients?.name
-            const bookingNo = Array.isArray(bookings) ? bookings[0]?.booking_no : bookings?.booking_no
-
-            return {
-              id: String(raw['id']),
-              invoiceNo: (raw['invoice_no'] as string) ?? null,
-              client: clientName ?? 'Client',
-              amount: String(raw['total_amount'] ?? 0),
-              status: (raw['status'] as string) ?? 'Draft',
-              ...(bookingNo ? { booking: bookingNo } : {}),
-            }
-          })
-        )
-      }
+      const { rows } = await listInvoices(payableInvoices())
+      setAvailableInvoicesError(null)
+      setAvailableInvoices(
+        rows.map((inv) => ({
+          id: inv.id,
+          invoiceNo: inv.invoiceNo,
+          client: inv.clientName,
+          amount: formatMoney(inv.totalAmount),
+          status: inv.status,
+          booking: inv.bookingNo,
+          // R-39 D1 — feeds the Amount prefill; undefined only if the column
+          // never comes back, in which case the field opens empty as before.
+          outstandingRupees: toRupees(inv.outstandingAmount),
+        })),
+      )
     } catch (err: unknown) {
       captureError(err, { where: 'RentalsList.fetchAvailableInvoices' })
       setAvailableInvoices([])
+      setAvailableInvoicesError(err instanceof Error ? err.message : String(err))
     }
   }, [])
 
@@ -1394,8 +1369,6 @@ export default function RentalsList() {
     void fetchAvailableInvoices()
   }, [paymentModalOpen, fetchAvailableInvoices])
 
-  const firstOnPage = (page - 1) * perPage + 1
-  const lastOnPage = firstOnPage + list.rows.length - 1
   const countedTitle = total === null ? 'Rentals' : `${total} ${total === 1 ? 'Rental' : 'Rentals'} found`
 
   if (isNew) {
@@ -1419,69 +1392,80 @@ export default function RentalsList() {
   }
 
   return (
-    <PageShell
-      className="rentals-v2"
-      header={
-        <PageHeader
-          leading={
-            <FilterButton
-              onClick={() => setFiltersOpen((open) => !open)}
-              activeCount={f.activeCount}
-              controls="rentals-filters"
-              expanded={filtersOpen}
-            />
-          }
-          title="Rentals"
-          actions={
-            <QuickActionBar
-              actions={[
-                ...(canWriteDesk
-                  ? [
-                      {
-                        id: 'new-booking',
-                        label: 'New Rental',
-                        icon: 'plus' as const,
-                        variant: 'primary' as const,
-                        onClick: () => {
-                          setRawParams((prev) => {
-                            const next = new URLSearchParams(prev)
-                            next.set('action', 'new')
-                            return next
-                          })
-                        },
-                      },
-                    ]
-                  : []),
-                ...(canOperate
-                  ? [
-                      {
-                        id: 'fast-return',
-                        label: '⚡ Fast Return',
-                        icon: 'return_arrow' as const,
-                        variant: 'accent' as const,
-                        onClick: () => setFastReturnOpen(true),
-                      },
-                    ]
-                  : []),
-                ...(canRecord
-                  ? [
-                      {
-                        id: 'record-payment',
-                        label: 'Record Payment',
-                        icon: 'invoice' as const,
-                        onClick: () => setPaymentModalOpen(true),
-                      },
-                    ]
-                  : []),
-                {
-                  id: 'quick-scan',
-                  label: 'Scan Barcode',
-                  icon: 'search' as const,
-                  onClick: () => setBarcodeModalOpen(true),
-                },
-              ]}
-              extra={
-                <>
+    <PageShell>
+      <PageHeader title="Rentals" description="Manage bookings, pickups, returns, and the next action." />
+      <WorkspaceLeftPanel>
+        <AppSidePanel id="rentals-filters" side="left" title="Filters" isOpen={filtersOpen} onClose={() => setFiltersOpen(false)}>
+          <BooqableRentalFilterDrawer
+            embedded
+            open={true}
+            onClose={() => setFiltersOpen(false)}
+            resultCount={total}
+            activeCount={f.activeCount}
+            onClearAll={clearFilters}
+            statusFilter={statusFilter}
+            onToggleStatus={toggleStatus}
+            quickFilter={chip}
+            onSelectQuickFilter={pickChip}
+            dateRange={{ from, to }}
+            onChangeDateRange={({ from: nextFrom, to: nextTo }) => setRange(nextFrom, nextTo)}
+            subOn={subOn}
+            onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
+            money={money}
+          />
+        </AppSidePanel>
+      </WorkspaceLeftPanel>
+
+      <div style={{ marginBottom: 'var(--sp-md)' }}>
+        <QuickActionBar
+          actions={[
+            ...(canWriteDesk
+              ? [
+                  {
+                    id: 'new-booking',
+                    label: 'New Rental',
+                    icon: 'plus' as const,
+                    variant: 'primary' as const,
+                    onClick: () => {
+                      setRawParams((prev) => {
+                        const next = new URLSearchParams(prev)
+                        next.set('action', 'new')
+                        return next
+                      })
+                    },
+                  },
+                ]
+              : []),
+            ...(canOperate
+              ? [
+                  {
+                    id: 'fast-return',
+                    label: '⚡ Fast Return',
+                    icon: 'return_arrow' as const,
+                    variant: 'accent' as const,
+                    onClick: () => setFastReturnOpen(true),
+                  },
+                ]
+              : []),
+            ...(canRecord
+              ? [
+                  {
+                    id: 'record-payment',
+                    label: 'Record Payment',
+                    icon: 'invoice' as const,
+                    onClick: () => setPaymentModalOpen(true),
+                  },
+                ]
+              : []),
+            {
+              id: 'quick-scan',
+              label: 'Scan Barcode',
+              icon: 'search' as const,
+              onClick: () => setBarcodeModalOpen(true),
+            },
+          ]}
+          extra={
+            <>
                   <Button icon="refresh" onClick={refreshAll}>
                     Refresh
                   </Button>
@@ -1497,11 +1481,8 @@ export default function RentalsList() {
                   </Unavailable>
                 </>
               }
-            />
-          }
         />
-      }
-    >
+      </div>
 
       {/*
         ## The chip row — §4.1's two lines
@@ -1577,251 +1558,88 @@ export default function RentalsList() {
           />
           Draft
         </button>
+        <button
+          type="button"
+          onClick={() => f.setExtra('sub', subOn ? undefined : 'on')}
+          aria-pressed={subOn}
+          title={SUB_RENTAL_NOTE}
+          style={stageChipStyle(subOn)}
+        >
+          <Icon
+            name="external_link"
+            size={13}
+            style={{ color: subOn ? 'var(--nav-active-accent)' : STATUS.ext.fg }}
+          />
+          Sub-Rental
+        </button>
       </div>
 
-      <div
-        className={viewport !== 'desktop' ? 'rsp-chip-scroll' : undefined}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          ...(viewport === 'desktop'
-            ? { flexWrap: 'wrap' as const }
-            : { overflowX: 'auto' as const, paddingBottom: 2 }),
-        }}
-      >
-        {/*
-          (Sub-Rental) — §4.1 line 40, "a filter chip, not a tab", and now a
-          LIVE one: rulings §11.1 ruled the question it was disabled waiting
-          on. It narrows on the derived set (`subIds`), AND-ed with whichever
-          stage and quick filters are on, because it sits on its own line in
-          §4.1's drawing rather than inside the twelve.
-
-          It refuses to select in exactly two states, and never selects and
-          quietly returns the unfiltered list: while the set is still in
-          flight, and if reading it failed. `null` is "not answered", never
-          "none" — see `subIds`.
-        */}
-        {subIds === null ? (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <Unavailable reason={subPending ? SUB_RENTAL_PENDING : SUB_RENTAL_UNANSWERED}>
-              <button
-                type="button"
-                disabled
-                aria-busy={subPending}
-                aria-label={`Sub-Rental — unavailable. ${subPending ? SUB_RENTAL_PENDING : SUB_RENTAL_UNANSWERED}`}
-                style={{ ...stageChipStyle(false), color: 'var(--muted)', cursor: 'not-allowed', opacity: 0.65 }}
-              >
-                <Icon name="external_link" size={13} style={{ color: 'var(--disabled)' }} />
-                Sub-Rental
-              </button>
-            </Unavailable>
-            {!subPending && (
-              <button
-                type="button"
-                onClick={() => void refreshSubRentals()}
-                title="Retry loading sub-rentals"
-                aria-label="Retry loading sub-rentals"
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'var(--link)',
-                  cursor: 'pointer',
-                  padding: '2px 4px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  fontSize: 'var(--t-meta)',
-                }}
-              >
-                <Icon name="refresh" size={12} />
-              </button>
-            )}
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={() => f.setExtra('sub', subOn ? undefined : 'on')}
-            aria-pressed={subOn}
-            title={SUB_RENTAL_NOTE}
-            style={stageChipStyle(subOn)}
-          >
-            {/* Law 11 — the gold outline is never the only carrier, so the chip
-                that turns it on carries the same icon and the same word. */}
-            <Icon
-              name="external_link"
-              size={13}
-              style={{ color: subOn ? 'var(--nav-active-accent)' : STATUS.ext.fg }}
+      <AppPageToolbar
+        bulkActions={
+          <>
+          <div style={{ flex: '1 1 220px', minWidth: 0, maxWidth: 360 }}>
+            <Input
+              type="search"
+              aria-label="Search rentals"
+              placeholder="Search booking number or project"
+              icon={<Icon name="search" size={16} />}
+              value={f.filters.search ?? ''}
+              onChange={(event) => f.setSearch(event.target.value)}
+              onClear={() => f.setSearch('')}
             />
-            Sub-Rental
-          </button>
-        )}
-
-        <span aria-hidden style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px', flexShrink: 0 }} />
-
-        {chips.map((c) => {
-          const on = chip === c.label
-          const tint =
-            c.tone === 'danger' ? 'var(--danger-text)' : c.tone === 'progress' ? 'var(--progress-text)' : undefined
-          const style = {
-            display: 'inline-flex' as const,
-            alignItems: 'center' as const,
-            gap: 5,
-            height: 32,
-            padding: '0 12px',
-            borderRadius: 'var(--r-sm)',
-            border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-            background: on ? 'var(--nav-active-bg)' : 'var(--card)',
-            color: c.unavailable ? 'var(--muted)' : on ? 'var(--nav-active-accent)' : (tint ?? 'var(--text2)'),
-            fontSize: 'var(--t-meta)',
-            fontWeight: on || (tint && !c.unavailable) ? 600 : 500,
-            cursor: c.unavailable ? ('not-allowed' as const) : ('pointer' as const),
-            fontFamily: 'inherit',
-            whiteSpace: 'nowrap' as const,
-            opacity: c.unavailable ? 0.65 : 1,
-            // The row scrolls rather than wraps below 1280 (§4.1 tablet and
-            // phone both say "chips scroll"), so a chip must not be squeezed.
-            flexShrink: 0,
-          }
-
-          /* A chip with no query behind it is genuinely `disabled` and
-             carries the reason, rather than selecting and quietly returning
-             the unfiltered list. `Unavailable` puts the sentence on hover,
-             on focus and on long-press. */
-          if (c.unavailable) {
-            return (
-              <Unavailable key={c.label} reason={c.unavailable}>
-                <button type="button" disabled aria-label={`${c.label} — unavailable. ${c.unavailable}`} style={style}>
-                  {c.label}
-                </button>
-              </Unavailable>
-            )
-          }
-
-          return (
-            <button key={c.label} type="button" onClick={() => pickChip(c.label)} aria-pressed={on} style={style}>
-              {c.label === 'Custom' && <Icon name="calendar" size={14} />}
-              {c.label}
-            </button>
-          )
-        })}
-
-        {tabular && (
-          <div style={{ marginLeft: 'auto', flexShrink: 0 }}>
+          </div>
+          <Button
+            icon="filter"
+            aria-controls="rentals-filters"
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            Filters{f.activeCount > 0 ? ` ${f.activeCount}` : ''}
+          </Button>
+          </>
+        }
+        filterChips={<ActiveFilterChips filters={f.chips} {...(isFiltered ? { onClearAll: clearFilters } : {})} />}
+        rightSlot={
+          tabular && (
             <SegmentedControl
               size="sm"
               ariaLabel="List view"
-              options={VIEWS.map((v) => ({
-                id: v,
-                label: v,
-                icon: v === 'Table' ? 'checklist' : v === 'Timeline' ? 'calendar' : 'queues',
-              }))}
-              value={view}
-              onChange={setView}
+              options={[
+                { id: 'Table', label: 'Table', icon: 'checklist' },
+                { id: 'Cards', label: 'Cards', icon: 'queues' },
+              ]}
+              value={view === 'Cards' ? 'Cards' : 'Table'}
+              onChange={(next) => setView(next as 'Table' | 'Cards')}
             />
-          </div>
-        )}
-      </div>
+          )
+        }
+        pagination={
+          total !== null && (
+            <Pagination
+              page={page}
+              total={total}
+              pageSize={perPage}
+              pageSizeOptions={ROWS_PER_PAGE}
+              onPageChange={setPage}
+              onPageSizeChange={setPerPage}
+            />
+          )
+        }
+      />
 
-      {/* The render draws `Custom` as a bare chip. A chip that selects a
-          range has to be able to state the range, so it opens inline. */}
-      {chip === 'Custom' && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--sp-sm)',
-            flexWrap: 'wrap',
-            fontSize: 'var(--t-meta)',
-            color: 'var(--text2)',
-          }}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0, flex: 1 }}>
+        <Card
+          title={countedTitle}
+          action={
+            <SavedViewsMenu
+              storageKey={savedViewStorageKey}
+              currentQuery={savedViewQuery}
+              currentHiddenColumns={[...hiddenCols]}
+              onApply={applySavedView}
+            />
+          }
+          bodyStyle={{ padding: 0 }}
         >
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            From
-            <DateField
-              ariaLabel="Rentals from this day"
-              value={from}
-              onChange={(v) => setRange(v, to)}
-              showBs={false}
-              clearable
-              style={dateInput}
-            />
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            To
-            <DateField
-              ariaLabel="Rentals up to this day"
-              value={to}
-              onChange={(v) => setRange(from, v)}
-              showBs={false}
-              clearable
-              align="right"
-              style={dateInput}
-            />
-          </label>
-          {(from || to) && (
-            <Button icon="close" onClick={() => setRange('', '')}>
-              Clear range
-            </Button>
-          )}
-          {/* ⛔ This used to read "pickup **or** return". It cannot: a
-              `ListFilters.dateRange` names one column, and `applyListFilters`
-              has no way to OR two ranges across two columns. The sentence
-              says what the query does. */}
-          <span style={{ color: 'var(--muted)' }}>
-            Matches a booking whose <strong style={{ color: 'var(--text2)' }}>pickup</strong> falls inside the range.
-            A return-date range needs a second dateRange the shared filter shape does not carry.
-          </span>
-        </div>
-      )}
-
-      {/* Which filters are on, and a one-click way off each of them — straight
-          from the hook, so the row, the badge and the query cannot disagree.
-          Renders nothing when the list is unfiltered. */}
-      <ActiveFilterChips filters={f.chips} {...(isFiltered ? { onClearAll: clearFilters } : {})} />
-
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: filtersOpen && viewport !== 'phone' ? 'minmax(240px, 320px) minmax(0,1fr)' : 'minmax(0,1fr)',
-          gap: 'var(--sp-md)',
-          alignItems: 'start',
-        }}
-      >
-        <BooqableRentalFilterDrawer
-          id="rentals-filters"
-          open={filtersOpen}
-          onClose={() => setFiltersOpen(false)}
-          resultCount={list.loading ? null : total}
-          activeCount={f.activeCount}
-          onClearAll={clearFilters}
-          statusFilter={statusFilter}
-          onToggleStatus={toggleStatus}
-          quickFilter={chip}
-          onSelectQuickFilter={pickChip}
-          dateRange={{ from, to }}
-          onChangeDateRange={(r) => setRange(r.from, r.to)}
-          subOn={subOn}
-          onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
-          money={money}
-          stageCounts={stageCounts}
-        />
-        {view === 'Timeline' ? (
-          <div style={{ ...cardStyle, minWidth: 0, overflow: 'hidden' }}>
-            <RentalTimeline rows={rowsWithIntel.map(({ row }) => row)} />
-          </div>
-        ) : (
-          <Card
-            title={countedTitle}
-            action={
-              <SavedViewsMenu
-                storageKey={savedViewStorageKey}
-                currentQuery={savedViewQuery}
-                currentHiddenColumns={[...hiddenCols]}
-                onApply={applySavedView}
-              />
-            }
-            bodyStyle={{ padding: 0 }}
-          >
             {/*
               Fixed ladder: restricted → error → loading → empty → children.
 
@@ -2375,63 +2193,19 @@ export default function RentalsList() {
             {/* The pager reports the SERVER's count, not the array's length.
                 Rendered only once rows have arrived — "Showing 0 rentals"
                 over a skeleton is a claim, not a placeholder. */}
-            {list.rows.length > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--sp-md)',
-                  padding: '11px 14px',
-                  flexWrap: 'wrap',
-                  fontSize: 'var(--t-meta)',
-                  color: 'var(--text2)',
-                }}
-              >
-                <span>
-                  {total === null
-                    ? `Showing ${firstOnPage} to ${lastOnPage} rentals`
-                    : `Showing ${firstOnPage} to ${lastOnPage} of ${total} rentals`}
-                </span>
-
-                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 3 }}>
-                  <PageBtn label="‹" disabled={page === 1} onClick={() => setPage(page - 1)} />
-                  {pageWindow(page, pageCount).map((p) => (
-                    <PageBtn key={p} label={String(p)} active={p === page} onClick={() => setPage(p)} />
-                  ))}
-                  <PageBtn label="›" disabled={page >= pageCount} onClick={() => setPage(page + 1)} />
-                </span>
-
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                  Rows per page
-                  <select
-                    value={perPage}
-                    /* `setPerPage` drops `?page=` itself — page 4 of 20 rows is
-                       not page 4 of 50, so resizing has to return to the top. */
-                    onChange={(e) => setPerPage(Number(e.target.value))}
-                    className="figure"
-                    style={{
-                      height: 28,
-                      padding: '0 6px',
-                      borderRadius: 7,
-                      border: '1px solid var(--border)',
-                      background: 'var(--input-bg)',
-                      color: 'var(--text)',
-                      fontSize: 'var(--t-meta)',
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    {ROWS_PER_PAGE.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+            {list.rows.length > 0 && total !== null && (
+              <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+                <Pagination
+                  page={page}
+                  total={total}
+                  pageSize={perPage}
+                  pageSizeOptions={ROWS_PER_PAGE}
+                  onPageChange={setPage}
+                  onPageSizeChange={setPerPage}
+                />
               </div>
             )}
           </Card>
-        )}
-
       </div>
 
       <ContextDrawer
@@ -2534,6 +2308,8 @@ export default function RentalsList() {
           isOpen={paymentModalOpen}
           onClose={() => setPaymentModalOpen(false)}
           invoices={availableInvoices}
+          invoicesError={availableInvoicesError}
+          onRetryInvoices={() => void fetchAvailableInvoices()}
           onSuccess={() => {
             setPaymentModalOpen(false)
             refreshAll()
@@ -2558,46 +2334,6 @@ export default function RentalsList() {
     </PageShell>
   )
 }
-
-
-function PageBtn({
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  label: string
-  active?: boolean
-  disabled?: boolean
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-current={active ? 'page' : undefined}
-      style={{
-        position: 'relative',
-        minWidth: 26,
-        height: 26,
-        borderRadius: 7,
-        border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
-        background: active ? 'var(--btn-primary-bg)' : 'transparent',
-        color: active ? 'var(--btn-primary-fg)' : 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: active ? 700 : 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.45 : 1,
-        fontFamily: 'inherit',
-      }}
-    >
-      <TouchTarget axis="y" />
-      {label}
-    </button>
-  )
-}
-
 const th = {
   textAlign: 'left' as const,
   padding: '9px 12px',
@@ -2674,17 +2410,4 @@ const stickyTd = {
   boxShadow: 'inset 1px 0 0 var(--border)',
 }
 
-/* Law 15 — the law is the hit area, not the paint, and `--tap` is where 44
-   lives. At 30 these two date fields were the smallest targets on the page and
-   the ones most often used on a phone at the counter. The range bar wraps, so
-   they can simply grow. */
-const dateInput = {
-  minHeight: 'var(--tap)',
-  padding: '0 8px',
-  borderRadius: 'var(--r-sm)',
-  border: '1px solid var(--input-border)',
-  background: 'var(--input-bg)',
-  color: 'var(--text)',
-  fontSize: 'var(--t-meta)',
-  fontFamily: 'inherit',
-}
+

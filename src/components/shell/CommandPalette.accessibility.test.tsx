@@ -13,6 +13,9 @@ vi.mock('./ScannerFab', () => ({ toggleScanner: vi.fn() }))
 vi.mock('../../data/nav', () => ({ permittedNav: () => [
   { label: 'Dashboard', to: '/dashboard', icon: 'home' },
   { label: 'Rentals', to: '/rentals', icon: 'home' },
+], permittedAllNav: () => [
+  { label: 'Dashboard', to: '/dashboard', icon: 'home' },
+  { label: 'Rentals', to: '/rentals', icon: 'home' },
 ] }))
 
 ;(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true

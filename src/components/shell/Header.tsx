@@ -7,6 +7,7 @@ import { openCommandPalette } from './CommandPalette'
 import HandoverSheet from '../../modules/auth/HandoverSheet'
 import { useSync } from '../../lib/syncContext'
 import { QuickCreateMenu } from './QuickCreateMenu'
+import './shell.css'
 
 export interface Crumb {
   label: string
@@ -41,7 +42,7 @@ const iconBtn = {
  * Generation C top strip — breadcrumb left, global search centred, chrome right.
  * Enhanced with Miraz POS Live Clock, Sync Heartbeat & Tactile Search.
  */
-export default function Header({ crumbs, searchPlaceholder = 'Search…', actions }: HeaderProps) {
+export default function Header({ crumbs, actions }: HeaderProps) {
   const { user, logout, lockNow, hasPin } = useAuth()
   const { status: syncStatus, pendingCount, error: syncError, triggerSync } = useSync()
   const navigate = useNavigate()
@@ -52,7 +53,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
   const [now, setNow] = useState(new Date())
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000)
+    const t = setInterval(() => setNow(new Date()), 60000)
     return () => clearInterval(t)
   }, [])
 
@@ -86,11 +87,12 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
     */
     <>
     <header
+      className="app-global-header"
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: isPhone ? 'var(--sp-xs)' : 'var(--sp-lg)',
-        padding: isPhone ? '6px 12px' : '10px 20px',
+        gap: isPhone ? 'var(--sp-xs)' : 'var(--sp-md)',
+        padding: isPhone ? '6px 12px' : '6px 20px',
         /* Reads the token rather than setting the height, so `--header-h` and
            this element cannot disagree. Everything that sticks BELOW the header
            — the page rails, the filter drawer — offsets by that token, and
@@ -98,6 +100,8 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
            real 59. Border-box is global, so this covers the padding and the
            border below. */
         minHeight: 'var(--header-h)',
+        height: 'var(--header-h)',
+        flexShrink: 0,
         borderBottom: '1px solid var(--border)',
         /* v4.2 §4 — chrome is glass at 20–24px. --sidebar is a 0.88 tint, and a
            sticky bar that content scrolls UNDER must blur what passes behind it
@@ -111,7 +115,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
         zIndex: 20,
       }}
     >
-      <nav aria-label="Breadcrumb" style={{ flex: isPhone ? '1 1 auto' : '0 0 auto', minWidth: 0, overflow: 'hidden' }}>
+      <nav aria-label="Breadcrumb" style={{ flex: isPhone ? '1 1 auto' : '0 1 auto', minWidth: 0, maxWidth: isPhone ? undefined : '30%', overflow: 'hidden' }}>
         <ol style={{ display: 'flex', alignItems: 'center', gap: 7, margin: 0, padding: 0, listStyle: 'none' }}>
           {(isPhone && crumbs.length > 1 ? [crumbs[crumbs.length - 1]!] : crumbs).map((c, i, arr) => {
             const last = i === arr.length - 1
@@ -154,6 +158,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
           <button
             type="button"
             onClick={() => openCommandPalette()}
+            aria-label="Search commands and pages"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -161,9 +166,9 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
               width: '100%',
               maxWidth: 440,
               minWidth: 0,
-              minHeight: 40,
+              minHeight: 44,
               padding: '0 14px',
-              borderRadius: 999,
+              borderRadius: 'var(--r-btn)',
               background: 'var(--input-bg)',
               border: '1px solid var(--input-border)',
               boxShadow: 'var(--specular-rim), 0 1px 3px rgba(0, 0, 0, 0.04)',
@@ -192,7 +197,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                 color: 'var(--muted)',
               }}
             >
-              {searchPlaceholder}
+              Search commands and pages…
             </span>
             {vp !== 'tablet' && (
               <kbd
@@ -209,14 +214,15 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                   boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
                 }}
               >
-                ⌘K
+                Ctrl+K / ⌘K
               </kbd>
             )}
           </button>
 
           {/* Live Clock & Sync Status Badge */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <div className="header-sync-context" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <button
+              className="header-sync-control"
               type="button"
               onClick={() => triggerSync()}
               style={{
@@ -308,6 +314,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
                 branch chips are the two that carry state (A6). */}
             {vp !== 'tablet' && (
               <div
+                className="header-clock"
                 style={{
                   fontSize: '12px',
                   fontWeight: 700,
@@ -325,6 +332,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
             )}
 
             <span
+              className="header-branch"
               style={{
                 fontSize: '11px',
                 fontWeight: 600,
@@ -347,7 +355,7 @@ export default function Header({ crumbs, searchPlaceholder = 'Search…', action
       <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 'var(--sp-sm)', flexShrink: 0, marginLeft: isPhone ? 'auto' : 0 }}>
         {actions}
 
-        <QuickCreateMenu role={user?.role} compact={isPhone} />
+        <QuickCreateMenu role={user?.role} compact={vp !== 'desktop'} />
 
         {isPhone && (
           <button
@@ -531,7 +539,7 @@ title="User profile"
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); handleLogoutRequest() }}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)' }}
+              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)', minHeight: 44 }}
             >
               Log Out
             </button>

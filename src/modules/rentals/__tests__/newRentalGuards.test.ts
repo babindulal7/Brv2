@@ -81,7 +81,7 @@ describe('confirmWriteRefusals — NR-10, the card and the button read one list'
   it('refuses a booking with no lines, and sends the operator to Equipment', () => {
     const out = confirmWriteRefusals({ ...CLEAR, lineCount: 0 })
     expect(out).toHaveLength(1)
-    expect(out[0]?.text).toContain('no equipment')
+    expect(out[0]?.text).toContain('Add at least one equipment item')
     expect(out[0]?.action).toBe('Open Equipment')
   })
 
@@ -156,6 +156,38 @@ describe('bookingDays — NR-19, the length is measured over the instants that g
     expect(days('2026-09-05', '09:00', '2026-09-06', '06:00')).toBe(1)
     expect(days('2026-09-05', '09:00', '2026-09-06', '10:00')).toBe(2)
     expect(days('2026-09-05', '09:00', '2026-09-06', '23:00')).toBe(2)
+  })
+})
+
+/**
+ * # NR-rpo — the Return Pickup select wrote its labels into the state
+ *
+ * The state is typed `'Client Return' | 'Babin Pickup'`, but the two `<option>`
+ * children carried display sentences and no `value`. A native select's value IS
+ * the option's text content, so choosing "Babin Rentals Pickup from Location"
+ * stored a string that matched NEITHER branch: the address/time/fee block (gated
+ * on `=== 'Babin Pickup'`) never rendered, the return fee stayed 0 in the
+ * transport total, and the Review line answered "Client Returns to Warehouse"
+ * for a Babin pickup. The fix carries explicit `value` attributes in the state
+ * union, display text unchanged.
+ */
+import newRentalRaw from '../NewRental.tsx?raw'
+
+describe('NR-rpo — the Return-Pickup select speaks the state union', () => {
+  it('both options carry an explicit value drawn from the state union', () => {
+    expect(newRentalRaw).toContain('<option value="Client Return">Client Returns to Warehouse</option>')
+    expect(newRentalRaw).toContain('<option value="Babin Pickup">Babin Rentals Pickup from Location</option>')
+  })
+
+  it('the state union and the branch condition read the same two literals', () => {
+    expect(newRentalRaw).toContain("useState<'Client Return' | 'Babin Pickup'>")
+    expect(newRentalRaw).toContain("returnPickupType === 'Babin Pickup'")
+  })
+
+  it('the no-value option shape does not return next to Return Pickup', () => {
+    /* The defect was bare `<option>Client Returns to Warehouse</option>`. */
+    expect(newRentalRaw).not.toContain('<option>Client Returns to Warehouse</option>')
+    expect(newRentalRaw).not.toContain('<option>Babin Rentals Pickup from Location</option>')
   })
 })
 

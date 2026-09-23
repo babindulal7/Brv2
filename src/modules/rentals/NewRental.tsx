@@ -1,12 +1,14 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { ConfirmDialog, Input, Select, Modal, Stepper } from '../../components/ui'
 import { Card, PageHeader, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { PageShell } from '../../components/ui/PageShell'
+import { BAR_BOX } from '../../components/shell/BottomBar'
 import './rentals.css'
+import './new-rental-flow.css'
 import { EmptyState, LoadingSkeleton } from '../../components/ui/StateViews'
 import { ScannerInput } from '../../components/ui/ScannerInput'
 import { useToast } from '../../components/ui/Toast'
@@ -27,9 +29,9 @@ import {
 } from '../../lib/pricingPipeline'
 import { formatMoney, rupees, roundHalfUp, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
-import { listClientRecords, CLIENTS_DATA, type ClientRecord } from '../../lib/queries/clients'
+import { listClientRecords, type ClientRecord } from '../../lib/queries/clients'
 import { updateClient } from '../../actions/clients/updateClient'
-import { CREW_ROLES, createRental, deliveryTypeFromLabel, CreateRentalPartialError, type BookingLineType } from '../../actions/rentals/createRental'
+import { CREW_ROLES, createRental, deliveryTypeFromLabel, type BookingLineType } from '../../actions/rentals/createRental'
 import {
   cancelDraft,
   convertDraft,
@@ -41,15 +43,17 @@ import type { CrewRoleDb } from '../../types/database'
 import { supabase, newClientUuid } from '../../lib/supabase'
 import { listInventory, INV_STYLE, type InvStatus } from '../../lib/queries/inventory'
 import { readProductAvailability } from '../../lib/queries/productAvailability'
+import { listBundleRecords } from '../../lib/queries/bundleRecords'
+import type { BundleRecord } from '../../data/bundles'
 import { planCreationUnits, type CreationUnitPlan } from '../../lib/queries/availability'
 import type { RentalWindow } from '../../lib/availability'
-import { equipmentConflicts, equipmentLineDraft, equipmentResultsFrom } from './booking/itemCatalogue'
+import { bundleResults, equipmentConflicts, equipmentLineDraft, equipmentResultsFrom, type ConflictCheckLine } from './booking/itemCatalogue'
 import type {
   AvailabilityVerdict,
   EquipmentAvailabilitySource,
   LiveEquipmentRow,
 } from './booking/itemCatalogue'
-import { CREW_ROSTER, searchRoster, type CrewMember, type CrewRole } from '../../lib/queries/crew'
+import { listCrewMembers, CREW_ROSTER, searchRoster, type CrewMember, type CrewRole } from '../../lib/queries/crew'
 import { useAuth } from '../../lib/auth'
 import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
@@ -339,7 +343,7 @@ export function confirmWriteRefusals(s: ConfirmWriteState): BlockingNotice[] {
   }
   if (s.lineCount === 0) {
     out.push({
-      text: 'A booking with no equipment on it is not a booking. Add at least one item first.',
+      text: 'Add at least one equipment item before confirming.',
       action: 'Open Equipment',
     })
   }
@@ -754,7 +758,7 @@ function Section({
           <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
         </button>
       </div>
-      {open && <div style={{ padding: 'var(--sp-md) var(--sp-lg)' }}>{children}</div>}
+      <div hidden={!open} style={{ padding: 'var(--sp-md) var(--sp-lg)' }}>{children}</div>
     </section>
   )
 }
@@ -1162,12 +1166,14 @@ function CrewSearch({
   onBooking,
   onAdd,
   showRates,
+  roster = CREW_ROSTER,
 }: {
   /** Who is already on the booking. Excluded from the list — nobody is added twice. */
   onBooking: readonly CrewLine[]
   onAdd: (crewId: string) => void
   /** The page's `canCrewMoney`. A money-blind role sees the roster and never a rate. */
   showRates: boolean
+  roster?: readonly CrewMember[]
 }) {
   const reactId = useId()
   const labelId = `${reactId}-crew-label`
@@ -1193,7 +1199,7 @@ function CrewSearch({
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const excludeIds = useMemo(() => onBooking.map((c) => c.crewId), [onBooking])
-  const options = useMemo(() => searchRoster(query, excludeIds), [query, excludeIds])
+  const options = useMemo(() => searchRoster(query, excludeIds, roster), [query, excludeIds, roster])
   /**
    * Whether anyone is left to find at all, which is a different question from
    * whether this query found someone. The empty state used to answer only the
@@ -1202,7 +1208,7 @@ function CrewSearch({
    * was nobody to match. An empty query returns the whole remaining roster, so
    * this is that count.
    */
-  const rosterExhausted = useMemo(() => searchRoster('', excludeIds).length === 0, [excludeIds])
+  const rosterExhausted = useMemo(() => searchRoster('', excludeIds, roster).length === 0, [excludeIds, roster])
 
   // Clamp the cursor whenever the result set shrinks under it.
   useEffect(() => {
@@ -1529,13 +1535,13 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const flag = 'Draft'
 
   /**
-   * Any section, any order — never a wizard.
+   * Desktop can work in any section; phones use focused workflow groups.
    *
    * Desktop and tablet open Client · Dates · Equipment · Pricing and leave
    * Crew and Delivery collapsed, which is exactly what 01_NEW_RENTAL §1.1
    * draws ("＋ Crew (collapsed)", "＋ Delivery (collapsed → Client Pickup
    * Rs 0)"). Phone is an accordion with **one open at a time**, per the same
-   * spec's phone block; Equipment is the one it lands on.
+   * spec's phone block; Client is the first section in the guided workflow.
    */
   /*
    * Read from `viewport`, not `window.innerWidth`.
@@ -1562,7 +1568,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    */
   const [open, setOpen] = useState<boolean[]>(() =>
     phoneAccordion
-      ? [false, false, true, false, false, false]
+      ? [true, false, false, false, false, false]
       : [true, true, true, false, false, true],
   )
   useEffect(() => {
@@ -1588,7 +1594,32 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
   // 5-Step Workflow State (§3)
   const [currentStep, setCurrentStep] = useState<number>(1)
-  const [viewMode, setViewMode] = useState<'steps' | 'all'>('steps')
+  const [preferredViewMode, setViewMode] = useState<'steps' | 'all'>('all')
+  const viewMode = isPhone ? 'steps' : preferredViewMode
+  const workflowRef = useRef<HTMLDivElement>(null)
+  const previousStep = useRef(currentStep)
+  const stageLabels = ['Client & Schedule', 'Equipment & Bundles', 'Crew & Delivery', 'Pricing & Payment', 'Review & Confirm']
+  useEffect(() => {
+    // Presentation only: sections stay mounted, so moving back preserves edits.
+    const indices = currentStep === 1 ? [0, 1] : currentStep === 2 ? [2] : currentStep === 3 ? [3, 4] : currentStep === 4 ? [5] : []
+    if (viewMode === 'steps' && indices.length) {
+      setOpen((previous) => previous.map((value, index) => isPhone ? index === indices[0] : indices.includes(index) || value))
+    }
+    if (previousStep.current !== currentStep) {
+      workflowRef.current?.focus({ preventScroll: true })
+      workflowRef.current?.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+      previousStep.current = currentStep
+    }
+  }, [currentStep, isPhone, viewMode])
+
+  const [isShortViewport, setIsShortViewport] = useState(() => typeof window !== 'undefined' && window.innerHeight < 900)
+  useEffect(() => {
+    const handleResize = () => {
+      setIsShortViewport(window.innerHeight < 900)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Return Pickup Logistics (§3.3)
   const [returnPickupType, setReturnPickupType] = useState<'Client Return' | 'Babin Pickup'>('Client Return')
@@ -1611,7 +1642,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * which state we are in, and the Confirm button refuses while either is
    * still seed — surfaced-as-unavailable, not silently disabled.
    */
-  const [clientPool, setClientPool] = useState<ClientRecord[]>(() => [...CLIENTS_DATA])
+  const [clientPool, setClientPool] = useState<ClientRecord[]>([])
   const [clientsAreLive, setClientsAreLive] = useState(false)
   /**
    * The live products, straight off `listInventory`. Their ids are
@@ -1623,6 +1654,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * pool, and two states describing one read is how they drift apart.
    */
   const [liveRows, setLiveRows] = useState<readonly LiveEquipmentRow[] | null>(null)
+  const [liveCrew, setLiveCrew] = useState<readonly CrewMember[] | null>(null)
+  const [liveBundles, setLiveBundles] = useState<readonly BundleRecord[] | null>(null)
   /*
    * Has the catalogue read FINISHED, whatever it found?
    *
@@ -1642,22 +1675,21 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     let cancelled = false
     void (async () => {
       try {
-        const [clients, inventory] = await Promise.all([
+        const [clients, inventory, crewResult] = await Promise.all([
           listClientRecords(),
           /* `withMoney` decides whether `dailyRate` comes back AT ALL (Law 6),
              so it is the gate this screen already computed — never a literal.
              A money-blind operator still picks equipment; they just do not see
              the rate, which is why the filter below cannot require one. */
           listInventory({ page: { index: 0, size: 500 }, withMoney: canBookingMoney }),
+          listCrewMembers(),
         ])
         if (cancelled) return
         /* Only rows carrying a real uuid are bookable. A client without `dbId`
            came from the seed array and must not silently look selectable. */
         const bookableClients = clients.filter((c) => !!c.dbId)
-        if (bookableClients.length > 0) {
-          setClientPool(bookableClients)
-          setClientsAreLive(true)
-        }
+        setClientPool(bookableClients)
+        setClientsAreLive(true)
         /* Active products only. NOT filtered on a rate: `dailyRate` is null for
            every row when `withMoney` is false, so requiring one would hand a
            money-blind operator an empty catalogue — a Law 6 gate turning into a
@@ -1669,6 +1701,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
            window changes long after this read lands — so they are derived
            below, where both inputs are in scope, instead of frozen here. */
         if (rows.length > 0) setLiveRows(rows)
+
+        if (crewResult && crewResult.rows && crewResult.rows.length > 0) {
+          setLiveCrew(crewResult.rows)
+        }
       } catch (e: unknown) {
         if (!cancelled) setPoolError(e instanceof Error ? e.message : String(e))
       } finally {
@@ -1703,14 +1739,31 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * add-client control in the trailing slot, §15 — is reachable on purpose
    * rather than by accident.
    */
+  const location = useLocation()
+  const quoteBridge = (location.state as { quote?: { lines?: Array<{ label: string; qty: number; days: number; ratePaisa: number }>; discountPct?: number } } | null)?.quote
   const [searchParams, setSearchParams] = useSearchParams()
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
     () => searchParams.get('clientId') || searchParams.get('client') || null,
   )
   const client: ClientRecord | undefined = useMemo(
-    () => clientPool.find((c) => c.id === selectedClientId),
+    () => clientPool.find((c) => c.id === selectedClientId || (c.dbId && c.dbId === selectedClientId)),
     [clientPool, selectedClientId],
   )
+
+  /* Connect URL client parameter to selection as soon as client pool loads */
+  useEffect(() => {
+    const rawParam = searchParams.get('clientId') || searchParams.get('client')
+    if (!rawParam) return
+    const match = clientPool.find((c) => c.id === rawParam || (c.dbId && c.dbId === rawParam))
+    if (match) {
+      if (selectedClientId !== match.id) {
+        setSelectedClientId(match.id)
+      }
+      if (match.pan) {
+        setGovId(match.pan)
+      }
+    }
+  }, [clientPool, searchParams, selectedClientId])
 
   // §11 / §15 / §20 — three disclosures over the workspace. None of them route,
   // so consulting a balance never costs a half-built booking.
@@ -1853,7 +1906,25 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * end instead of the start. Nothing is lost — the operator adds what the job
    * actually needs, which is what the panel below is for.
    */
-  const [lines, setLines] = useState<Line[]>(() => [])
+  const [lines, setLines] = useState<Line[]>(() => {
+    if (quoteBridge?.lines && quoteBridge.lines.length > 0) {
+      return quoteBridge.lines.map((ql, idx) => ({
+        id: `quote-${idx + 1}-${Date.now()}`,
+        name: ql.label || 'Quoted Item',
+        serial: '',
+        category: 'Equipment',
+        lineType: 'Manual item',
+        qty: Math.max(1, ql.qty || 1),
+        days: Math.max(1, ql.days || 1),
+        daysOverridden: true,
+        ratePaisa: (ql.ratePaisa || 0) as Paisa,
+        discountPct: 0,
+        location: 'Main Warehouse',
+        committedTo: '—',
+      }))
+    }
+    return []
+  })
 
   const seedCrewLine = (m: CrewMember): CrewLine => ({
     crewId: m.id,
@@ -1922,7 +1993,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const [scannerOpen, setScannerOpen] = useState(false)
   const [scanNotice, setScanNotice] = useState<{ tone: 'success' | 'warning' | 'danger'; text: string } | null>(null)
   /* 0, not the worked example's 7 — a discount is something someone grants. */
-  const [discountPct, setDiscountPct] = useState(0)
+  const [discountPct, setDiscountPct] = useState(() => quoteBridge?.discountPct ?? 0)
   /* `discountReason` / `approver` / `discountPopoverOpen` left with the
      discount gate (31 Aug 2026 — D3, Babin: "don't put any gate on discount"). */
   /**
@@ -2070,8 +2141,14 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     const window: RentalWindow = { fromAd: pickupAt.toISOString(), toAd: returnAt.toISOString() }
     void (async () => {
       try {
-        const byProduct = await readProductAvailability(window, liveRows.map((r) => r.id))
-        if (!cancelled) setAvailabilitySource({ state: 'ready', byProduct })
+        const [byProduct, bundles] = await Promise.all([
+          readProductAvailability(window, liveRows.map((r) => r.id)),
+          listBundleRecords(window, { withMoney: canBookingMoney }),
+        ])
+        if (!cancelled) {
+          setAvailabilitySource({ state: 'ready', byProduct })
+          if (bundles && bundles.length > 0) setLiveBundles(bundles)
+        }
       } catch (e: unknown) {
         if (!cancelled) {
           setAvailabilitySource({ state: 'failed', reason: e instanceof Error ? e.message : String(e) })
@@ -2081,7 +2158,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     return () => {
       cancelled = true
     }
-  }, [liveRows, pickupAt, returnAt, poolError, poolSettled])
+  }, [liveRows, pickupAt, returnAt, poolError, poolSettled, canBookingMoney])
 
   /**
    * The pool `AddItemPanel` searches — rebuilt whenever the rows OR the
@@ -2091,6 +2168,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const liveEquipment = useMemo(
     () => (liveRows === null ? null : equipmentResultsFrom(liveRows, availabilitySource)),
     [liveRows, availabilitySource],
+  )
+
+  const liveBundleResults = useMemo(
+    () => bundleResults(bookingWindow, liveBundles ?? undefined),
+    [bookingWindow, liveBundles],
   )
 
   /* ── §10.1 canonical calculation order — via calculatePricingPipeline (Task 6) ── */
@@ -2229,7 +2311,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * trips.
    */
   const conflictSummary = useMemo(
-    () => equipmentConflicts(equipmentLines, availabilitySource),
+    () => equipmentConflicts(equipmentLines as readonly ConflictCheckLine[], availabilitySource),
     [equipmentLines, availabilitySource],
   )
   const conflictLines = conflictSummary.conflicts
@@ -2369,7 +2451,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       clientIsBlocked: Boolean(client?.isBlocked || client?.onStop),
       clientsAreLive,
       lineCount: lines.length,
-      sampleLineName: equipmentLines.find((l) => !PRODUCT_ID_RE.test(l.id))?.name ?? null,
+      sampleLineName: equipmentLines.find((l) => !PRODUCT_ID_RE.test(l.productId ?? l.id))?.name ?? null,
       canBookingMoney,
     }),
     ...pricing.discounts.validationErrors.map((err) => ({ text: err, action: 'Open Pricing' })),
@@ -2511,7 +2593,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   }, [liveEquipment, lines, addDrafts, days])
 
   const addCrew = (crewId: string) => {
-    const m = CREW_ROSTER.find((x) => x.id === crewId)
+    const rosterPool = liveCrew && liveCrew.length > 0 ? liveCrew : CREW_ROSTER
+    const m = rosterPool.find((x) => x.id === crewId)
     if (!m || crew.some((c) => c.crewId === crewId)) return
     setCrew((p) => [...p, seedCrewLine(m)])
   }
@@ -2979,7 +3062,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             { fromAd: pickupAt.toISOString(), toAd: returnAt.toISOString() },
             equipmentLines.map((l, i) => ({
               key: l.id ?? `line-${i}`,
-              productId: l.id ?? null,
+              productId: l.productId ?? l.id ?? null,
               qty: l.qty,
               label: l.name ?? `Line ${i + 1}`,
             })),
@@ -3122,16 +3205,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       } catch (err) {
         setSaveState('error')
         const reason = err instanceof Error ? err.message : String(err)
-        if (err instanceof CreateRentalPartialError) {
-          /* The header, lines and discounts landed; a crew or transport row
-             did not. The Quote is named and a retry confirms it AS IT IS — the
-             rows that failed are not retried, and the message says so. */
-          createdQuote.current = { id: err.bookingId, no: err.bookingNo }
-          setActionError(
-            `Booking saved as a Quote (${err.bookingNo}), but ${reason} Press Confirm Booking again to confirm that Quote without the missing rows, or open it from the Rentals list to add them.`,
-          )
-          return
-        }
+        /* 0132 (Audit-01 P1-02): there is no longer a partial-create branch.
+           Crew and transport ride the same `create_booking` transaction as the
+           header, lines and discounts, so a create failure means NOTHING was
+           written — the generic `step === undefined` message below is now the
+           literal truth, and a retry creates the whole booking at once. */
         if (step === 'convert' && createdQuote.current) {
           setActionError(
             `Booking ${createdQuote.current.no} is confirmed, but the draft link did not update: ${reason}. ` +
@@ -3282,9 +3360,14 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     // Client & Schedule into Client + Dates (and Crew & Transport into Crew +
     // Delivery) cannot leave a stale id behind.
     const sectionIndex = SECTIONS.findIndex((_, i) => `section-${i}` === targetId)
-    if (sectionIndex >= 0) setOpen((prev) => prev.map((v, j) => (j === sectionIndex ? true : v)))
+    if (sectionIndex >= 0) {
+      setOpen((prev) => prev.map((v, j) => (j === sectionIndex ? true : v)))
+      setCurrentStep(sectionIndex <= 1 ? 1 : sectionIndex === 2 ? 2 : sectionIndex <= 4 ? 3 : 4)
+    }
     globalThis.requestAnimationFrame(() => {
-      document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      const section = document.getElementById(targetId)
+      section?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })
+      section?.querySelector<HTMLElement>('input:not([disabled]), select:not([disabled]), button:not([disabled])')?.focus({ preventScroll: true })
     })
   }, [])
 
@@ -3619,6 +3702,12 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    */
   const bookingSummaryCard = (
     <Card id="rail-booking-summary" title="Booking Summary">
+      <dl className="new-rental-summary-context">
+        <div><dt>Client</dt><dd>{client?.name || 'Select a client'}</dd></div>
+        <div><dt>Pickup</dt><dd>{pickupAt ? formatAd(new Date(pickupAt)) : 'Choose date'} · {pickupTime || 'Choose time'}</dd></div>
+        <div><dt>Return</dt><dd>{returnAt ? formatAd(new Date(returnAt)) : 'Choose date'} · {returnTime || 'Choose time'}</dd></div>
+        <div><dt>Equipment</dt><dd>{totalUnits} {totalUnits === 1 ? 'item' : 'items'} · {days > 0 ? `${days} ${dayWord}` : 'Check dates'}</dd></div>
+      </dl>
       {canBookingMoney ? (
         <>
           <MoneyRow label="Equipment" value={formatMoney(pricing.equipmentSubtotalPaisa)} />
@@ -3717,6 +3806,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                       onClick={() => runNoticeAction(n.action!)}
                       style={{
                         display: 'inline-block',
+                        minHeight: 44,
                         marginLeft: 6,
                         padding: '1px 6px',
                         borderRadius: 'var(--r-badge)',
@@ -3746,7 +3836,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           onClick={confirmBooking}
           disabled={confirmBlocked || saveState === 'saving'}
           title={blockReasonText}
-          style={{ width: '100%', minHeight: 40, justifyContent: 'center' }}
+          style={{ width: '100%', minHeight: 44, justifyContent: 'center' }}
         >
           {saveState === 'saving' ? 'Confirming Booking…' : 'Confirm Booking'}
         </Button>
@@ -3854,9 +3944,55 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         </p>
       )}
 
+      {/* Global Inventory Stock Contention Banner */}
+      {critical.length > 0 && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 'var(--sp-md)',
+            padding: '12px 16px',
+            borderRadius: 'var(--r-card)',
+            background: 'var(--st-danger-bg)',
+            color: 'var(--st-danger-fg)',
+            border: '1px solid var(--st-danger-fg)',
+            marginBottom: 'var(--sp-md)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Icon name="alert_triangle" size={18} style={{ flexShrink: 0 }} />
+            <div>
+              <strong style={{ display: 'block', fontSize: 'var(--t-body)' }}>
+                Inventory Stock Contention ({critical.length} conflict{critical.length > 1 ? 's' : ''})
+              </strong>
+              <span style={{ fontSize: 'var(--t-meta)', opacity: 0.9 }}>
+                {critical.map((c) => c.text).join(' · ')}
+              </span>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => setCurrentStep(2)}
+            style={{
+              whiteSpace: 'nowrap',
+              borderColor: 'currentColor',
+              color: 'inherit',
+              minHeight: 36,
+            }}
+          >
+            Resolve Equipment
+          </Button>
+        </div>
+      )}
+
       {/* ── WORKFLOW 5-STEP PERSISTENT STEPPER (§3) ── */}
       <div
         className="new-rental-stepper-container"
+        ref={workflowRef}
+        tabIndex={-1}
+        aria-label={`Step ${currentStep} of 5: ${stageLabels[currentStep - 1]}`}
         style={{
           marginBottom: 'var(--sp-md)',
           display: 'flex',
@@ -3869,7 +4005,14 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 280 }}>
+          {isPhone && (
+            <div className="new-rental-mobile-progress" aria-live="polite">
+              <span>Step {currentStep} of 5</span>
+              <strong>{stageLabels[currentStep - 1]}</strong>
+              <progress value={currentStep} max={5} aria-label="Rental workflow progress" />
+            </div>
+          )}
+          <div hidden={isPhone} style={{ flex: '1 1 100%', minWidth: 0 }}>
             <Stepper
               steps={[
                 { id: 1, label: 'Client & Schedule', description: client ? client.name : 'Who & When' },
@@ -3880,6 +4023,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               ]}
               currentStep={currentStep}
               onStepClick={(step: number) => {
+                setViewMode('steps')
                 setCurrentStep(step)
                 if (step === 1) setOpen((prev) => prev.map((v, i) => (i === 0 || i === 1 ? true : v)))
                 if (step === 2) setOpen((prev) => prev.map((v, i) => (i === 2 ? true : v)))
@@ -3889,7 +4033,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               }}
             />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+          <div style={{ display: isPhone ? 'none' : 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
             <button
               type="button"
               className="press"
@@ -3899,7 +4043,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 5,
-                minHeight: 32,
+                minHeight: 44,
                 padding: '0 10px',
                 borderRadius: 'var(--r-badge)',
                 border: '1px solid var(--border)',
@@ -3911,7 +4055,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               }}
             >
               <Icon name={viewMode === 'all' ? 'check' : 'checklist'} size={13} />
-              {viewMode === 'all' ? 'All Sections' : 'Guided 5-Step'}
+              {viewMode === 'all' ? 'Use guided steps' : 'Show all sections'}
             </button>
             {viewMode === 'all' && (
               <button
@@ -3925,7 +4069,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 5,
-                  minHeight: 32,
+                  minHeight: 44,
                   padding: '0 10px',
                   borderRadius: 'var(--r-badge)',
                   border: '1px solid var(--border)',
@@ -4193,7 +4337,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </div>
           </Section>
 
-          {viewMode === 'steps' && (
+          {viewMode === 'steps' && !isPhone && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 8 }}>
               <Button
                 variant="primary"
@@ -4224,8 +4368,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                     gap: 4,
                     padding: '2px 8px',
                     borderRadius: 'var(--r-badge)',
-                    background: 'var(--st-info-bg)',
-                    color: 'var(--st-info-fg)',
+                    /* R-40 fix: was --st-info-*, a token pair defined in no
+                       stylesheet — the badge computed to transparent ink on
+                       nothing. --st-primary-* is the defined blue pair. */
+                    background: 'var(--st-primary-bg)',
+                    color: 'var(--st-primary-fg)',
                     fontSize: 11,
                     fontWeight: 600,
                   }}
@@ -4288,6 +4435,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 {...(liveEquipment
                   ? { equipment: liveEquipment, availability: availabilitySource }
                   : {})}
+                bundles={liveBundleResults}
                 days={days || 1}
                 existingLineIds={lines.map((l) => l.id)}
                 onAdd={addDrafts}
@@ -4593,7 +4741,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </div>
           </Section>
 
-          {viewMode === 'steps' && (
+          {viewMode === 'steps' && !isPhone && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
               <Button
                 variant="outline"
@@ -4670,13 +4818,20 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 * stub the dispatcher refuses. So the booking gets priced crew;
                 * nobody's own calendar hears about it.
                 */}
-              <p style={{ margin: '0 0 var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--warn-text)', lineHeight: 1.5 }}>
-                This is a <strong>sample roster</strong> — the people and the day rates they are priced at are invented in
-                the app, not read from the database. Adding someone puts their name, role and rate on this booking when it
-                is confirmed; it does not link a staff record, and it reserves nobody, because booking a crew member's own
-                calendar is not built yet.
-              </p>
-              <CrewSearch onBooking={crew} onAdd={addCrew} showRates={canCrewMoney} />
+              {(!liveCrew || liveCrew.length === 0) && (
+                <p style={{ margin: '0 0 var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--warn-text)', lineHeight: 1.5 }}>
+                  This is a <strong>sample roster</strong> — the people and the day rates they are priced at are invented in
+                  the app, not read from the database. Adding someone puts their name, role and rate on this booking when it
+                  is confirmed; it does not link a staff record, and it reserves nobody, because booking a crew member's own
+                  calendar is not built yet.
+                </p>
+              )}
+              <CrewSearch
+                onBooking={crew}
+                onAdd={addCrew}
+                showRates={canCrewMoney}
+                roster={liveCrew && liveCrew.length > 0 ? liveCrew : CREW_ROSTER}
+              />
               <div style={{ minWidth: 0 }}>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
@@ -4945,7 +5100,13 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                       />
                     </Field>
 
-                    {/* Return Pickup Logistics (§3.3) */}
+                    {/* Return Pickup Logistics (§3.3)
+                        TODO(decision): returnPickupType/Address/Time/Charge have no
+                        persistence path — no booking_transport columns, not in
+                        createRental's transport contract, not in the draft schema.
+                        The fee shows in the on-page Transport Total but is not sent
+                        with the booking. Needs a ruling: add columns + payload half,
+                        or scope the block out of Quot/* creates. */}
                     <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
                       <Field label="Return Pickup Option">
                         <Select
@@ -4953,8 +5114,9 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                           onChange={(e) => setReturnPickupType(e.target.value as typeof returnPickupType)}
                           style={inputStyle}
                         >
-                          <option>Client Returns to Warehouse</option>
-                          <option>Babin Rentals Pickup from Location</option>
+                          {/* RULING 2026-09-22 session: explicit values — option text alone set the state to a display label, so the 'Babin Pickup' branch (address/time/fee) and the fee total never engaged, and the review summary printed the wrong line. */}
+                          <option value="Client Return">Client Returns to Warehouse</option>
+                          <option value="Babin Pickup">Babin Rentals Pickup from Location</option>
                         </Select>
                       </Field>
                       {returnPickupType === 'Babin Pickup' && (
@@ -5041,7 +5203,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </div>
           </Section>
 
-          {viewMode === 'steps' && (
+          {viewMode === 'steps' && !isPhone && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
               <Button
                 variant="outline"
@@ -5418,7 +5580,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </Section>
           )}
 
-          {viewMode === 'steps' && (
+          {viewMode === 'steps' && !isPhone && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
               <Button
                 variant="outline"
@@ -5596,9 +5758,17 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               </div>
             )}
 
-            {/* Blocking Alerts if any */}
             {critical.length > 0 && (
-              <div style={{ marginBottom: 'var(--sp-md)', padding: 12, borderRadius: 'var(--r-card)', background: 'var(--st-danger-bg)', border: '1px solid var(--st-danger-border)', color: 'var(--st-danger-fg)' }}>
+              <div
+                style={{
+                  marginBottom: 'var(--sp-md)',
+                  padding: 12,
+                  borderRadius: 'var(--r-card)',
+                  background: 'var(--st-danger-bg)',
+                  border: '1px solid color-mix(in srgb, var(--danger) 45%, transparent)',
+                  color: 'var(--st-danger-fg)',
+                }}
+              >
                 <strong>Cannot Confirm Rental:</strong>
                 <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
                   {critical.map((a, i) => (
@@ -5622,15 +5792,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 >
                   {saveState === 'saving' ? 'Saving…' : 'Save as Quote / Draft'}
                 </Button>
-                <Button
-                  variant="primary"
-                  onClick={confirmBooking}
-                  disabled={confirmBlocked || saveState === 'saving'}
-                  title={blockReasonText}
-                  style={{ minHeight: 44, padding: '0 28px', fontSize: 15, fontWeight: 700 }}
-                >
-                  {saveState === 'saving' ? 'Confirming Rental…' : 'Confirm Rental'}
-                </Button>
+                <a className="new-rental-summary-link" href="#rail-booking-summary">Review booking summary</a>
               </div>
             </div>
           </Card>
@@ -5699,12 +5861,105 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       </div>
 
       {!isDesktop && (
-        <div style={{ marginTop: 'var(--sp-md)' }}>
+        <div hidden={isPhone && currentStep !== 5} style={{ marginTop: 'var(--sp-md)' }}>
           {bookingSummaryCard}
         </div>
       )}
 
-      <FooterNote extra={['Sections are not a wizard — any order, one Confirm']} />
+      {isPhone && (
+        <nav className="new-rental-mobile-actions" style={{ bottom: BAR_BOX }} aria-label="Rental workflow actions">
+          <button type="button" className="new-rental-compact-summary" onClick={() => setCurrentStep(5)} aria-label="Review rental summary">
+            <span>{client?.name ?? 'No client selected'} · {totalUnits} items</span>
+            {canBookingMoney && <strong>{formatMoney(pricing.rentalTotalPaisa)}</strong>}
+          </button>
+          <div className="new-rental-mobile-action-buttons">
+            <Button variant="outline" disabled={currentStep === 1} onClick={() => setCurrentStep((step) => Math.max(1, step - 1))}>Back</Button>
+            {currentStep < 5 ? (
+              <Button variant="primary" onClick={() => setCurrentStep((step) => Math.min(5, step + 1))}>{currentStep === 4 ? 'Review rental' : 'Continue'}</Button>
+            ) : (
+              <Button variant="primary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView?.({ block: 'start', behavior: 'auto' })}>Review confirmation</Button>
+            )}
+          </div>
+        </nav>
+      )}
+
+      {!isPhone && (isShortViewport || currentStep >= 4) && (
+        <aside
+          aria-label="Rental confirmation bar"
+          style={{
+            position: 'sticky',
+            bottom: 0,
+            zIndex: 30,
+            background: 'var(--surface, var(--card))',
+            borderTop: '1px solid var(--border)',
+            padding: '12px 20px',
+            margin: 'var(--sp-md) calc(-1 * var(--page-padding)) 0',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 'var(--sp-md)',
+            boxShadow: '0 -4px 14px rgba(0, 0, 0, 0.08)',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                {client?.name || 'No client selected'} · {totalUnits} {totalUnits === 1 ? 'item' : 'items'} · {days > 0 ? `${days} ${dayWord}` : 'Dates unset'}
+              </div>
+              {canBookingMoney && (
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                  <span style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>
+                    {formatMoney(pricing.rentalTotalPaisa)}
+                  </span>
+                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                    Deposit: {formatMoney(pricing.securityDeposit.requiredPaisa)}
+                  </span>
+                </div>
+              )}
+            </div>
+            {blockingNotices.length > 0 && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 10px',
+                  borderRadius: 'var(--r-badge)',
+                  background: 'var(--st-danger-bg)',
+                  color: 'var(--st-danger-fg)',
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 600,
+                }}
+              >
+                <Icon name="alert_triangle" size={14} />
+                {blockingNotices.length} blocking {blockingNotices.length === 1 ? 'item' : 'items'}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Button
+              variant="outline"
+              onClick={() => saveDraft()}
+              disabled={saveState === 'saving'}
+              style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}
+            >
+              {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={confirmBooking}
+              disabled={confirmBlocked || saveState === 'saving'}
+              title={blockReasonText}
+              style={{ minHeight: 44, padding: '0 20px', fontWeight: 600 }}
+            >
+              {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
+            </Button>
+          </div>
+        </aside>
+      )}
+
+      <FooterNote extra={['Move between sections freely. Review the booking before confirming.']} />
 
       {/* ── Disclosures. None of these route; the booking stays behind them. ── */}
       {client && (

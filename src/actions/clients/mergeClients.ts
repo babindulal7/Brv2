@@ -85,13 +85,49 @@ export const mergeClientsConfig: ActionConfig<MergeClientsInput, MergeClientsRes
     }
 
     // 2. Count and repoint related records
+    /* Every repoint is error-checked: an unchecked PATCH that fails silently
+       leaves the duplicate's rows behind in a "merged" state. A failed
+       repoint stops the merge loudly rather than half-completing it. */
+    const repoint = async (table: string): Promise<void> => {
+      const { error } = await supabase
+        .from(table as 'cases')
+        .update({ client_id: survivorId })
+        .eq('client_id', duplicateId);
+      if (error) {
+        throw new Error(
+          `Merging stopped — repointing ${table} rows to the survivor failed: ${error.message}. ` +
+            `Earlier tables may already have moved; re-run the merge once this is fixed.`,
+        );
+      }
+    };
+
     // Bookings
-    const { count: bookingsCount } = await supabase
+    const { data: dupBookings, error: bookingsReadError } = await supabase
       .from('bookings')
-      .select('*', { count: 'exact', head: true })
+      .select('id')
       .eq('client_id', duplicateId);
-    if ((bookingsCount ?? 0) > 0) {
-      await supabase.from('bookings').update({ client_id: survivorId }).eq('client_id', duplicateId);
+    if (bookingsReadError) {
+      throw new Error(`Could not list the duplicate's bookings: ${bookingsReadError.message}`);
+    }
+    const bookingIds = (dupBookings ?? []).map((b) => b.id as string);
+    const bookingsCount = bookingIds.length;
+    if (bookingsCount > 0) {
+      await repoint('bookings');
+    }
+
+    // Cases follow bookings (linked_booking_id) — the `cases` table has no
+    // client_id column, so a direct repoint cannot exist. (An earlier version
+    // of this block queried `cases.client_id`; the query 42703'd silently
+    // every time. If the product wants case moves on merge, they move with
+    // the booking, not with a second update.) The summary counts the ones that
+    // moved WITH the bookings — read after the repoint.
+    let casesCount = 0;
+    if (bookingIds.length > 0) {
+      const { count: linkedCases } = await supabase
+        .from('cases')
+        .select('*', { count: 'exact', head: true })
+        .in('linked_booking_id', bookingIds);
+      casesCount = linkedCases ?? 0;
     }
 
     // Invoices
@@ -100,7 +136,7 @@ export const mergeClientsConfig: ActionConfig<MergeClientsInput, MergeClientsRes
       .select('*', { count: 'exact', head: true })
       .eq('client_id', duplicateId);
     if ((invoicesCount ?? 0) > 0) {
-      await supabase.from('invoices').update({ client_id: survivorId }).eq('client_id', duplicateId);
+      await repoint('invoices');
     }
 
     // Security Deposits
@@ -109,16 +145,7 @@ export const mergeClientsConfig: ActionConfig<MergeClientsInput, MergeClientsRes
       .select('*', { count: 'exact', head: true })
       .eq('client_id', duplicateId);
     if ((depositsCount ?? 0) > 0) {
-      await supabase.from('security_deposits').update({ client_id: survivorId }).eq('client_id', duplicateId);
-    }
-
-    // Cases
-    const { count: casesCount } = await supabase
-      .from('cases')
-      .select('*', { count: 'exact', head: true })
-      .eq('client_id', duplicateId);
-    if ((casesCount ?? 0) > 0) {
-      await supabase.from('cases').update({ client_id: survivorId }).eq('client_id', duplicateId);
+      await repoint('security_deposits');
     }
 
     // Contacts: repoint, set is_primary = false so survivor keeps its own primary contact
@@ -127,7 +154,13 @@ export const mergeClientsConfig: ActionConfig<MergeClientsInput, MergeClientsRes
       .select('*', { count: 'exact', head: true })
       .eq('client_id', duplicateId);
     if ((contactsCount ?? 0) > 0) {
-      await supabase.from('client_contacts').update({ client_id: survivorId, is_primary: false }).eq('client_id', duplicateId);
+      const { error: contactsError } = await supabase
+        .from('client_contacts')
+        .update({ client_id: survivorId, is_primary: false })
+        .eq('client_id', duplicateId);
+      if (contactsError) {
+        throw new Error(`Merging stopped — repointing contacts failed: ${contactsError.message}`);
+      }
     }
 
     // Documents
@@ -136,7 +169,7 @@ export const mergeClientsConfig: ActionConfig<MergeClientsInput, MergeClientsRes
       .select('*', { count: 'exact', head: true })
       .eq('client_id', duplicateId);
     if ((documentsCount ?? 0) > 0) {
-      await supabase.from('client_documents').update({ client_id: survivorId }).eq('client_id', duplicateId);
+      await repoint('client_documents');
     }
 
     // Notes
@@ -145,14 +178,15 @@ export const mergeClientsConfig: ActionConfig<MergeClientsInput, MergeClientsRes
       .select('*', { count: 'exact', head: true })
       .eq('client_id', duplicateId);
     if ((notesCount ?? 0) > 0) {
-      await supabase.from('client_notes').update({ client_id: survivorId }).eq('client_id', duplicateId);
+      await repoint('client_notes');
     }
 
     const movedSummary = {
       bookings: bookingsCount ?? 0,
       invoices: invoicesCount ?? 0,
       security_deposits: depositsCount ?? 0,
-      cases: casesCount ?? 0,
+      // Moved WITH their bookings — counted right after the bookings repoint.
+      cases: casesCount,
       contacts: contactsCount ?? 0,
       documents: documentsCount ?? 0,
       notes: notesCount ?? 0,

@@ -147,7 +147,8 @@ describe('Finance — one click, one payment write', () => {
 
     const input = container.querySelector('input[type="number"]') as HTMLInputElement
     expect(input).toBeTruthy()
-    expect(input.value).toBe('')
+    // R-39: prefilled with the selected invoice's outstanding rupees
+    expect(input.value).toBe('139506')
 
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
     await act(async () => {

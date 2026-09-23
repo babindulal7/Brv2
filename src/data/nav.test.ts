@@ -27,15 +27,18 @@ import {
  */
 
 describe('canonical primary and secondary nav', () => {
-  it('is exactly the canonical primary list, in order', () => {
+  it('is exactly the canonical primary list across the 3 domains, in order', () => {
     expect(NAV.map((s) => s.label)).toEqual([
       'Dashboard',
       'Rentals',
-      'Calendar',
       'Operations',
+      'Calendar',
       'Inventory',
       'Clients',
+      'Crew Assist',
       'Finance',
+      'Documents',
+      'Analytics',
     ])
   })
 
@@ -43,27 +46,28 @@ describe('canonical primary and secondary nav', () => {
     expect(NAV.some((s) => s.children !== undefined)).toBe(false)
   })
 
-  it('exports SETTINGS_NAV as item 3 of MORE_NAV', () => {
+  it('exports SETTINGS_NAV as item 2 of MORE_NAV', () => {
     expect(SETTINGS_NAV.label).toBe('Settings')
     expect(SETTINGS_NAV.to).toBe('/settings')
   })
 
-  it('exports PRIMARY_NAV with 7 items and MORE_NAV with 3 items', () => {
-    expect(PRIMARY_NAV).toHaveLength(7)
-    expect(MORE_NAV).toHaveLength(3)
-    expect(permittedMoreNav('Owner')).toHaveLength(3)
+  it('exports PRIMARY_NAV with 10 items and MORE_NAV with 2 items', () => {
+    expect(PRIMARY_NAV).toHaveLength(10)
+    expect(MORE_NAV).toHaveLength(2)
+    expect(permittedMoreNav('Owner')).toHaveLength(2)
   })
 })
 
 describe('Law 6 — money-blind roles never see money surfaces', () => {
-  it('drops /finance for a money-blind role and keeps the other 6 primary items', () => {
+  it('drops /finance and /reports for a money-blind role and keeps the other 8 primary items', () => {
     const warehouse = permittedNav('Warehouse')
     expect(warehouse.map((s) => s.to)).not.toContain('/finance')
-    expect(warehouse).toHaveLength(6)
+    expect(warehouse.map((s) => s.to)).not.toContain('/reports')
+    expect(warehouse).toHaveLength(8)
   })
 
-  it('keeps all 7 primary items for an Owner', () => {
-    expect(permittedNav('Owner')).toHaveLength(7)
+  it('keeps all 10 primary items for an Owner', () => {
+    expect(permittedNav('Owner')).toHaveLength(10)
   })
 
   it('gives a signed-out visitor nothing', () => {
@@ -194,6 +198,8 @@ describe('More sheet', () => {
       'Clients',
       'Crew Assist',
       'Finance',
+      'Documents',
+      'Analytics',
       'Tools',
       'Settings',
     ])
@@ -247,7 +253,7 @@ describe('SPEC_TABS records what each updated spec ruled', () => {
     expect(SPEC_TABS['/inventory']).toEqual(['Equipment', 'Bundles', 'Stock Check', 'Maintenance'])
   })
 
-  it('09_FINANCE — six tabs, Audit gone (it is a Tools card)', () => {
-    expect(SPEC_TABS['/finance']).toEqual(['Dashboard', 'Invoices', 'Payments', 'Expenses', 'Documents', 'Reports'])
+  it('09_FINANCE — six tabs, Closing elevated, Documents is primary', () => {
+    expect(SPEC_TABS['/finance']).toEqual(['Dashboard', 'Invoices', 'Payments', 'Expenses', 'Closing', 'Reports'])
   })
 })

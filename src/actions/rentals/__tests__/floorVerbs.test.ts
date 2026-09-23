@@ -276,7 +276,13 @@ describe('each verb runs at exactly one stage — JOBS[j].runsAt, not a re-typed
 
 describe('Pack — the whole shape, in the order that makes a partial failure truthful', () => {
   beforeEach(() => {
-    db.state.responses['bookings'] = [[bookingAt('Booked')]]
+    /* The second element is what the stage READ-BACK in `advanceStage`
+       (RL-08 / Audit-01 P0-01) must see after the transition — `nextRows`
+       repeats the last entry forever, so a one-element queue would report
+       'Booked' for the persisted stage and the verb would rightly refuse to
+       seal. Refusal paths below never reach the read-back, so the extra row
+       changes nothing for them. */
+    db.state.responses['bookings'] = [[bookingAt('Booked')], [bookingAt('Packed')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['packing_lines'] = [
@@ -435,7 +441,7 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
     expect(movements[0]?.payload['unit_id']).toBeUndefined()
 
     writes.reset()
-    db.state.responses['bookings'] = [[bookingAt('Booked')]]
+    db.state.responses['bookings'] = [[bookingAt('Booked')], [bookingAt('Packed')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['packing_lines'] = [[], [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }]]
@@ -476,7 +482,8 @@ describe('Pack — the whole shape, in the order that makes a partial failure tr
  */
 describe('PK-05 — a refused stage transition leaves the session resumable', () => {
   beforeEach(() => {
-    db.state.responses['bookings'] = [[bookingAt('Booked')]]
+    // resolve → read-back (see the Pack suite's note on the second element)
+    db.state.responses['bookings'] = [[bookingAt('Booked')], [bookingAt('Packed')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 2 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['packing_lines'] = [[], [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }]]
@@ -491,6 +498,22 @@ describe('PK-05 — a refused stage transition leaves the session resumable', ()
 
     // Opened, never sealed: the update to 'Completed' is the write that would
     // have spent the session.
+    expect(opsOn('operation_sessions').map((o) => o.kind)).toEqual(['insert'])
+    expect(insertsOn('operation_sessions')[0]?.payload['state']).toBe('In Progress')
+  })
+
+  it('does not seal when the stage cannot be read back at the new value — RL-08 / Audit-01 P0-01', async () => {
+    /* The transition INSERT resolves (the one-element bookings queue repeats
+       'Booked' forever, so the read-back after it still sees 'Booked'), yet
+       the verb must NOT seal or claim the move: a stage the database cannot
+       be SEEN to have reached is a refused stage. */
+    db.state.responses['bookings'] = [[bookingAt('Booked')]]
+
+    await expect(
+      packRental({ id: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1', 'u2'] }] }, OWNER),
+    ).rejects.toThrow(/still open/)
+
+    // Opened, never sealed — same residue as a refusal, because it is one.
     expect(opsOn('operation_sessions').map((o) => o.kind)).toEqual(['insert'])
     expect(insertsOn('operation_sessions')[0]?.payload['state']).toBe('In Progress')
   })
@@ -578,7 +601,8 @@ describe('PK-05 — a refused stage transition leaves the session resumable', ()
 
 describe('the stage moves through the transition trigger and nothing else', () => {
   it('never writes the bookings table, and the transition it does write matches JOBS', async () => {
-    db.state.responses['bookings'] = [[bookingAt('Packed')]]
+    // resolve → stage read-back (RL-08) — the second element is the moved stage
+    db.state.responses['bookings'] = [[bookingAt('Packed')], [bookingAt('On Rent')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['handover_lines'] = [[], [{ id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' }]]
@@ -598,7 +622,7 @@ describe('the stage moves through the transition trigger and nothing else', () =
   })
 
   it('writes signatures to signatures table before stage transition when provided', async () => {
-    db.state.responses['bookings'] = [[bookingAt('Packed')]]
+    db.state.responses['bookings'] = [[bookingAt('Packed')], [bookingAt('On Rent')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['handover_lines'] = [[], [{ id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' }]]
@@ -650,7 +674,7 @@ describe('Law 6 — the floor verbs touch no money', () => {
   ]
 
   it('names no money column in any SELECT, and carries none in any write payload', async () => {
-    db.state.responses['bookings'] = [[bookingAt('On Rent')]]
+    db.state.responses['bookings'] = [[bookingAt('On Rent')], [bookingAt('Returned')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
@@ -679,7 +703,9 @@ describe('Law 6 — the floor verbs touch no money', () => {
 
 describe('Handover', () => {
   beforeEach(() => {
-    db.state.responses['bookings'] = [[bookingAt('Packed')]]
+    // resolve → stage read-back (RL-08); the staged/partial flows below simply
+    // never consume the second element, because no transition is attempted.
+    db.state.responses['bookings'] = [[bookingAt('Packed')], [bookingAt('On Rent')]]
     db.state.responses['booking_lines'] = [
       [
         { id: LINE_A, qty: 2 },
@@ -833,7 +859,8 @@ describe('Handover', () => {
 
 describe('Return', () => {
   beforeEach(() => {
-    db.state.responses['bookings'] = [[bookingAt('On Rent')]]
+    // resolve → stage read-back (RL-08); holds short of terminal never read it.
+    db.state.responses['bookings'] = [[bookingAt('On Rent')], [bookingAt('Returned')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
     db.state.responses['operation_sessions'] = [[]]
   })
@@ -1078,7 +1105,7 @@ describe('Return', () => {
  */
 describe('RT-03 — a line that is still expected back is not a finished line', () => {
   beforeEach(() => {
-    db.state.responses['bookings'] = [[bookingAt('On Rent')]]
+    db.state.responses['bookings'] = [[bookingAt('On Rent')], [bookingAt('Returned')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
     db.state.responses['operation_sessions'] = [[]]
   })
@@ -1175,7 +1202,7 @@ describe('RT-03 — a line that is still expected back is not a finished line', 
     for (const decision of ['Charge replacement', 'Insurance claim', 'Write off'] as const) {
       db.reset()
       writes.reset()
-      db.state.responses['bookings'] = [[bookingAt('On Rent')]]
+      db.state.responses['bookings'] = [[bookingAt('On Rent')], [bookingAt('Returned')]]
       db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
       db.state.responses['operation_sessions'] = [[]]
       db.state.responses['return_lines'] = [
@@ -1476,7 +1503,7 @@ describe('Reset — the verb that opens no session and moves no stage', () => {
 
 describe('the dispatcher — implemented, and gated on a capability that actually resolves', () => {
   function setUpPack(): void {
-    db.state.responses['bookings'] = [[bookingAt('Booked')]]
+    db.state.responses['bookings'] = [[bookingAt('Booked')], [bookingAt('Packed')]]
     db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
     db.state.responses['operation_sessions'] = [[]]
     db.state.responses['packing_lines'] = [[], [{ id: 'pl-1', booking_line_id: LINE_A, state: 'Packed' }]]
@@ -1527,7 +1554,8 @@ describe('one shape, four verbs', () => {
     for (const { job, run } of cases) {
       db.reset()
       writes.reset()
-      db.state.responses['bookings'] = [[bookingAt(JOBS[job].runsAt)]]
+      // resolve (runsAt) → stage read-back (the stage the verb sets)
+      db.state.responses['bookings'] = [[bookingAt(JOBS[job].runsAt)], [bookingAt(JOBS[job].sets as string)]]
       db.state.responses['booking_lines'] = [[{ id: LINE_A, qty: 1 }]]
       db.state.responses['operation_sessions'] = [[]]
       db.state.responses[LINE_TABLE[job]] = [

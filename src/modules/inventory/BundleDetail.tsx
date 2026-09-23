@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import EditBundle from './EditBundle'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
@@ -256,7 +257,7 @@ export function BundleDetail() {
   }))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)', paddingBottom: 60 }}>
+    <PageShell width="full">
       <PageHeader
         icon={iconFor(bundle.category)}
         title={bundle.name}
@@ -460,7 +461,7 @@ export function BundleDetail() {
           'A bundle stores models, never serials — units are assigned at packing',
         ]}
       />
-    </div>
+    </PageShell>
   )
 }
 

@@ -1,8 +1,9 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon, { type IconName } from '../../components/ui/Icon'
+import { Badge } from '../../components/ui/Badge'
 import { PageBody } from '../../components/ui/PageBody'
-import { has, timeOf, type MovementRow } from '../../lib/queries/today'
+import { businessDayAd, has, timeOf, type MovementRow } from '../../lib/queries/today'
 import type { ListResult } from '../../lib/queries/useList'
 import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 import type { BookingStatus, JobName } from '../../lib/workflow'
@@ -17,6 +18,9 @@ interface DashboardMovementPanelProps {
   onClearFilters: () => void
   filterControl: ReactNode
   isToday?: boolean
+  onLoadMore?: () => void
+  hasMore?: boolean
+  kpiFilter?: 'all' | 'ready' | 'overdue'
 }
 
 export function dashboardAction(row: MovementRow, side: 'outgoing' | 'incoming'): {
@@ -48,23 +52,47 @@ export default function DashboardMovementPanel({
   periodLabel,
   onClearFilters,
   filterControl,
+  onLoadMore,
+  hasMore = false,
+  kpiFilter = 'all',
 }: DashboardMovementPanelProps) {
   const navigate = useNavigate()
   const { openOperations } = useOperationsWorkspace()
   const count = list.loading || list.error ? '—' : String(list.total ?? list.rows.length)
   const noun = side === 'outgoing' ? 'pickups' : 'returns'
+  const today = businessDayAd()
+  const [searchQuery, setSearchQuery] = useState('')
 
-  // Visually place overdue returns before normal returns
+  // Visually place overdue returns before normal returns, apply KPI filter and instant search
   const rows = useMemo(() => {
-    if (side !== 'incoming') return list.rows
-    const overdue: MovementRow[] = []
-    const normal: MovementRow[] = []
-    for (const r of list.rows) {
-      if (has(r, 'Overdue')) overdue.push(r)
-      else normal.push(r)
+    let baseRows = list.rows
+    if (side === 'incoming') {
+      const overdue: MovementRow[] = []
+      const normal: MovementRow[] = []
+      for (const r of list.rows) {
+        if (has(r, 'Overdue')) overdue.push(r)
+        else normal.push(r)
+      }
+      baseRows = [...overdue, ...normal]
     }
-    return [...overdue, ...normal]
-  }, [list.rows, side])
+
+    if (kpiFilter === 'ready' && side === 'outgoing') {
+      baseRows = baseRows.filter((r) => r.status === 'Packed' || (r.status ?? '').toLowerCase().includes('packed'))
+    } else if (kpiFilter === 'overdue' && side === 'incoming') {
+      baseRows = baseRows.filter((r) => has(r, 'Overdue') || (r.statusNote ?? '').toLowerCase().includes('late'))
+    }
+
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return baseRows
+
+    return baseRows.filter((r) => {
+      const clientMatch = (r.client ?? '').toLowerCase().includes(q)
+      const bookingMatch = (r.bookingNo ?? '').toLowerCase().includes(q)
+      const projectMatch = (r.project ?? '').toLowerCase().includes(q)
+      const deliveryMatch = (r.deliveryType ?? '').toLowerCase().includes(q)
+      return clientMatch || bookingMatch || projectMatch || deliveryMatch
+    })
+  }, [list.rows, side, kpiFilter, searchQuery])
 
   return (
     <section className="movement-panel" aria-labelledby={`${side}-panel-title`}>
@@ -76,10 +104,34 @@ export default function DashboardMovementPanel({
           <h2 id={`${side}-panel-title`}>
             {title} <span aria-hidden="true">·</span> <span className="figure">{count}</span>
           </h2>
-          <p>{subtitle}</p>
+          <p title={subtitle}>{subtitle}</p>
         </div>
         <div className="movement-panel__filter">{filterControl}</div>
       </header>
+
+      <div className="movement-panel__toolbar">
+        <div className="movement-panel__search-box">
+          <Icon name="search" size={15} className="movement-panel__search-icon" />
+          <input
+            type="search"
+            className="movement-panel__search-input"
+            placeholder={`Filter ${noun} by client, booking, project...`}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            aria-label={`Search ${title} by client, booking number, or project`}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              className="movement-panel__search-clear"
+              onClick={() => setSearchQuery('')}
+              aria-label={`Clear ${title} search`}
+            >
+              <Icon name="close" size={14} />
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className={`movement-panel__body movement-panel__body--${side}`}>
         <PageBody
@@ -101,18 +153,34 @@ export default function DashboardMovementPanel({
           }
           clearLabel="Back to Today"
         >
-          <div className="movement-cards-list">
-            {rows.map((row) => {
+          {rows.length === 0 ? (
+            <div className="movement-panel__empty-search">
+              <p>No {noun} match {searchQuery ? `"${searchQuery}"` : 'the active filter'}.</p>
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="movement-panel__search-reset-btn"
+                  onClick={() => setSearchQuery('')}
+                >
+                  Clear search query
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="movement-cards-list">
+              {rows.map((row) => {
               const action = dashboardAction(row, side)
               const isOverdue = has(row, 'Overdue')
               const isReady = row.status === 'Packed'
+              const actionLabel = side === 'outgoing' && !isReady ? 'Open booking' : action.label
               const isPartial =
                 (row.status ?? '').toLowerCase().includes('partial') ||
                 (row.statusNote ?? '').toLowerCase().includes('partial') ||
                 (row.statusNote ?? '').toLowerCase().includes('still with client')
 
-              const displayTime =
-                side === 'outgoing' ? timeOf(row) : row.due.replace(/^Due\s+/i, '')
+              const displayTime = side === 'outgoing'
+                ? `${row.atDayAd !== today ? `${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${row.atDayAd}T00:00:00Z`))} · ` : ''}${timeOf(row)}`
+                : row.due.replace(/^Due\s+/i, '')
 
               return (
                 <article
@@ -120,17 +188,6 @@ export default function DashboardMovementPanel({
                   className={`movement-card movement-card--${side} ${
                     isOverdue ? 'movement-card--overdue' : ''
                   }`}
-                  tabIndex={0}
-                  onClick={() => navigate(`/rentals/${row.bookingNo}`)}
-                  onKeyDown={(event) => {
-                    if (
-                      event.target === event.currentTarget &&
-                      (event.key === 'Enter' || event.key === ' ')
-                    ) {
-                      event.preventDefault()
-                      navigate(`/rentals/${row.bookingNo}`)
-                    }
-                  }}
                   aria-label={`${row.bookingNo}, ${row.client}, ${displayTime}`}
                 >
                   <div className="movement-card__top">
@@ -138,26 +195,20 @@ export default function DashboardMovementPanel({
                     <div className="movement-card__badge-wrap">
                       {side === 'outgoing' ? (
                         isReady ? (
-                          <span className="status-pill status-pill--success">
-                            READY FOR PICKUP
-                          </span>
+                          <Badge tone="in" label="Ready for pickup" icon={<Icon name="check" size={14} />} />
                         ) : (
-                          <span className="status-pill status-pill--warning">
-                            ⚠ NOT READY
-                          </span>
+                          <Badge tone="warning" label="Preparation needed" icon={<Icon name="checklist" size={14} />} />
                         )
                       ) : isOverdue ? (
-                        <span className="status-pill status-pill--danger">
-                          OVERDUE{row.statusNote ? ` · ${row.statusNote}` : ''}
-                        </span>
+                        <Badge
+                          tone="danger"
+                          label={row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'}
+                          icon={<Icon name="alert_triangle" size={14} />}
+                        />
                       ) : isPartial ? (
-                        <span className="status-pill status-pill--warning">
-                          PARTIAL RETURN
-                        </span>
+                        <Badge tone="warning" label="Partial return" icon={<Icon name="alert_triangle" size={14} />} />
                       ) : (
-                        <span className="status-pill status-pill--info">
-                          DUE TODAY
-                        </span>
+                        <Badge tone="primary" label={row.atDayAd === today ? 'Due today' : 'Return scheduled'} icon={<Icon name="timer" size={14} />} />
                       )}
                     </div>
                   </div>
@@ -165,14 +216,12 @@ export default function DashboardMovementPanel({
                   <div className="movement-card__main">
                     <div className="movement-card__title">
                       <Link
-                        className="movement-card__number identifier"
+                        className="movement-card__booking-link"
                         to={`/rentals/${row.bookingNo}`}
-                        onClick={(e) => e.stopPropagation()}
                       >
-                        {row.bookingNo}
+                        <strong className="movement-card__client">{row.client}</strong>
+                        <span className="movement-card__number identifier">#{row.bookingNo}</span>
                       </Link>
-                      <span className="movement-card__sep">·</span>
-                      <strong className="movement-card__client">{row.client}</strong>
                     </div>
 
                     <div className="movement-card__items-row">
@@ -183,18 +232,14 @@ export default function DashboardMovementPanel({
                           ) : (
                             `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`
                           )
-                        ) : isPartial ? (
-                          row.statusNote || `${row.itemCount} items expected`
-                        ) : isOverdue ? (
-                          `${row.itemCount} items outstanding`
                         ) : (
-                          `${row.itemCount} items expected`
+                          `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'} booked`
                         )}
                       </span>
 
-                      {side === 'outgoing' && !isReady && (
+                      {side === 'outgoing' && !isReady && row.statusNote && (
                         <span className="movement-card__subnote">
-                          {row.statusNote || `${row.itemCount} items unchecked`}
+                          {row.statusNote}
                         </span>
                       )}
                     </div>
@@ -203,7 +248,7 @@ export default function DashboardMovementPanel({
                     {row.deliveryType && row.deliveryType !== 'Client Pickup' && (
                       <div className="movement-card__meta-tag">
                         <Icon name="truck" size={12} />
-                        <span>{row.deliveryType} · {displayTime}</span>
+                        <span>{row.deliveryType}</span>
                       </div>
                     )}
                   </div>
@@ -225,15 +270,24 @@ export default function DashboardMovementPanel({
                           openOperations(row.bookingNo, bookingStatus, action.job)
                         }
                       }}
-                      aria-label={`${action.label} for ${row.client}, booking ${row.bookingNo}`}
+                      aria-label={`${actionLabel} for ${row.client}, booking ${row.bookingNo}`}
                     >
-                      <span>{side === 'outgoing' && !isReady ? 'Open Booking →' : `${action.label} →`}</span>
+                      <span>{actionLabel}</span><Icon name="arrow_right" size={16} />
                     </button>
                   </div>
                 </article>
               )
             })}
           </div>
+          )}
+          {hasMore && onLoadMore && (
+            <div className="movement-panel__load-more">
+              <button type="button" className="press" onClick={onLoadMore} aria-label={`Load more ${noun}`}>
+                Load more {noun}
+              </button>
+              <span aria-live="polite">Showing {list.rows.length} of {list.total}</span>
+            </div>
+          )}
         </PageBody>
       </div>
     </section>

@@ -1218,11 +1218,16 @@ export async function runFloorVerb(
    *     Packing session a booking is allowed (`0003:152`) and the booking can
    *     never be packed again.
    *
-   *     A refusal arrives two ways and both land in this catch: `advanceStage`
-   *     throws when `planTransition` refuses, and `idempotentInsert` throws when
-   *     the database does — `0021`'s from_stage / no-skip / causal-order checks,
+   *     A refusal arrives three ways and all land in this catch: `advanceStage`
+   *     throws when `planTransition` refuses, when `idempotentInsert` throws in
+   *     the database's name — `0021`'s from_stage / no-skip / causal-order checks,
    *     `0090`'s R-06 money gate on the move to On Rent, or the insert policy
-   *     `0021` gave the table.
+   *     `0021` gave the table — and, since 21 Sep 2026 (RULING, Audit-01 P0-01),
+   *     when the stage cannot be READ BACK at the new value afterwards. The
+   *     transition insert itself can no longer queue: `booking_stage_transitions`
+   *     is written with `queueOnFailure: false`, so an offline device or a dropped
+   *     answer surfaces HERE as a refusal, never as a queued success that seals
+   *     the session over a stage nobody reached.
    *
    *     `0094` (6 Sep 2026) does not make this call more likely to be refused:
    *     it guards *direct* writes to `bookings.stage`, and exempts
@@ -2165,5 +2170,42 @@ async function advanceStage(
         plan.blockers.map((b) => `${b.label}${b.blocking === null ? '' : ` (${b.blocking})`}`).join('; '),
     )
   }
+
+  /* ── READ THE STAGE BACK — RL-08, fixed 21 Sep 2026 (Audit-01 P0-01) ──────
+   *
+   * `applyBookingTransition` now refuses the offline queue outright
+   * (`queueOnFailure: false` in `bookingTransition.ts`), so a resolved
+   * promise here means the INSERT committed — and the trigger that moves
+   * `bookings.stage` runs inside that same INSERT. This read is the belt on
+   * those braces: the same guard `confirmRental` (`readStage`) and
+   * `closeRental` carry, applied to the floor. A stage the database cannot
+   * be SEEN to have reached is reported the same as a refusal — it throws,
+   * `stageRefusal` catches it, the session stays In Progress, and 8b tells
+   * the floor operator the truth instead of sealing a Completed session
+   * over a move nobody can find afterwards.
+   *
+   * `stage` only — Law 6: no money column is named, and the Warehouse-safe
+   * column is all this check needs. */
+  const { data: after, error: afterError } = await supabase
+    .from('bookings')
+    .select('stage')
+    .eq('id', booking.id)
+    .maybeSingle()
+
+  if (afterError || !after) {
+    throw new Error(
+      `${booking.booking_no}'s ${job} transition was submitted but the stage could not be read back, so treat ` +
+        `it as NOT moved to ${to} and check the booking before retrying${afterError ? `: ${afterError.message}` : '.'}`,
+    )
+  }
+
+  const stageNow = (after as { stage: string }).stage
+  if (stageNow !== to) {
+    throw new Error(
+      `${booking.booking_no} is still ${stageNow} after its ${job} transition was submitted, so treat the stage ` +
+        `as NOT moved to ${to}. The database refused the move — check the gates standing on the booking.`,
+    )
+  }
+
   return { from: booking.stage, to }
 }

@@ -192,6 +192,7 @@ export default function AlertsPanel({
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                     <span
+                      title={a.title}
                       style={{
                         fontSize: 'var(--t-ui)',
                         fontWeight: 700,
@@ -225,6 +226,7 @@ export default function AlertsPanel({
                     </span>
                   </div>
                   <div
+                    title={a.detail}
                     style={{
                       marginTop: 2,
                       fontSize: 'var(--t-meta)',

@@ -458,6 +458,7 @@ export interface HandoverWorkspaceProps {
     complete: () => void
     isDirty: boolean
     label?: string
+    error?: string | null
   }) => void
 }
 
@@ -902,6 +903,56 @@ export default function HandoverWorkspace({
     )
   }
 
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const code = query.trim().toLowerCase()
+      if (!code) return
+      const match = rows.find(
+        (r) =>
+          (r.serial && r.serial.toLowerCase() === code) ||
+          r.key.toLowerCase() === code ||
+          (r.name && r.name.toLowerCase() === code) ||
+          (r.assetId && r.assetId.toLowerCase() === code),
+      )
+      if (match) {
+        pick(match.key, 'scan')
+        setQuery('')
+      } else {
+        setScanLog((p) => [`✕ No matching item on this booking for "${query.trim()}"`, ...p].slice(0, 5))
+      }
+    }
+  }
+
+  const eligibleVisible = useMemo(() => visible.filter((r) => r.prior === null), [visible])
+  const allEligiblePicked = eligibleVisible.length > 0 && eligibleVisible.every((r) => stateOf(r.key) === 'Picked Up')
+  const someEligiblePicked = eligibleVisible.some((r) => stateOf(r.key) === 'Picked Up')
+
+  const toggleAllEligible = () => {
+    if (allEligiblePicked) {
+      setMarks((p) => {
+        const next = { ...p }
+        for (const r of eligibleVisible) {
+          delete next[r.key]
+        }
+        return next
+      })
+      setScanLog((p) => [`• Unmarked ${eligibleVisible.length} item(s)`, ...p].slice(0, 5))
+    } else {
+      const at = new Date().toISOString()
+      setMarks((p) => {
+        const next = { ...p }
+        for (const r of eligibleVisible) {
+          if (stateOf(r.key) !== 'Picked Up') {
+            next[r.key] = { state: 'Picked Up', pickedAtIso: at, via: 'manual' }
+          }
+        }
+        return next
+      })
+      setScanLog((p) => [`• Marked ${eligibleVisible.length} item(s) Picked Up by hand`, ...p].slice(0, 5))
+    }
+  }
+
   const scannableUnits = rows
     .filter((r) => r.prior === null)
     .map((r) => ({
@@ -1059,9 +1110,10 @@ export default function HandoverWorkspace({
       complete: completeSession,
       isDirty,
       label: 'Confirm & Next →',
+      error: dispatchError,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onRegisterActions, canComplete, dispatching, isDirty])
+  }, [onRegisterActions, canComplete, dispatching, isDirty, dispatchError])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
 
@@ -1289,8 +1341,9 @@ export default function HandoverWorkspace({
                     <input
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Search equipment, serial…"
-                      aria-label="Search equipment"
+                      onKeyDown={handleSearchKeyDown}
+                      placeholder="Search equipment or scan barcode (press Enter)…"
+                      aria-label="Search equipment or scan barcode"
                       style={{ flex: 1, minWidth: 180, minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                     />
                     <SegmentedControl
@@ -1386,7 +1439,20 @@ export default function HandoverWorkspace({
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                         <thead>
                           <tr style={{ background: 'var(--th-bg)' }}>
-                            {['', 'Equipment', 'Serial', 'Qty', 'Status', 'Location', 'Marked At', ''].map((h, i) => (
+                            <th style={{ ...th, width: 26 }}>
+                              <input
+                                type="checkbox"
+                                aria-label="Toggle all eligible units Picked Up"
+                                title={allEligiblePicked ? 'Unmark all eligible units' : 'Mark all eligible units Picked Up'}
+                                checked={allEligiblePicked}
+                                ref={(el) => {
+                                  if (el) el.indeterminate = !allEligiblePicked && someEligiblePicked
+                                }}
+                                onChange={toggleAllEligible}
+                                disabled={eligibleVisible.length === 0}
+                              />
+                            </th>
+                            {['Equipment', 'Serial', 'Qty', 'Status', 'Location', 'Marked At', ''].map((h, i) => (
                               <th key={h || i} style={th}>{h}</th>
                             ))}
                           </tr>

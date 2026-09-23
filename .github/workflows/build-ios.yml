@@ -1,0 +1,122 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: 'Vite build mode'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - mock
+          - localdb
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    name: Build & Package iOS IPA
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Web Application
+        run: |
+          if [ "${{ github.event.inputs.build_mode }}" = "mock" ]; then
+            npm run build:mock
+          else
+            npm run build
+          fi
+
+      - name: Install Capacitor iOS Tooling
+        run: |
+          npm install --no-save @capacitor/core@latest @capacitor/cli@latest @capacitor/ios@latest
+
+      - name: Initialize and Sync Capacitor iOS
+        run: |
+          npx cap add ios || true
+          npx cap sync ios
+
+      - name: Install CocoaPods
+        run: |
+          cd ios/App
+          pod install || pod install --repo-update
+          cd ../..
+
+      - name: Compile & Archive with Xcode
+        run: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/App.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            clean archive
+          cd ../..
+
+      - name: Package Payload into IPA
+        run: |
+          rm -rf Payload BabinRentalsOS.ipa
+          mkdir -p Payload
+          cp -r ios/App/build/App.xcarchive/Products/Applications/App.app Payload/
+          zip -qr BabinRentalsOS.ipa Payload
+          echo "IPA archive created successfully: $(ls -lh BabinRentalsOS.ipa)"
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BabinRentalsOS-iOS-IPA
+          path: BabinRentalsOS.ipa
+          retention-days: 14
+
+      - name: Generate Job Summary
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          # 📱 Babin Rentals OS - iOS IPA Build Complete!
+
+          Your iOS package (`BabinRentalsOS.ipa`) has been built and uploaded to the Artifacts section above.
+
+          ### How to Install on iPhone / iPad from Windows Desktop:
+          1. **Download the Artifact**:
+             - Download `BabinRentalsOS-iOS-IPA.zip` from this workflow's run summary.
+             - Unzip it to your Windows Desktop to obtain `BabinRentalsOS.ipa`.
+          2. **Sideload via Sideloadly (Recommended & Free)**:
+             - Download [Sideloadly](https://sideloadly.io/) on Windows.
+             - Connect your iPhone or iPad to your PC with a USB cable.
+             - Drag `BabinRentalsOS.ipa` into Sideloadly.
+             - Enter your standard Apple ID and click **Start**.
+             - On your iPhone/iPad, go to **Settings > General > VPN & Device Management** and tap **Trust**.
+          3. **Alternative Sideloaders**:
+             - You can also use **AltStore**, **Scarlet**, or **TrollStore** to install and run the app.
+          EOF

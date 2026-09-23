@@ -3,6 +3,7 @@ import Icon from '../../../components/ui/Icon';
 import type { IconName } from '../../../components/ui/Icon';
 import { cardStyle } from '../../../components/ui/Page';
 import { Badge } from '../../../components/ui/Badge';
+import { InfoTooltip } from '../../../components/ui/InfoTooltip';
 import type { StatusKey } from '../../../lib/status';
 import { CONDITION_TONE } from '../../../lib/queries/inventory';
 import { toBs, formatBs, formatAd } from '../../../lib/bs';
@@ -51,17 +52,18 @@ export function Field({
         ...(span ? { gridColumn: `span ${span}` } : {}),
       }}
     >
-      <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
-        {label} {required && <span style={{ color: 'var(--danger-text)' }}>*</span>}
-      </label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+          {label} {required && <span style={{ color: 'var(--danger-text)' }}>*</span>}
+        </label>
+        {hint && <InfoTooltip content={hint} />}
+      </div>
       {children}
       {error ? (
         <span style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
           <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 1 }} />
           {error}
         </span>
-      ) : hint ? (
-        <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{hint}</span>
       ) : null}
     </div>
   )
@@ -101,9 +103,9 @@ export function SectionCard({
         >
           {n}
         </span>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
           <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{title}</h2>
-          {note && <p style={{ margin: '2px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{note}</p>}
+          {note && <InfoTooltip content={note} />}
         </div>
         {action && <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>{action}</div>}
       </div>

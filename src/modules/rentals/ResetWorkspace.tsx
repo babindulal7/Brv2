@@ -286,6 +286,7 @@ export interface ResetWorkspaceProps {
     complete: () => void
     isDirty: boolean
     label?: string
+    error?: string | null
   }) => void
 }
 
@@ -873,9 +874,10 @@ export default function ResetWorkspace({
       complete: completeResetJob,
       isDirty,
       label: 'Confirm & Complete',
+      error: dispatchError,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onRegisterActions, canComplete, dispatching, isDirty])
+  }, [onRegisterActions, canComplete, dispatching, isDirty, dispatchError])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
 
@@ -1338,7 +1340,7 @@ export default function ResetWorkspace({
 
               {/* ── right — the batch panel, the gate checklist ─────────────── */}
               <FloorAside collapsible={desktop} side="right" width={320} label="Reset selected items" style={place.rail}>
-                <Card title={`Reset Selected Items (${selected.size})`} action={selected.size > 0 ? <button type="button" onClick={clearSelection} style={{ border: 'none', background: 'transparent', color: 'var(--link)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'var(--t-meta)' }}>Clear</button> : undefined}>
+                <Card title={`Reset Selected Items (${selected.size})`} action={selected.size > 0 ? <button type="button" onClick={clearSelection} aria-label="Clear selected reset items" style={{ minHeight: 44, padding: '0 8px', border: 'none', background: 'transparent', color: 'var(--link)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'var(--t-meta)' }}>Clear</button> : undefined}>
                   {selRows.length === 0 ? (
                     <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Select items from the queue to work a batch.</p>
                   ) : (

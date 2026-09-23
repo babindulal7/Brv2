@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import { Button } from '../../components/ui/Button'
+import { InfoTooltip } from '../../components/ui/InfoTooltip'
 import { Card, PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
-import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { price, formatMoney, parseMoney, rupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -86,6 +88,7 @@ const NEW_LINE = (id: number): Line => ({ id, label: '', qty: '1', days: '1', ra
 const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, 25] as const
 
 export default function PricingCalculator() {
+  const navigate = useNavigate()
   const viewport = useViewport()
   const isMoney = isMoneySurface('/tools/pricing')
 
@@ -126,6 +129,26 @@ export default function PricingCalculator() {
   /* An unapproved discount is not applied. The ladder shows the undiscounted
      figures and the banner says why — never a total the gate has refused. */
   const appliedDiscount = gate.valid ? discountPercent : 0
+
+  const handleCreateBookingFromQuote = () => {
+    const validLines = lines
+      .filter((l) => l.label.trim() !== '' || parseMoney(l.rate) !== null)
+      .map((l) => ({
+        label: l.label.trim() || 'Custom Item',
+        qty: Math.max(1, Number(l.qty) || 1),
+        days: Math.max(1, Number(l.days) || 1),
+        ratePaisa: parseMoney(l.rate) ?? 0,
+      }))
+
+    navigate('/rentals/new', {
+      state: {
+        quote: {
+          lines: validLines,
+          discountPct: appliedDiscount,
+        },
+      },
+    })
+  }
 
   const breakdown = price({
     equipment,
@@ -307,11 +330,11 @@ export default function PricingCalculator() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 44, cursor: 'pointer' }}>
                 <input type="checkbox" checked={vatOn} onChange={() => setVatOn((v) => !v)} style={{ width: 18, height: 18 }} />
-                <span style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)' }}>
+                <span style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   {/* Never a literal. Rate comes from Settings ▸ Financial. */}
                   VAT <span className="figure">{vatRatePercent}%</span>
+                  <InfoTooltip content="Read from Settings, never hardcoded" />
                 </span>
-                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Read from Settings, never hardcoded</span>
               </label>
 
               <LabelledInput
@@ -393,30 +416,20 @@ export default function PricingCalculator() {
             </p>
           </div>
 
-          <Unavailable
-            reason="A quote sandbox books nothing. Carrying these figures into a booking needs the draft hand-off New Rental owns; nothing on this page may write one."
-            style={{ marginTop: 'var(--sp-md)', width: '100%' }}
+          <Button
+            variant="primary"
+            icon="file"
+            onClick={handleCreateBookingFromQuote}
+            style={{
+              width: '100%',
+              minHeight: 44,
+              justifyContent: 'center',
+              marginTop: 'var(--sp-md)',
+              fontWeight: 600,
+            }}
           >
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                width: '100%',
-                minHeight: 44,
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'var(--card2)',
-                color: 'var(--muted)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-              }}
-            >
-              <Icon name="lock" size={14} />
-              Use in a booking
-            </span>
-          </Unavailable>
+            Create Booking from Quote
+          </Button>
         </div>
       </div>
 
@@ -465,9 +478,12 @@ function LabelledInput({
 }): ReactNode {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-      <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-        {label}
-      </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{ fontSize: 'var(--t-th)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--muted)' }}>
+          {label}
+        </span>
+        {hint && <InfoTooltip content={hint} />}
+      </div>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -475,7 +491,6 @@ function LabelledInput({
         {...(numeric ? { inputMode: 'decimal' as const } : {})}
         style={controlStyle}
       />
-      {hint && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</span>}
     </label>
   )
 }

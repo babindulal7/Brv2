@@ -3,7 +3,8 @@ import type { ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input, Select, EmptyState, TouchTarget, PageBody, CheckAvailabilityModal } from '../../components/ui'
+import { Input, Select, EmptyState, TouchTarget, PageBody, CheckAvailabilityModal, Modal } from '../../components/ui'
+import { PageShell } from '../../components/ui/PageShell'
 import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
 import { listInventory } from '../../lib/queries/inventory'
 import { BRAND } from '../../lib/status'
@@ -71,12 +72,14 @@ import {
 } from '../../lib/queries/calendar'
 
 /*
- * The operating day, resolved once when this module loads, from the real
- * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
- * imported `TODAY` constant frozen at 31 Jul 2026.
+ * The operating day comes off the Kathmandu clock (`lib/bs.ts`'s
+ * `getBusinessToday`) at EVERY call, never once at module load — a tablet left
+ * on this screen over midnight must see the today marker, the Today button and
+ * the mini month move with the new day. The rail's `dayAd` (`businessDayAd`,
+ * resolved per render) and `CrewBooking.tsx`'s X-05 note take the same
+ * reading. The module-scope `const TODAY = getBusinessToday()` this replaced
+ * froze the highlight to the day the bundle evaluated.
  */
-const TODAY = getBusinessToday()
-
 
 /**
  * **Calendar Workspace** — built against `03 Core Modules/Calendar.PNG` and
@@ -185,7 +188,7 @@ const MONTH_STEP_BLOCKED =
 function monthStepTarget(anchor: Date, dir: -1 | 1): Date | null {
   if (!toBs(anchor)) return addAdMonths(adMonthStart(anchor), dir)
   const width = bsMonthDays(anchor).length
-  const target = adDay(dayDiff(anchor, TODAY) + dir * width)
+  const target = adDay(dayDiff(anchor, getBusinessToday()) + dir * width)
   return toBs(target) ? target : null
 }
 
@@ -217,7 +220,7 @@ function bsMonthStart(from: Date): Date {
     const bs = toBs(d)
     if (!bs) break
     if (bs.day === 1) return d
-    d = adDay(dayDiff(d, TODAY) - 1)
+    d = adDay(dayDiff(d, getBusinessToday()) - 1)
   }
   return d
 }
@@ -310,7 +313,7 @@ function resourceFromParam(raw: string | null): string {
 /** Where the window starts so `day` is visible — one column in, as the render shows. */
 function anchorFor(day: Date | null): Date {
   if (!day) return adDay(-1)
-  return adDay(dayDiff(day, TODAY) - 1)
+  return adDay(dayDiff(day, getBusinessToday()) - 1)
 }
 
 /**
@@ -346,7 +349,7 @@ function bsMonthDays(from: Date): Date[] {
   const start = bsMonthStart(from)
   const out: Date[] = []
   for (let i = 0; i < 34; i += 1) {
-    const d = adDay(dayDiff(start, TODAY) + i)
+    const d = adDay(dayDiff(start, getBusinessToday()) + i)
     if (!toBs(d)) break
     out.push(d)
   }
@@ -387,7 +390,7 @@ function adRangeLabel(days: Date[]): string {
 
 /** "Shrawan 2083" — the BS month a window sits in, with no day numbers; the AD month ("September 2026") where BS is null. */
 function bsMonthLabel(days: Date[]): string {
-  const first = days[0] ?? TODAY
+  const first = days[0] ?? getBusinessToday()
   const bs = toBs(first)
   return bs ? `${BS_MONTHS[bs.month - 1] ?? ''} ${bs.year}` : formatAdMonth(first)
 }
@@ -422,7 +425,7 @@ function adShort(d: Date): string {
 }
 
 function isToday(d: Date): boolean {
-  return d.getTime() === TODAY.getTime()
+  return d.getTime() === getBusinessToday().getTime()
 }
 
 /**
@@ -663,7 +666,9 @@ function BarView({
         alignItems: 'center',
         gap: 6,
         minWidth: 0,
-        height: compact ? 26 : 42,
+        /* Law 15 — the bar is the button: both densities give the whole day
+           span a 44px tap band, not just the compact glyph. */
+        height: 'var(--tap)',
         margin: '4px 2px',
         padding: compact ? '0 7px' : '0 8px',
         borderTopLeftRadius: pos.clipL ? 0 : 7,
@@ -1482,7 +1487,7 @@ function MiniMonth({
    * Stepping a month and choosing a day are two different intentions.
    */
   onStepMonth: (dir: -1 | 1) => void
-  busy: Set<number>
+  busy: Map<number, number>
 }) {
   const days = bsMonthDays(anchor)
   const first = days[0]
@@ -1566,12 +1571,17 @@ function MiniMonth({
         {days.map((d) => {
           const bs = toBs(d)
           const today = isToday(d)
+          const booked = busy.get(d.getTime()) ?? 0
+          /* Law 11 — the dot is colour alone, so the cell's name carries the
+             busy state in words (the MonthGrid cell's `aria-label` pattern). */
+          const named = `${bs ? `${formatBs(bs)} · ` : ''}${formatAd(d)} — ${booked === 0 ? 'no bookings' : `${booked} booking${booked === 1 ? '' : 's'} booked`}`
           return (
             <button
               key={d.getTime()}
               type="button"
               onClick={() => onPickDay(d)}
-              title={`${bs ? `${formatBs(bs)} · ` : ''}${formatAd(d)}`}
+              title={named}
+              aria-label={named}
               className="figure"
               style={{
                 position: 'relative',
@@ -1589,7 +1599,7 @@ function MiniMonth({
               }}
             >
               {bs ? bs.day : d.getUTCDate()}
-              {busy.has(d.getTime()) && !today && (
+              {booked > 0 && !today && (
                 <span aria-hidden style={{ position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)', width: 4, height: 4, borderRadius: 'var(--r-badge)', background: 'var(--primary)' }} />
               )}
             </button>
@@ -1776,8 +1786,14 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow 
           <span aria-hidden style={{ width: 7, height: 7, borderRadius: 'var(--r-badge)', background: skin.line }} />
           {bar.kind}
         </span>
-        <button type="button" onClick={onClose} title="Close (Esc)" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', display: 'flex', padding: 2 }}>
-          <Icon name="close" size={16} />
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          title="Close (Esc)"
+          style={{ minWidth: TOUCH, minHeight: TOUCH, display: 'grid', placeItems: 'center', border: '1px solid transparent', background: 'transparent', color: 'var(--muted)', borderRadius: 'var(--r-btn)', cursor: 'pointer' }}
+        >
+          <Icon name="close" size={18} />
         </button>
       </div>
 
@@ -1937,7 +1953,7 @@ export default function Calendar() {
    * controls navigated and scoped nothing. Anchoring the window on `d` is what
    * makes them mean what they say, and it makes a date linkable and shareable.
    */
-  const [start, setStart] = useState<Date>(() => anchorShowing(requestedDay(dParam) ?? TODAY))
+  const [start, setStart] = useState<Date>(() => anchorShowing(requestedDay(dParam) ?? getBusinessToday()))
   /** The day the peek / sheet / phone agenda is showing. */
   const [dayChoice, setDayChoice] = useState<Date | null>(() => requestedDay(dParam))
   const rowType = rowTypeFromParam(params.get('type'))
@@ -1955,6 +1971,10 @@ export default function Calendar() {
   const [catalogProducts, setCatalogProducts] = useState<
     Array<{ id: string; name: string; totalQuantity?: number | undefined; dailyRate?: number | undefined; description?: string | undefined }>
   >([])
+  /* The Check availability modal's product list failed to load, stated inline
+     rather than swallowed — an empty dropdown over a silent failure reads as
+     "no products", which is a different and wrong business fact. */
+  const [catalogError, setCatalogError] = useState<string | null>(null)
 
   useEffect(() => {
     listInventory({ withMoney: true }).then((res) => {
@@ -1966,7 +1986,9 @@ export default function Calendar() {
           dailyRate: r.dailyRate ? Number(r.dailyRate) / 100 : undefined,
         }))
       )
-    }).catch(() => {})
+    }).catch((err: unknown) => {
+      setCatalogError(err instanceof Error ? err.message : String(err))
+    })
   }, [])
   /*
    * ⛔ An `overlays` Set lived here, holding the three §5.1 layer names, driven
@@ -1984,7 +2006,7 @@ export default function Calendar() {
   /* Full View is a desktop mode: it drops the app chrome for a wall display. */
   const full = fullChoice && desktop
   /* The phone layout always shows an agenda, so it falls back to today. */
-  const day: Date | null = dayChoice ?? (phone ? TODAY : null)
+  const day: Date | null = dayChoice ?? (phone ? getBusinessToday() : null)
 
   const dayCount = view === 'Week' ? 7 : zoom
   const days = useMemo(() => eachDay(start, dayCount), [start, dayCount])
@@ -2005,13 +2027,14 @@ export default function Calendar() {
   const goToday = useCallback(() => {
     // `anchorShowing`, not `adDay(-1)`: on the 1st of a month the bare offset
     // lands in the previous month and Today would draw the wrong month.
-    setStart(anchorShowing(TODAY))
-    setDayChoice(TODAY)
+    const today = getBusinessToday()
+    setStart(anchorShowing(today))
+    setDayChoice(today)
   }, [])
 
   const shift = useCallback(
     (dir: -1 | 1) => {
-      setStart((s) => adDay(dayDiff(s, TODAY) + dir * dayCount))
+      setStart((s) => adDay(dayDiff(s, getBusinessToday()) + dir * dayCount))
     },
     [dayCount],
   )
@@ -2247,11 +2270,13 @@ export default function Calendar() {
    * same array the grid does now, and `jobsOn` already does.
    */
   const busyDays = useMemo(() => {
-    const set = new Set<number>()
+    /* A count per day, not a flag: the mini month says the number out loud in
+       each cell's name, because the dot alone is colour (Law 11). */
+    const counts = new Map<number, number>()
     for (const b of bars) {
-      for (let t = b.from.getTime(); t <= b.to.getTime(); t += 86_400_000) set.add(t)
+      for (let t = b.from.getTime(); t <= b.to.getTime(); t += 86_400_000) counts.set(t, (counts.get(t) ?? 0) + 1)
     }
-    return set
+    return counts
   }, [bars])
 
   /* ── the rail figures ───────────────────────────────────────────────────
@@ -2572,7 +2597,9 @@ export default function Calendar() {
     </p>
   )
 
-  /* §5.1 draws four tabs at desktop, two at tablet and none at phone. */
+  /* §5.1 draws four tabs at desktop, two at tablet and none at phone. Each tab
+     is `id`d and controls its `tabpanel` (the `centre` block below) so the
+     selected panel announces which tab produced it. */
   const viewTabs = allowedViews.length > 1 && (
     <span role="tablist" aria-label="Calendar view" style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}>
       {allowedViews.map((v) => {
@@ -2582,10 +2609,15 @@ export default function Calendar() {
             key={v}
             type="button"
             role="tab"
+            id={`calendar-view-tab-${urlSlug(v)}`}
+            aria-controls={`calendar-view-panel-${urlSlug(v)}`}
             onClick={() => setViewChoice(v)}
             aria-selected={on}
             style={{
-              height: 28,
+              // Law 15 — tabs touch the 44 floor like every other control.
+              minHeight: 'var(--tap)',
+              display: 'inline-flex',
+              alignItems: 'center',
               padding: '0 11px',
               borderRadius: 7,
               border: on ? '1px solid var(--nav-active-accent)' : '1px solid transparent',
@@ -2780,7 +2812,7 @@ export default function Calendar() {
     <Card bodyStyle={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700 }}>Filters</div>
-        <button type="button" onClick={clearAll} style={{ background: 'none', border: 'none', color: 'var(--link)', fontSize: 'var(--t-meta)', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
+        <button type="button" onClick={clearAll} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 'var(--tap)', padding: '0 12px', background: 'none', border: 'none', borderRadius: 'var(--r-btn)', color: 'var(--link)', fontSize: 'var(--t-meta)', cursor: 'pointer', fontFamily: 'inherit' }}>
           Clear All
         </button>
       </div>
@@ -3100,17 +3132,22 @@ export default function Calendar() {
     </PageBody>
   )
 
-  const centre =
-    view === 'Availability' ? (
-      <AvailabilityPanel onCheckAvailability={() => setShowCheckAvailability(true)} />
-    ) : view === 'Timeline' ? (
-      /* Not wrapped in `PageBody`: this view reads nothing. Its rows come from
-         `ROWS`, which is empty in the source, so there is no load to fail and no
-         spinner that could ever resolve into content. */
-      timelineCard
-    ) : (
-      gridBody
-    )
+  const centre = (
+    /* The tab the view switcher has selected — only one panel is ever mounted,
+       so `aria-controls` on an unselected tab refers to nothing until chosen. */
+    <div role="tabpanel" id={`calendar-view-panel-${urlSlug(view)}`} aria-labelledby={`calendar-view-tab-${urlSlug(view)}`}>
+      {view === 'Availability' ? (
+        <AvailabilityPanel onCheckAvailability={() => setShowCheckAvailability(true)} />
+      ) : view === 'Timeline' ? (
+        /* Not wrapped in `PageBody`: this view reads nothing. Its rows come from
+           `ROWS`, which is empty in the source, so there is no load to fail and no
+           spinner that could ever resolve into content. */
+        timelineCard
+      ) : (
+        gridBody
+      )}
+    </div>
+  )
 
   const shortcutsCard = (
     <Card bodyStyle={{ padding: 14 }}>
@@ -3228,6 +3265,47 @@ export default function Calendar() {
     <DaySheet side={desktop ? 'right' : 'bottom'} onClose={() => setDayChoice(null)}>
       {dayJobList}
     </DaySheet>
+  )
+
+  /**
+   * The Check availability modal — one instance, shared by both layouts. A
+   * failed inventory read becomes a persistent inline error IN the modal
+   * (Law 12): without it, a silent catch left the product selector empty and
+   * read as "there are no products".
+   */
+  const checkAvailabilityModal = catalogError !== null ? (
+    <Modal isOpen={showCheckAvailability} onClose={() => setShowCheckAvailability(false)} title="Check availability" size="md">
+      <p
+        role="alert"
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 6,
+          margin: 0,
+          padding: '8px 9px',
+          borderRadius: 'var(--r-sm)',
+          border: '1px solid var(--danger)',
+          background: 'var(--st-danger-bg)',
+          fontSize: 'var(--t-th)',
+          color: 'var(--danger-text)',
+          lineHeight: 1.45,
+        }}
+      >
+        <Icon name="alert_triangle" size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+        <span>
+          The product list could not be loaded, so availability cannot be checked from here. {catalogError}
+        </span>
+      </p>
+    </Modal>
+  ) : (
+    <CheckAvailabilityModal
+      open={showCheckAvailability}
+      onClose={() => setShowCheckAvailability(false)}
+      products={catalogProducts}
+      onApplyRange={(rng, qty) => {
+        navigate(`/rentals/new?from=${rng.from}&to=${rng.to}&qty=${qty}`)
+      }}
+    />
   )
 
   /* ── full view overlay ──────────────────────────────────────────────── */
@@ -3374,14 +3452,7 @@ export default function Calendar() {
           </div>
         )}
 
-        <CheckAvailabilityModal
-          open={showCheckAvailability}
-          onClose={() => setShowCheckAvailability(false)}
-          products={catalogProducts}
-          onApplyRange={(rng, qty) => {
-            navigate(`/rentals/new?from=${rng.from}&to=${rng.to}&qty=${qty}`)
-          }}
-        />
+        {checkAvailabilityModal}
 
         {dayOverlay}
       </div>
@@ -3391,7 +3462,7 @@ export default function Calendar() {
   /* ── default view ───────────────────────────────────────────────────── */
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
       <PageHeader
         icon="calendar"
         title="Calendar"
@@ -3504,17 +3575,10 @@ export default function Calendar() {
 
       <FooterNote extra={['Bookings are cancelled, never deleted']} />
 
-      <CheckAvailabilityModal
-        open={showCheckAvailability}
-        onClose={() => setShowCheckAvailability(false)}
-        products={catalogProducts}
-        onApplyRange={(rng, qty) => {
-          navigate(`/rentals/new?from=${rng.from}&to=${rng.to}&qty=${qty}`)
-        }}
-      />
+      {checkAvailabilityModal}
 
       {dayOverlay}
-    </div>
+    </PageShell>
   )
 }
 

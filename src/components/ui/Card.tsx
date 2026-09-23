@@ -48,8 +48,6 @@ export function Card({
 }: CardProps) {
   const rootStyle: CSSProperties = {
     background: 'var(--card)',
-    backdropFilter: 'blur(14px)',
-    WebkitBackdropFilter: 'blur(14px)',
     border: '1px solid var(--border)',
     borderRadius: 'var(--r-card)',
     boxShadow: 'var(--shadow-card), var(--specular-rim)',

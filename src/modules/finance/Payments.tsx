@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
 import { PageBody } from '../../components/ui/PageBody'
 import { STATUS, PAYMENT_STATUS_TONE } from '../../lib/status'
 import { useViewport } from '../../lib/device'
-import { formatMoney } from '../../lib/money'
+import { formatMoney, toRupees } from '../../lib/money'
 import { toBs, formatBs } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
@@ -26,6 +27,8 @@ import type { Database } from '../../types/supabase'
 import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { RefundPaymentModal } from './modals/RefundPaymentModal'
 import { DateField } from '../../components/ui/DateField'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { Pagination } from '../../components/ui/Pagination'
 
 /**
  * **Finance ▸ Payments** — `updated mds/09_FINANCE.md` §9.3, `/finance/payments`.
@@ -654,6 +657,8 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
         amount: formatMoney(r.totalAmount),
         status: r.status,
         booking: r.bookingNo,
+        // R-39 D1 — prefills the Amount field with what the invoice still owes.
+        outstandingRupees: toRupees(r.outstandingAmount),
       })),
     [invoiceList.rows],
   )
@@ -746,7 +751,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
       {/* Page when routed, subtitle + actions when hosted as Finance's Payments
           tab. See `TabHeader.tsx` for why the description and the actions
           survive the demotion and only the `<h1>` goes. */}
@@ -869,6 +874,11 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
         }}
       >
         <Card title={`Payments${countSuffix}`} bodyStyle={{ padding: tabular ? 0 : 10 }}>
+          {total !== null && (
+            <AppPageToolbar
+              pagination={<Pagination page={page} total={total} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />}
+            />
+          )}
           {/*
             Fixed ladder: restricted → error → loading → empty → children.
             `financeRestriction` outranks everything, so a money-blind session is
@@ -1033,30 +1043,8 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
             )}
 
             {total !== null && total > ROWS_PER_PAGE && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  padding: '10px 12px',
-                  borderTop: '1px solid var(--border)',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                  Showing {(page - 1) * ROWS_PER_PAGE + 1} to {Math.min(page * ROWS_PER_PAGE, total)} of {total}
-                </span>
-                <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}>
-                    Previous
-                  </Button>
-                  <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', padding: '0 4px' }}>
-                    {page} / {pageCount}
-                  </span>
-                  <Button onClick={() => setPage(Math.min(pageCount, page + 1))} disabled={page === pageCount}>
-                    Next
-                  </Button>
-                </span>
+              <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+                <Pagination page={page} total={total} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />
               </div>
             )}
           </PageBody>
@@ -1129,7 +1117,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
           currentPaidPaisa={reversalPaidPaisa}
         />
       )}
-    </div>
+    </PageShell>
   )
 }
 

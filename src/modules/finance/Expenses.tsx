@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, FooterNote } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
 import { PageBody } from '../../components/ui/PageBody'
 import { Modal } from '../../components/ui/Modal'
@@ -33,6 +34,8 @@ import type { Database } from '../../types/supabase'
 import { useList, type ListQueryResult } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { DateField } from '../../components/ui/DateField'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { Pagination } from '../../components/ui/Pagination'
 
 type ExpenseStatusDb = Database['public']['Enums']['expense_status']
 
@@ -862,7 +865,7 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageShell width="full">
       {/* The action is omitted for a money-blind session, not disabled: it
           operates on records that session may not read at all. */}
       <ScreenHeader
@@ -968,6 +971,11 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
           </div>
 
           <Card title={countedTitle} bodyStyle={{ padding: 0 }}>
+            {total !== null && (
+              <AppPageToolbar
+                pagination={<Pagination page={page} total={total} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />}
+              />
+            )}
             {/*
               Fixed ladder: restricted → error → loading → empty → children.
               `restricted` is spread here too — this card is the surface whose
@@ -1110,30 +1118,8 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
               )}
 
               {total !== null && total > ROWS_PER_PAGE && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '10px 12px',
-                    borderTop: '1px solid var(--border)',
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                    Showing {(page - 1) * ROWS_PER_PAGE + 1} to {(page - 1) * ROWS_PER_PAGE + list.rows.length} of {total}
-                  </span>
-                  <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Button onClick={() => setPage(Math.max(1, page - 1))} disabled={page === 1}>
-                      Previous
-                    </Button>
-                    <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', padding: '0 4px' }}>
-                      {page} / {pageCount}
-                    </span>
-                    <Button onClick={() => setPage(Math.min(pageCount, page + 1))} disabled={page === pageCount}>
-                      Next
-                    </Button>
-                  </span>
+                <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+                  <Pagination page={page} total={total} pageSize={ROWS_PER_PAGE} onPageChange={setPage} />
                 </div>
               )}
             </PageBody>
@@ -1157,6 +1143,6 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
       )}
 
       <FooterNote extra={['Corrections are reversal rows, never edits']} />
-    </div>
+    </PageShell>
   )
 }

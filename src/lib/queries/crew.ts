@@ -178,8 +178,8 @@ export async function listCrewMembers(_filters?: ListFilters): Promise<ListQuery
       }
     }
 
-    const rows: CrewMember[] = (memberRows as unknown as CrewMemberDbRow[]).map((m, idx) => ({
-      id: `CR-${String(idx + 1).padStart(3, '0')}`,
+    const rows: CrewMember[] = (memberRows as unknown as CrewMemberDbRow[]).map((m) => ({
+      id: m.id,
       name: m.full_name,
       role: (m.position || 'Grip') as CrewRole,
       phone: m.phone || '+977 980-0000000',

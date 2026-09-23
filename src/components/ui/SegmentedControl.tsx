@@ -41,7 +41,8 @@ export function SegmentedControl<T extends string = string>({
   className = '',
   style,
 }: SegmentedControlProps<T>) {
-  const minHeight = size === 'sm' ? 36 : 42
+  // Law 15 — 44 is the floor at both sizes; `sm` tightens padding and type, never the hit area.
+  const minHeight = 44
 
   return (
     <div
@@ -97,7 +98,6 @@ export function SegmentedControl<T extends string = string>({
               boxShadow: isSelected ? 'var(--shadow-sm, 0 1px 2px rgba(0,0,0,0.08)), var(--specular-rim)' : 'none',
               transition: 'background var(--dur-fast, 120ms) var(--ease), color var(--dur-fast, 120ms) var(--ease), box-shadow var(--dur-fast, 120ms) var(--ease)',
               fontFamily: 'inherit',
-              outline: 'none',
             }}
           >
             {opt.icon && (

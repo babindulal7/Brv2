@@ -12,7 +12,7 @@ import { ErrorBanner } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
 import { formatAd, BS_UNSUPPORTED_NOTE } from '../../lib/bs'
-import { rupees, formatMoney } from '../../lib/money'
+import { rupees, formatMoney, toRupees } from '../../lib/money'
 import { csvCell } from '../../lib/csv'
 import type { Paisa } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
@@ -52,7 +52,7 @@ import { RefundPaymentModal } from './modals/RefundPaymentModal'
 import { VoidInvoiceModal } from './modals/VoidInvoiceModal'
 import Payments from './Payments'
 import Expenses from './Expenses'
-import Documents from '../documents/Documents'
+import DailyClosing from './DailyClosing'
 import { ReportCatalog } from '../reports/ReportCatalog'
 import { DateField } from '../../components/ui/DateField'
 import { exportInvoicePdf } from '../../lib/pdf/exportPdf'
@@ -251,7 +251,7 @@ const PAYMENT_STATUSES = ['Received', 'Refunded', 'Failed', 'Cancelled'] as cons
  * ruling.
  */
 const FINANCE_TABS = SPEC_TABS['/finance'] ?? []
-type FinanceTab = 'Dashboard' | 'Invoices' | 'Payments' | 'Expenses' | 'Documents' | 'Reports'
+type FinanceTab = 'Dashboard' | 'Invoices' | 'Payments' | 'Expenses' | 'Closing' | 'Reports'
 
 /**
  * §9.2's chip row — `(All)(Draft)(Sent)(Partially Paid)(Paid)(Overdue)(Void)`.
@@ -936,6 +936,8 @@ export default function Finance() {
         amount: formatMoney(r.totalAmount),
         status: r.status,
         booking: r.bookingNo,
+        // R-39 D1 — prefills the Amount field with what the invoice still owes.
+        outstandingRupees: toRupees(r.outstandingAmount),
       })),
     [list.rows],
   )
@@ -1413,7 +1415,7 @@ export default function Finance() {
       */}
       {tab === 'Payments' && <Payments embedded />}
       {tab === 'Expenses' && <Expenses embedded />}
-      {tab === 'Documents' && <Documents embedded />}
+      {tab === 'Closing' && <DailyClosing embedded />}
       {tab === 'Reports' && <ReportCatalog />}
 
       {/*

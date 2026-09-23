@@ -74,6 +74,7 @@ import {
   IconBarcode,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
+  IconFilter,
   type Icon as TablerIconType,
 } from '@tabler/icons-react'
 import { captureError } from '../../lib/monitoring'
@@ -101,6 +102,7 @@ const REGISTRY = {
   arrow_right: IconArrowRight,
   external_link: IconExternalLink,
   edit: IconEdit,
+  filter: IconFilter,
 
   // sidebar nav
   home: IconHome,

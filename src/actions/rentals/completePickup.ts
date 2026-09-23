@@ -3,6 +3,29 @@ import { EVENT_TYPES } from '../../events/eventBus';
 import { supabase } from '../../lib/supabase';
 import { runFloorVerb, type FloorLineInput } from './floorVerb';
 
+/**
+ * # RETIRED — 21 Sep 2026 (RULING / Audit-01 P1-03)
+ *
+ * This action walks a booking Booked → Packed → On Rent by running BOTH floor
+ * verbs itself — and, worse, it hands the Handover verb
+ * `governmentIdVerified: true` and `bookingAuthorizationVerified: true` that
+ * NOBODY verified. A pickup completed through here carries two fabricated
+ * compliance facts in an append-only operational record.
+ *
+ * There must be exactly one checkout path, and it is the Handover Workspace →
+ * `runFloorVerb('Handover', …)`, where signatures, ID checks and the R-06
+ * money gate are inputs the floor actually supplies. `MovementList.tsx` has
+ * treated this action as the disabled stub it was meant to be; the flag below
+ * now makes that true again. The dispatcher fails closed on anything that is
+ * not `implemented: true` (core.ts), so this body is unreachable through the
+ * app's action layer. It remains exported only because
+ * `actions/rentals/index.ts` re-exports it and its pinned tests exercise the
+ * shape; delete the file outright when that test file is retired.
+ *
+ * Revert (never silently): flip `implemented` back to `true` — and then
+ * explain, in a new ruling, where `governmentIdVerified: true` came from.
+ */
+
 export type CompletePickupInput = {
   /** Target booking ID (UUID) or booking_no */
   rentalId: string;
@@ -24,7 +47,9 @@ export type CompletePickupResult = {
 export const completePickupConfig: ActionConfig<CompletePickupInput, CompletePickupResult> = {
   name: 'COMPLETE_PICKUP',
   permissions: ['rental.pickup'],
-  implemented: true,
+  // RULING 2026-09-21: retired (see the header). The dispatcher refuses this
+  // action; checkout exists only through the Handover Workspace's floor verb.
+  implemented: false,
 
   validate: (input) => {
     if (!input.rentalId || input.rentalId.trim().length === 0) {

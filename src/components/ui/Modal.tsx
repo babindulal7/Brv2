@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from './Icon'
 import { TouchTarget } from './TouchTarget'
 import { useViewport } from '../../lib/device'
@@ -67,6 +68,7 @@ export interface ModalProps {
   footer?: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
   sheet?: boolean
+  portal?: boolean
 }
 
 const SIZE_MAX_WIDTH: Record<NonNullable<ModalProps['size']>, number> = {
@@ -86,6 +88,7 @@ export function Modal({
   footer,
   size = 'md',
   sheet = false,
+  portal,
 }: ModalProps) {
   // Keeps the modal mounted for a beat after isOpen flips to false so the
   // CSS fade/scale-out below can actually play instead of vanishing instantly.
@@ -200,8 +203,9 @@ export function Modal({
   // After every hook: `useViewport` is one, so the early return cannot precede it.
   if (!shouldRender) return null
 
-  return (
+  const modalNode = (
     <div
+      className="app-modal"
       onKeyDown={handleTrapKeyDown}
       style={{
         position: 'fixed',
@@ -215,9 +219,7 @@ export function Modal({
         alignItems: sheet ? 'flex-end' : 'center',
         justifyContent: 'center',
         padding: sheet ? 0 : 'var(--sp-md)',
-        background: 'rgba(0, 0, 0, 0.65)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
+        background: 'var(--scrim)',
         opacity: isOpen ? 1 : 0,
         transition: 'opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
       }}
@@ -230,6 +232,7 @@ export function Modal({
 
       <div
         ref={surfaceRef}
+        className="app-modal__surface"
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
@@ -317,7 +320,7 @@ export function Modal({
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>{children}</div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain', padding: 20 }}>{children}</div>
 
         {/* Footer */}
         {footer && (
@@ -326,6 +329,7 @@ export function Modal({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
+              flexWrap: 'wrap',
               gap: 'var(--sp-md)',
               padding: phone || sheet ? '16px 20px calc(16px + env(safe-area-inset-bottom, 0px))' : '16px 20px',
               borderTop: '1px solid var(--border)',
@@ -339,4 +343,9 @@ export function Modal({
       </div>
     </div>
   )
+
+  // RULING 2026-09-23: never `process.env` in shipped modules — the program has no
+  // node types; MODE is 'test' under vitest, so the portal skips there only.
+  const usePortal = portal ?? (import.meta.env.MODE !== 'test')
+  return usePortal && typeof document !== 'undefined' ? createPortal(modalNode, document.body) : modalNode
 }

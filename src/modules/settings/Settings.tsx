@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle, SummaryRows } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
 import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -611,7 +612,7 @@ export default function Settings() {
     <GoTab.Provider value={go}>
       <VisibleTabs.Provider value={tabs}>
         <EditCtx.Provider value={edit}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+          <PageShell width="settings">
             <PageHeader
               icon="settings"
               title="Settings"
@@ -668,7 +669,7 @@ export default function Settings() {
             {body}
 
             <FooterNote extra={[`Data as of ${asOf}`]} />
-          </div>
+          </PageShell>
         </EditCtx.Provider>
       </VisibleTabs.Provider>
     </GoTab.Provider>

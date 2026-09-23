@@ -767,7 +767,7 @@ export default function ClientDetail() {
                 <Button
                   variant="primary"
                   icon="plus"
-                  onClick={() => navigate(`/rentals?action=new&clientId=${encodeURIComponent(client.id)}`)}
+                  onClick={() => navigate(`/rentals/new?clientId=${encodeURIComponent(client.id)}`)}
                 >
                   Start Rental
                 </Button>

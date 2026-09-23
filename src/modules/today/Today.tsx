@@ -31,11 +31,17 @@ function readStoredFilter(key: string): DateFilter {
   try {
     const parsed = JSON.parse(window.sessionStorage.getItem(key) ?? 'null') as DateFilter | null
     if (parsed?.kind === 'quick' && QUICK_PERIODS.includes(parsed.period)) return parsed
-    if (parsed?.kind === 'custom' && /^\d{4}-\d{2}-\d{2}$/.test(parsed.from) && /^\d{4}-\d{2}-\d{2}$/.test(parsed.to)) return parsed
+    if (parsed?.kind === 'custom' && isCalendarDay(parsed.from) && isCalendarDay(parsed.to) && parsed.from <= parsed.to) return parsed
   } catch {
     // A stale browser value should never prevent the movement board from opening.
   }
   return { kind: 'quick', period: 'Today' }
+}
+
+function isCalendarDay(day: unknown): day is string {
+  if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return false
+  const date = new Date(`${day}T00:00:00.000Z`)
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === day
 }
 
 function useStoredFilter(key: string): [DateFilter, (filter: DateFilter) => void] {
@@ -96,7 +102,7 @@ function calendarDays(month: Date): Array<string | null> {
   return result
 }
 
-function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' | 'return'; filter: DateFilter; onChange: (filter: DateFilter) => void; today: string }) {
+function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' | 'return' | 'dispatch'; filter: DateFilter; onChange: (filter: DateFilter) => void; today: string }) {
   const [open, setOpen] = useState(false)
   const [rangeStart, setRangeStart] = useState<string | null>(null)
   const [rangeMode, setRangeMode] = useState(false)
@@ -104,15 +110,30 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
   const initialDate = new Date(`${initialDay}T00:00:00.000Z`)
   const [month, setMonth] = useState(() => new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
   const root = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const dialog = useRef<HTMLDivElement>(null)
   const days = useMemo(() => calendarDays(month), [month])
+  const close = () => {
+    setOpen(false)
+    setRangeStart(null)
+    trigger.current?.focus()
+  }
+
+  // Move focus into the dialog when it opens — a keyboard user otherwise stays
+  // on the trigger after it closes over.
+  useEffect(() => {
+    if (open) dialog.current?.focus()
+  }, [open])
 
   useEffect(() => {
     if (!open) return
     const closeAway = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) { setOpen(false); setRangeStart(null) } }
     const closeEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault()
         setOpen(false)
         setRangeStart(null)
+        trigger.current?.focus()
       }
     }
     document.addEventListener('pointerdown', closeAway)
@@ -125,15 +146,13 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
 
   const selectQuick = (period: QuickPeriod) => {
     onChange({ kind: 'quick', period })
-    setRangeStart(null)
-    setOpen(false)
+    close()
   }
 
   const selectDay = (day: string) => {
     if (!rangeMode) {
       onChange({ kind: 'custom', from: day, to: day })
-      setRangeStart(null)
-      setOpen(false)
+      close()
       return
     }
     if (!rangeStart) {
@@ -141,15 +160,13 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
       return
     }
     onChange({ kind: 'custom', from: day < rangeStart ? day : rangeStart, to: day < rangeStart ? rangeStart : day })
-    setRangeStart(null)
-    setOpen(false)
+    close()
   }
 
   const useSingleDay = () => {
     if (!rangeStart) return
     onChange({ kind: 'custom', from: rangeStart, to: rangeStart })
-    setRangeStart(null)
-    setOpen(false)
+    close()
   }
 
   const onDayKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, day: string) => {
@@ -170,16 +187,28 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
   const currentTo = filter.kind === 'custom' ? filter.to : null
   const monthName = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(month)
 
+  const triggerLabel = noun === 'dispatch' ? 'Sync dispatch day' : `Choose ${noun} date filter`
+  const dialogLabel = noun === 'dispatch' ? 'Dispatch date filter' : `${noun} date filter`
+
   return (
-    <div className="dashboard-date-filter" ref={root}>
-      <button type="button" className="dashboard-date-filter__button" aria-label={`Choose ${noun} date filter`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+    <div className="dashboard-date-filter" ref={root} onBlur={(event) => {
+      if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) {
+        setOpen(false)
+        setRangeStart(null)
+      }
+    }}>
+      <button ref={trigger} type="button" className="dashboard-date-filter__button" aria-label={triggerLabel} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `${noun}-date-dialog` : undefined} onClick={() => {
+        setRangeStart(null)
+        if (!open) setMonth(new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
+        setOpen((value) => !value)
+      }}>
         <span className="dashboard-date-filter__calendar" aria-hidden="true"><Icon name="calendar" size={18} /></span>
         <span className="dashboard-date-filter__label">{filterLabel(filter)}</span>
         <Icon name="chevron_down" size={15} />
       </button>
 
       {open && (
-        <div className="dashboard-calendar" role="dialog" aria-label={`${noun} date filter`}>
+        <div id={`${noun}-date-dialog`} className="dashboard-calendar" role="dialog" aria-label={dialogLabel} tabIndex={-1} ref={dialog}>
           <div className="dashboard-calendar__quick" role="group" aria-label="Quick date filters">
             {QUICK_PERIODS.map((period) => (
               <button key={period} type="button" aria-pressed={filter.kind === 'quick' && filter.period === period} onClick={() => selectQuick(period)}>{period}</button>
@@ -207,8 +236,9 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
           </div>
           <div className="dashboard-calendar__footer">
             <button type="button" aria-pressed={rangeMode} onClick={() => { setRangeMode(!rangeMode); setRangeStart(null) }}>{rangeMode ? 'Date range' : 'Single date'}</button>
-            <span>{rangeStart ? 'Choose an end date.' : rangeMode ? 'Select start and end dates' : 'Select a date'}</span>
+            <span aria-live="polite">{rangeStart ? 'Choose an end date.' : rangeMode ? 'Select start and end dates' : 'Select a date'}</span>
             {rangeStart && <button type="button" onClick={useSingleDay}>Use {compactDate(rangeStart)}</button>}
+            <button type="button" className="dashboard-calendar__close" onClick={close}>Close</button>
           </div>
         </div>
       )}
@@ -223,6 +253,8 @@ export default function Today() {
 
   const [pickupDateFilter, setPickupDateFilter] = useStoredFilter(STORAGE_PICKUPS)
   const [returnDateFilter, setReturnDateFilter] = useStoredFilter(STORAGE_RETURNS)
+  const [pickupPage, setPickupPage] = useState(0)
+  const [returnPage, setReturnPage] = useState(0)
   const dayAd = businessDayAd()
   const pickupSet = pickupFilter(pickupDateFilter, dayAd)
   const returnSet = returnFilter(returnDateFilter, dayAd)
@@ -239,8 +271,10 @@ export default function Today() {
     return { rows: result.rows.map((row) => toMovementRow(row, 'incoming', now)), total: result.total ?? null }
   }, [])
 
-  const pickups: ListResult<MovementRow> = useList(fetchPickups, pickupSet.filters, { isFilteredOverride: pickupDateFilter.kind !== 'quick' || pickupDateFilter.period !== 'Today' })
-  const returns: ListResult<MovementRow> = useList(fetchReturns, returnSet, { isFilteredOverride: returnDateFilter.kind !== 'quick' || returnDateFilter.period !== 'Today' })
+  const pickupFilters = { ...pickupSet.filters, page: { index: 0, size: (pickupPage + 1) * 50 } }
+  const returnFilters = { ...returnSet, page: { index: 0, size: (returnPage + 1) * 50 } }
+  const pickups: ListResult<MovementRow> = useList(fetchPickups, pickupFilters, { isFilteredOverride: pickupDateFilter.kind !== 'quick' || pickupDateFilter.period !== 'Today' })
+  const returns: ListResult<MovementRow> = useList(fetchReturns, returnFilters, { isFilteredOverride: returnDateFilter.kind !== 'quick' || returnDateFilter.period !== 'Today' })
   const { refetch: refetchPickups } = pickups
   const { refetch: refetchReturns } = returns
   const refetchMovement = useCallback(() => { refetchPickups(); refetchReturns() }, [refetchPickups, refetchReturns])
@@ -256,14 +290,171 @@ export default function Today() {
   useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refetchMovement)
 
   const isReturnToday = returnDateFilter.kind === 'quick' && returnDateFilter.period === 'Today'
-  const pickupCount = pickups.total ?? pickups.rows.length
-  const returnCount = returns.total ?? returns.rows.length
+  const pickupCount = pickups.loading || pickups.error ? undefined : pickups.total ?? pickups.rows.length
+  const returnCount = returns.loading || returns.error ? undefined : returns.total ?? returns.rows.length
+
+  const readyForHandoverCount = useMemo(
+    () => pickups.rows.filter((r) => r.status === 'Packed' || r.status?.toLowerCase().includes('packed')).length,
+    [pickups.rows]
+  )
+  const overdueCount = useMemo(
+    () => returns.rows.filter((r) => r.flags.includes('Overdue') || (r.statusNote && r.statusNote.includes('late'))).length,
+    [returns.rows]
+  )
+
+  const [kpiFilter, setKpiFilter] = useState<'all' | 'ready' | 'overdue'>('all')
+
+  const isDispatchToday = pickupDateFilter.kind === 'quick' && pickupDateFilter.period === 'Today'
+
+  const goToToday = () => {
+    syncBothPanels({ kind: 'quick', period: 'Today' })
+  }
+
+  const stepDay = (delta: number) => {
+    let currentDay = dayAd
+    if (pickupDateFilter.kind === 'custom') {
+      currentDay = pickupDateFilter.from
+    } else if (pickupDateFilter.kind === 'quick') {
+      if (pickupDateFilter.period === 'Tomorrow') {
+        currentDay = shiftDay(dayAd, 1)
+      } else if (pickupDateFilter.period === 'Next 7 Days') {
+        currentDay = dayAd
+      }
+    }
+    const nextDay = shiftDay(currentDay, delta)
+    if (nextDay === dayAd) {
+      syncBothPanels({ kind: 'quick', period: 'Today' })
+    } else {
+      syncBothPanels({ kind: 'custom', from: nextDay, to: nextDay })
+    }
+  }
+
+  const syncBothPanels = (nextFilter: DateFilter) => {
+    setPickupPage(0)
+    setReturnPage(0)
+    setPickupDateFilter(nextFilter)
+    setReturnDateFilter(nextFilter)
+  }
 
   return (
     <PageShell
       className="rental-dashboard"
-      header={<PageHeader title="Dashboard" />}
+      header={
+        <PageHeader
+          title="Dashboard"
+          description="Prepare pickups, receive returns, and keep equipment moving."
+          actions={
+            <div className="dashboard-header-controls">
+              <span className="dashboard-header-controls__label">Sync dispatch day:</span>
+              <div className="dashboard-day-pager" role="group" aria-label="Quick day navigation">
+                <button
+                  type="button"
+                  className="dashboard-day-pager__btn"
+                  aria-label="Previous day"
+                  onClick={() => stepDay(-1)}
+                >
+                  <Icon name="chevron_left" size={16} />
+                </button>
+                <button
+                  type="button"
+                  className={`dashboard-day-pager__btn dashboard-day-pager__btn--today ${isDispatchToday ? 'is-current' : ''}`}
+                  aria-label="Today"
+                  onClick={goToToday}
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  className="dashboard-day-pager__btn"
+                  aria-label="Next day"
+                  onClick={() => stepDay(1)}
+                >
+                  <Icon name="chevron_right" size={16} />
+                </button>
+              </div>
+              <DateFilterControl
+                noun="dispatch"
+                filter={pickupDateFilter}
+                onChange={syncBothPanels}
+                today={dayAd}
+              />
+            </div>
+          }
+        />
+      }
     >
+      {/* Critical Overdue Warning Alert */}
+      {overdueCount > 0 && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 'var(--sp-md)',
+            padding: '12px 16px',
+            background: 'var(--st-danger-bg)',
+            border: '1px solid var(--st-danger-fg)',
+            borderRadius: 'var(--r-card)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--sp-sm)',
+            color: 'var(--st-danger-fg)',
+          }}
+        >
+          <Icon name="alert_circle" size={18} />
+          <span style={{ fontWeight: 700 }}>Action Required:</span>
+          <span>
+            {overdueCount} rental return{overdueCount > 1 ? 's are' : ' is'} overdue. Follow up with client or initiate return check-in.
+          </span>
+        </div>
+      )}
+
+      {/* Operational KPI Metric Strip */}
+      <div
+        className="dashboard-kpi-strip"
+        role="region"
+        aria-label="Movement KPI summary"
+      >
+        <button
+          type="button"
+          className={`dashboard-kpi-card ${kpiFilter === 'all' ? 'is-active' : ''}`}
+          onClick={() => setKpiFilter('all')}
+          aria-pressed={kpiFilter === 'all'}
+          aria-label={`Scheduled Pickups: ${pickupCount ?? 'none'}. Click to view all.`}
+        >
+          <span className="dashboard-kpi-card__label">Scheduled Pickups</span>
+          <span className="dashboard-kpi-card__val figure">{pickupCount ?? '—'}</span>
+        </button>
+        <button
+          type="button"
+          className={`dashboard-kpi-card ${kpiFilter === 'ready' ? 'is-active' : ''}`}
+          onClick={() => setKpiFilter((prev) => (prev === 'ready' ? 'all' : 'ready'))}
+          aria-pressed={kpiFilter === 'ready'}
+          aria-label={`Ready for Handover: ${readyForHandoverCount}. Click to filter ready pickups.`}
+        >
+          <span className="dashboard-kpi-card__label">Ready for Handover</span>
+          <span className="dashboard-kpi-card__val dashboard-kpi-card__val--success figure">{readyForHandoverCount}</span>
+        </button>
+        <button
+          type="button"
+          className={`dashboard-kpi-card ${kpiFilter === 'all' ? 'is-active' : ''}`}
+          onClick={() => setKpiFilter('all')}
+          aria-pressed={kpiFilter === 'all'}
+          aria-label={`Expected Returns: ${returnCount ?? 'none'}. Click to view all.`}
+        >
+          <span className="dashboard-kpi-card__label">Expected Returns</span>
+          <span className="dashboard-kpi-card__val figure">{returnCount ?? '—'}</span>
+        </button>
+        <button
+          type="button"
+          className={`dashboard-kpi-card ${overdueCount > 0 ? 'dashboard-kpi-card--danger' : ''} ${kpiFilter === 'overdue' ? 'is-active' : ''}`}
+          onClick={() => setKpiFilter((prev) => (prev === 'overdue' ? 'all' : 'overdue'))}
+          aria-pressed={kpiFilter === 'overdue'}
+          aria-label={`Overdue Returns: ${overdueCount}. Click to filter overdue returns.`}
+        >
+          <span className="dashboard-kpi-card__label">Overdue Returns</span>
+          <span className="dashboard-kpi-card__val dashboard-kpi-card__val--danger figure">{overdueCount}</span>
+        </button>
+      </div>
+
       {/* Spec §31: Mobile Segmented Control */}
       {isPhone && (
         <div style={{ marginBottom: 'var(--sp-md)' }}>
@@ -290,12 +481,15 @@ export default function Today() {
             icon="truck"
             list={pickups}
             periodLabel={filterLabel(pickupDateFilter).toLowerCase()}
-            onClearFilters={() => setPickupDateFilter({ kind: 'quick', period: 'Today' })}
+            kpiFilter={kpiFilter}
+            onClearFilters={() => { setPickupPage(0); setPickupDateFilter({ kind: 'quick', period: 'Today' }) }}
+            onLoadMore={() => setPickupPage((page) => page + 1)}
+            hasMore={pickups.total !== null && pickups.rows.length < pickups.total}
             filterControl={
               <DateFilterControl
                 noun="pickup"
                 filter={pickupDateFilter}
-                onChange={setPickupDateFilter}
+                onChange={(next) => { setPickupPage(0); setPickupDateFilter(next) }}
                 today={dayAd}
               />
             }
@@ -311,12 +505,15 @@ export default function Today() {
             list={returns}
             periodLabel={filterLabel(returnDateFilter).toLowerCase()}
             isToday={isReturnToday}
-            onClearFilters={() => setReturnDateFilter({ kind: 'quick', period: 'Today' })}
+            kpiFilter={kpiFilter}
+            onClearFilters={() => { setReturnPage(0); setReturnDateFilter({ kind: 'quick', period: 'Today' }) }}
+            onLoadMore={() => setReturnPage((page) => page + 1)}
+            hasMore={returns.total !== null && returns.rows.length < returns.total}
             filterControl={
               <DateFilterControl
                 noun="return"
                 filter={returnDateFilter}
-                onChange={setReturnDateFilter}
+                onChange={(next) => { setReturnPage(0); setReturnDateFilter(next) }}
                 today={dayAd}
               />
             }

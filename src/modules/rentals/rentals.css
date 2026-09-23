@@ -11,6 +11,29 @@
 .rentals-v2 .page-toolbar { margin-top: 0; }
 
 /* ── New Rental Workspace Component Rules ── */
+.new-rental-summary-context {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--t-meta);
+}
+.new-rental-summary-context > div { display: grid; grid-template-columns: 5rem minmax(0, 1fr); gap: 8px; }
+.new-rental-summary-context dt { color: var(--text2); }
+.new-rental-summary-context dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.new-rental-summary-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--link); font-size: var(--t-meta); }
+
+.new-rental-stepper-container .rental-stepper {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  overflow-x: auto;
+}
+.new-rental-stepper-container .rental-stepper__list { min-width: max-content; }
+.new-rental-stepper-container .rental-stepper__desc { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
 /* Page width is owned by PageShell (`width="form"`); no local max-width here. */
 
 .new-rental-stage-bar {
@@ -92,4 +115,3 @@
 .new-rental-section-card:hover {
   border-color: var(--border2);
 }
-

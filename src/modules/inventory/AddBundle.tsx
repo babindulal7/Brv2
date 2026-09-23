@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui/Select'
+import { InfoTooltip } from '../../components/ui/InfoTooltip'
 import { Card, PageHeader, Button, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { RestrictedState } from '../../components/ui/StateViews'
@@ -179,9 +180,11 @@ function Field({
 }) {
   return (
     <label style={fieldBox}>
-      <Caption label={label} {...(required ? { required } : {})} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <Caption label={label} {...(required ? { required } : {})} />
+        {hint && <InfoTooltip content={hint} />}
+      </div>
       {children}
-      {hint && <span style={subtle}>{hint}</span>}
     </label>
   )
 }
@@ -204,9 +207,11 @@ function FieldBlock({
 }) {
   return (
     <div style={fieldBox} role="group" aria-label={label}>
-      <Caption label={label} {...(required ? { required } : {})} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <Caption label={label} {...(required ? { required } : {})} />
+        {hint && <InfoTooltip content={hint} />}
+      </div>
       {children}
-      {hint && <span style={subtle}>{hint}</span>}
     </div>
   )
 }

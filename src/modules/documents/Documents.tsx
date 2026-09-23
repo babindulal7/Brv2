@@ -6,6 +6,7 @@ import type { IconName } from '../../components/ui/Icon'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Card, Button, KpiStrip, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { PageShell } from '../../components/ui/PageShell'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { useViewport } from '../../lib/device'
 import { ScreenHeader } from '../finance/TabHeader'
@@ -53,6 +54,8 @@ import {
   type SortKey,
 } from '../../lib/queries/documents'
 import { DateField } from '../../components/ui/DateField'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { Pagination } from '../../components/ui/Pagination'
 
 const th = {
   textAlign: 'left' as const,
@@ -203,8 +206,10 @@ function ActionIcon({ name, label, why }: { name: IconName; label: string; why: 
       aria-label={`${label} — unavailable`}
       title={`${label} — ${why}`}
       style={{
-        width: 24,
-        height: 24,
+        minWidth: 36,
+        minHeight: 36,
+        width: 36,
+        height: 36,
         borderRadius: 'var(--r-xs)',
         border: 'none',
         background: 'transparent',
@@ -214,7 +219,7 @@ function ActionIcon({ name, label, why }: { name: IconName; label: string; why: 
         placeItems: 'center',
       }}
     >
-      <Icon name={name} size={14} />
+      <Icon name={name} size={16} />
     </button>
   )
 }
@@ -246,8 +251,10 @@ function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle
           onToggle()
         }}
         style={{
-          width: 24,
-          height: 24,
+          minWidth: 36,
+          minHeight: 36,
+          width: 36,
+          height: 36,
           borderRadius: 'var(--r-xs)',
           border: 'none',
           background: open ? 'var(--hover-card)' : 'transparent',
@@ -257,7 +264,7 @@ function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle
           placeItems: 'center',
         }}
       >
-        <Icon name="more_vert" size={14} />
+        <Icon name="more_vert" size={16} />
       </button>
 
       {open && (
@@ -358,32 +365,6 @@ const menuItem = {
   fontFamily: 'inherit',
   textAlign: 'left' as const,
   textDecoration: 'none',
-}
-
-function PageBtn({ label, active, disabled, onClick }: { label: string; active?: boolean; disabled?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-current={active ? 'page' : undefined}
-      style={{
-        minWidth: 26,
-        height: 26,
-        borderRadius: 7,
-        border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
-        background: active ? 'var(--btn-primary-bg)' : 'transparent',
-        color: active ? 'var(--btn-primary-fg)' : 'var(--text2)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: active ? 700 : 500,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.45 : 1,
-        fontFamily: 'inherit',
-      }}
-    >
-      {label}
-    </button>
-  )
 }
 
 /**
@@ -697,7 +678,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }} onClick={() => setMenuFor(null)}>
+    <PageShell width="full" onClick={() => setMenuFor(null)}>
       <ScreenHeader
         embedded={embedded}
         leading={
@@ -1005,6 +986,21 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
 
         {/* ── centre ────────────────────────────────────────────────────── */}
         <Card bodyStyle={{ padding: 0 }}>
+          <AppPageToolbar
+            pagination={
+              <Pagination
+                page={current}
+                total={rows.length}
+                pageSize={perPage}
+                pageSizeOptions={PER_PAGE}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setPerPage(size)
+                  setPage(1)
+                }}
+              />
+            }
+          />
           <div
             style={{
               display: 'flex',
@@ -1015,13 +1011,8 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               flexWrap: 'wrap',
             }}
           >
-            {/* Stripped when hosted as Finance's Documents tab: the Shell already
-                renders a search field for `/finance`, and two search boxes on one
-                page filtering different sets is the duplication `CONFLICTS.md`
-                §09.2 named. `query` itself stays wired — the state, the filter
-                and the empty state's "clear the search" affordance are unchanged,
-                so nothing downstream has to know which mount it is in. */}
-            {!embedded && (
+            {/* Global command search navigates records; this field filters the
+                displayed documents, including when hosted inside Finance. */}
               <span style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 190 }}>
                 <Icon name="search" size={14} style={{ position: 'absolute', left: 10, color: 'var(--muted)' }} />
                 <Input
@@ -1036,8 +1027,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                   style={{ ...fieldStyle, height: 34, paddingLeft: 30 }}
                 />
               </span>
-            )}
-            {embedded && <span style={{ flex: 1, minWidth: 0 }} />}
 
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               Sort by
@@ -1331,7 +1320,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                           style={{ ...td, ...stickyRight, padding: '9px 6px', background: 'var(--card)' }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 0 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
                             <ActionIcon name="eye" label="View" why={NOT_BUILT} />
                             <ActionIcon name="download" label="Download" why={NOT_BUILT} />
                             <ActionIcon name="upload" label="Send" why={NOT_BUILT} />
@@ -1350,50 +1339,18 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             </div>
           )}
 
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--sp-md)',
-              padding: '10px 12px',
-              flexWrap: 'wrap',
-              fontSize: 'var(--t-meta)',
-              color: 'var(--text2)',
-              borderTop: '1px solid var(--border)',
-            }}
-          >
-            <span>
-              {rows.length === 0
-                ? 'Showing 0 documents'
-                : `Showing ${(current - 1) * perPage + 1} to ${Math.min(current * perPage, rows.length)} of ${rows.length} documents`}
-            </span>
-
-            <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-              <PageBtn label="‹" disabled={current === 1} onClick={() => setPage(current - 1)} />
-              {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-                <PageBtn key={p} label={String(p)} active={p === current} onClick={() => setPage(p)} />
-              ))}
-              <PageBtn label="›" disabled={current === pageCount} onClick={() => setPage(current + 1)} />
-            </span>
-
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-              Rows per page
-              <Select
-                value={perPage}
-                onChange={(e) => {
-                  setPerPage(Number(e.target.value))
-                  setPage(1)
-                }}
-                className="figure"
-                style={{ ...fieldStyle, width: 'auto', height: 28 }}
-              >
-                {PER_PAGE.map((n) => (
-                  <option key={n} value={n}>
-                    {n} / page
-                  </option>
-                ))}
-              </Select>
-            </label>
+          <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
+            <Pagination
+              page={current}
+              total={rows.length}
+              pageSize={perPage}
+              pageSizeOptions={PER_PAGE}
+              onPageChange={setPage}
+              onPageSizeChange={(size) => {
+                setPerPage(size)
+                setPage(1)
+              }}
+            />
           </div>
         </Card>
 
@@ -1618,6 +1575,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         onClose={() => setIsCreateOpen(false)}
         onSuccess={refetchDocs}
       />
-    </div>
+    </PageShell>
   )
 }

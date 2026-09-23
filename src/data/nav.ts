@@ -26,6 +26,17 @@ export interface NavSection {
   icon: IconName
   to: string
   children?: NavChild[]
+  action?: {
+    label: string
+    to: string
+    title?: string
+  }
+}
+
+export interface NavGroup {
+  id: string
+  title: string
+  sections: NavSection[]
 }
 
 /**
@@ -34,24 +45,56 @@ export interface NavSection {
 const SETTINGS_SECTION: NavSection = { label: 'Settings', icon: 'settings', to: '/settings' }
 
 /**
- * Primary navigation destinations for desktop and tablet shells.
- * Plural "Operations" per spec simplification.
+ * The 3 operational domains:
+ * 1. Daily Dispatch (Dashboard, Rentals, Operations, Calendar)
+ * 2. Assets & Relationships (Inventory, Clients, Crew Assist)
+ * 3. Business & Back Office (Finance, Documents, Analytics)
  */
-export const PRIMARY_NAV: NavSection[] = [
-  { label: 'Dashboard', icon: 'home', to: '/dashboard' },
-  { label: 'Rentals', icon: 'checklist', to: '/rentals' },
-  { label: 'Calendar', icon: 'calendar', to: '/calendar' },
-  { label: 'Operations', icon: 'queues', to: '/operations' },
-  { label: 'Inventory', icon: 'box', to: '/inventory' },
-  { label: 'Clients', icon: 'users', to: '/clients' },
-  { label: 'Finance', icon: 'card', to: '/finance' },
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'dispatch',
+    title: 'Daily Dispatch',
+    sections: [
+      { label: 'Dashboard', icon: 'home', to: '/dashboard' },
+      {
+        label: 'Rentals',
+        icon: 'checklist',
+        to: '/rentals',
+        action: { label: '+ New', to: '/rentals/new', title: 'Create new rental booking' },
+      },
+      { label: 'Operations', icon: 'queues', to: '/operations' },
+      { label: 'Calendar', icon: 'calendar', to: '/calendar' },
+    ],
+  },
+  {
+    id: 'assets',
+    title: 'Assets & Relationships',
+    sections: [
+      { label: 'Inventory', icon: 'box', to: '/inventory' },
+      { label: 'Clients', icon: 'users', to: '/clients' },
+      { label: 'Crew Assist', icon: 'crew', to: '/crew' },
+    ],
+  },
+  {
+    id: 'business',
+    title: 'Business & Back Office',
+    sections: [
+      { label: 'Finance', icon: 'card', to: '/finance' },
+      { label: 'Documents', icon: 'file', to: '/documents' },
+      { label: 'Analytics', icon: 'chart', to: '/reports' },
+    ],
+  },
 ]
 
 /**
- * Secondary lower-frequency modules exposed under More.
+ * Primary navigation destinations for desktop and tablet shells.
+ */
+export const PRIMARY_NAV: NavSection[] = NAV_GROUPS.flatMap((g) => g.sections)
+
+/**
+ * Secondary lower-frequency modules exposed under More or Settings.
  */
 export const MORE_NAV: NavSection[] = [
-  { label: 'Crew Assist', icon: 'crew', to: '/crew' },
   { label: 'Tools', icon: 'tool', to: '/tools' },
   SETTINGS_SECTION,
 ]
@@ -71,6 +114,14 @@ export function filterNavByRole(sections: NavSection[], role: SystemRole | undef
     nav = nav.filter((s) => !isStaffSurface(s.to))
   }
   return nav
+}
+
+export function permittedNavGroups(role: SystemRole | undefined): NavGroup[] {
+  if (!role) return []
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    sections: filterNavByRole(group.sections, role),
+  })).filter((group) => group.sections.length > 0)
 }
 
 export function permittedNav(role: SystemRole | undefined): NavSection[] {
@@ -312,6 +363,8 @@ export const MORE_ROUTES: readonly string[] = [
   '/clients',
   '/crew',
   '/finance',
+  '/documents',
+  '/reports',
   '/tools',
   '/settings',
 ]
@@ -364,10 +417,9 @@ export const SPEC_TABS: Record<string, string[]> = {
      lists. */
   '/inventory': ['Equipment', 'Bundles', 'Stock Check', 'Maintenance'],
 
-  /* `09_FINANCE.md` line 4 — "Dashboard · Invoices · Payments · Expenses ·
-     Documents · Reports." Payments and Expenses are new tabs (§9.3, §9.4);
-     "Audit" is gone — the audit log is a Tools card (`10_TOOLS.md` §10.4). */
-  '/finance': ['Dashboard', 'Invoices', 'Payments', 'Expenses', 'Documents', 'Reports'],
+  /* Finance tabs: Dashboard · Invoices · Payments · Expenses · Closing · Reports.
+     Documents is a dedicated primary module in Business & Back Office. */
+  '/finance': ['Dashboard', 'Invoices', 'Payments', 'Expenses', 'Closing', 'Reports'],
 
   /* `08_CLIENTS.md` line 3 says "Directory only — no tabs." **Deliberately
      overridden, 12 Aug 2026 (user ruling).** Clients keeps Memberships.
@@ -388,23 +440,6 @@ export const SPEC_TABS: Record<string, string[]> = {
 
 /**
  * **Where each Finance tab actually goes.**
- *
- * `SPEC_TABS['/finance']` above names the six tabs `09_FINANCE.md` line 4 rules.
- * It does not say where any of them LIVES, and on Finance that gap has already
- * cost something: `modules/finance/Finance.tsx`'s tab strip links Expenses to
- * `/reports/expenses`, which is the Expense **report** — twelve hand-typed rows
- * out of `src/data/expenseReports.ts` — rather than the ledger §9.4 specifies.
- * Two different screens, one tab, and nothing wrote down which is which.
- *
- * So this is the record: tab label → the route that serves it today, or `null`
- * where no screen exists. `null` is deliberate and must stay honest — pointing
- * an unbuilt tab at the nearest plausible page is exactly how Expenses came to
- * mean the report.
- *
- * ⚠ Like `SPEC_TABS`, **no page reads this yet**. `Finance.tsx` still holds its
- * own literal strip and is owned by another pass; re-pointing it is that pass's
- * work, and this is the one place it should read from when it does. Nothing here
- * routes anything on its own.
  */
 export const FINANCE_TAB_ROUTES: Readonly<Record<string, string | null>> = {
   /* Both are the Finance page itself — `Finance.tsx` switches between them in
@@ -413,15 +448,12 @@ export const FINANCE_TAB_ROUTES: Readonly<Record<string, string | null>> = {
   Invoices: '/finance',
   /* §9.3 — `modules/finance/Payments.tsx`, added 12 Aug 2026. The receipt
      ledger with its deposits rail and the shared Record Payment modal, reading
-     `payments` through `lib/queries/finance.ts`. NOT `Finance.tsx`'s Dashboard
-     payment-method breakdown, which is an aggregate over the same table and not
-     the ledger §9.3 draws. Read-only by law: `payments` is immutable, so the
-     screen records and reverses, and offers no edit. */
+     `payments` through `lib/queries/finance.ts`. */
   Payments: '/finance/payments',
   /* §9.4 — `modules/finance/Expenses.tsx`, added 12 Aug 2026. Reads `expenses`
-     through `lib/queries/finance.ts`. NOT `/reports/expenses`. */
+     through `lib/queries/finance.ts`. */
   Expenses: '/finance/expenses',
-  Documents: '/finance/documents',
+  Closing: '/finance/closing',
   /* §9.6's catalog of 45 is not built; Pulse is the report index that exists. */
   Reports: '/reports/pulse',
 }

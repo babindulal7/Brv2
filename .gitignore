@@ -58,3 +58,9 @@ review-receipts/
 # .localdb/storage/. Rebuildable from supabase/migrations in one command, and
 # it holds a copy of the seed corpus, so it is regenerable state, not history.
 .localdb/
+
+# Concurrent-session UI scratch (parse dumps, probe logs) and local packing archives
+.tmp-ui-*/
+tsc_check.txt
+/babin-rentals-os md.rar
+

@@ -161,7 +161,7 @@ export function ResolveCaseModal({
                   alignItems: 'center',
                   gap: 6,
                   cursor: 'pointer',
-                  fontSize: 'var(--t-body-sm)',
+                   fontSize: 'var(--t-meta)',
                 }}
               >
                 <input
@@ -195,7 +195,7 @@ export function ResolveCaseModal({
               background: 'var(--card)',
               color: 'var(--text)',
               fontFamily: 'inherit',
-              fontSize: 'var(--t-body-sm)',
+               fontSize: 'var(--t-ui)', // RULING 2026-09-23: --t-body-sm never existed; --t-ui is the step below --t-body
               resize: 'vertical',
             }}
           />
@@ -222,7 +222,7 @@ export function ResolveCaseModal({
                   background: 'var(--card)',
                   color: 'var(--text)',
                   fontFamily: 'inherit',
-                  fontSize: 'var(--t-body-sm)',
+                   fontSize: 'var(--t-meta)',
                 }}
               />
             </div>
@@ -244,7 +244,7 @@ export function ResolveCaseModal({
                   background: 'var(--card)',
                   color: 'var(--text)',
                   fontFamily: 'inherit',
-                  fontSize: 'var(--t-body-sm)',
+                   fontSize: 'var(--t-meta)',
                 }}
               />
             </div>
