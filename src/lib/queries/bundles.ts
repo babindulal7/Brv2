@@ -122,6 +122,7 @@ interface BundleRow {
         days: number
         is_mandatory: boolean
         sort_order: number
+        is_active?: boolean
       }>
     | null
 }
@@ -129,7 +130,7 @@ interface BundleRow {
 const BUNDLE_COLUMNS =
   'id, bundle_code, name, description, daily_rate, weekly_rate, is_active, category_id, ' +
   'category:inventory_categories ( name ), ' +
-  'items:bundle_items ( id, product_id, quantity, days, is_mandatory, sort_order )'
+  'items:bundle_items ( id, product_id, quantity, days, is_mandatory, sort_order, is_active )'
 
 export interface ListBundlesOptions {
   /**
@@ -193,7 +194,11 @@ export async function listBundlesWithItems(opts: ListBundlesOptions = {}): Promi
   if (bundles.length === 0) return []
 
   const productIds = [
-    ...new Set(bundles.flatMap((b) => (b.items ?? []).map((i) => i.product_id)).filter(Boolean)),
+    ...new Set(
+      bundles
+        .flatMap((b) => (b.items ?? []).filter((i) => i.is_active !== false).map((i) => i.product_id))
+        .filter(Boolean),
+    ),
   ]
 
   const [products, units] = await Promise.all([
@@ -212,6 +217,7 @@ export async function listBundlesWithItems(opts: ListBundlesOptions = {}): Promi
     weeklyRate: rupees(b.weekly_rate ?? 0),
     isActive: b.is_active,
     items: [...(b.items ?? [])]
+      .filter((i) => i.is_active !== false)
       .sort((x, y) => x.sort_order - y.sort_order || x.id.localeCompare(y.id))
       .map((i): BundleComponent => {
         const p = products.get(i.product_id)

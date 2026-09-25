@@ -298,7 +298,7 @@ describe('MONEY-13 — a rental nobody invoiced is unbilled, not settled', () =>
     expect(read?.ops).toContainEqual(['neq', 'status', 'Void'])
   })
 
-  it('there is no override — an unbilled rental cannot be closed by anyone (R-07)', async () => {
+  it('without override, an unbilled rental cannot be closed by anyone (R-07)', async () => {
     setUpCloseable()
     db.state.responses['invoices'] = [[]]
 
@@ -310,6 +310,83 @@ describe('MONEY-13 — a rental nobody invoiced is unbilled, not settled', () =>
       await expect(closeRental({ bookingNo: 'B-880', clientUuid: ACTION_KEY }, { userId: 'u', role, isOnline: true }))
         .rejects.toThrow(/nothing has been invoiced/i)
     }
+  })
+
+  it('refuses an override with an empty or sub-10 character reason', async () => {
+    setUpCloseable()
+    db.state.responses['invoices'] = [[]]
+
+    await expect(
+      closeRental(
+        { bookingNo: 'B-880', clientUuid: ACTION_KEY, override: { reason: 'Short' } },
+        { userId: 'u', role: 'Owner', isOnline: true },
+      ),
+    ).rejects.toThrow(/at least 10 characters/i)
+  })
+
+  it('refuses an override attempted by Manager or Accounts', async () => {
+    setUpCloseable()
+    db.state.responses['invoices'] = [[]]
+
+    for (const role of ['Manager', 'Accounts'] as const) {
+      db.reset()
+      writes.reset()
+      setUpCloseable()
+      db.state.responses['invoices'] = [[]]
+      await expect(
+        closeRental(
+          {
+            bookingNo: 'B-880',
+            clientUuid: ACTION_KEY,
+            override: { reason: 'Internal shoot with zero rental fees' },
+          },
+          { userId: 'u', role, isOnline: true },
+        ),
+      ).rejects.toThrow(/restricted to Owner and Admin/i)
+    }
+  })
+
+  it('allows Owner or Admin to close an unbilled zero-value rental with a valid reason (§4.51)', async () => {
+    for (const role of ['Owner', 'Admin'] as const) {
+      db.reset()
+      writes.reset()
+      setUpCloseable()
+      db.state.responses['invoices'] = [[]]
+
+      const result = await closeRental(
+        {
+          bookingNo: 'B-880',
+          clientUuid: ACTION_KEY,
+          override: { reason: 'Sponsored NGO documentary production with zero rental fees' },
+        },
+        { userId: 'usr-exec', role, isOnline: true },
+      )
+
+      expect(result.stage).toBe('Closed')
+      expect(result.gates.isZeroValueOverride).toBe(true)
+      expect(result.gates.rentalInvoiced).toBe(false)
+      expect(transitions()).toHaveLength(1)
+      expect(transitions()[0]?.payload['reason']).toBe('Sponsored NGO documentary production with zero rental fees')
+    }
+  })
+
+  it('still enforces other gates (deposit, case, damage) even when zero-value override is provided', async () => {
+    setUpCloseable()
+    db.state.responses['invoices'] = [[]]
+    db.state.responses['security_deposits'] = [
+      [{ received_amount: 10000, refunded_amount: 0, applied_amount: 0 }],
+    ]
+
+    await expect(
+      closeRental(
+        {
+          bookingNo: 'B-880',
+          clientUuid: ACTION_KEY,
+          override: { reason: 'Sponsored NGO documentary production with zero rental fees' },
+        },
+        { userId: 'u', role: 'Owner', isOnline: true },
+      ),
+    ).rejects.toThrow(/deposit is still held/i)
   })
 })
 

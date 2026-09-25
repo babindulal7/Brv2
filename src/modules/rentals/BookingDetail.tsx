@@ -10,6 +10,8 @@ import './rentals.css'
 import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
 import { Badge } from '../../components/ui/Badge'
+import { Modal } from '../../components/ui/Modal'
+import { Input } from '../../components/ui/Input'
 import { LifecycleProgress } from '../../components/ui/LifecycleProgress'
 import { PageActions } from '../../components/ui/PageActions'
 import { OverflowMenu, type OverflowMenuItem } from '../../components/ui/OverflowMenu'
@@ -1288,6 +1290,10 @@ export default function BookingDetail() {
    */
   const [closeError, setCloseError] = useState<string | null>(null)
   const [closing, setClosing] = useState(false)
+  const [overrideModalOpen, setOverrideModalOpen] = useState(false)
+  const [overrideReason, setOverrideReason] = useState('')
+  const [overriding, setOverriding] = useState(false)
+  const [overrideError, setOverrideError] = useState<string | null>(null)
 
   const closeBooking = useCallback(() => {
     const ctx = actionCtx(user)
@@ -1314,6 +1320,42 @@ export default function BookingDetail() {
       })
       .finally(() => setClosing(false))
   }, [id, user, showSuccessToast, refetchHead])
+
+  const submitCloseOverride = useCallback(() => {
+    const ctx = actionCtx(user)
+    if (!ctx) {
+      setOverrideError('You must be signed in to close a rental.')
+      return
+    }
+    if (overrideReason.trim().length < 10) {
+      setOverrideError('A zero-value close override requires an audit reason of at least 10 characters.')
+      return
+    }
+    setOverrideError(null)
+    setOverriding(true)
+    const clientUuid = newClientUuid()
+    void import('../../actions/rentals/closeRental')
+      .then((m) =>
+        m.closeRental(
+          {
+            bookingNo: id,
+            clientUuid,
+            override: { reason: overrideReason.trim() },
+          },
+          ctx,
+        ),
+      )
+      .then((res) => {
+        showSuccessToast('Rental Closed', `${res.bookingNo} closed with Zero-Value Override`)
+        setOverrideModalOpen(false)
+        setOverrideReason('')
+        refetchHead()
+      })
+      .catch((err: unknown) => {
+        setOverrideError(formatGateError(err))
+      })
+      .finally(() => setOverriding(false))
+  }, [id, user, overrideReason, showSuccessToast, refetchHead])
 
   const segments: PhoneSegment[] = canBookingMoney ? ['Items', 'Money', 'Docs'] : ['Items', 'Docs']
   const [segment, setSegment] = useState<PhoneSegment>('Items')
@@ -2824,7 +2866,7 @@ export default function BookingDetail() {
             role="alert"
             style={{
               display: 'flex',
-              alignItems: 'flex-start',
+              flexDirection: 'column',
               gap: 'var(--sp-sm)',
               padding: '10px 12px',
               borderRadius: 'var(--r-sm)',
@@ -2834,8 +2876,26 @@ export default function BookingDetail() {
               color: 'var(--danger-text)',
             }}
           >
-            <Icon name="alert_triangle" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-            <span>{closeError}</span>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-sm)' }}>
+              <Icon name="alert_triangle" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+              <span>{closeError}</span>
+            </div>
+            {closeError.includes('nothing has been invoiced') &&
+              (user?.role === 'Owner' || user?.role === 'Admin') && (
+                <div style={{ marginTop: 'var(--sp-xs)', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setOverrideError(null)
+                      setOverrideReason('')
+                      setOverrideModalOpen(true)
+                    }}
+                  >
+                    Close with Zero-Value Override (§4.51)
+                  </Button>
+                </div>
+              )}
           </div>
         )}
       </div>
@@ -3080,6 +3140,76 @@ export default function BookingDetail() {
           refetchHead()
         }}
       />
+
+      <Modal
+        isOpen={overrideModalOpen}
+        onClose={() => {
+          if (!overriding) {
+            setOverrideModalOpen(false)
+            setOverrideReason('')
+            setOverrideError(null)
+          }
+        }}
+        title="Zero-Value Close Override"
+        subtitle={`Booking ${booking.bookingNo} · Law 1 / OPEN_DECISIONS §4.51`}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-sm)' }}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setOverrideModalOpen(false)
+                setOverrideReason('')
+                setOverrideError(null)
+              }}
+              disabled={overriding}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={submitCloseOverride}
+              disabled={overriding || overrideReason.trim().length < 10}
+            >
+              {overriding ? 'Closing…' : 'Confirm Close Override'}
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+          <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+            This rental has no issued invoice. As an <strong>{user?.role}</strong>, you may close
+            this rental if it is a genuine zero-value / sponsored / goodwill job. A mandatory audit reason
+            of at least 10 characters will be permanently written to the immutable audit log.
+          </p>
+          <Input
+            label="Audit Reason"
+            value={overrideReason}
+            onChange={(e) => setOverrideReason(e.target.value)}
+            placeholder="e.g. Sponsored NGO documentary production with zero rental fees"
+            helperText={`${overrideReason.trim().length}/10 characters minimum`}
+            error={
+              overrideReason.length > 0 && overrideReason.trim().length < 10
+                ? 'Reason must be at least 10 characters.'
+                : null
+            }
+          />
+          {overrideError && (
+            <div
+              role="alert"
+              style={{
+                padding: '8px 12px',
+                borderRadius: 'var(--r-sm)',
+                border: '1px solid var(--danger)',
+                background: 'var(--st-danger-bg)',
+                fontSize: 'var(--t-meta)',
+                color: 'var(--danger-text)',
+              }}
+            >
+              {overrideError}
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {showCreateDocument && (
         <CreateDocumentModal

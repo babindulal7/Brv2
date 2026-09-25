@@ -300,6 +300,11 @@ export interface CloseGateInput {
    * is a gate that cannot fail, which is exactly what it was.
    */
   damageChargesPendingApproval: number
+  /**
+   * **§4.51.** Zero-Value Close Override.
+   * When true and rentalOutstandingPaisa === 0, the invoice gate passes without an issued invoice.
+   */
+  isZeroValueOverride?: boolean
 }
 
 /**
@@ -312,10 +317,10 @@ export interface CloseGateInput {
 export function closeGates(i: CloseGateInput): Array<{ label: string; passing: boolean; blocking: string | null }> {
   const rs = (paisa: number): string => formatMoney(paisa as Paisa)
 
-  /* MONEY-13 — "billed AND settled", which is what R-07's "outstanding must be
-     0" presupposes. One gate, not two, because R-07 rules four close gates and
-     a fifth would be an invented one; the distinction lives in the reason. */
-  const settled = i.rentalInvoiced && i.rentalOutstandingPaisa === 0
+  /* MONEY-13 & §4.51 — "billed AND settled", or genuine zero-value override with 0 outstanding. */
+  const settled =
+    (i.rentalInvoiced && i.rentalOutstandingPaisa === 0) ||
+    (i.isZeroValueOverride === true && i.rentalOutstandingPaisa === 0)
   const held = i.depositHeldPaisa
   const pending = i.damageChargesPendingApproval
 

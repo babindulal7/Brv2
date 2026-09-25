@@ -24,6 +24,7 @@ import type {
   UpdateBundlePatch,
   UpdateBundleLineEdit,
   UpdateBundleLineAdd,
+  UpdateBundleLineDeactivate,
 } from '../../actions/inventory/updateBundle'
 
 /**
@@ -118,6 +119,7 @@ interface Draft {
   weeklyRate: string
   lines: LineDraft[]
   adds: AddDraft[]
+  removedItemIds: string[]
 }
 
 function draftOf(b: BundleWithItems): Draft {
@@ -136,6 +138,7 @@ function draftOf(b: BundleWithItems): Draft {
       isMandatory: i.isMandatory,
     })),
     adds: [],
+    removedItemIds: [],
   }
 }
 
@@ -354,15 +357,26 @@ export default function EditBundle(props: EditBundleProps = {}) {
       lineAdds.push({ key: a.key, productId: a.productId, qty: quantity, days })
     }
 
+    const lineDeactivations: Array<Omit<UpdateBundleLineDeactivate, 'clientUuid'>> =
+      draft.removedItemIds.map((id) => ({ itemId: id }))
+
     const problems = [...rateProblems, ...lineProblems]
     if (draft.name.trim() === '') problems.push('A bundle needs a name.')
+    if (draft.lines.length === 0 && draft.adds.length === 0) {
+      problems.push('A bundle must contain at least one component.')
+    }
 
     return {
       patch,
       lineEdits,
       lineAdds,
+      lineDeactivations,
       problems,
-      changed: Object.keys(patch).length > 0 || lineEdits.length > 0 || lineAdds.length > 0,
+      changed:
+        Object.keys(patch).length > 0 ||
+        lineEdits.length > 0 ||
+        lineAdds.length > 0 ||
+        lineDeactivations.length > 0,
     }
   }, [bundle, draft, money])
 
@@ -429,10 +443,22 @@ export default function EditBundle(props: EditBundleProps = {}) {
   }
 
   /* An addition that has not been saved yet is only in this form's state, so
-     dropping it is not a delete and Law 3 has nothing to say about it. That is
-     exactly why the saved components below carry no equivalent control. */
+     dropping it is not a delete and Law 3 has nothing to say about it. */
   const dropPendingAdd = (key: string) =>
     setDraft((d) => (d ? { ...d, adds: d.adds.filter((a) => a.key !== key) } : d))
+
+  /* Law 3 & §4.52: A saved component is removed via soft-deactivation (is_active = false)
+     when the form is saved, preserving audit and historical references. */
+  const dropSavedLine = (itemId: string) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            lines: d.lines.filter((l) => l.itemId !== itemId),
+            removedItemIds: [...d.removedItemIds, itemId],
+          }
+        : d,
+    )
 
   const save = () => {
     if (!diff || !diff.changed || diff.problems.length > 0) return
@@ -460,6 +486,10 @@ export default function EditBundle(props: EditBundleProps = {}) {
       ...(a.days !== undefined ? { days: a.days } : {}),
       clientUuid: keyFor(a.key),
     }))
+    const lineDeactivations: UpdateBundleLineDeactivate[] = diff.lineDeactivations.map((d) => ({
+      itemId: d.itemId,
+      clientUuid: keyFor(d.itemId),
+    }))
 
     setSaveError(null)
     setSaving(true)
@@ -472,6 +502,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
             patch: diff.patch,
             lineEdits,
             lineAdds,
+            lineDeactivations,
           },
           { userId: user.id, role: user.role },
         ),
@@ -483,6 +514,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
           result.changedKeys.length > 0 ? `${result.changedKeys.length} field${result.changedKeys.length === 1 ? '' : 's'}` : null,
           result.linesUpdated > 0 ? `${result.linesUpdated} changed` : null,
           result.linesAdded > 0 ? `${result.linesAdded} added` : null,
+          result.linesDeactivated > 0 ? `${result.linesDeactivated} removed` : null,
         ].filter(Boolean)
         showSuccessToast('Bundle saved', `${result.bundleCode} · ${parts.join(' · ')}`)
         /* Only a landed write leaves the page — the failing path keeps every
@@ -627,6 +659,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
                 <th style={{ ...th, width: 110 }}>Quantity</th>
                 <th style={{ ...th, width: 110 }}>Days</th>
                 <th style={{ ...th, width: 150 }}>Mandatory</th>
+                <th style={{ ...th, width: 90 }} />
               </tr>
             </thead>
             <tbody>
@@ -662,28 +695,23 @@ export default function EditBundle(props: EditBundleProps = {}) {
                       onChange={(e) => setLine(l.itemId, { isMandatory: e.target.value === 'yes' })}
                     />
                   </td>
+                  <td style={td}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => dropSavedLine(l.itemId)}
+                      aria-label={`Remove ${l.productName}`}
+                    >
+                      Remove
+                    </Button>
+                  </td>
                 </tr>
               ))}
               {draft.adds.map((a) => (
                 <tr key={a.key} style={{ background: 'var(--success-bg)' }}>
                   <td style={td}>
                     {a.productName}{' '}
-                    <span style={labelStyle}>· not saved yet</span>{' '}
-                    <button
-                      type="button"
-                      onClick={() => dropPendingAdd(a.key)}
-                      style={{
-                        border: 'none',
-                        background: 'none',
-                        color: 'var(--muted)',
-                        cursor: 'pointer',
-                        textDecoration: 'underline',
-                        fontSize: 'var(--t-meta)',
-                        padding: 0,
-                      }}
-                    >
-                      Drop
-                    </button>
+                    <span style={labelStyle}>· not saved yet</span>
                   </td>
                   <td style={td}>
                     <Input
@@ -716,11 +744,21 @@ export default function EditBundle(props: EditBundleProps = {}) {
                     />
                   </td>
                   <td style={{ ...td, color: 'var(--muted)' }}>Mandatory</td>
+                  <td style={td}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => dropPendingAdd(a.key)}
+                      aria-label={`Drop ${a.productName}`}
+                    >
+                      Drop
+                    </Button>
+                  </td>
                 </tr>
               ))}
               {draft.lines.length === 0 && draft.adds.length === 0 && (
                 <tr>
-                  <td style={{ ...td, color: 'var(--muted)' }} colSpan={4}>
+                  <td style={{ ...td, color: 'var(--muted)' }} colSpan={5}>
                     This bundle has no components.
                   </td>
                 </tr>
@@ -730,10 +768,8 @@ export default function EditBundle(props: EditBundleProps = {}) {
         </DataTableShell>
 
         <p style={{ ...labelStyle, marginTop: 'var(--sp-md)', marginBottom: 0 }}>
-          A saved component cannot be removed. There is no DELETE grant on <code>bundle_items</code>,
-          the table has no archive column, and a quantity of zero is refused — so retiring one needs a
-          schema change, not a button. Filed as PLAN.md §4.52. Until then, archive the bundle and
-          build a replacement, or set the component to Optional.
+          Law 3 &amp; §4.52: Removing a component soft-deactivates it in <code>bundle_items</code>,
+          preserving historical references while removing it from the active kit.
         </p>
       </Card>
 

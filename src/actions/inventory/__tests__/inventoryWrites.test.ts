@@ -876,6 +876,14 @@ describe('UPDATE_BUNDLE — validate', () => {
   it('refuses a new component that names no product', () => {
     expect(() => check({ lineAdds: [{ qty: 1, clientUuid: 'k2' }] })).toThrow(/names no product/i)
   })
+
+  it('refuses a deactivation with no itemId', () => {
+    expect(() => check({ lineDeactivations: [{ itemId: '', clientUuid: 'k' }] })).toThrow(/no row id/i)
+  })
+
+  it('refuses a deactivation with no clientUuid (Law 8)', () => {
+    expect(() => check({ lineDeactivations: [{ itemId: 'bi-fx3', clientUuid: '' }] })).toThrow(/idempotency key/i)
+  })
 })
 
 describe('UPDATE_BUNDLE — execute', () => {
@@ -961,6 +969,28 @@ describe('UPDATE_BUNDLE — execute', () => {
   it('reports an RLS refusal as NOT SAVED — zero rows come back with no error', async () => {
     access.updateResult = { data: null, error: null }
     await expect(run({ patch: { name: 'Renamed Kit' } })).rejects.toThrow(/treat it as not saved/i)
+  })
+
+  it('soft-deactivates components with is_active: false and attribution (Law 3, 4.52)', async () => {
+    const { result } = await run({
+      patch: {},
+      lineDeactivations: [{ itemId: 'bi-fx3', clientUuid: 'deact-key-1' }],
+    })
+    expect(result.linesDeactivated).toBe(1)
+    const deact = access.updates.find((u) => u.table === 'bundle_items' && u.id === 'bi-fx3')
+    expect(deact).toBeDefined()
+    expect(deact?.patch).toMatchObject({
+      is_active: false,
+      deactivated_by: CTX.userId,
+    })
+    expect(deact?.clientUuid).toBe('deact-key-1')
+  })
+
+  it('refuses deactivating a component from another bundle before writing', async () => {
+    await expect(
+      run({ patch: {}, lineDeactivations: [{ itemId: 'bi-someone-elses', clientUuid: 'k' }] }),
+    ).rejects.toThrow(/does not belong to BND-7/i)
+    expect(access.updates).toHaveLength(0)
   })
 
   it('names the roles when the database changes no row', async () => {

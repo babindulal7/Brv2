@@ -1,5 +1,45 @@
 # Progress Log
 
+## 2026-09-25 (a) — Bundle component soft-deactivation (§4.52) & Zero-value close override (§4.51)
+
+Implemented open business and operational decisions while strictly maintaining Law 1 (DB triggers are the law) and Law 3 (no physical `DELETE`).
+
+1. **Bundle Component Removal / Soft-Deactivation (§4.52):**
+   - Migration `0134_bundle_items_soft_delete.sql`: added `is_active boolean NOT NULL DEFAULT true`, `deactivated_at timestamptz`, `deactivated_by uuid REFERENCES users(id)` to `bundle_items`.
+   - Action `updateBundle`: added `UpdateBundleLineDeactivate`, validated item ID and client UUID per row, executed via `safeUpdate('bundle_items', ...)`, returning `linesDeactivated` and auditing in `EVENT_TYPES.BUNDLE_UPDATED`.
+   - Query `src/lib/queries/bundles.ts`: selects `is_active` in `BUNDLE_COLUMNS` and filters `is_active !== false` in `listBundlesWithItems` and `productIds`.
+   - UI `EditBundle.tsx`: added "Remove" button on component rows, non-empty bundle validation, and passes line deactivations on save.
+
+2. **Zero-Value Rental Close Override (§4.51):**
+   - Migration `0135_zero_value_close_override.sql`: updated `apply_booking_stage_transition()` to permit Owner and Admin to close Rs 0 / sponsored rentals without an issued invoice by supplying a mandatory $\ge 10$-character audit reason, recording `'CloseOverride'` in `audit_events`.
+   - Action `closeRental.ts`: added optional `override?: { reason: string }`, validated $\ge 10$ characters, restricted to Owner/Admin, passed to `applyBookingTransition()`, and emitted in audit event payload.
+   - UI `BookingDetail.tsx`: added "Close with Zero-Value Override (§4.51)" trigger button in close error state for Owner/Admin, opening an audit reason modal.
+
+### Verified
+- `npm run typecheck` (`tsc --noEmit`): exit 0, 0 errors.
+- `npm run lint` (`eslint src --max-warnings 0`): exit 0, 0 warnings.
+- `npm run check:pglite`: 133/133 migrations applied, 0 failed.
+- `npm run check:lifecycle`: 18/18 steps green, 0 known-red.
+- Full Vitest suite: 242/242 test files passed, 3530/3530 tests passed.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 44 / 44 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 40 | 40 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 18 / 18 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+
+Migrations 133 files · check:pglite 133/133 applied, 0 failed. Suite: green.
+Gates read from .lifecycle-result.json, written 2026-09-25T22:54:46.308Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live remote database backup (`scripts/backup-db.ps1`) and push of pending migrations 0125-0135 to Supabase project `sxguwvgoserhdolewibb` (Rule N-5).
+- Stage and commit working tree changes to `step1-foundation`.
+
 ## 2026-09-25 — 100% Real Data & operational domain logic decoupling
 
 Decoupled operational domain state-machine logic (`stepWriteGate`, `stepDotState`, `OperationItem`, item transition helpers) from `src/data/operationsShell.ts` to `src/lib/operationsShell.ts`. Kept `SEED_ITEMS` in `src/data/operationsShell.ts` for fixture consumers while re-exporting all types and pure helpers from lib.

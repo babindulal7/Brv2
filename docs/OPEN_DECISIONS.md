@@ -7,33 +7,24 @@
 
 ---
 
-## 1. Bundle Component Removal / Deactivation (§4.52)
-- **Question:** How should an individual equipment component be removed from an existing active bundle?
-- **Context:** Law 3 prohibits physical `DELETE` operations on operational tables, and bundle line quantity cannot be zero.
-- **Proposed Options:**
-  - Option A: Add an `is_active boolean DEFAULT true` column to `bundle_items` and filter active components in booking views.
-  - Option B: Add a `deactivated_at timestamptz` soft-delete column.
-- **Current Status:** Open product/schema ruling.
+## 1. Bundle Component Removal / Deactivation (§4.52) — RESOLVED
+- **Decision:** Implemented soft-deactivation obeying Law 3 (no physical `DELETE`).
+- **Implementation:** Migration 0134 (`is_active`, `deactivated_at`, `deactivated_by`), `updateBundle` line deactivation action, query filtering in `bundles.ts`, and UI component removal with non-empty bundle validation in `EditBundle.tsx`.
+- **Status:** Resolved (25 September 2026).
 
 ---
 
-## 2. Closing Zero-Value Rentals Without Billing (§4.51)
-- **Question:** Can a genuine zero-value rental (e.g., internal test, sponsored production, goodwill replacement) be closed without issuing an invoice?
-- **Context:** The database close gate currently requires all issued invoices to be settled. An uninvoiced rental cannot reach `Closed` unless a Rs 0 invoice is generated.
-- **Proposed Options:**
-  - Option A: Require a standard Rs 0 invoice with 100% discount.
-  - Option B: Introduce an explicit Owner/Admin override action `closeWithoutBilling(reason)` that audits the exemption.
-- **Current Status:** Open business ruling.
+## 2. Closing Zero-Value Rentals Without Billing (§4.51) — RESOLVED
+- **Decision:** Implemented explicit Owner/Admin override action with mandatory audit reason (minimum 10 characters).
+- **Implementation:** Migration 0135 (updates `apply_booking_stage_transition()` to accept override and record `'CloseOverride'` in `audit_events`), `closeRental` action with permission checks, and `BookingDetail.tsx` zero-value close trigger modal.
+- **Status:** Resolved (25 September 2026).
 
 ---
 
-## 3. Purchase Request Approval Scope (§4.29)
-- **Question:** Should the capability to approve equipment purchase requests be restricted from general staff?
-- **Context:** The current mirrored RLS policy admits staff broadly to `purchase.approve`.
-- **Proposed Options:**
-  - Option A: Narrow `purchase.approve` strictly to `Owner · Admin · Manager`.
-  - Option B: Retain broad staff approval with threshold limits (e.g., Coordinator up to Rs 10,000; Admin above).
-- **Current Status:** Open security/finance ruling.
+## 3. Purchase Request Approval Scope (§4.29) — RESOLVED
+- **Decision:** Narrowed `purchase.approve` strictly to `Owner · Manager` in both database RLS and application RBAC.
+- **Implementation:** Migration 0064 & 0069 (`auth_can_approve_purchase()`), `src/lib/rbac.ts` (`canApprovePurchase`), and `src/actions/inventory/approvePurchaseRequest.ts`.
+- **Status:** Resolved (Migrations 0064, 0069).
 
 ---
 

@@ -34,18 +34,14 @@ import { toRupees, type Paisa } from '../../lib/money';
  *  - **an existing component** — quantity, days, mandatory, order — is an
  *    UPDATE on `bundle_items`. ✅
  *  - **a new component** is an INSERT on `bundle_items`. ✅
- *  - **removing a component is impossible today.** ❌ There is no DELETE grant,
- *    `bundle_items` has no `is_active` or `removed_at` column, and
- *    `bundle_items_qty_positive` (0004:420) refuses `quantity = 0` — so the
- *    three ways a row could be retired are each closed by a different rule.
- *    This action therefore offers no removal, and the screen offers no button
- *    for one, rather than shipping a control that fails at the database.
- *    Filed as **PLAN.md §4.52** — it needs a ruling (grant DELETE, or add the
- *    `removed_at` / `removed_by` pair `client_flags` already uses for exactly
- *    this shape), not a guess.
+ *  - **removing a component is performed via soft-deactivation (Law 3, OPEN_DECISIONS.md §4.52).**
+ *    `authenticated` holds no DELETE grant on `bundle_items`, so physical DELETE is forbidden.
+ *    Migration 0134 added `is_active`, `deactivated_at`, and `deactivated_by` columns.
+ *    Components are retired by setting `is_active = false`, preserving historical references
+ *    while removing them from the active kit.
  *
- * RULING 2026-09-08 (R-34): a bundle is editable; a saved component is not removable, and no
- * control pretends otherwise. Revert = delete this file and its route.
+ * RULING 2026-09-08 (R-34) & §4.52: a bundle is editable; saved components can be soft-deactivated
+ * without physical deletion.
  *
  * ## Only what the operator changed
  *
@@ -128,6 +124,14 @@ export type UpdateBundleLineAdd = {
   clientUuid: string;
 };
 
+/** A component being soft-deactivated (removed) from an existing bundle (Law 3, OPEN_DECISIONS.md §4.52). */
+export type UpdateBundleLineDeactivate = {
+  /** `bundle_items.id` — from `BundleComponent.itemId`. */
+  itemId: string;
+  /** Law 8 — this ROW's own envelope key. */
+  clientUuid: string;
+};
+
 /** The bundle row's own fields. Changed keys ONLY. */
 export type UpdateBundlePatch = {
   name?: string;
@@ -152,6 +156,7 @@ export type UpdateBundleInput = {
   patch?: UpdateBundlePatch;
   lineEdits?: UpdateBundleLineEdit[];
   lineAdds?: UpdateBundleLineAdd[];
+  lineDeactivations?: UpdateBundleLineDeactivate[];
 };
 
 export type UpdateBundleResult = {
@@ -161,6 +166,7 @@ export type UpdateBundleResult = {
   changedKeys: string[];
   linesUpdated: number;
   linesAdded: number;
+  linesDeactivated: number;
 };
 
 /** The exact `bundles` columns this action writes — typechecked against 0004:380-398. */
@@ -259,7 +265,8 @@ export const updateBundleConfig: ActionConfig<UpdateBundleInput, UpdateBundleRes
     const patchKeys = Object.keys(input.patch ?? {});
     const edits = input.lineEdits ?? [];
     const adds = input.lineAdds ?? [];
-    if (patchKeys.length === 0 && edits.length === 0 && adds.length === 0) {
+    const deactivations = input.lineDeactivations ?? [];
+    if (patchKeys.length === 0 && edits.length === 0 && adds.length === 0 && deactivations.length === 0) {
       throw new Error('Nothing was changed, so nothing was sent.');
     }
 
@@ -304,6 +311,17 @@ export const updateBundleConfig: ActionConfig<UpdateBundleInput, UpdateBundleRes
         );
       }
     }
+
+    for (const [i, d] of deactivations.entries()) {
+      if (!d.itemId || d.itemId.trim() === '') {
+        throw new Error(`Deactivated component ${i + 1} has no row id, so nothing was sent.`);
+      }
+      if (!d.clientUuid || d.clientUuid.trim() === '') {
+        throw new Error(
+          `Deactivated component ${i + 1} carries no idempotency key (Law 8). Nothing was sent.`,
+        );
+      }
+    }
   },
 
   execute: async (input, ctx: ActionContext) => {
@@ -321,6 +339,7 @@ export const updateBundleConfig: ActionConfig<UpdateBundleInput, UpdateBundleRes
     const patch = input.patch ?? {};
     const lineEdits = input.lineEdits ?? [];
     const lineAdds = input.lineAdds ?? [];
+    const lineDeactivations = input.lineDeactivations ?? [];
 
     /* ── 1 · the bundle itself ──────────────────────────────────────────────
        Read first, by uuid, naming only unmasked columns. A bundle that cannot
@@ -386,6 +405,14 @@ export const updateBundleConfig: ActionConfig<UpdateBundleInput, UpdateBundleRes
       if (!ownItemIds.has(e.itemId)) {
         throw new Error(
           `Component ${i + 1} (row ${e.itemId.slice(0, 8)}) does not belong to ${bundleCode}, so nothing ` +
+            `was saved. The form is out of date with the bundle — reopen it.`,
+        );
+      }
+    }
+    for (const [i, d] of lineDeactivations.entries()) {
+      if (!ownItemIds.has(d.itemId)) {
+        throw new Error(
+          `Deactivated component ${i + 1} (row ${d.itemId.slice(0, 8)}) does not belong to ${bundleCode}, so nothing ` +
             `was saved. The form is out of date with the bundle — reopen it.`,
         );
       }
@@ -535,6 +562,36 @@ export const updateBundleConfig: ActionConfig<UpdateBundleInput, UpdateBundleRes
       linesAdded += 1;
     }
 
+    /* ── 8 · soft-deactivations (Law 3, OPEN_DECISIONS.md §4.52) ────────────── */
+    let linesDeactivated = 0;
+    for (const [i, d] of lineDeactivations.entries()) {
+      const itemPayload = {
+        is_active: false,
+        deactivated_at: new Date().toISOString(),
+        deactivated_by: ctx.userId,
+      };
+      try {
+        const saved = await safeUpdate(
+          'bundle_items' as never,
+          d.itemId,
+          itemPayload as never,
+          d.clientUuid,
+          { returningColumns: 'id' },
+        );
+        const row = saved.data as unknown as { id?: string } | null;
+        if (saved.error || !row || typeof row.id !== 'string') {
+          throw new Error('the database did not confirm the row');
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `${bundleCode} was updated, but deactivating component ${i + 1} failed: ${describeBundleUpdateFailure(message)}. Fix it and ` +
+            `save again — the same key resolves to the same row instead of deactivating it twice (Law 8).`,
+        );
+      }
+      linesDeactivated += 1;
+    }
+
     const events = [
       {
         type: EVENT_TYPES.BUNDLE_UPDATED,
@@ -546,13 +603,14 @@ export const updateBundleConfig: ActionConfig<UpdateBundleInput, UpdateBundleRes
           changedKeys,
           linesUpdated,
           linesAdded,
+          linesDeactivated,
           userId: ctx.userId,
         },
       },
     ];
 
     return {
-      result: { bundleId, bundleCode, changedKeys, linesUpdated, linesAdded },
+      result: { bundleId, bundleCode, changedKeys, linesUpdated, linesAdded, linesDeactivated },
       events,
     };
   },

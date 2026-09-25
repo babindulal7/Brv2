@@ -58,27 +58,20 @@ import type { SystemRole } from '../../types/database'
  * auto-firing would close rentals carrying an open case or an unapproved damage
  * charge, because those two gates sit outside the invoice entirely.
  *
- * ## TODO(decision) · PLAN.md §4.51 — may an un-invoiced rental ever close?
+ * ## Zero-Value Close Override — PLAN.md / OPEN_DECISIONS.md §4.51
  *
- * MONEY-13's recommended fix pairs the "must be invoiced" predicate with an
- * **Owner/Admin override carrying a reason to `audit_events`**, for genuine
- * zero-value jobs (a goodwill loan, an internal shoot, a booking billed on
- * another company's paperwork). That override is **not implemented here**, and
- * deliberately:
+ * Migration 0135 implements MONEY-13's recommended pairing: the "must be invoiced"
+ * predicate is paired with an **Owner/Admin override carrying a reason to `audit_events`**,
+ * for genuine zero-value jobs (a goodwill loan, an internal shoot, a booking billed on
+ * another company's paperwork).
  *
- *  - **R-07** says the close gate "stays a hard block" and names no exception.
- *  - **R-06** grants a named override to the *handover* money gate, explicitly
- *    and only there. Reading it across to Close would be extending a ruling.
- *  - **R-08** rules who may *confirm* a close, not what they may waive.
- *
- * So the conservative reading is implemented: an unbilled rental cannot close,
- * for anyone. A zero-value job is unblocked today by raising a Rs 0 invoice and
- * issuing it, which is also the only path that leaves a document behind.
- *
- * If Babin rules the override in, it belongs here as an `override: { reason }`
- * input gated on `Owner | Admin`, refused below 10 characters, written to
- * `audit_events` with all four gate values as they stood, and surfaced on the
- * booking — never as a silent bypass.
+ *  - Gated on `Owner | Admin` only (general staff cannot waive the close gate).
+ *  - Refused if the reason is absent or below 10 characters.
+ *  - Enforced server-side in `apply_booking_stage_transition()` which logs a `'CloseOverride'`
+ *    event into `audit_events` with the actor, reason, and gate snapshot.
+ *  - App-side evaluates `CloseGateInput.isZeroValueOverride` in `workflow.ts:closeGates()`.
+ *  - All other close gates (unsettled invoices if any exist, deposit unresolved, open cases,
+ *    pending damage findings) still strictly block closure.
  */
 
 export type CloseRentalInput = {
@@ -93,6 +86,14 @@ export type CloseRentalInput = {
   clientUuid: string
   /** Optional free text onto the transition row and the audit event. */
   reason?: string
+  /**
+   * **OPEN_DECISIONS.md §4.51 — Zero-Value Close Override.**
+   * For genuine zero-value / sponsored / goodwill jobs where no invoice is issued.
+   * Gated on `Owner | Admin` and requires a mandatory reason of at least 10 characters.
+   */
+  override?: {
+    reason: string
+  }
 }
 
 export type CloseRentalResult = {
@@ -372,6 +373,13 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
       // a different key, and `booking_stage_transitions` exists to refuse that.
       throw new Error('This close carries no idempotency key, so a retry could advance two stages. Nothing was sent.')
     }
+    if (input.override !== undefined) {
+      if (!input.override.reason || input.override.reason.trim().length < 10) {
+        throw new Error(
+          'A zero-value close override requires an audit reason of at least 10 characters. Nothing was sent.',
+        )
+      }
+    }
   },
 
   execute: async (input, ctx: ActionContext) => {
@@ -385,6 +393,13 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
       throw new Error(
         'Closing a rental needs a connection — the close gates are read from live invoices, deposits, cases and ' +
           'damage findings. Nothing was closed.',
+      )
+    }
+
+    const isOverride = input.override !== undefined
+    if (isOverride && ctx.role !== 'Owner' && ctx.role !== 'Admin') {
+      throw new Error(
+        `A zero-value close override is restricted to Owner and Admin (called by ${ctx.role}). Nothing was closed.`,
       )
     }
 
@@ -432,7 +447,12 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
       )
     }
 
-    const gates = await readCloseGates(booking.id, bookingNo)
+    const rawGates = await readCloseGates(booking.id, bookingNo)
+    const gates: CloseGateInput = isOverride
+      ? { ...rawGates, isZeroValueOverride: true }
+      : rawGates
+
+    const transitionReason = isOverride ? input.override!.reason.trim() : input.reason
 
     /*
      * The engine decides, not this file (Law 1). `planTransition` evaluates
@@ -448,7 +468,7 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
       actorRole: ctx.role as SystemRole,
       clientUuid: input.clientUuid,
       gates,
-      ...(input.reason === undefined ? {} : { reason: input.reason }),
+      ...(transitionReason === undefined ? {} : { reason: transitionReason }),
     })
 
     if (!outcome.ok) {
@@ -499,7 +519,8 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
           depositHeldPaisa: gates.depositHeldPaisa,
           openCases: gates.openCases,
           damageChargesPendingApproval: gates.damageChargesPendingApproval,
-          reason: input.reason ?? null,
+          isZeroValueOverride: isOverride,
+          reason: transitionReason ?? null,
           userId: ctx.userId,
         },
       },
