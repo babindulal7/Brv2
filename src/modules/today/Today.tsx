@@ -395,13 +395,23 @@ export default function Today() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [goToToday, stepDay])
 
+  const dualDateLabel = useMemo(() => {
+    try {
+      const ad = compactDate(dayAd)
+      const bs = toBs(new Date(`${dayAd}T00:00:00.000Z`))
+      return bs ? `${ad} (${formatBs(bs, { suffix: true })})` : ad
+    } catch {
+      return dayAd
+    }
+  }, [dayAd])
+
   return (
     <PageShell
       className="rental-dashboard"
       header={
         <PageHeader
           title="Today"
-          description="Prepare pickups, receive returns, and keep equipment moving."
+          description={`Prepare pickups, receive returns, and keep equipment moving. · ${dualDateLabel}`}
           actions={
             <PageActions
               extra={

@@ -310,6 +310,110 @@
   --cat-8: #5d71b0;
 }
 
+/* ── §3.1 High-Contrast Outdoor Profile (Glare Reduction for Warehouse & Loading Bays) ── */
+:root[data-theme='high-contrast'] {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #141414;
+  --border: #facc15;
+  --border2: #eab308;
+  --divider: #facc15;
+
+  --bg-gradient-1: #000000;
+  --bg-gradient-2: #050505;
+  --bg-radial-mesh: none;
+  --surface-card: #0a0a0a;
+  --surface-card-hover: #171717;
+  --glass-tint: 1;
+  --specular-rim: 0 0 0 transparent;
+  --bezel-outer-ring: 0 0 0 2px #facc15;
+  --bezel-outer-bg: transparent;
+
+  --text: #ffffff;
+  --text2: #f1f5f9;
+  --muted: #e2e8f0;
+  --disabled: #94a3b8;
+
+  --primary: #facc15;
+  --on-primary: #000000;
+  --primary-text: #fde047;
+
+  --success: #22c55e;
+  --on-success: #000000;
+  --success-text: #4ade80;
+
+  --danger: #ef4444;
+  --on-danger: #000000;
+  --danger-text: #f87171;
+
+  --warn: #f97316;
+  --on-warn: #000000;
+  --warn-text: #fb923c;
+
+  --ready: #facc15;
+  --on-ready: #000000;
+  --ready-text: #facc15;
+
+  --neutral: #334155;
+  --on-neutral: #ffffff;
+
+  --dim: #1e293b;
+  --on-dim: #f1f5f9;
+
+  --ext-fg: #fde047;
+  --ext-line: #facc15;
+  --ext-bg: rgba(250, 204, 21, 0.2);
+  --gold: #facc15;
+  --brand-mark: #facc15;
+
+  --app: #000000;
+  --sidebar: #050505;
+  --card: #0a0a0a;
+  --card2: #141414;
+  --modal: #0a0a0a;
+  --dropdown: #0a0a0a;
+
+  --hover-card: #171717;
+  --hover-sidebar: #171717;
+  --hover-button: #eab308;
+  --hover-row: #1a1a1a;
+
+  --btn-primary-bg: #facc15;
+  --btn-primary-fg: #000000;
+  --btn-secondary-bg: #000000;
+  --btn-secondary-border: #facc15;
+  --btn-danger-bg: #ef4444;
+  --btn-danger-fg: #000000;
+
+  --nav-active-accent: #facc15;
+  --nav-active-bg: #1f1b04;
+  --nav-icon: #facc15;
+
+  --input-bg: #050505;
+  --input-border: #facc15;
+  --input-border-focus: #ffffff;
+
+  --chip-blue-bg: #002244;
+  --chip-blue-fg: #93c5fd;
+  --chip-gray-bg: #1e293b;
+  --chip-gray-fg: #ffffff;
+  --chip-amber-bg: #3d2600;
+  --chip-amber-fg: #fde047;
+
+  --danger-soft: #2e0808;
+  --scrim: rgba(0, 0, 0, 0.85);
+
+  --chart-grid: #facc15;
+  --cat-1: #facc15;
+  --cat-2: #22c55e;
+  --cat-3: #ef4444;
+  --cat-4: #f97316;
+  --cat-5: #38bdf8;
+  --cat-6: #ec4899;
+  --cat-7: #a855f7;
+  --cat-8: #ffffff;
+}
+
 /* ---- scale: identical in both themes ---- */
 :root {
   /* radius */
@@ -670,6 +774,11 @@ html {
   font-size: calc(clamp(0.9375rem, 0.6875rem + 0.3125vw, 1.0625rem) * var(--ui-scale, 1));
 }
 
+html[lang='ne'] {
+  /* Devanagari optical x-height parity (+3% scale offset so Hind/Asar glyphs match Latin visual rhythm) */
+  font-size: calc(clamp(0.9375rem, 0.6875rem + 0.3125vw, 1.0625rem) * var(--ui-scale, 1) * 1.03);
+}
+
 /*
   §4.3.6 — "Floor screens run one step up." Pack, Handover, Return, Reset and
   the Scanner are read at arm's length, often in motion, sometimes one-handed.
@@ -681,6 +790,7 @@ html {
   step, and the two multiply.
 */
 [data-floor='true'] {
+  --tap: 48px; /* Gloved-hand floor minimum hit target (enhanced from 44px) */
   --floor-step: 1.1;
   --t-h1: calc(2.1rem * var(--floor-step));
   --t-h2: calc(1.45rem * var(--floor-step));

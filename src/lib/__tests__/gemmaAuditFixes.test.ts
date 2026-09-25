@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import {
   parseMoney,
   rupees,
@@ -10,7 +10,6 @@ import {
 import {
   db,
   resetStaleSyncingMutations,
-  type QueuedMutation,
 } from '../offlineQueue'
 
 describe('Gemma Audit Post-Remediation Tests', () => {

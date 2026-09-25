@@ -149,3 +149,47 @@ This audit evaluates a high-complexity hybrid architecture (Vite + PWA + Tauri +
 3. **Custody & Stage Gates**: The append-only `booking_stage_transitions` table with idempotency keys prevents double-booking and invalid skipping of warehouse packing/inspection gates.
 4. **Offline Sync & Idempotency**: Custody writes correctly fail closed (`bypassQueue: true`) when offline, preventing phantom handovers. Compound index `&[table+action+clientUuid]` safely prevents duplicate replay.
 5. **Hybrid Build & PWA**: Precached font manifests and PGlite WASM bundles ensure deterministic offline performance across desktop and mobile containers.
+
+---
+
+## Post-Audit Remediation & Verification (25 Sep 2026)
+
+All critical findings and warnings raised by `gemma4:26b` have been resolved with dedicated regression tests:
+
+### 1. Financial Arithmetic & Exact Integer Paisa Parsing
+- **Files Modified:** [`src/lib/money.ts`](../../../src/lib/money.ts)
+- **Remediation:** 
+  - `parseMoney(input)` now uses decimal string splitting (`split('.')`) and explicit digit padding rather than floating-point multiplication (`* 100`), eliminating binary IEEE 754 float drift on numbers like `19.99` and `0.01`.
+  - `rupees(n)` protects against floating-point representation drift with `Number(n.toFixed(4))` normalization and returns `0 as Paisa` on invalid float values (`NaN`, `Infinity`).
+
+### 2. PostgREST Column-Level RLS Protection & Zero Financial Leakage (Law 6)
+- **Files Modified:** [`src/lib/dataAccess.ts`](../../../src/lib/dataAccess.ts)
+- **Remediation:**
+  - Added `NON_MONEY_RETURNING_COLUMNS` mapping for the 4 tables locked down by migration 0062 (`bookings`, `booking_lines`, `products`, `product_units`).
+  - When `returningColumns` is omitted on these tables, both `idempotentInsert` and `safeUpdate` automatically default to the migration 0062 non-money column grants rather than PostgREST wildcard `*`, preventing error `42501 permission denied` and eliminating shadow money data leakage.
+
+### 3. Safe Mutation Deduplication & Custody Fail-Closed Enforcement
+- **Files Modified:** [`src/lib/dataAccess.ts`](../../../src/lib/dataAccess.ts)
+- **Remediation:**
+  - Added `queueOnFailure?: boolean` to `UpdateOptions` to mirror `InsertOptions`. When `queueOnFailure: false`, custody updates fail closed instead of creating unconfirmed optimistic offline state.
+  - Multi-row updates under the same user action key now scope the outbox dedupe key by row ID (`${actionUuid}:${id}`), preventing finding E-P1-1 (where updating multiple rows silently dropped all but the first row).
+
+### 4. Stranded In-Flight Mutation Recovery (E-P1-2)
+- **Files Modified:** [`src/lib/offlineQueue.ts`](../../../src/lib/offlineQueue.ts)
+- **Remediation:**
+  - Implemented `resetStaleSyncingMutations()` in `drainQueue()`, automatically resetting any mutations left stranded in status `'syncing'` (due to crash, tab closure, or network disconnect) back to `'pending'` so they are safely replayed.
+
+### 5. Audit Logging Atomicity
+- **Files Modified:** [`src/lib/bookingTransition.ts`](../../../src/lib/bookingTransition.ts)
+- **Remediation:**
+  - Wrapped `logAuditEvent` in a `try / catch` with `captureError`, preventing secondary audit logging errors from aborting successfully committed stage transitions.
+
+### 6. Verification Suite Results
+- **Typecheck:** `tsc --noEmit` — **PASS (0 errors)**
+- **Lint:** `eslint src --max-warnings 0` — **PASS (0 errors, 0 warnings)**
+- **Regression Suite:** `src/lib/__tests__/gemmaAuditFixes.test.ts` — **PASS (6/6 green)**
+- **PGlite Migration Rebuild:** `node scripts/check-pglite.mjs` — **PASS (131/131 applied, 0 failed)**
+- **Lifecycle Suite:** `node scripts/e2e-lifecycle.mjs` — **PASS (18/18 green)**
+- **Full Test Suite:** `vitest run` — **PASS (242/242 test files, 3,522/3,522 tests green)**
+- **Production Build:** `tsc --noEmit && vite build` — **PASS (14.06s, 236 PWA precached assets)**
+

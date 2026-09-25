@@ -3,7 +3,7 @@ import { BrowserMultiFormatReader, BrowserCodeReader, type IScannerControls } fr
 import { Modal } from './Modal'
 import { Button } from './Page'
 import Icon from './Icon'
-import { audioContextClass } from '../../lib/audioContext'
+import { dispatchScanFeedback } from '../../lib/scannerFeedback'
 
 export interface ScannableItem {
   id: string
@@ -87,31 +87,12 @@ const DEFAULT_MATCH_LABEL = 'marked — recorded at session close, nothing saved
 /** Same-code cooldown: ignore identical consecutive detections within 2s */
 const SAME_CODE_COOLDOWN_MS = 2000
 
-/** Web Audio Beep Feedback */
+/** Web Audio, Vibration, and Peripheral Visual Flash Feedback */
 function playAudioFeedback(type: 'success' | 'error') {
   try {
-    const Ctor = audioContextClass()
-    if (!Ctor) return
-    const ctx = new Ctor()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-
-    if (type === 'success') {
-      osc.frequency.setValueAtTime(880, ctx.currentTime) // A5 beep
-      gain.gain.setValueAtTime(0.15, ctx.currentTime)
-      osc.start()
-      osc.stop(ctx.currentTime + 0.12)
-    } else {
-      osc.frequency.setValueAtTime(220, ctx.currentTime) // A3 error beep
-      gain.gain.setValueAtTime(0.2, ctx.currentTime)
-      osc.start()
-      osc.stop(ctx.currentTime + 0.25)
-    }
+    dispatchScanFeedback(type === 'success' ? 'ok' : 'wrong')
   } catch (e) {
-    // Ignore audio context errors in headless envs
+    // Graceful fallback in non-browser or mock test environments
   }
 }
 

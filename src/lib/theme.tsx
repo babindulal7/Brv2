@@ -1,8 +1,8 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { readLocal, writeLocal, onMediaChange } from './safeStorage'
 
-export type ThemeMode = 'system' | 'dark' | 'light'
-export type ResolvedTheme = 'dark' | 'light'
+export type ThemeMode = 'system' | 'dark' | 'light' | 'high-contrast'
+export type ResolvedTheme = 'dark' | 'light' | 'high-contrast'
 
 interface ThemeCtx {
   mode: ThemeMode
@@ -40,7 +40,7 @@ export function ThemeProvider({ children, initial = 'light' }: { children: React
        "Block All Cookies". Unguarded, a preference lookup blanked the whole app
        on Apple devices. See `safeStorage.ts`. */
     const saved = readLocal(KEY) as ThemeMode | null
-    return saved === 'dark' || saved === 'light' || saved === 'system' ? saved : 'light'
+    return saved === 'dark' || saved === 'light' || saved === 'high-contrast' || saved === 'system' ? saved : 'light'
   })
 
   const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(() => {
@@ -73,7 +73,9 @@ export function ThemeProvider({ children, initial = 'light' }: { children: React
   const toggle = () => {
     setModeState((m) => {
       const current = m === 'system' ? systemTheme : m
-      return current === 'light' ? 'dark' : 'light'
+      if (current === 'light') return 'dark'
+      if (current === 'dark') return 'high-contrast'
+      return 'light'
     })
   }
 
