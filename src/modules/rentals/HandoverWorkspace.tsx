@@ -27,6 +27,8 @@ import type { FloorLineInput } from '../../actions/rentals/floorVerb'
 import { CompactButton } from '../../components/ui/TouchTarget'
 import { deliveryTypeLabel } from '../../lib/format'
 import { formatGateError } from '../../lib/gates'
+import { DriverHandoverModal } from '../operations/DriverHandoverModal'
+import { useFloorPresence } from '../../lib/floorPresence'
 import './rentals.css'
 
 /**
@@ -513,6 +515,8 @@ export default function HandoverWorkspace({
    * on the resolved promise. */
   const [marks, setMarks] = useState<Record<string, Mark>>({})
   const [showScanner, setShowScanner] = useState(false)
+  const [showDriverModal, setShowDriverModal] = useState(false)
+  const presence = useFloorPresence(floor?.bookingNo, user?.name || 'Warehouse staff', user?.role)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All')
   const [query, setQuery] = useState('')
   const [scanLog, setScanLog] = useState<string[]>([])
@@ -1320,6 +1324,26 @@ export default function HandoverWorkspace({
                 </Card>
 
                 {/* ── §7 Equipment checklist over the real rows ──────────── */}
+                {presence.presenceBanner && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      background: 'var(--card2)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--primary-text)',
+                      fontSize: 'var(--t-caption)',
+                      fontWeight: 600,
+                      marginBottom: 'var(--sp-xs)',
+                    }}
+                  >
+                    <Icon name="users" size={15} />
+                    <span>{presence.presenceBanner}</span>
+                  </div>
+                )}
                 <Card
                   title="Equipment"
                   bodyStyle={{ padding: 0 }}
@@ -1336,6 +1360,7 @@ export default function HandoverWorkspace({
                       */}
                       <Button icon="checklist" onClick={markReadyPickedUp}>Mark Ready Picked Up</Button>
                       <Button icon="queues" onClick={() => setShowScanner(true)}>Scan Barcode</Button>
+                      <Button icon="truck" onClick={() => setShowDriverModal(true)}>Field Delivery</Button>
                     </>
                   }
                 >
@@ -1966,6 +1991,22 @@ export default function HandoverWorkspace({
               items={scannableUnits}
               onItemScanned={(item) => pick(item.id, 'scan')}
             />
+
+            {showDriverModal && floor && (
+              <DriverHandoverModal
+                isOpen={showDriverModal}
+                onClose={() => setShowDriverModal(false)}
+                bookingNo={floor.bookingNo}
+                bookingId={floor.id}
+                clientName={floor.clientName || 'Client'}
+                deliveryAddress={floor.deliveryType || 'Client Location'}
+                itemCount={totalUnits}
+                onSuccess={() => {
+                  setShowDriverModal(false)
+                  setReload((r) => r + 1)
+                }}
+              />
+            )}
 
             {/*
               HO-12 — the confirmation Cancel Handover never had. It names what

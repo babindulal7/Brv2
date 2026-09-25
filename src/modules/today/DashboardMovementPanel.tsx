@@ -220,6 +220,25 @@ export default function DashboardMovementPanel({
                           )}
                         </span>
 
+                        {side === 'outgoing' && (
+                          isReady ? (
+                            <span className="movement-card__case-pill is-packed" title="All serialized equipment packed into flight cases">
+                              <Icon name="check" size={12} />
+                              <span>Cases Packed</span>
+                            </span>
+                          ) : (
+                            <span className="movement-card__case-pill is-prep" title="Prep & packing in progress in gear vault">
+                              <Icon name="checklist" size={12} />
+                              <span>Prep in Vault</span>
+                            </span>
+                          )
+                        )}
+
+                        <span className="movement-card__deposit-pill" title="Security deposit & KYC verified">
+                          <Icon name="card" size={12} />
+                          <span>Deposit Clear</span>
+                        </span>
+
                         {side === 'outgoing' && !isReady && row.statusNote && (
                           <span className="movement-card__subnote">
                             {row.statusNote}
@@ -237,6 +256,56 @@ export default function DashboardMovementPanel({
                     </div>
 
                     <div className="movement-card__footer">
+                      {side === 'outgoing' && isReady && (
+                        <Link
+                          to={`/rentals/${row.bookingNo}`}
+                          className="movement-card__manifest-btn"
+                          title={`Share Manifest on WhatsApp for #${row.bookingNo}`}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.4rem',
+                            minHeight: 44,
+                            padding: '0 0.85rem',
+                            fontSize: '0.825rem',
+                            fontWeight: 500,
+                            borderRadius: 'var(--r-btn, 8px)',
+                            border: '1px solid var(--border)',
+                            color: 'var(--text)',
+                            background: 'var(--card2)',
+                            textDecoration: 'none',
+                          }}
+                        >
+                          <span style={{ color: '#25D366', display: 'inline-flex', alignItems: 'center' }} aria-hidden="true">
+                            <Icon name="phone" size={14} />
+                          </span>
+                          <span>WhatsApp</span>
+                        </Link>
+                      )}
+                      <Link
+                        to={`/rentals/${row.bookingNo}`}
+                        className="movement-card__details-btn"
+                        title={`Open Flight Cases & Booking Workspace for #${row.bookingNo}`}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          minHeight: 44,
+                          padding: '0 0.85rem',
+                          fontSize: '0.825rem',
+                          fontWeight: 500,
+                          borderRadius: 'var(--r-btn, 8px)',
+                          border: '1px solid var(--border)',
+                          color: 'var(--text2)',
+                          background: 'var(--card2)',
+                          textDecoration: 'none',
+                        }}
+                      >
+                        <Icon name="package" size={14} style={{ color: 'var(--accent, #2563eb)' }} />
+                        <span>Cases & Gear</span>
+                      </Link>
                       <button
                         type="button"
                         className={`movement-card__cta-btn ${
@@ -254,6 +323,7 @@ export default function DashboardMovementPanel({
                         <span>{actionLabel}</span><Icon name="arrow_right" size={15} />
                       </button>
                     </div>
+
                 </article>
               )
             })}

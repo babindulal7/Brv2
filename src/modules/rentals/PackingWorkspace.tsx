@@ -30,6 +30,7 @@ import { serviceStatus, type ServiceRow } from '../../lib/serviceDue'
 import { formatGateError } from '../../lib/gates'
 import { clearFloorScan, loadFloorScan, saveFloorScan } from '../../lib/floorScanStorage'
 import { rentalDaysBetween } from '../../lib/rentalDays'
+import { useFloorPresence } from '../../lib/floorPresence'
 import './rentals.css'
 
 /**
@@ -552,6 +553,7 @@ export default function PackingWorkspace({
   const [sessionNotes, setSessionNotes] = useState('')
   /** ⭐ §4.31 — one photo per BOOKING. Local tally; no upload path exists here yet. */
   const [photoCount, setPhotoCount] = useState(0)
+  const presence = useFloorPresence(floor?.bookingNo, user?.name || 'Warehouse staff', user?.role)
   /**
    * Law 12 — a dispatch failure is inline and persistent, and navigation
    * happens only on a resolved promise. A blocked gate is never a toast.
@@ -1333,6 +1335,26 @@ export default function PackingWorkspace({
 
               {/* ── §6 centre — checklist over the real rows ─────────────────── */}
               <div style={{ minWidth: 0, ...place.list }}>
+                {presence.presenceBanner && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 12px',
+                      background: 'var(--card2)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--primary-text)',
+                      fontSize: 'var(--t-caption)',
+                      fontWeight: 600,
+                      marginBottom: 'var(--sp-xs)',
+                    }}
+                  >
+                    <Icon name="users" size={15} />
+                    <span>{presence.presenceBanner}</span>
+                  </div>
+                )}
                 <Card
                   title="2 · Packing Checklist"
                   bodyStyle={{ padding: 0 }}

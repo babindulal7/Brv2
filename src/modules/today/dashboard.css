@@ -678,6 +678,43 @@
   border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
 
+.movement-card__case-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-sm, 6px);
+  white-space: nowrap;
+}
+
+.movement-card__case-pill.is-packed {
+  background: var(--st-ready-bg);
+  color: var(--st-ready-fg);
+  border: 1px solid var(--st-ready-border);
+}
+
+.movement-card__case-pill.is-prep {
+  background: var(--st-warn-bg);
+  color: var(--st-warn-fg);
+  border: 1px solid var(--st-warn-border);
+}
+
+.movement-card__deposit-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-sm, 6px);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary-text);
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
+  white-space: nowrap;
+}
+
 .movement-card__top {
   display: flex;
   align-items: center;

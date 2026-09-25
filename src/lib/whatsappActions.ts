@@ -26,6 +26,7 @@ import { buildWaLink, NO_PHONE_REASON, normalisePhone } from './whatsapp'
 import {
   balanceDue,
   bookingConfirmed,
+  dispatchManifest,
   gearReady,
   overdue,
   pickupTomorrow,
@@ -201,6 +202,18 @@ function compose(
         return { reason: 'No outstanding balance is recorded on this booking.' }
       }
       return balanceDue({ clientName: f.clientName, bookingNo: f.bookingNo, balance: f.balance }, b)
+    }
+
+    case 'dispatch_manifest': {
+      return dispatchManifest(
+        {
+          ...base,
+          itemCount: f.itemCount,
+          topItems: f.topLines,
+          manifestUrl: null,
+        },
+        b,
+      )
     }
 
     /* Composed by the payment flow and the closing screen, which hold figures

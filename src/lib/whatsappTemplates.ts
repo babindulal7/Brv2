@@ -53,6 +53,7 @@ export type WaTemplateId =
   | 'payment_receipt'
   | 'balance_due'
   | 'daily_digest'
+  | 'dispatch_manifest'
 
 /* ────────────────────────────────────────────────────────────────────────────
    Formatting primitives
@@ -141,6 +142,12 @@ export interface WaReturnReminder extends WaBookingBase {
 }
 
 export type WaOverdue = WaBookingBase
+
+export interface WaDispatchManifest extends WaBookingBase {
+  readonly itemCount: number
+  readonly topItems?: string[]
+  readonly manifestUrl?: string | null
+}
 
 export interface WaPaymentReceipt {
   clientName: string
@@ -256,6 +263,28 @@ export function overdue(i: WaOverdue, b: WaBusiness): string {
   ].join('\n')
 }
 
+export function dispatchManifest(i: WaDispatchManifest, b: WaBusiness): string {
+  const itemsLine =
+    i.topItems && i.topItems.length > 0
+      ? `${i.itemCount} items packed & verified (${i.topItems.join(', ')})`
+      : `${i.itemCount} items packed & verified`
+
+  const manifestDoc = i.manifestUrl ? `\n📄 View dispatch manifest:\n${i.manifestUrl}\n` : ''
+
+  return [
+    open(i.clientName),
+    '',
+    `Your equipment dispatch for Booking #${i.bookingNo} has left our warehouse. 📦`,
+    '',
+    `📦 ${itemsLine}.`,
+    manifestDoc,
+    'Please reply with "CONFIRMED" upon delivery inspection.',
+    '',
+    close(b),
+  ].filter((line) => line !== null).join('\n')
+}
+
+
 export function paymentReceipt(i: WaPaymentReceipt, b: WaBusiness): string {
   const balanceLine =
     i.balance > 0 ? 'Remaining balance: ' + money(i.balance) : 'Status: fully paid ✅'
@@ -329,6 +358,7 @@ const REGISTRY: Readonly<Record<WaTemplateId, WaTemplateMeta>> = {
   payment_receipt: { id: 'payment_receipt', label: 'Send payment receipt', money: true },
   balance_due: { id: 'balance_due', label: 'Send balance reminder', money: true },
   daily_digest: { id: 'daily_digest', label: 'Send daily digest', money: true },
+  dispatch_manifest: { id: 'dispatch_manifest', label: 'Send dispatch manifest', money: false },
 }
 
 export function templateMeta(id: WaTemplateId): WaTemplateMeta {
@@ -366,15 +396,16 @@ export function templatesForStage(args: {
       ids.push('booking_confirmed', 'pickup_tomorrow')
       break
     case 'Packed':
-      ids.push('gear_ready', 'pickup_tomorrow')
+      ids.push('gear_ready', 'dispatch_manifest', 'pickup_tomorrow')
       break
     case 'On Rent':
-      ids.push('return_reminder')
+      ids.push('return_reminder', 'dispatch_manifest')
       break
     case 'Returned':
     case 'Closed':
       break
   }
+
 
   /* Overdue is a flag, not a stage — it rides on top of On Rent and takes the
      first slot, because once a booking is late it is the only message anyone

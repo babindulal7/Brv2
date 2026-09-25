@@ -40,6 +40,7 @@ const ClientReports     = lazy(() => import('./modules/reports/ClientReports'))
 const InventoryReports  = lazy(() => import('./modules/reports/InventoryReports'))
 const ProductReports    = lazy(() => import('./modules/reports/ProductReports'))
 const EquipmentPerformance = lazy(() => import('./modules/reports/EquipmentPerformance'))
+const AssetRoiReport    = lazy(() => import('./modules/reports/AssetRoiReport'))
 const PromotionsReports = lazy(() => import('./modules/reports/PromotionsReports'))
 const StaffReports      = lazy(() => import('./modules/reports/StaffReports'))
 const ForecastingReports = lazy(() => import('./modules/reports/ForecastingReports'))
@@ -526,6 +527,15 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Equipment Performance' }]}>
               <EquipmentPerformance />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/asset-roi"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Asset ROI' }]}>
+              <AssetRoiReport />
             </Shell>
           }
         />

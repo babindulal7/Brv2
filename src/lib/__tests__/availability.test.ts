@@ -14,6 +14,10 @@ import {
   capacityFor,
   explainCapacityShortfall,
   windowContains,
+  violatesTurnaroundBuffer,
+  findTurnaroundBufferViolations,
+  explainTurnaroundViolation,
+  turnaroundBufferMsForCategory,
   type RentalWindow,
   type QuantityHold,
   type UnitCandidate,
@@ -815,3 +819,73 @@ describe('windowContains — Postgres range @> timestamptz', () => {
     expect(() => windowContains(WINDOW, '2026-08-16T09:00:00', 'half-open')).toThrow(/Law 7/)
   })
 })
+
+describe('Turnaround buffers — Pillar 1', () => {
+  const SIX_HOURS_MS = 6 * 60 * 60 * 1000
+  const TWELVE_HOURS_MS = 12 * 60 * 60 * 1000
+
+  it('resolves category defaults correctly', () => {
+    expect(turnaroundBufferMsForCategory('Heavy AV')).toBe(TWELVE_HOURS_MS)
+    expect(turnaroundBufferMsForCategory('LED Wall')).toBe(TWELVE_HOURS_MS)
+    expect(turnaroundBufferMsForCategory('Camera')).toBe(SIX_HOURS_MS)
+    expect(turnaroundBufferMsForCategory('Drone')).toBe(SIX_HOURS_MS)
+    expect(turnaroundBufferMsForCategory('Unknown')).toBe(0)
+    expect(turnaroundBufferMsForCategory(null)).toBe(0)
+  })
+
+  it('detects violation when gap between consecutive windows is less than buffer', () => {
+    // Window A ends at 18:00 on 18 Aug
+    const windowA: RentalWindow = { fromAd: '2026-08-16T09:00:00+05:45', toAd: '2026-08-18T18:00:00+05:45' }
+    // Window B starts 2 hours later at 20:00 on 18 Aug
+    const windowB: RentalWindow = { fromAd: '2026-08-18T20:00:00+05:45', toAd: '2026-08-19T20:00:00+05:45' }
+
+    // Gap is 2 hours (less than 6 hours buffer) -> violates
+    expect(violatesTurnaroundBuffer(windowA, windowB, SIX_HOURS_MS)).toBe(true)
+    // Symmetric: windowB vs windowA
+    expect(violatesTurnaroundBuffer(windowB, windowA, SIX_HOURS_MS)).toBe(true)
+
+    // With a 1-hour buffer (less than 2 hours gap) -> does NOT violate
+    const ONE_HOUR_MS = 1 * 60 * 60 * 1000
+    expect(violatesTurnaroundBuffer(windowA, windowB, ONE_HOUR_MS)).toBe(false)
+  })
+
+  it('detects violation for touching endpoints (gap is 0 ms)', () => {
+    const windowA: RentalWindow = { fromAd: '2026-08-16T09:00:00+05:45', toAd: '2026-08-18T18:00:00+05:45' }
+    const windowB: RentalWindow = { fromAd: '2026-08-18T18:00:00+05:45', toAd: '2026-08-19T18:00:00+05:45' }
+
+    expect(violatesTurnaroundBuffer(windowA, windowB, SIX_HOURS_MS)).toBe(true)
+  })
+
+  it('does not violate turnaround buffer when gap exceeds buffer', () => {
+    const windowA: RentalWindow = { fromAd: '2026-08-16T09:00:00+05:45', toAd: '2026-08-18T18:00:00+05:45' }
+    // Window B starts 24 hours later
+    const windowB: RentalWindow = { fromAd: '2026-08-19T18:00:00+05:45', toAd: '2026-08-20T18:00:00+05:45' }
+
+    expect(violatesTurnaroundBuffer(windowA, windowB, TWELVE_HOURS_MS)).toBe(false)
+  })
+
+  it('finds unit turnaround violations across holds and formats informative warnings', () => {
+    const existingHold: UnitHold = {
+      unitId: 'unit-cam-1',
+      bookingId: 'bk-100',
+      bookingNo: 'B-100',
+      window: { fromAd: '2026-08-16T09:00:00+05:45', toAd: '2026-08-18T18:00:00+05:45' },
+    }
+    const requestedWindow: RentalWindow = {
+      fromAd: '2026-08-18T21:00:00+05:45', // 3 hours gap
+      toAd: '2026-08-20T18:00:00+05:45',
+    }
+
+    const violations = findTurnaroundBufferViolations('unit-cam-1', requestedWindow, [existingHold], SIX_HOURS_MS)
+    expect(violations.length).toBe(1)
+    const firstViolation = violations[0]
+    expect(firstViolation).toBeDefined()
+    if (!firstViolation) return
+    expect(firstViolation.bookingNo).toBe('B-100')
+    expect(firstViolation.actualGapMs).toBe(3 * 3600 * 1000)
+
+    const explanation = explainTurnaroundViolation(firstViolation, 'CAM-01')
+    expect(explanation).toContain('CAM-01 has only 3h turnaround gap with booking B-100 (minimum recommended: 6h).')
+  })
+})
+

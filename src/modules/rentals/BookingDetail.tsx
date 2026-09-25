@@ -52,6 +52,7 @@ import { CancelRentalModal } from './modals/CancelRentalModal'
 import { RecordPaymentModal } from '../finance/modals/RecordPaymentModal'
 import { CreateInvoiceModal } from '../finance/modals/CreateInvoiceModal'
 import { CreateDocumentModal } from '../documents/CreateDocumentModal'
+import { LineItemTree } from './LineItemTree'
 import { listDocuments, documentsForBooking, type DocRow } from '../../lib/queries/documents'
 import { formatGateError } from '../../lib/gates'
 import type { ActionContext } from '../../actions/core'
@@ -217,7 +218,7 @@ const srOnly = {
  * a dotted vs solid border) would hang from. It simply no longer picks a
  * colour. Note `'required'` currently has no call site in this file.
  */
-function ItemBadge({ text }: { text: string; kind?: 'bundle' | 'required' | 'count' }) {
+export function ItemBadge({ text }: { text: string; kind?: 'bundle' | 'required' | 'count' }) {
   return (
     <span
       style={{
@@ -1876,8 +1877,12 @@ export default function BookingDetail() {
         <PageHeader
           breadcrumb={
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              <Link to="/rentals" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <Link to="/dashboard" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <Icon name="chevron_left" size={14} />
+                Today Dashboard
+              </Link>
+              <span>/</span>
+              <Link to="/rentals" style={{ color: 'var(--text2)', textDecoration: 'none', fontWeight: 500 }}>
                 Rentals
               </Link>
               <span>›</span>
@@ -2302,184 +2307,17 @@ export default function BookingDetail() {
                     : 'The lines embed did not come back for this booking, which is a query fault, not an empty booking.'}
                 </NotWiredNote>
               ) : (
-                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
-                  <DataTableShell ariaLabel="Booking equipment lines">
-                    <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
-                      <thead>
-                        <tr style={{ background: 'var(--card2)' }}>
-                        {/*
-                          ⚠ No `Rate / Day` and no `Total` for ANY role — not a
-                          Law 6 gate but a source gate: this read is
-                          `fetchFloorBooking`, which deliberately names no money
-                          column (`booking_lines.rate` is in 0019's revoked
-                          set; the masked read is `booking_lines_v`, which has
-                          no query module yet). The booking's money lives in
-                          Block 4, from the invoice. Rendering a per-line rate
-                          here again means a `booking_lines_v` fetcher, not a
-                          seed.
-                        */}
-                        {/* Five columns, not six. The sixth was an unlabelled
-                            spacer for the ⋮ glyph removed below (BD-05). */}
-                        {['Item', 'Serial / ID', 'Qty', 'Status', 'Location'].map((h, i) => (
-                          <th key={h} style={{ ...th, textAlign: i === 2 ? 'right' : 'left' }}>
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lines.map((l) => {
-                        const depth = l.parentLineId ? 1 : 0
-                        const packedCount = l.units.filter((u) => u.packed).length
-                        const lineState =
-                          l.units.length === 0
-                            ? null
-                            : packedCount === l.units.length
-                              ? ('Packed' as const)
-                              : packedCount > 0
-                                ? ('Partial' as const)
-                                : null
-                        return (
-                          <tr
-                            key={l.id}
-                            style={{ borderBottom: '1px solid var(--border)', ...subRentedRowStyle({ lineType: l.lineType }) }}
-                          >
-                            <td style={{ ...td, paddingLeft: 10 + depth * 18 }}>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <Icon name={depth === 0 ? 'chevron_down' : 'dot'} size={depth === 0 ? 13 : 8} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-                                <span style={{ fontWeight: depth === 0 ? 700 : 500 }}>
-                                  {l.productName ?? l.description ?? '(no description)'}
-                                </span>
-                                {l.lineType !== 'Equipment' && !isSubRentedLine({ lineType: l.lineType }) && (
-                                  <ItemBadge text={l.lineType} kind={l.lineType === 'Bundle' ? 'bundle' : 'count'} />
-                                )}
-                                {/* Law 11 — the gold outline never travels alone. */}
-                                {isSubRentedLine({ lineType: l.lineType }) && <SubRentedMark />}
-                              </span>
-                              {l.units.length > 0 && (
-                                <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2, paddingLeft: 19 }}>
-                                  {l.units.length} unit{l.units.length === 1 ? '' : 's'} assigned
-                                </span>
-                              )}
-                            </td>
-                            <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                              {/*
-                                Chips, not a comma list — v2.5 §10.4's ruled shape for
-                                creation-time serial assignments. The × is VISIBLE, never
-                                hover-revealed (§10.4 observed Booqable's hover-only × and
-                                ruled "do not copy"), and LIVE since §4.39 was ruled (a):
-                                the press RELEASES the assignment — `released_at`/
-                                `released_by` on the row (migration 0076), never a DELETE,
-                                which 0044's Law 3 backstop rejects for every role. Past
-                                Packed the press asks first (§10.4's confirm); the role
-                                gate mirrors `unit.release` = `booking_line_units_all`'s
-                                five, and for everyone else the control is ABSENT, not
-                                disabled — the same shape as the payment buttons (Law 6's
-                                omitted-not-masked direction applied to a verb).
-                              */}
-                              <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                {l.units
-                                  .filter((u) => u.serial || u.assetTag)
-                                  .map((u) => {
-                                    const label = u.serial ?? u.assetTag ?? ''
-                                    return (
-                                      <span
-                                        key={u.id}
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: 2,
-                                          border: '1px solid var(--border)',
-                                          borderRadius: 'var(--r-chip)',
-                                          background: 'var(--card2)',
-                                          padding: canReleaseUnits ? '1px 2px 1px 7px' : '1px 7px',
-                                        }}
-                                      >
-                                        <Link to={`/inventory/${label}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                                          {label}
-                                        </Link>
-                                        {canReleaseUnits && (
-                                          <button
-                                            type="button"
-                                            onClick={() => requestReleaseUnit(u.id, label)}
-                                            disabled={releasingUnitId !== null}
-                                            aria-label={`Release ${label}`}
-                                            title={
-                                              pastPacked
-                                                ? `Release ${label} — this booking is past Packed, so you will be asked to confirm`
-                                                : `Release ${label} from this booking`
-                                            }
-                                            style={{
-                                              display: 'inline-flex',
-                                              alignItems: 'center',
-                                              justifyContent: 'center',
-                                              width: 20,
-                                              height: 20,
-                                              padding: 0,
-                                              border: 'none',
-                                              background: 'transparent',
-                                              color: releasingUnitId === u.id ? 'var(--disabled)' : 'var(--muted)',
-                                              cursor: releasingUnitId !== null ? 'wait' : 'pointer',
-                                              borderRadius: 'var(--r-xs)',
-                                            }}
-                                          >
-                                            <Icon name="close" size={12} />
-                                          </button>
-                                        )}
-                                      </span>
-                                    )
-                                  })}
-                              </span>
-                            </td>
-                            <td className="figure" style={{ ...td, textAlign: 'right' }}>{l.qty}</td>
-                            <td style={td}>
-                              {lineState && (
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 'var(--sp-xs)',
-                                    fontSize: 'var(--t-meta)',
-                                    fontWeight: 600,
-                                    color: lineState === 'Packed' ? 'var(--success-text)' : 'var(--progress-text)',
-                                  }}
-                                >
-                                  <Icon name={lineState === 'Packed' ? 'dot' : 'alert_triangle'} size={11} />
-                                  {lineState}
-                                </span>
-                              )}
-                            </td>
-                            <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                              {l.units.map((u) => u.location).find((loc) => loc !== null) ?? ''}
-                            </td>
-                            {/*
-                              ⛔ A sixth cell held a bare `more_vert` glyph here:
-                              an <Icon>, not a button, with no handler and no
-                              menu anywhere in this file to open. It sat alone
-                              in a 26px last column under an unlabelled header —
-                              the position and the glyph of a row menu — so it
-                              read as one and did nothing when pressed. A fake
-                              affordance (BD-05).
-
-                              Nothing was lost with it. The only row-level verb
-                              this screen has is the unit release, which is the
-                              × on each serial chip in the Serial/ID cell — the
-                              second of the five columns, not the neighbour of
-                              the sixth this removed; line writes
-                              have no path at all, which is what the Add Item
-                              button's `ITEM_EDIT_UNAVAILABLE` says. Removing
-                              dead UI is not a Law 3 deletion — Law 3 governs
-                              entities and data, and no line, unit or booking is
-                              touched here.
-                            */}
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </DataTableShell>
-              </div>
-            )}
+                <LineItemTree
+                  lines={lines}
+                  canReleaseUnits={canReleaseUnits}
+                  onReleaseUnit={requestReleaseUnit}
+                  releasingUnitId={releasingUnitId}
+                  pastPacked={pastPacked}
+                  subRentedRowStyle={subRentedRowStyle}
+                  isSubRented={isSubRentedLine}
+                  bookingStage={stage}
+                />
+              )}
 
               {lines.length > 0 && (
                 <div

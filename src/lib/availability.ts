@@ -859,3 +859,139 @@ export function explainCapacityShortfall(outcome: CapacityOutcome, productName: 
 
   return parts.join(' ')
 }
+
+/* ── PREDICTIVE TURNAROUND BUFFERS (Pillar 1) ────────────────────────────────
+ *
+ * In high-demand rental logistics, gear returned requires turnaround time for
+ * QA, sensor cleaning, battery recharging, cable coiling, and repacking before
+ * going out again. Consecutive bookings for the same unit with insufficient gap
+ * risk dispatching uninspected equipment.
+ *
+ * Like windowsOverlap, these functions are PURE: they take windows and millisecond
+ * buffers and evaluate conflicts/gaps without I/O or database access.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+export interface CategoryTurnaroundBuffer {
+  readonly category: string
+  readonly bufferMs: number
+}
+
+/** Standard category buffers: Heavy AV / LED Wall = 12h, Camera / Drone = 6h, Audio / Lighting = 4h */
+export const DEFAULT_CATEGORY_TURNAROUND_BUFFERS: Readonly<Record<string, number>> = {
+  'Heavy AV': 12 * 60 * 60 * 1000,
+  'LED Wall': 12 * 60 * 60 * 1000,
+  'Camera': 6 * 60 * 60 * 1000,
+  'Drone': 6 * 60 * 60 * 1000,
+  'Lighting': 4 * 60 * 60 * 1000,
+  'Audio': 4 * 60 * 60 * 1000,
+}
+
+export function turnaroundBufferMsForCategory(category?: string | null): number {
+  if (!category) return 0
+  return DEFAULT_CATEGORY_TURNAROUND_BUFFERS[category] ?? 0
+}
+
+export interface TurnaroundBufferViolation {
+  readonly unitId: string
+  readonly bookingNo: string
+  readonly requiredBufferMs: number
+  readonly actualGapMs: number
+  readonly priorWindow: RentalWindow
+  readonly nextWindow: RentalWindow
+}
+
+/**
+ * Does the gap between two non-overlapping windows violate a turnaround buffer?
+ *
+ * Windows that already overlap according to windowsOverlap are direct conflicts.
+ * If they do not overlap, this checks whether the non-negative turnaround gap
+ * between one ending and the other starting is strictly less than bufferMs.
+ */
+export function violatesTurnaroundBuffer(
+  a: RentalWindow,
+  b: RentalWindow,
+  bufferMs: number,
+): boolean {
+  if (bufferMs <= 0) return false
+  assertWindow(a, 'Window A')
+  assertWindow(b, 'Window B')
+
+  const aFrom = instant(a.fromAd)
+  const aTo = instant(a.toAd)
+  const bFrom = instant(b.fromAd)
+  const bTo = instant(b.toAd)
+
+  // If A finishes before or exactly when B begins
+  if (aTo <= bFrom) {
+    const gap = bFrom - aTo
+    return gap < bufferMs
+  }
+
+  // If B finishes before or exactly when A begins
+  if (bTo <= aFrom) {
+    const gap = aFrom - bTo
+    return gap < bufferMs
+  }
+
+  // Windows overlap in time — immediate conflict
+  return true
+}
+
+/**
+ * Finds all existing holds on a unit that violate a turnaround buffer when
+ * evaluated against a proposed rental window.
+ */
+export function findTurnaroundBufferViolations(
+  unitId: string,
+  window: RentalWindow,
+  holds: readonly UnitHold[],
+  bufferMs: number,
+): readonly TurnaroundBufferViolation[] {
+  if (bufferMs <= 0) return []
+  assertWindow(window, 'The candidate window')
+
+  const violations: TurnaroundBufferViolation[] = []
+  const wFrom = instant(window.fromAd)
+  const wTo = instant(window.toAd)
+
+  for (const hold of holds) {
+    if (hold.unitId !== unitId) continue
+    const hFrom = instant(hold.window.fromAd)
+    const hTo = instant(hold.window.toAd)
+
+    if (hTo <= wFrom) {
+      const gap = wFrom - hTo
+      if (gap < bufferMs) {
+        violations.push({
+          unitId,
+          bookingNo: hold.bookingNo,
+          requiredBufferMs: bufferMs,
+          actualGapMs: gap,
+          priorWindow: hold.window,
+          nextWindow: window,
+        })
+      }
+    } else if (wTo <= hFrom) {
+      const gap = hFrom - wTo
+      if (gap < bufferMs) {
+        violations.push({
+          unitId,
+          bookingNo: hold.bookingNo,
+          requiredBufferMs: bufferMs,
+          actualGapMs: gap,
+          priorWindow: window,
+          nextWindow: hold.window,
+        })
+      }
+    }
+  }
+
+  return violations
+}
+
+export function explainTurnaroundViolation(violation: TurnaroundBufferViolation, assetTag: string): string {
+  const reqHours = (violation.requiredBufferMs / (3600 * 1000)).toFixed(1).replace(/\.0$/, '')
+  const gapHours = (violation.actualGapMs / (3600 * 1000)).toFixed(1).replace(/\.0$/, '')
+  return `${assetTag} has only ${gapHours}h turnaround gap with booking ${violation.bookingNo} (minimum recommended: ${reqHours}h).`
+}
+

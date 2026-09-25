@@ -127,5 +127,31 @@ describe('money, and Law 6', () => {
   it('still lets a money-blind role send a non-money message', () => {
     const out = run({ stage: 'Packed' }, {}, 'Warehouse')
     expect(out.map((a) => a.id)).toContain('gear_ready')
+    expect(out.map((a) => a.id)).toContain('dispatch_manifest')
   })
 })
+
+describe('dispatch manifest action (Pillar 3)', () => {
+  it('offers dispatch_manifest for Packed and On Rent stages', () => {
+    const packedActions = run({ stage: 'Packed' })
+    expect(packedActions.map((a) => a.id)).toContain('dispatch_manifest')
+
+    const onRentActions = run({ stage: 'On Rent' })
+    expect(onRentActions.map((a) => a.id)).toContain('dispatch_manifest')
+  })
+
+  it('composes dispatch manifest with item count, booking reference, and client confirmation', () => {
+    const actions = run({ stage: 'Packed', itemCount: 4, topLines: ['Sony FX6', 'Sachtler Tripod'] })
+    const manifestAction = actions.find((a) => a.id === 'dispatch_manifest')
+    expect(manifestAction).toBeDefined()
+    expect(manifestAction?.href).toContain('https://wa.me/9779841234567?text=')
+
+    // Decode URL component to check text
+    const text = decodeURIComponent(manifestAction!.href!.split('?text=')[1]!)
+    expect(text).toContain('Booking #B-901')
+    expect(text).toContain('4 items packed & verified (Sony FX6, Sachtler Tripod)')
+    expect(text).toContain('Please reply with "CONFIRMED"')
+    expect(text).toContain('Babin Rentals')
+  })
+})
+

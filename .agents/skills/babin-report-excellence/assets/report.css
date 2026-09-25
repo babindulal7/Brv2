@@ -1,0 +1,91 @@
+/* Babin Report Excellence — base theme (dark / OS view).
+   Token-driven. The .export class / print overrides live in report-print.css. */
+
+:root {
+  /* surfaces */
+  --surface-base:#050B12; --surface-sunken:#02060B; --surface-card:#0B1622;
+  --surface-raised:#0D1A29; --surface-inset:#081522;
+  --border-subtle:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.16);
+  /* text */
+  --text-primary:#EAF2FA; --text-secondary:#AEBACA; --text-muted:#5A6776;
+  /* accents */
+  --accent:#2F7DFF; --accent-brand:#D9A83C;
+  /* status law */
+  --status-inactive:#8A94A6; --status-commercial:#2F7DFF; --status-prep:#F5C518;
+  --status-move:#2FD4C4; --status-success:#2ECC8F; --status-return:#8B5CF6;
+  --status-attention:#FF9F43; --status-critical:#FF6B6B; --status-external:#D9A83C;
+  /* type */
+  --font-ui:"Outfit",system-ui,-apple-system,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,"SF Mono",monospace;
+  /* radii */
+  --r-card:14px; --r-ctrl:10px; --r-pill:999px;
+}
+
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--surface-base); color:var(--text-primary);
+  font-family:var(--font-ui); font-size:14px; line-height:20px;
+  -webkit-font-smoothing:antialiased;
+}
+.report { max-width:1040px; margin:0 auto; padding:32px; }
+
+/* typography */
+h1{ font-size:32px; line-height:44px; font-weight:700; margin:0 0 8px; }
+h2{ font-size:20px; line-height:28px; font-weight:600; margin:32px 0 12px; }
+h3{ font-size:16px; line-height:22px; font-weight:600; margin:24px 0 8px; }
+p { margin:0 0 12px; max-width:70ch; }
+.meta{ font-size:12px; line-height:16px; color:var(--text-muted); }
+.num, .mono, code { font-family:var(--font-mono); }
+
+/* cards & layout */
+.card{
+  background:var(--surface-card); border:1px solid var(--border-subtle);
+  border-radius:var(--r-card); padding:24px;
+}
+.grid{ display:grid; gap:16px; }
+.kpi-strip{ display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin:16px 0 24px; }
+
+/* KPI card */
+.kpi{
+  background:var(--surface-card); border:1px solid var(--border-subtle);
+  border-radius:var(--r-card); padding:16px;
+}
+.kpi-label{ font-family:var(--font-mono); font-size:12px; letter-spacing:.04em;
+  text-transform:uppercase; color:var(--text-muted); }
+.kpi-value{ font-family:var(--font-mono); font-size:26px; line-height:32px;
+  font-weight:600; color:var(--text-primary); margin:6px 0 4px; }
+.kpi-delta{ font-family:var(--font-mono); font-size:13px; font-weight:600; }
+.kpi-context{ font-size:12px; color:var(--text-secondary); margin-top:4px; }
+.kpi-up,   .kpi-good { color:var(--status-success); }
+.kpi-down, .kpi-bad  { color:var(--status-critical); }
+
+/* status badge: color + icon + label, never color alone */
+.badge{
+  display:inline-flex; align-items:center; gap:6px;
+  font-size:12px; font-weight:600; padding:3px 10px; border-radius:var(--r-pill);
+  border:1px solid transparent;
+}
+.badge svg{ width:12px; height:12px; }
+.badge-success  { color:var(--status-success);  background:color-mix(in srgb,var(--status-success) 16%,transparent); }
+.badge-attention{ color:var(--status-attention);background:color-mix(in srgb,var(--status-attention) 16%,transparent); }
+.badge-critical { color:var(--status-critical); background:color-mix(in srgb,var(--status-critical) 16%,transparent); }
+.badge-commercial{color:var(--status-commercial);background:color-mix(in srgb,var(--status-commercial) 16%,transparent); }
+.badge-external { color:var(--status-external); background:transparent; border-color:var(--status-external); }
+
+/* callout */
+.callout{
+  border-left:3px solid var(--accent-brand); background:var(--surface-raised);
+  border-radius:var(--r-ctrl); padding:12px 16px; margin:16px 0;
+}
+
+/* tables */
+table{ width:100%; border-collapse:collapse; font-size:13px; line-height:18px; }
+thead th{
+  font-family:var(--font-mono); text-transform:uppercase; font-size:11px;
+  color:var(--text-muted); text-align:left; padding:8px 12px;
+  border-bottom:1px solid var(--border-strong);
+}
+tbody td{ padding:8px 12px; border-bottom:1px solid var(--border-subtle); }
+tbody tr:nth-child(even){ background:var(--surface-raised); }
+td.num, th.num{ font-family:var(--font-mono); text-align:right; }
+tr.highlight td{ font-weight:600; color:var(--text-primary); }

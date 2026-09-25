@@ -40,6 +40,8 @@ export interface ServiceRow {
   readonly daysSinceService: number
   readonly rentalDaysSinceService: number
   readonly meterHoursSinceService: number
+  /** Rental cycles (completed returns) since last preventive service (Pillar 1). */
+  readonly rentalCyclesSinceService?: number
   /** The TIME due date. Null when the model sets no day interval — see `0103`. */
   readonly dueAt: string | null
   /** `'time'` · `'usage'` · null when the model has no plan, or nothing is due. */
@@ -49,6 +51,8 @@ export interface ServiceRow {
   readonly serviceIntervalDays: number | null
   readonly serviceIntervalRentalDays: number | null
   readonly serviceIntervalMeterHours: number | null
+  /** Model interval in rental cycles (e.g. 15 rentals for bulb/dust cleaning, 25 for cables). */
+  readonly serviceIntervalRentalCycles?: number | null
   readonly serviceGraceDays: number
 }
 
@@ -124,6 +128,14 @@ export function serviceDetail(row: ServiceRow): string {
     return `Due — usage (${formatHours(row.meterHoursSinceService)} of ${formatHours(row.serviceIntervalMeterHours)} meter hours)`
   }
 
+  if (
+    row.serviceIntervalRentalCycles !== undefined &&
+    row.serviceIntervalRentalCycles !== null &&
+    (row.rentalCyclesSinceService ?? 0) >= row.serviceIntervalRentalCycles
+  ) {
+    return `Due — usage (${String(row.rentalCyclesSinceService ?? 0)} of ${String(row.serviceIntervalRentalCycles)} rental cycles)`
+  }
+
   /* Unreachable while the view and this module agree on what `'usage'` means.
      Stated rather than thrown: a tooltip is not worth an exception, and a
      sentence that says the reason is unreadable is more useful to whoever has to
@@ -140,7 +152,7 @@ function formatHours(hours: number): string {
  * Does this model have a preventive plan at all?
  *
  * The empty state R-28 asks the model page for (`No preventive plan`) and the
- * answer to "why does nothing on this model ever badge". All three intervals
+ * answer to "why does nothing on this model ever badge". All intervals
  * null means every trigger is off, which is deliberate and is the default for
  * every model in the catalogue.
  */
@@ -148,10 +160,13 @@ export function hasServicePlan(model: {
   serviceIntervalDays: number | null
   serviceIntervalRentalDays: number | null
   serviceIntervalMeterHours: number | null
+  serviceIntervalRentalCycles?: number | null
 }): boolean {
   return (
     model.serviceIntervalDays !== null ||
     model.serviceIntervalRentalDays !== null ||
-    model.serviceIntervalMeterHours !== null
+    model.serviceIntervalMeterHours !== null ||
+    (model.serviceIntervalRentalCycles !== undefined && model.serviceIntervalRentalCycles !== null)
   )
 }
+

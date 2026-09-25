@@ -137,6 +137,17 @@ describe('serviceDetail — the tooltip names the counter that crossed', () => {
     ).toContain('42.5 of 40')
   })
 
+  it('identifies rental cycles when that counter crossed the model plan', () => {
+    const detail = serviceDetail(
+      row({
+        dueReason: 'usage',
+        serviceIntervalRentalCycles: 15,
+        rentalCyclesSinceService: 16,
+      }),
+    )
+    expect(detail).toBe('Due — usage (16 of 15 rental cycles)')
+  })
+
   /* A date the view could not produce must not become a blank tooltip. */
   it('says how long it has been when the time reason carries no due date', () => {
     const detail = serviceDetail(row({ dueReason: 'time', dueAt: null, serviceIntervalDays: 90, daysSinceService: 95 }))
@@ -145,13 +156,21 @@ describe('serviceDetail — the tooltip names the counter that crossed', () => {
 })
 
 describe('hasServicePlan — the model page empty state', () => {
-  it('is false when all three intervals are off, which is the default', () => {
+  it('is false when all intervals are off, which is the default', () => {
     expect(
       hasServicePlan({ serviceIntervalDays: null, serviceIntervalRentalDays: null, serviceIntervalMeterHours: null }),
     ).toBe(false)
+    expect(
+      hasServicePlan({
+        serviceIntervalDays: null,
+        serviceIntervalRentalDays: null,
+        serviceIntervalMeterHours: null,
+        serviceIntervalRentalCycles: null,
+      }),
+    ).toBe(false)
   })
 
-  it('is true as soon as any ONE of the three is set — either, not both', () => {
+  it('is true as soon as any ONE of the intervals is set — either, not both', () => {
     expect(
       hasServicePlan({ serviceIntervalDays: 90, serviceIntervalRentalDays: null, serviceIntervalMeterHours: null }),
     ).toBe(true)
@@ -161,5 +180,14 @@ describe('hasServicePlan — the model page empty state', () => {
     expect(
       hasServicePlan({ serviceIntervalDays: null, serviceIntervalRentalDays: null, serviceIntervalMeterHours: 250 }),
     ).toBe(true)
+    expect(
+      hasServicePlan({
+        serviceIntervalDays: null,
+        serviceIntervalRentalDays: null,
+        serviceIntervalMeterHours: null,
+        serviceIntervalRentalCycles: 20,
+      }),
+    ).toBe(true)
   })
 })
+

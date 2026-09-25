@@ -644,10 +644,38 @@
 .floor-gate-row.is-pass {
   background: color-mix(in srgb, var(--st-in-bg) 12%, transparent);
 }
-
 .floor-gate-row.is-pending {
   background: color-mix(in srgb, var(--st-progress-bg) 14%, transparent);
 }
 
+/* ── Nested Flight Case & Line Item Tree (Cinema Architecture) ── */
+.flight-case-container {
+  transition: border-color var(--dur-fast, 120ms) var(--ease, ease), box-shadow var(--dur-fast, 120ms) var(--ease, ease);
+}
 
+.flight-case-container:hover {
+  border-color: var(--border2, var(--border));
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+}
 
+.flight-case-header:hover {
+  background: color-mix(in srgb, var(--card2, #f8fafc) 98%, var(--text) 2%) !important;
+}
+
+.unit-barcode-chip {
+  transition: all var(--dur-fast, 120ms) var(--ease, ease);
+}
+
+.unit-barcode-chip:hover {
+  border-color: var(--primary, #2563eb) !important;
+  background: color-mix(in srgb, var(--primary, #2563eb) 8%, var(--card)) !important;
+}
+
+.unit-barcode-chip button:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  color: var(--danger-text, #dc2626) !important;
+}
+
+.flight-case-body table tr:hover td {
+  background: color-mix(in srgb, var(--card2, #f8fafc) 80%, var(--card)) !important;
+}

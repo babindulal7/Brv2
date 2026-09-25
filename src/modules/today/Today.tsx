@@ -478,11 +478,15 @@ export default function Today() {
             <span className="dashboard-bento-tile__label">Operational Day</span>
             <span className="status-live-dot" title="Live movement sync" />
           </div>
-          <div className="dashboard-bento-tile__value">
-            {dayAd}
+          <div className="dashboard-bento-tile__value" style={{ fontSize: '1.25rem' }}>
+            {compactDate(dayAd)}
           </div>
           <div className="dashboard-bento-tile__sub">
-            {todayBs ? <span className="dashboard-bento-tile__sub-pill">BS {formatBs(todayBs)}</span> : null}
+            {todayBs ? (
+              <span className="dashboard-bento-tile__sub-pill" style={{ background: 'rgba(245, 158, 11, 0.12)', color: 'var(--warning-text, #d97706)', fontWeight: 700 }}>
+                BS {formatBs(todayBs)}
+              </span>
+            ) : null}
             <span style={{ color: 'var(--text-muted, #71717a)', fontSize: 11 }}>
               {isDispatchToday ? 'Today (Active Shift)' : 'Scheduled Shift'}
             </span>
@@ -536,21 +540,21 @@ export default function Today() {
             <span className="dashboard-bento-tile__label">Floor Shortcuts</span>
             <Icon name="zap" size={15} style={{ color: 'var(--accent, #2563eb)' }} />
           </div>
-          <div className="dashboard-bento-tile__sub" style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div className="dashboard-bento-tile__sub" style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Link
               to="/rentals/new"
               className="btn btn--sm btn--primary"
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', height: 30, fontSize: 12, fontWeight: 500 }}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', minHeight: 38, fontSize: 13, fontWeight: 600, borderRadius: 'var(--r-btn, 8px)' }}
             >
-              <Icon name="plus" size={14} /> New Rental
+              <Icon name="plus" size={15} /> New Rental Quote
             </Link>
             <button
               type="button"
               className="btn btn--sm btn--secondary"
-              style={{ height: 28, fontSize: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+              style={{ minHeight: 36, fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 'var(--r-btn, 8px)' }}
               onClick={() => counterInputRef.current?.focus()}
             >
-              <Icon name="barcode" size={13} /> Quick Barcode <kbd className="new-rental-kbd" style={{ fontSize: 9 }}>/</kbd>
+              <Icon name="barcode" size={14} /> Quick Barcode <kbd className="new-rental-kbd" style={{ fontSize: 10, padding: '1px 5px' }}>/</kbd>
             </button>
           </div>
         </div>
