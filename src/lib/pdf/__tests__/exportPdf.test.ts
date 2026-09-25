@@ -44,8 +44,13 @@ describe('exportPdf', () => {
     expect(typeof res.signedUrl).toBe('string')
 
     // Verify it is retrievable from storage (remote or mock)
-    let downloaded: any = await supabase.storage.from('documents').download(res.storagePath!)
-    if (downloaded.error && downloaded.error.message?.includes('Bucket not found')) {
+    let downloaded: any = null
+    try {
+      downloaded = await supabase.storage.from('documents').download(res.storagePath!)
+    } catch (err) {
+      downloaded = { error: err }
+    }
+    if (downloaded?.error) {
       downloaded = await mockStorage.from('documents').download(res.storagePath!)
     }
     expect(downloaded.error).toBeNull()

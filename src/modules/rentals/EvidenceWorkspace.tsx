@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import './rentals.css'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
@@ -408,7 +409,7 @@ export default function EvidenceWorkspace() {
 
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div className="floor-workspace-container" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageBody
         loading={floorLoading}
         error={floorError}
@@ -485,14 +486,8 @@ export default function EvidenceWorkspace() {
               </div>
             </div>
 
-            {/* §3 — read-only booking strip, BS above AD. HO-09: every cell is a
-                column off `fetchFloorBooking`. Where the read has no value the
-                cell is `—` — the seed values that used to stand in for Client,
-                Status, the two dates and Items are gone rather than kept as a
-                fallback, because a fallback here is indistinguishable from a
-                fact. `Items` had no live source at all (it was
-                `data/packing`'s TOTAL_ITEMS) and is simply not claimed. */}
-            <div style={{ ...cardStyle, display: 'flex', flexWrap: 'wrap', overflow: 'hidden' }}>
+            {/* §3 — read-only booking strip, BS above AD */}
+            <div className="floor-summary-bar">
               {[
                 { l: 'Client', v: floor.clientName ?? '—', big: true },
                 { l: 'Booking', v: floor.bookingNo },
@@ -512,12 +507,12 @@ export default function EvidenceWorkspace() {
                 { l: 'Stage', v: floor.stage, big: true },
                 { l: 'Delivery', v: deliveryTypeLabel(floor.deliveryType) },
               ].map((f) => (
-                <div key={f.l} style={{ padding: '11px 14px', borderRight: '1px solid var(--border)', minWidth: 0, flex: '1 1 auto' }}>
-                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.l}</div>
-                  <div style={{ fontSize: f.big ? 13 : 12, fontWeight: f.big ? 700 : 600, color: 'var(--text)', marginTop: 3, whiteSpace: 'nowrap' }}>
+                <div key={f.l} className="floor-summary-cell">
+                  <div className="floor-summary-label">{f.l}</div>
+                  <div className="floor-summary-value">
                     {f.v}
                   </div>
-                  {f.s && <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{f.s}</div>}
+                  {f.s && <div className="floor-summary-sub figure">{f.s}</div>}
                 </div>
               ))}
             </div>
@@ -699,17 +694,26 @@ export default function EvidenceWorkspace() {
               {/* ── §6 / §8 centre ──────────────────────────────────────────── */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0, ...place.list }}>
                 <Card title="Processing — sample files">
-                  <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2, minmax(0,1fr))' : 'repeat(4, minmax(0,1fr))', gap: 9 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2, minmax(0,1fr))' : 'repeat(4, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
                     {[
-                      { l: 'Total Photos', v: total, tone: 'var(--text)' },
-                      { l: 'Matched', v: counts.Matched, tone: 'var(--success-text)', p: pct(counts.Matched) },
-                      { l: 'Need Review', v: counts.Review, tone: 'var(--progress-text)', p: pct(counts.Review) },
-                      { l: 'Unmatched', v: counts.Unmatched, tone: 'var(--danger-text)', p: pct(counts.Unmatched) },
+                      { l: 'Total Photos', v: total, tone: 'var(--text)', bg: 'var(--card2)' },
+                      { l: 'Matched', v: counts.Matched, tone: 'var(--success-text)', p: pct(counts.Matched), bg: 'var(--st-in-bg)' },
+                      { l: 'Need Review', v: counts.Review, tone: 'var(--progress-text)', p: pct(counts.Review), bg: 'var(--st-progress-bg)' },
+                      { l: 'Unmatched', v: counts.Unmatched, tone: 'var(--danger-text)', p: pct(counts.Unmatched), bg: 'var(--st-danger-bg)' },
                     ].map((k) => (
-                      <div key={k.l} style={{ padding: '10px 11px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)' }}>
-                        <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{k.l}</div>
-                        <div className="figure" style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: k.tone, marginTop: 2 }}>{k.v}</div>
-                        {k.p && <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{k.p}</div>}
+                      <div
+                        key={k.l}
+                        style={{
+                          padding: '11px 13px',
+                          borderRadius: 'var(--r-sm)',
+                          border: '1px solid var(--border)',
+                          background: k.bg,
+                          transition: 'border-color var(--dur) ease',
+                        }}
+                      >
+                        <div style={{ fontSize: 'var(--t-meta)', fontWeight: 500, color: 'var(--text2)' }}>{k.l}</div>
+                        <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: k.tone, marginTop: 4 }}>{k.v}</div>
+                        {k.p && <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{k.p}</div>}
                       </div>
                     ))}
                   </div>

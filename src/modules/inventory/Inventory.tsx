@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, Button, PageHeader, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, Button, PageHeader, PageActions, KpiStrip, FooterNote } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { AppSidePanel } from '../../components/shell/AppSidePanel'
@@ -32,6 +32,7 @@ import { FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
 import { BarcodeLookupModal } from '../rentals/modals/BarcodeLookupModal'
 import { PrintLabelModal } from '../../components/ui/PrintLabelModal'
 import type { LabelData } from '../../lib/labelPrinter'
+import './inventory.css'
 import {
   listInventory,
   listUnits,
@@ -316,19 +317,14 @@ function ConditionBadge({ condition }: { condition: Condition | null }) {
 /** Stands in for the mockup's product photograph — see `CATEGORY_ICON`. */
 function Thumb({ category, size = 34 }: { category: string; size?: number }) {
   const icon: IconName = CATEGORY_ICON[category] ?? 'box'
+  const isSm = size < 30
   return (
     <span
       aria-hidden
+      className={`inventory-thumb ${isSm ? 'inventory-thumb-sm' : ''}`}
       style={{
         width: size,
         height: size,
-        flexShrink: 0,
-        borderRadius: 7,
-        display: 'grid',
-        placeItems: 'center',
-        background: 'var(--card2)',
-        border: '1px solid var(--border)',
-        color: 'var(--muted)',
       }}
     >
       <Icon name={icon} size={Math.round(size * 0.5)} />
@@ -473,10 +469,10 @@ function ChildRowView({
   const td = tdFor(density)
   const place = unitLocationOf(unit)
   return (
-    <tr style={{ borderBottom: '1px solid var(--border)' }}>
+    <tr className="inventory-child-row">
       <td style={td} />
       <td style={td} />
-      <td style={{ ...td, paddingLeft: 22 }}>
+      <td className="inventory-child-indent" style={{ ...td, paddingLeft: 28 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
           <Thumb category={category} size={26} />
           <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -492,14 +488,14 @@ function ChildRowView({
               */}
               <Link
                 to={`/inventory/${encodeURIComponent(unit.assetTag)}`}
-                className="identifier"
-                style={{ fontSize: 'var(--t-meta)', color: 'var(--link)', textDecoration: 'none', fontWeight: 600 }}
+                className="inventory-asset-code"
+                style={{ fontSize: 'var(--t-meta)' }}
               >
                 {unit.assetTag}
               </Link>
             </span>
             <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              {unit.serialNo === null ? 'No serial on file' : `Serial ${unit.serialNo}`} · Unit {index + 1} of {count}
+              {unit.serialNo === null ? 'No serial on file' : <>Serial <span className="figure">{unit.serialNo}</span></>} · Unit <span className="figure">{index + 1}</span> of <span className="figure">{count}</span>
             </span>
           </span>
         </span>
@@ -553,6 +549,7 @@ function ParentRowView({
   checked,
   onToggle,
   onInspect,
+  isInspected = false,
 }: {
   row: InventoryListRow
   money: boolean
@@ -562,6 +559,7 @@ function ParentRowView({
   checked: boolean
   onToggle: () => void
   onInspect: (row: InventoryListRow) => void
+  isInspected?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const td = tdFor(density)
@@ -579,8 +577,16 @@ function ParentRowView({
 
   return (
     <>
-      <tr style={{ borderBottom: '1px solid var(--border)', background: open ? 'var(--card2)' : 'transparent' }}>
-        <td style={{ ...td, width: 26 }}>
+      <tr
+        onClick={() => onInspect(row)}
+        className={[
+          'inventory-parent-row',
+          isInspected ? 'is-inspected' : '',
+          open ? 'is-open' : '',
+          checked ? 'is-selected' : '',
+        ].filter(Boolean).join(' ')}
+      >
+        <td style={{ ...td, width: 26 }} onClick={(e) => e.stopPropagation()}>
           <input
             type="checkbox"
             aria-label={`Select ${row.name}`}
@@ -589,7 +595,7 @@ function ParentRowView({
             style={{ accentColor: 'var(--nav-active-accent)' }}
           />
         </td>
-        <td style={{ ...td, width: 26 }}>
+        <td style={{ ...td, width: 34 }} onClick={(e) => e.stopPropagation()}>
           {serialised ? (
             <button
               type="button"
@@ -597,21 +603,22 @@ function ParentRowView({
               aria-expanded={open}
               aria-label={`${open ? 'Collapse' : 'Expand'} ${row.name}`}
               style={{
-                width: 20,
-                height: 20,
-                borderRadius: 5,
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--text2)',
+                width: 28,
+                height: 28,
+                borderRadius: 6,
+                border: '1px solid var(--border)',
+                background: open ? 'var(--nav-active-bg)' : 'var(--card2)',
+                color: open ? 'var(--nav-active-accent)' : 'var(--text2)',
                 cursor: 'pointer',
                 display: 'grid',
                 placeItems: 'center',
+                transition: 'all var(--dur-fast) var(--ease)',
               }}
             >
               <Icon name={open ? 'chevron_down' : 'chevron_right'} size={14} />
             </button>
           ) : (
-            <span aria-hidden style={{ display: 'inline-block', width: 20 }} />
+            <span aria-hidden style={{ display: 'inline-block', width: 28 }} />
           )}
         </td>
         <td style={td}>
@@ -621,6 +628,7 @@ function ParentRowView({
               <span style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
                 <Link
                   to={`/inventory/${encodeURIComponent(row.assetCode)}`}
+                  onClick={(e) => e.stopPropagation()}
                   style={{ fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
                   onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--link)')}
                   onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text)')}
@@ -631,8 +639,8 @@ function ParentRowView({
                   <CategoryChip category={category} />
                   <Link
                     to={`/inventory/${encodeURIComponent(row.assetCode)}`}
-                    className="identifier"
-                    style={{ fontSize: 'var(--t-th)', color: 'var(--link)', textDecoration: 'none' }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inventory-asset-code"
                   >
                     {row.assetCode}
                   </Link>
@@ -685,13 +693,24 @@ function ParentRowView({
             {row.replacementValue === null ? <span style={{ color: 'var(--muted)' }}>—</span> : formatMoney(row.replacementValue)}
           </td>
         )}
-        <td style={{ ...td, width: 30, color: 'var(--muted)' }}>
+        <td style={{ ...td, width: 36, color: 'var(--muted)' }} onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             onClick={() => onInspect(row)}
             aria-label={`Quick view ${row.name}`}
             title="Quick view"
-            style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', width: 30, height: 30, display: 'grid', placeItems: 'center' }}
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--r-btn)',
+              background: 'var(--card2)',
+              color: 'var(--text2)',
+              cursor: 'pointer',
+              width: 32,
+              height: 32,
+              display: 'grid',
+              placeItems: 'center',
+              transition: 'all var(--dur-fast) var(--ease)',
+            }}
           >
             <Icon name="eye" size={14} />
           </button>
@@ -770,13 +789,7 @@ function ParentCardView({
 
   return (
     <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--sp-sm)',
-        padding: '13px 14px',
-        borderBottom: '1px solid var(--border)',
-      }}
+      className={['inventory-model-card', checked ? 'is-selected' : ''].filter(Boolean).join(' ')}
     >
       <span style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
         <input
@@ -799,8 +812,7 @@ function ParentCardView({
               <CategoryChip category={category} />
               <Link
                 to={`/inventory/${encodeURIComponent(row.assetCode)}`}
-                className="identifier"
-                style={{ fontSize: 'var(--t-th)', color: 'var(--link)', textDecoration: 'none' }}
+                className="inventory-asset-code"
               >
                 {row.assetCode}
               </Link>
@@ -863,22 +875,23 @@ function ParentCardView({
           style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 5,
+            gap: 6,
             alignSelf: 'flex-start',
-            height: 30,
-            padding: '0 9px',
+            minHeight: 44,
+            padding: '0 14px',
             borderRadius: 'var(--r-btn)',
             border: '1px solid var(--border)',
-            background: 'var(--card2)',
-            color: 'var(--text2)',
+            background: open ? 'var(--nav-active-bg)' : 'var(--card2)',
+            color: open ? 'var(--nav-active-accent)' : 'var(--text)',
             fontSize: 'var(--t-meta)',
             fontWeight: 600,
             cursor: 'pointer',
             fontFamily: 'inherit',
+            transition: 'all var(--dur-fast) var(--ease)',
           }}
         >
-          <Icon name={open ? 'chevron_down' : 'chevron_right'} size={13} />
-          {open ? 'Hide' : 'Show'} units
+          <Icon name={open ? 'chevron_down' : 'chevron_right'} size={14} />
+          {open ? 'Hide units' : 'Show units'}
         </button>
       )}
 
@@ -913,29 +926,18 @@ function ChildCardView({
 }) {
   const place = unitLocationOf(unit)
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 5,
-        padding: '9px 10px',
-        marginLeft: 28,
-        borderLeft: '2px solid var(--border)',
-        background: 'var(--card2)',
-        borderRadius: 'var(--r-btn)',
-      }}
-    >
+    <div className="inventory-unit-card">
       <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         <Icon name="queues" size={12} style={{ color: 'var(--muted)' }} />
         <Link
           to={`/inventory/${encodeURIComponent(unit.assetTag)}`}
-          className="identifier"
-          style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)', textDecoration: 'none' }}
+          className="inventory-asset-code"
+          style={{ fontSize: 'var(--t-meta)' }}
         >
           {unit.assetTag}
         </Link>
         <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-          {unit.serialNo === null ? 'No serial on file' : `Serial ${unit.serialNo}`} · Unit {index + 1} of {count}
+          {unit.serialNo === null ? 'No serial on file' : <>Serial <span className="figure">{unit.serialNo}</span></>} · Unit <span className="figure">{index + 1}</span> of <span className="figure">{count}</span>
         </span>
       </span>
       <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
@@ -946,7 +948,7 @@ function ChildCardView({
         {place ?? 'No rack, shelf or bin recorded'}
       </span>
       {money && unit.replacementValue !== null && (
-        <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
           Replacement {formatMoney(unit.replacementValue)}
         </span>
       )}
@@ -1209,6 +1211,27 @@ function chipSlug(c: EquipmentChip): string {
   return c.label.toLowerCase().replace(/\s+/g, '-')
 }
 
+const FACET_PARAM_MAP: Record<FacetKey, string> = {
+  Category: 'category',
+  Status: 'status',
+  Condition: 'condition',
+  Serialisation: 'serialisation',
+}
+
+function parseFacetsFromParams(searchParams: URLSearchParams): Facets {
+  const result: Facets = {}
+  for (const [key, paramName] of Object.entries(FACET_PARAM_MAP) as [FacetKey, string][]) {
+    const val = searchParams.get(paramName)
+    if (val) {
+      const items = val.split(',').map((s) => s.trim()).filter(Boolean)
+      if (items.length > 0) {
+        result[key] = new Set(items)
+      }
+    }
+  }
+  return result
+}
+
 /* ── screen ────────────────────────────────────────────────────────────── */
 
 /**
@@ -1259,8 +1282,8 @@ export default function Inventory() {
    * 3.7 — the chip row is the Equipment pane's sibling-tab filter, so like the
    * tab itself it lives in the URL (`?chip=available`), validated against the
    * real row and falling back to All for anything stale. Same `replace: true`
-   * rule: flicking chips must not build a back stack. The facet rail stays
-   * local state — multi-set facets are a working selection, not an address.
+   * rule: flicking chips must not build a back stack. Active facets also sync to
+   * the URL query string (`?category=...&condition=...`) so refresh/sharing preserves them.
    */
   const chipParam = params.get('chip')
   const chip: EquipmentChip = useMemo(
@@ -1276,7 +1299,7 @@ export default function Inventory() {
     },
     [params, setParams],
   )
-  const [facets, setFacets] = useState<Facets>({})
+  const facets: Facets = useMemo(() => parseFacetsFromParams(params), [params])
   /* The rail became an overlay — see the drawer below for why. */
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [sort, setSort] = useState<SortKey>('Equipment A–Z')
@@ -1313,29 +1336,44 @@ export default function Inventory() {
    */
   const money = canViewMoneyField(gctx, 'asset-finance')
 
-  const activeFacetCount = Object.values(facets).reduce((a, s) => a + s.size, 0)
+  const activeFacetCount = useMemo(
+    () => Object.values(facets).reduce((a, s) => a + (s?.size ?? 0), 0),
+    [facets],
+  )
   const filtersOn = activeFacetCount > 0 || chip.kind !== 'all'
 
-  const toggleFacet = (key: FacetKey, value: string) => {
-    setFacets((prev) => {
-      const next: Facets = { ...prev }
-      const set = new Set(prev[key] ?? [])
-      if (set.has(value)) set.delete(value)
-      else set.add(value)
-      if (set.size === 0) delete next[key]
-      else next[key] = set
-      return next
-    })
-    setPage(1)
-  }
+  const toggleFacet = useCallback(
+    (key: FacetKey, value: string) => {
+      const paramName = FACET_PARAM_MAP[key]
+      const curSet = new Set(facets[key] ?? [])
+      if (curSet.has(value)) {
+        curSet.delete(value)
+      } else {
+        curSet.add(value)
+      }
+      const p = new URLSearchParams(params)
+      if (curSet.size === 0) {
+        p.delete(paramName)
+      } else {
+        p.set(paramName, Array.from(curSet).join(','))
+      }
+      setParams(p, { replace: true })
+      setPage(1)
+    },
+    [facets, params, setParams],
+  )
 
   // `setChip` in the deps: it closes over the current search params, and a
   // stale copy would write yesterday's URL back.
   const clearFilters = useCallback(() => {
-    setFacets({})
-    setChip(EQUIPMENT_CHIPS[0]!)
+    const p = new URLSearchParams(params)
+    p.delete('chip')
+    for (const paramName of Object.values(FACET_PARAM_MAP)) {
+      p.delete(paramName)
+    }
+    setParams(p, { replace: true })
     setPage(1)
-  }, [setChip])
+  }, [params, setParams])
 
   /*
    * §7.1's chip row spans **two dimensions**, so it resolves into two things
@@ -1527,48 +1565,37 @@ export default function Inventory() {
    */
   const phone = viewport === 'phone'
   const equipmentActions =
-    tab === 'Equipment' ? (
-      <>
-        <Button icon="refresh" onClick={refreshAll} aria-label="Refresh equipment">
-          {phone ? '' : 'Refresh'}
-        </Button>
-        {!phone && (
-          <Unavailable reason="Import is not built — there is no catalogue intake pipeline in this release.">
-            <Button icon="upload" disabled>
-              Import
-            </Button>
-          </Unavailable>
-        )}
-        {/* `Button` takes no `title`, so the scope note sits on a wrapper —
-            the file is the PAGE, and the label and the tooltip both say so. */}
-        <span
-          style={{ display: 'inline-flex' }}
-          title={`Exports the ${list.rows.length} models on this page. The list is paged server-side, so the file is the page, not the catalogue.`}
-        >
-          <Button icon="download" onClick={() => exportCsv(list.rows, money)} aria-label="Export equipment on this page">
-            {phone ? '' : 'Export'}
+    tab === 'Equipment' && !isNew ? (
+      <PageActions
+        primary={
+          <Button
+            icon="plus"
+            variant="primary"
+            aria-label="Add Equipment"
+            onClick={() => {
+              const p = new URLSearchParams(params)
+              p.set('tab', 'new')
+              setParams(p, { replace: true })
+            }}
+          >
+            {phone ? '' : 'Add Equipment'}
           </Button>
-        </span>
-        <Button
-          icon="search"
-          onClick={() => setBarcodeLookupOpen(true)}
-          aria-label="Scan or search barcode"
-        >
-          {phone ? '' : 'Scan Barcode'}
-        </Button>
-        <Button
-          icon="plus"
-          variant="primary"
-          aria-label="Add Equipment"
-          onClick={() => {
-            const p = new URLSearchParams(params)
-            p.set('tab', 'new')
-            setParams(p, { replace: true })
-          }}
-        >
-          {phone ? '' : 'Add Equipment'}
-        </Button>
-      </>
+        }
+        secondary={[
+          <Button key="refresh" icon="refresh" onClick={refreshAll} aria-label="Refresh equipment">
+            {phone ? '' : 'Refresh'}
+          </Button>,
+          <span
+            key="export"
+            style={{ display: 'inline-flex' }}
+            title={`Exports the ${list.rows.length} models on this page. The list is paged server-side, so the file is the page, not the catalogue.`}
+          >
+            <Button icon="download" onClick={() => exportCsv(list.rows, money)} aria-label="Export equipment on this page">
+              {phone ? '' : 'Export'}
+            </Button>
+          </span>,
+        ]}
+      />
     ) : null;
 
   return (
@@ -1649,7 +1676,7 @@ export default function Inventory() {
          */
         <StockCheck embedded />
       ) : (
-        <>
+        <div className="inventory-v2">
           <KpiStrip items={kpis} columns={6} />
 
           {/*
@@ -1665,21 +1692,8 @@ export default function Inventory() {
             Chips scroll rather than wrap, matching the tab strip above and the
             tablet/phone drawings ("chips scroll").
           */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <div
-              className="rsp-chip-scroll"
-              style={{
-                display: 'flex',
-                gap: 6,
-                alignItems: 'center',
-                flexWrap: 'nowrap',
-                overflowX: 'auto',
-                overflowY: 'hidden',
-                minWidth: 0,
-                flex: 1,
-                paddingBottom: 2,
-              }}
-            >
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div className="inventory-chip-track">
               {EQUIPMENT_CHIPS.map((c) => {
                 const key = chipKey(c)
                 const on = chipKey(chip) === key
@@ -1701,23 +1715,8 @@ export default function Inventory() {
                       setPage(1)
                     }}
                     aria-pressed={on}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      flexShrink: 0,
-                      minHeight: 44,
-                      padding: '0 12px',
-                      borderRadius: 'var(--r-sm)',
-                      border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                      background: on ? 'var(--nav-active-bg)' : 'var(--card)',
-                      color: on ? 'var(--nav-active-accent)' : tone,
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: on ? 600 : 500,
-                      cursor: 'pointer',
-                      fontFamily: 'inherit',
-                      whiteSpace: 'nowrap',
-                    }}
+                    className={`inventory-filter-chip ${on ? 'is-active' : ''}`}
+                    style={!on && tone ? { color: tone } : undefined}
                   >
                     {/* Law 11 — never colour alone. The chips carry an icon as
                         well as the tone, and the Damaged one says which
@@ -1732,6 +1731,53 @@ export default function Inventory() {
 
             <button
               type="button"
+              onClick={() => setFiltersOpen((o) => !o)}
+              aria-expanded={filtersOpen}
+              aria-controls="inventory-filters"
+              aria-label="Filter options"
+              style={{
+                flexShrink: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                minHeight: 44,
+                padding: '0 14px',
+                borderRadius: 'var(--r-btn, 8px)',
+                border: `1px solid ${filtersOpen || activeFacetCount > 0 ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                background: filtersOpen || activeFacetCount > 0 ? 'var(--nav-active-bg)' : 'var(--card)',
+                color: filtersOpen || activeFacetCount > 0 ? 'var(--nav-active-accent)' : 'var(--text)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'all var(--dur-fast) var(--ease)',
+              }}
+            >
+              <Icon name="filter" size={14} />
+              <span>Filters</span>
+              {activeFacetCount > 0 && (
+                <span
+                  className="figure"
+                  style={{
+                    minWidth: 18,
+                    height: 18,
+                    padding: '0 5px',
+                    borderRadius: 'var(--r-badge)',
+                    display: 'grid',
+                    placeItems: 'center',
+                    background: 'var(--nav-active-accent)',
+                    color: 'var(--on-primary, #ffffff)',
+                    fontSize: 'var(--t-th)',
+                    fontWeight: 700,
+                  }}
+                >
+                  {activeFacetCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
               onClick={clearFilters}
               disabled={!filtersOn}
               title={filtersOn ? 'Clear the status chip and every filter' : 'No filters are applied'}
@@ -1741,8 +1787,8 @@ export default function Inventory() {
                 alignItems: 'center',
                 gap: 6,
                 minHeight: 44,
-                padding: '0 10px',
-                borderRadius: 'var(--r-sm)',
+                padding: '0 12px',
+                borderRadius: 'var(--r-btn, 8px)',
                 border: '1px solid transparent',
                 background: 'transparent',
                 color: filtersOn ? 'var(--link)' : 'var(--muted)',
@@ -1750,6 +1796,7 @@ export default function Inventory() {
                 fontWeight: 600,
                 cursor: filtersOn ? 'pointer' : 'not-allowed',
                 fontFamily: 'inherit',
+                transition: 'all var(--dur-fast) var(--ease)',
               }}
             >
               <Icon name="refresh" size={13} />
@@ -1829,8 +1876,9 @@ export default function Inventory() {
                       }}
                       aria-label="Sort equipment"
                       style={{
-                        height: 32,
-                        padding: '0 26px 0 10px',
+                        minHeight: 44,
+                        height: 44,
+                        padding: '0 32px 0 12px',
                         borderRadius: 'var(--r-sm)',
                         border: '1px solid var(--border)',
                         background: 'var(--card)',
@@ -1863,8 +1911,10 @@ export default function Inventory() {
                     aria-pressed={density === 'compact'}
                     title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
                     style={{
-                      width: 32,
-                      height: 32,
+                      width: 44,
+                      height: 44,
+                      minWidth: 44,
+                      minHeight: 44,
                       borderRadius: 'var(--r-sm)',
                       border: '1px solid var(--border)',
                       background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--card)',
@@ -2002,7 +2052,7 @@ export default function Inventory() {
                   /* Below 768px the 1060px-wide table is a horizontal scrollbar,
                      not a layout — forced to the card presentation regardless of
                      the `view` toggle (Law 13: capability, not a platform check). */
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div className="inventory-card-grid">
                     {rowsWithIntel.map(({ row: p, glance, detail }) => (
                       <ParentCardView
                         key={p.id}
@@ -2016,16 +2066,9 @@ export default function Inventory() {
                     ))}
                   </div>
                 ) : view === 'grid' ? (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
-                      gap: 'var(--sp-md)',
-                      padding: 'var(--sp-md)',
-                    }}
-                  >
+                  <div className="inventory-desktop-grid">
                     {rowsWithIntel.map(({ row: p, glance, detail }) => (
-                      <article key={p.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                      <article key={p.id} className="inventory-grid-item">
                         <IntelCard glance={glance} detail={detail} detailTitle={p.name} detailSubtitle={p.category ?? '—'}>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                             <Thumb category={p.category ?? '—'} size={38} />
@@ -2051,8 +2094,8 @@ export default function Inventory() {
                     ))}
                   </div>
                 ) : (
-                  <DataTableShell ariaLabel="Equipment inventory" style={{ overflowX: 'auto' }}>
-                    <table className="operations-table" aria-label="Equipment inventory" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1060 }}>
+                  <DataTableShell ariaLabel="Equipment inventory" className="inventory-table-shell" style={{ overflowX: 'auto' }}>
+                    <table className="inventory-table operations-table" aria-label="Equipment inventory" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1060 }}>
                       <thead>
                         <tr style={{ background: 'var(--th-bg)' }}>
                           <th style={{ ...th, width: 26 }}>
@@ -2139,6 +2182,7 @@ export default function Inventory() {
                             checked={selected.has(p.id)}
                             onToggle={() => toggleRow(p.id)}
                             onInspect={setInspectingEquipment}
+                            isInspected={inspectingEquipment?.id === p.id}
                           />
                         ))}
                       </tbody>
@@ -2175,7 +2219,7 @@ export default function Inventory() {
             Status is written by the Status Engine from booking and workspace events. There is no manual status
             control in Inventory — not in a row menu, not in bulk.
           </p>
-        </>
+        </div>
       )}
 
       <ContextDrawer
@@ -2189,32 +2233,73 @@ export default function Inventory() {
         {inspectingEquipment && (
           <div style={{ display: 'grid', gap: 'var(--space-6)' }}>
             <section aria-labelledby="equipment-quick-view-stock">
-              <h3 id="equipment-quick-view-stock" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Stock</h3>
-              <dl style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 'var(--space-2) var(--space-4)', margin: 'var(--space-3) 0 0' }}>
-                <dt style={{ color: 'var(--muted)' }}>Availability</dt><dd className="figure" style={{ margin: 0 }}>{stockLabel(inspectingEquipment)}</dd>
-                <dt style={{ color: 'var(--muted)' }}>Tracking</dt><dd style={{ margin: 0 }}>{inspectingEquipment.trackingMode}</dd>
-                <dt style={{ color: 'var(--muted)' }}>Category</dt><dd style={{ margin: 0 }}>{inspectingEquipment.category ?? '—'}</dd>
+              <h3 id="equipment-quick-view-stock" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Stock & Identity</h3>
+              <dl style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, margin: 'var(--space-3) 0 0' }}>
+                <div style={{ padding: '8px 10px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                  <dt style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text2)' }}>Availability</dt>
+                  <dd className="figure" style={{ margin: '3px 0 0', fontWeight: 600, fontSize: '13px', color: 'var(--text)' }}>{stockLabel(inspectingEquipment)}</dd>
+                </div>
+                <div style={{ padding: '8px 10px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                  <dt style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text2)' }}>Tracking</dt>
+                  <dd style={{ margin: '3px 0 0', fontWeight: 600, fontSize: '13px', color: 'var(--text)' }}>{inspectingEquipment.trackingMode}</dd>
+                </div>
+                <div style={{ padding: '8px 10px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                  <dt style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text2)' }}>Category</dt>
+                  <dd style={{ margin: '3px 0 0', fontWeight: 600, fontSize: '13px', color: 'var(--text)' }}>{inspectingEquipment.category ?? '—'}</dd>
+                </div>
+                {inspectingEquipment.brand && (
+                  <div style={{ padding: '8px 10px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                    <dt style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text2)' }}>Brand</dt>
+                    <dd style={{ margin: '3px 0 0', fontWeight: 600, fontSize: '13px', color: 'var(--text)' }}>{inspectingEquipment.brand}</dd>
+                  </div>
+                )}
+                {money && inspectingEquipment.dailyRate !== null && (
+                  <div style={{ padding: '8px 10px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                    <dt style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text2)' }}>Daily Rate</dt>
+                    <dd className="figure" style={{ margin: '3px 0 0', fontWeight: 700, fontSize: '13px', color: 'var(--nav-active-accent)' }}>
+                      {formatMoney(inspectingEquipment.dailyRate)}
+                    </dd>
+                  </div>
+                )}
               </dl>
             </section>
             <section aria-labelledby="equipment-quick-view-status">
               <h3 id="equipment-quick-view-status" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Status breakdown</h3>
-              <div style={{ marginTop: 'var(--space-3)' }}><StatusBreakdown breakdown={breakdownOf(inspectingEquipment)} /></div>
+              <div style={{ marginTop: 'var(--space-3)', padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                <StatusBreakdown breakdown={breakdownOf(inspectingEquipment)} />
+              </div>
             </section>
             {money && (
               <section aria-labelledby="equipment-quick-view-finance">
                 <h3 id="equipment-quick-view-finance" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Replacement value</h3>
-                <p className="figure" style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 700 }}>{inspectingEquipment.replacementValue === null ? '—' : formatMoney(inspectingEquipment.replacementValue)}</p>
+                <div style={{ marginTop: 'var(--space-3)', padding: '10px 14px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                  <p className="figure" style={{ margin: 0, color: 'var(--text)', fontWeight: 700, fontSize: '15px' }}>
+                    {inspectingEquipment.replacementValue === null ? '—' : formatMoney(inspectingEquipment.replacementValue)}
+                  </p>
+                </div>
               </section>
             )}
             <div style={{ marginTop: 'var(--space-4)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
               <Link
-                to={`/inventory/${encodeURIComponent(inspectingEquipment.assetCode)}`}
+                to={`/rentals/new?item=${encodeURIComponent(inspectingEquipment.id)}`}
                 style={{ textDecoration: 'none' }}
               >
                 <Button
                   variant="primary"
                   size="sm"
-                  style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: 6 }}
+                  style={{ width: '100%', minHeight: 44, display: 'flex', justifyContent: 'center', gap: 6 }}
+                >
+                  <Icon name="plus" size={14} /> Start Rental with this Model
+                </Button>
+              </Link>
+              <Link
+                to={`/inventory/${encodeURIComponent(inspectingEquipment.assetCode)}`}
+                style={{ textDecoration: 'none' }}
+              >
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  style={{ width: '100%', minHeight: 44, display: 'flex', justifyContent: 'center', gap: 6 }}
                 >
                   <Icon name="eye" size={14} /> Full Asset Details
                 </Button>
@@ -2231,7 +2316,7 @@ export default function Inventory() {
                     orgName: 'BABIN RENTALS OS',
                   })
                 }}
-                style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: 6 }}
+                style={{ width: '100%', minHeight: 44, display: 'flex', justifyContent: 'center', gap: 6 }}
               >
                 <Icon name="barcode" size={14} /> Print Thermal Asset Tag
               </Button>

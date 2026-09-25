@@ -3,13 +3,17 @@ import { useParams, Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import './rentals.css'
 import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
 import { Badge } from '../../components/ui/Badge'
-import { LifecycleProgress, getUniversalNextAction } from '../../components/ui/LifecycleProgress'
+import { LifecycleProgress } from '../../components/ui/LifecycleProgress'
+import { PageActions } from '../../components/ui/PageActions'
+import { OverflowMenu, type OverflowMenuItem } from '../../components/ui/OverflowMenu'
+import { getRentalPrimaryAction } from '../../lib/rentalActions'
 import { useViewport } from '../../lib/device'
 import type { Viewport } from '../../lib/device'
 import { BAR_BOX } from '../../components/shell/BottomBar'
@@ -380,209 +384,8 @@ function dotTone(stage: BookingStatus, current: BookingStatus): BrandKey {
 }
 
 /**
- * §4.2's header `[⋮]` — one primary, one launcher, everything else behind an
- * overflow. Nothing was deleted to get there (Law 3): Extend, Assign Crew,
- * Sub-Rental and Save Draft still open the same modals.
+ * §4.2's header overflow uses the shared OverflowMenu component from src/components/ui/OverflowMenu.
  */
-interface OverflowItem {
-  label: string
-  icon: IconName
-  onClick: () => void
-  /** §4.2: disabled entries stay visible and greyed with the reason on hover/focus/long-press. */
-  unavailable?: string
-  /**
-   * A nested group, opened in place rather than as a second floating layer.
-   *
-   * WHATSAPP_LINKS_SPEC v1.0 §3 asks for **one** "Message client" entry with a
-   * stage-aware submenu, and this is why: a booking can offer four messages at
-   * once, and spreading them flat pushes Extend and Assign Crew — the verbs
-   * people actually open this menu for — off the top. One entry that expands
-   * keeps the overflow's shape fixed however many messages apply.
-   */
-  submenu?: { label: string; onClick: () => void; unavailable?: string }[]
-}
-
-function OverflowMenu({ items }: { items: OverflowItem[] }) {
-  const [open, setOpen] = useState(false)
-  /** Which submenu is expanded, by label. One at a time. */
-  const [expanded, setExpanded] = useState<string | null>(null)
-  const ref = useRef<HTMLSpanElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  /* A submenu left expanded would re-open with the menu, showing a stale group
-     for a booking whose stage may have moved on since. */
-  useEffect(() => {
-    if (!open) setExpanded(null)
-  }, [open])
-
-  return (
-    <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
-      <button
-        type="button"
-        aria-label="More booking actions"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          // Law 15 — 44×44 at every width, desktop included.
-          width: 44,
-          height: 44,
-          borderRadius: 'var(--r-btn)',
-          border: '1px solid var(--btn-secondary-border)',
-          background: open ? 'var(--hover-card)' : 'var(--btn-secondary-bg)',
-          color: 'var(--text2)',
-          display: 'grid',
-          placeItems: 'center',
-          cursor: 'pointer',
-        }}
-      >
-        <Icon name="more_vert" size={16} />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          style={{
-            position: 'absolute',
-            right: 0,
-            top: 48,
-            minWidth: 210,
-            padding: 6,
-            borderRadius: 'var(--r-btn)',
-            background: 'var(--dropdown)',
-            border: '1px solid var(--border)',
-            boxShadow: 'var(--shadow-modal)',
-            zIndex: 30,
-          }}
-        >
-          {items.map((it) => {
-            const rowStyle = {
-              display: 'flex' as const,
-              alignItems: 'center' as const,
-              gap: 9,
-              width: '100%',
-              height: 44,
-              padding: '0 9px',
-              borderRadius: 'var(--r-sm)',
-              border: 'none',
-              background: 'transparent',
-              color: it.unavailable ? 'var(--muted)' : 'var(--text)',
-              fontSize: 'var(--t-meta)',
-              fontFamily: 'inherit',
-              textAlign: 'left' as const,
-              cursor: it.unavailable ? ('not-allowed' as const) : ('pointer' as const),
-            }
-            const body = (
-              <>
-                <Icon
-                  name={it.icon}
-                  size={15}
-                  style={{ color: it.unavailable ? 'var(--disabled)' : 'var(--text2)' }}
-                />
-                <span style={{ flex: 1 }}>{it.label}</span>
-                {it.unavailable && <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />}
-              </>
-            )
-            if (it.unavailable) {
-              return (
-                <Unavailable key={it.label} reason={it.unavailable}>
-                  <button type="button" role="menuitem" disabled aria-disabled style={rowStyle}>
-                    {body}
-                  </button>
-                </Unavailable>
-              )
-            }
-            if (it.submenu) {
-              const isOpen = expanded === it.label
-              return (
-                <div key={it.label}>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    aria-haspopup="menu"
-                    aria-expanded={isOpen}
-                    onClick={() => setExpanded(isOpen ? null : it.label)}
-                    style={rowStyle}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    {body}
-                    <Icon name="chevron_right" size={12} style={{ color: 'var(--text2)' }} />
-                  </button>
-                  {isOpen &&
-                    it.submenu.map((sub) => {
-                      const subStyle = {
-                        ...rowStyle,
-                        paddingLeft: 33,
-                        color: sub.unavailable ? 'var(--muted)' : 'var(--text)',
-                        cursor: sub.unavailable ? ('not-allowed' as const) : ('pointer' as const),
-                      }
-                      if (sub.unavailable) {
-                        return (
-                          <Unavailable key={sub.label} reason={sub.unavailable}>
-                            <button type="button" role="menuitem" disabled aria-disabled style={subStyle}>
-                              <span style={{ flex: 1 }}>{sub.label}</span>
-                              <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />
-                            </button>
-                          </Unavailable>
-                        )
-                      }
-                      return (
-                        <button
-                          key={sub.label}
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setOpen(false)
-                            sub.onClick()
-                          }}
-                          style={subStyle}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                        >
-                          <span style={{ flex: 1 }}>{sub.label}</span>
-                        </button>
-                      )
-                    })}
-                </div>
-              )
-            }
-            return (
-              <button
-                key={it.label}
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setOpen(false)
-                  it.onClick()
-                }}
-                style={rowStyle}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                {body}
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </span>
-  )
-}
 
 /**
  * §4.2's phone segmented control — `[Items][Money][Docs]`. **`Money` is
@@ -1646,37 +1449,6 @@ export default function BookingDetail() {
     .filter((l) => l.lineType === 'Equipment')
     .reduce((sum, l) => sum + Math.max(0, l.qty - l.units.length), 0)
 
-  const universalNext = useMemo(() => {
-    return getUniversalNextAction(stage, {
-      isOverdue:
-        booking?.stage === 'On Rent' &&
-        !booking?.isClosed &&
-        !booking?.isCancelled &&
-        booking?.actualReturnAtAd === null &&
-        Boolean(booking?.returnAtAd && new Date(booking.returnAtAd) < new Date()),
-      uncheckedCount: missingSerialsCount,
-    })
-  }, [stage, booking, missingSerialsCount])
-
-  const handleUniversalNextAction = useCallback(() => {
-    if (!booking) return
-    const verb = universalNext.primaryVerb
-    if (verb === 'Start Preparation' || verb === 'Continue Preparation') {
-      openOperations(booking.bookingNo, stage, 'Pack')
-    } else if (verb === 'Start Handover') {
-      openOperations(booking.bookingNo, stage, 'Handover')
-    } else if (verb === 'Receive Return' || verb === 'Continue Return') {
-      openOperations(booking.bookingNo, stage, 'Return')
-    } else if (verb === 'Start Inspection') {
-      openOperations(booking.bookingNo, stage, 'Return')
-    } else if (verb === 'Complete Reset') {
-      openOperations(booking.bookingNo, stage, 'Reset')
-    } else if (verb === 'Close Rental') {
-      closeBooking()
-    } else if (verb === 'Confirm Rental') {
-      confirmBooking()
-    }
-  }, [booking, universalNext.primaryVerb, stage, openOperations, closeBooking, confirmBooking])
 
   if (!booking) {
     /*
@@ -1769,6 +1541,22 @@ export default function BookingDetail() {
   const operationsUnavailable: string | null =
     cancelledReason ?? (stage === 'Quote' ? 'Operations open once this booking is Booked' : null)
 
+  const primaryAction = getRentalPrimaryAction(stage, {
+    isCancelled: booking.isCancelled,
+    isClosed: booking.isClosed,
+    isOverdue:
+      booking.stage === 'On Rent' &&
+      !booking.isClosed &&
+      !booking.isCancelled &&
+      booking.actualReturnAtAd === null &&
+      Boolean(booking.returnAtAd && new Date(booking.returnAtAd) < new Date()),
+    canCloseRental: canCloseRental(gctx.role),
+    canOperate,
+    cancelledReason,
+    operationsUnavailable,
+    bookingNo: booking.bookingNo,
+  })
+
   /**
    * What the overflow's "Message client" row offers — or the true reason it
    * cannot (BD-08).
@@ -1782,7 +1570,7 @@ export default function BookingDetail() {
    * sentence, telling an operator to go and add a number that may already be
    * on file (Law 12).
    */
-  const messageClient: { unavailable: string } | { submenu: NonNullable<OverflowItem['submenu']> } =
+  const messageClient: { unavailable: string } | { submenu: NonNullable<OverflowMenuItem['submenu']> } =
     contact.kind === 'failed'
       ? {
           unavailable:
@@ -1909,7 +1697,13 @@ export default function BookingDetail() {
   const railBody = (
     <>
       {blockers.length > 0 && showSegment('Items') && (
-        <Card title={`Attention (${blockers.length})`}>
+        <Card
+          title={`Attention (${blockers.length})`}
+          style={{
+            borderLeft: '3px solid var(--danger, #dc2626)',
+            background: 'color-mix(in srgb, var(--danger, #dc2626) 3%, var(--card))',
+          }}
+        >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
             {blockers.map((b) => (
               <div
@@ -2050,74 +1844,141 @@ export default function BookingDetail() {
           }
           title={booking.clientName ? `${booking.bookingNo} · ${booking.clientName}` : booking.bookingNo}
           actions={
-          <>
-            {/* §8 step 2 — the stage block is <Badge>'s. This assembled it
-                here from `STATUS[statusToken(stage)]`, on `--r-badge` (999,
-                which §3.3 reserves for numeric count badges) and with no glyph
-                at all, so the header's own status was colour + word only.
-                Passing `status` gets the §4 hue, the word and the icon in one
-                move and cannot be half-done. */}
-            <Badge status={stage} />
-            {/* Law 3 — the terminal action, on screen. `stage` cannot carry it:
-                Cancelled is `cancelled_at`, orthogonal to the six, so a
-                cancelled booking's block still reads Quote / On Rent. The word,
-                the icon and the hue all come from <Badge>'s `flag` path
-                (FLAGS.Cancelled, token `danger`) — never assembled here. */}
-            {booking.isCancelled && <Badge flag="Cancelled" />}
-            {/* §11.1 — computed from the QUERIED lines on every render; there
-                is no stored `bookings.is_sub_rental` and there must not be. */}
-            {subRental && <SubRentedMark label="Sub-rental" />}
-            {stage === 'Booked' &&
-              (cancelledReason ? (
-                <Unavailable reason={cancelledReason}>
-                  <Button icon="box" variant="primary" disabled>
-                    Start Packing
-                  </Button>
-                </Unavailable>
-              ) : (
-                <Button icon="box" variant="primary" onClick={() => openOperations(booking.bookingNo, stage, 'Pack')}>
-                  Start Packing
-                </Button>
-              ))}
-            {stage === 'Packed' &&
-              (cancelledReason ? (
-                <Unavailable reason={cancelledReason}>
-                  <Button icon="truck" variant="primary" disabled>
-                    Handover
-                  </Button>
-                </Unavailable>
-              ) : (
-                <Button icon="truck" variant="primary" onClick={() => openOperations(booking.bookingNo, stage, 'Handover')}>
-                  Handover
-                </Button>
-              ))}
-            {stage === 'On Rent' &&
-              (cancelledReason ? (
-                <Unavailable reason={cancelledReason}>
-                  <Button icon="return_arrow" variant="primary" disabled>
-                    Return & Inspect
-                  </Button>
-                </Unavailable>
-              ) : (
-                <Button icon="return_arrow" variant="primary" onClick={() => openOperations(booking.bookingNo, stage, 'Return')}>
-                  Return & Inspect
-                </Button>
-              ))}
-            {stage === 'Returned' && (
+            <PageActions
+            extra={
               <>
-                {cancelledReason ? (
-                  <Unavailable reason={cancelledReason}>
+                <Badge status={stage} />
+                {booking.isCancelled && <Badge flag="Cancelled" />}
+                {subRental && <SubRentedMark label="Sub-rental" />}
+              </>
+            }
+            secondary={[
+              stage === 'Returned' && canCloseRental(gctx.role) && (
+                cancelledReason ? (
+                  <Unavailable key="reset" reason={cancelledReason}>
                     <Button icon="refresh" variant="secondary" disabled>
                       Cleaning & Reset
                     </Button>
                   </Unavailable>
                 ) : (
-                  <Button icon="refresh" variant="secondary" onClick={() => openOperations(booking.bookingNo, stage, 'Reset')}>
+                  <Button
+                    key="reset"
+                    icon="refresh"
+                    variant="secondary"
+                    onClick={() => openOperations(booking.bookingNo, stage, 'Reset')}
+                  >
                     Cleaning & Reset
                   </Button>
-                )}
-                {canCloseRental(gctx.role) &&
-                  (cancelledReason ? (
+                )
+              ),
+              <BookingOperationsMenu
+                key="ops"
+                bookingNo={id}
+                bookingStatus={stage}
+                unavailable={operationsUnavailable}
+                primary={false}
+              />,
+              <Button key="print" icon="file" variant="secondary" onClick={() => window.print()}>
+                Print booking
+              </Button>,
+              booking && (
+                <WhatsAppShareButton
+                  key="wa"
+                  clientPhone={clientPhone}
+                  facts={{
+                    clientName: booking.clientName,
+                    bookingNo: booking.bookingNo,
+                    stage: (stage as import('../../lib/whatsappTemplates').WaStage) ?? 'Quote',
+                    startIso: booking.pickupAtAd,
+                    endIso: booking.returnAtAd,
+                    itemCount: booking.itemCount,
+                    topLines: (floor?.lines ?? [])
+                      .slice(0, 3)
+                      .map((l) => l.productName ?? l.description)
+                      .filter((x): x is string => Boolean(x)),
+                    isOverdue:
+                      booking.stage === 'On Rent' &&
+                      !booking.isClosed &&
+                      !booking.isCancelled &&
+                      booking.actualReturnAtAd === null &&
+                      new Date(booking.returnAtAd) < new Date(),
+                    total: canBookingMoney && hasInvoice ? (totals.total as Paisa) : null,
+                    advance: canBookingMoney && hasInvoice ? (totals.paid as Paisa) : null,
+                    deposit: canBookingMoney ? booking.depositRequired : null,
+                    balance: canBookingMoney && hasInvoice ? (totals.outstanding as Paisa) : null,
+                  }}
+                />
+              ),
+            ].filter(Boolean)}
+            overflow={
+              <OverflowMenu
+                ariaLabel="More booking actions"
+                items={[
+                  {
+                    label: 'Message client',
+                    icon: 'message' as const,
+                    onClick: () => undefined,
+                    ...messageClient,
+                  },
+                  ...(canBookingMoney && canOperate
+                    ? [
+                        {
+                          label: 'Extend rental',
+                          icon: 'calendar' as const,
+                          onClick: () => setShowExtendModal(true),
+                          ...(cancelledReason ? { unavailable: cancelledReason } : {}),
+                        },
+                      ]
+                    : []),
+                  ...(user && canAssignPricedCrew(user.role)
+                    ? [
+                        {
+                          label: 'Assign crew',
+                          icon: 'users' as const,
+                          onClick: () => setShowCrewModal(true),
+                          ...(crewUnavailableReason ? { unavailable: crewUnavailableReason } : {}),
+                        },
+                      ]
+                    : []),
+                  ...(canCrewMoney && canOperate
+                    ? [
+                        {
+                          label: 'Create sub-rental',
+                          icon: 'box' as const,
+                          onClick: () => setShowSubRentalModal(true),
+                          ...(cancelledReason ? { unavailable: cancelledReason } : {}),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: 'Cancel booking',
+                    icon: 'close',
+                    onClick: () => setShowCancelModal(true),
+                    ...(booking.isCancelled
+                      ? { unavailable: `${booking.bookingNo} is already cancelled.` }
+                      : ['On Rent', 'Returned', 'Closed'].includes(stage)
+                        ? { unavailable: `Cannot cancel a booking that has reached ${stage} (equipment has already left custody).` }
+                        : {}),
+                  },
+                ]}
+              />
+            }
+            primary={
+              primaryAction.isOperable && (!booking.isCancelled || stage === 'Quote') && !booking.isClosed ? (
+                primaryAction.actionType === 'confirm' ? (
+                  cancelledReason ? (
+                    <Unavailable reason={`${booking.bookingNo} is cancelled — a cancelled booking is not confirmed.`}>
+                      <Button icon="plus" variant="primary" disabled>
+                        Confirm Booking
+                      </Button>
+                    </Unavailable>
+                  ) : (
+                    <Button icon="plus" variant="primary" onClick={confirmBooking} disabled={confirming}>
+                      {confirming ? 'Confirming…' : 'Confirm Booking'}
+                    </Button>
+                  )
+                ) : primaryAction.actionType === 'close' ? (
+                  cancelledReason ? (
                     <Unavailable reason={cancelledReason}>
                       <Button icon="check" variant="primary" disabled>
                         Close Rental
@@ -2127,139 +1988,29 @@ export default function BookingDetail() {
                     <Button icon="check" variant="primary" onClick={closeBooking} disabled={closing}>
                       {closing ? 'Closing…' : 'Close Rental'}
                     </Button>
-                  ))}
-              </>
-            )}
-            {stage === 'Quote' && (
-              <>
-                {/* `confirmRental` refuses a cancelled booking by name before it
-                    writes anything, so a live Confirm here is a press that can
-                    only end in the error banner below the header. */}
-                {cancelledReason ? (
-                  <Unavailable reason={`${booking.bookingNo} is cancelled — a cancelled booking is not confirmed.`}>
-                    <Button icon="plus" variant="primary" disabled>
-                      Confirm Booking
+                  )
+                ) : primaryAction.disabled ? (
+                  <Unavailable reason={primaryAction.reason || 'Action unavailable'}>
+                    <Button icon={primaryAction.icon} variant="primary" disabled>
+                      {primaryAction.label}
                     </Button>
                   </Unavailable>
                 ) : (
-                  <Button icon="plus" variant="primary" onClick={confirmBooking} disabled={confirming}>
-                    {confirming ? 'Confirming…' : 'Confirm Booking'}
+                  <Button
+                    icon={primaryAction.icon}
+                    variant="primary"
+                    onClick={() => {
+                      if (primaryAction.job) {
+                        openOperations(booking.bookingNo, stage, primaryAction.job)
+                      }
+                    }}
+                  >
+                    {primaryAction.label}
                   </Button>
-                )}
-              </>
-            )}
-            {canOperate && stage !== 'Quote' && !booking.isClosed && !booking.isCancelled && (
-              <Button
-                variant="primary"
-                onClick={handleUniversalNextAction}
-                style={{ fontWeight: 700 }}
-              >
-                {universalNext.primaryVerb}
-              </Button>
-            )}
-            <BookingOperationsMenu
-              bookingNo={id}
-              bookingStatus={stage}
-              unavailable={operationsUnavailable}
-              primary={false}
-            />
-            <Button icon="file" variant="secondary" onClick={() => window.print()}>
-              Print booking
-            </Button>
-            {booking && (
-              <WhatsAppShareButton
-                clientPhone={clientPhone}
-                facts={{
-                  clientName: booking.clientName,
-                  bookingNo: booking.bookingNo,
-                  stage: (stage as import('../../lib/whatsappTemplates').WaStage) ?? 'Quote',
-                  startIso: booking.pickupAtAd,
-                  endIso: booking.returnAtAd,
-                  itemCount: booking.itemCount,
-                  topLines: (floor?.lines ?? [])
-                    .slice(0, 3)
-                    .map((l) => l.productName ?? l.description)
-                    .filter((x): x is string => Boolean(x)),
-                  isOverdue:
-                    booking.stage === 'On Rent' &&
-                    !booking.isClosed &&
-                    !booking.isCancelled &&
-                    booking.actualReturnAtAd === null &&
-                    new Date(booking.returnAtAd) < new Date(),
-                  total: canBookingMoney && hasInvoice ? (totals.total as Paisa) : null,
-                  advance: canBookingMoney && hasInvoice ? (totals.paid as Paisa) : null,
-                  deposit: canBookingMoney ? booking.depositRequired : null,
-                  balance: canBookingMoney && hasInvoice ? (totals.outstanding as Paisa) : null,
-                }}
-              />
-            )}
-            {/* Two gates, both required: money visibility ("may this role see
-                this figure") AND capability ("may this role do this").
-                `canPerformOperations` remains the narrowest EXISTING rule —
-                the capability matrix TODO(decision) lives with core.ts. */}
-            <OverflowMenu
-              items={[
-                /* §3 — ONE "Message client" entry with a stage-aware submenu.
-                   WhatsApp is never the primary verb and never a row verb
-                   (RAIL_AND_QUICK_ACTIONS F5); it lives here, behind one row,
-                   so a booking offering four messages cannot push the
-                   operational verbs down. A message that cannot be composed
-                   stays VISIBLE and disabled with its reason (§4.2). */
-                {
-                  label: 'Message client',
-                  icon: 'message' as const,
-                  onClick: () => undefined,
-                  ...messageClient,
-                },
-                /* BD-03 — the three operational verbs carry the SAME refusal
-                   the rentals list gives this row, so a cancelled booking
-                   cannot be extended, crewed or sub-rented from here. Visible
-                   and greyed with the reason (§4.2), never removed: Law 3 is
-                   about what happened to the booking, and hiding the verbs
-                   would hide that it happened. */
-                ...(canBookingMoney && canOperate
-                  ? [
-                      {
-                        label: 'Extend rental',
-                        icon: 'calendar' as const,
-                        onClick: () => setShowExtendModal(true),
-                        ...(cancelledReason ? { unavailable: cancelledReason } : {}),
-                      },
-                    ]
-                  : []),
-                ...(user && canAssignPricedCrew(user.role)
-                  ? [
-                      {
-                        label: 'Assign crew',
-                        icon: 'users' as const,
-                        onClick: () => setShowCrewModal(true),
-                        ...(crewUnavailableReason ? { unavailable: crewUnavailableReason } : {}),
-                      },
-                    ]
-                  : []),
-                ...(canCrewMoney && canOperate
-                  ? [
-                      {
-                        label: 'Create sub-rental',
-                        icon: 'box' as const,
-                        onClick: () => setShowSubRentalModal(true),
-                        ...(cancelledReason ? { unavailable: cancelledReason } : {}),
-                      },
-                    ]
-                  : []),
-                {
-                  label: 'Cancel booking',
-                  icon: 'close',
-                  onClick: () => setShowCancelModal(true),
-                  ...(booking.isCancelled
-                    ? { unavailable: `${booking.bookingNo} is already cancelled.` }
-                    : ['On Rent', 'Returned', 'Closed'].includes(stage)
-                      ? { unavailable: `Cannot cancel a booking that has reached ${stage} (equipment has already left custody).` }
-                      : {}),
-                },
-              ]}
-            />
-          </>
+                )
+              ) : null
+            }
+          />
         }
       />
     }
@@ -2289,7 +2040,7 @@ export default function BookingDetail() {
               new Date(booking.returnAtAd) < new Date(),
             uncheckedCount: missingSerialsCount,
           }}
-          onActionClick={handleUniversalNextAction}
+          showNextActionBanner={true}
         />
       </div>
 
@@ -2510,7 +2261,7 @@ export default function BookingDetail() {
                 </NotWiredNote>
               ) : (
                 <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
-                  <div style={{ overflowX: 'auto' }}>
+                  <DataTableShell ariaLabel="Booking equipment lines">
                     <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                       <thead>
                         <tr style={{ background: 'var(--card2)' }}>
@@ -2684,7 +2435,7 @@ export default function BookingDetail() {
                       })}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               </div>
             )}
 
@@ -2810,7 +2561,7 @@ export default function BookingDetail() {
                     gap: 'var(--sp-md)',
                   }}
                 >
-                  <div>
+                  <div className="booking-detail-financial-col">
                     <h3 style={sub}>Rental Charges</h3>
                     {/* The figures are the invoice's own columns — computed by
                         the DB chain (`recalculate_invoice_totals`,
@@ -2841,7 +2592,7 @@ export default function BookingDetail() {
                           }}
                         >
                           <span style={{ flex: 1 }}>Rental Total</span>
-                          <span className="figure">{money(totals.total)}</span>
+                          <span className="figure" style={{ fontFamily: 'var(--font-mono, JetBrains Mono, monospace)', fontSize: '15px' }}>{money(totals.total)}</span>
                         </div>
                         <p style={{ margin: '8px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
                           From {liveInvoices.length === 1 ? `invoice ${liveInvoices[0]?.invoiceNo}` : `${liveInvoices.length} live invoices`}.
@@ -2875,7 +2626,7 @@ export default function BookingDetail() {
                     )}
                   </div>
 
-                  <div>
+                  <div className="booking-detail-financial-col">
                     <h3 style={sub}>Deposit</h3>
                     <SummaryRows
                       rows={[
@@ -2943,7 +2694,7 @@ export default function BookingDetail() {
                     </div>
                   </div>
 
-                  <div>
+                  <div className="booking-detail-financial-col">
                     <h3 style={sub}>Payment History (Rental)</h3>
                     {paymentRows.length === 0 ? (
                       <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
@@ -2951,7 +2702,7 @@ export default function BookingDetail() {
                       </p>
                     ) : (
                       <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
-                        <div style={{ overflowX: 'auto' }}>
+                        <DataTableShell ariaLabel="Payment history">
                           <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                             <thead>
                               <tr style={{ background: 'var(--card2)' }}>
@@ -2993,7 +2744,7 @@ export default function BookingDetail() {
                               ))}
                             </tbody>
                           </table>
-                        </div>
+                        </DataTableShell>
                       </div>
                     )}
                     {canTakePayment && <div style={{ marginTop: 10 }}>{recordPaymentButton('Record Payment')}</div>}
@@ -3024,7 +2775,7 @@ export default function BookingDetail() {
               </NotWiredNote>
               {documentsList.rows.length > 0 && (
                 <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden', marginTop: 12 }}>
-                  <div style={{ overflowX: 'auto' }}>
+                  <DataTableShell ariaLabel="Booking documents">
                     <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ background: 'var(--card2)' }}>
@@ -3050,7 +2801,7 @@ export default function BookingDetail() {
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                  </DataTableShell>
                 </div>
               )}
             </Block>

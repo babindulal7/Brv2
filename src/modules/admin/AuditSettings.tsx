@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, ReflowRail, SummaryRows, FooterNote, useRailGridColumns } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useAuth } from '../../lib/auth'
@@ -435,7 +436,7 @@ export default function AuditSettings() {
               }
               bodyStyle={{ padding: 0 }}
             >
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="Retention policies" data-table-scroll style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 380 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
@@ -467,7 +468,7 @@ export default function AuditSettings() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
               <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)' }}>
                 <Unavailable reason={whyNoWrite}>
                   <Button icon="plus" disabled>
@@ -488,7 +489,7 @@ export default function AuditSettings() {
               }
               bodyStyle={{ padding: 0 }}
             >
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="Audit rules" data-table-scroll style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
@@ -522,7 +523,7 @@ export default function AuditSettings() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
               <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border)' }}>
                 <Unavailable reason={whyNoWrite}>
                   <Button icon="plus" disabled>

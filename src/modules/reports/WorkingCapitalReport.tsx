@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, useRailGridColumns } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
@@ -396,84 +397,86 @@ export default function WorkingCapitalReport() {
 
       <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
         <Card title={`The position · ${asAt}`}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th style={th} scope="col">Line</th>
-                <th style={th} scope="col">Nature</th>
-                <th style={{ ...th, textAlign: 'right' }} scope="col">NPR</th>
-                <th style={{ ...th, textAlign: 'right' }} scope="col">Share</th>
-              </tr>
-            </thead>
-            <tbody>
-              {assets.map((l) => (
-                <tr key={l.label}>
-                  <th style={{ ...td, fontWeight: 400 }} scope="row">{l.label}</th>
-                  <td style={{ ...td, color: 'var(--text-2)' }}>{l.nature}</td>
-                  <td style={l.amount === null ? { ...num, color: 'var(--text-3)', fontFamily: 'inherit' } : num}>
-                    {l.amount === null ? NOT_TRACKED : money(l.amount)}
-                  </td>
-                  <td style={{ ...num, color: 'var(--text-3)' }}>{l.amount === null ? '—' : `${shareOf(l.amount)}%`}</td>
+          <DataTableShell ariaLabel={`The position as at ${asAt}`} data-table-scroll style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={th} scope="col">Line</th>
+                  <th style={th} scope="col">Nature</th>
+                  <th style={{ ...th, textAlign: 'right' }} scope="col">NPR</th>
+                  <th style={{ ...th, textAlign: 'right' }} scope="col">Share</th>
                 </tr>
-              ))}
-              <tr>
-                <th style={{ ...td, fontWeight: 600 }} scope="row">Current assets</th>
-                <td style={td} />
-                <td style={{ ...num, fontWeight: 600 }}>{money(currentAssets())}</td>
-                <td style={{ ...num, fontWeight: 600 }}>100%</td>
-              </tr>
-              {liabilities.map((l) => (
-                <tr key={l.label}>
-                  <th style={{ ...td, fontWeight: 400 }} scope="row">{l.label}</th>
-                  <td style={{ ...td, color: 'var(--text-2)' }}>{l.nature}</td>
-                  {/* An untracked line loses the parentheses and the danger tone
-                      along with its figure — both are the visual grammar of "this
-                      is a number", and it is not one. Law 11: the words carry the
-                      meaning, never the colour. */}
-                  <td
-                    style={
-                      l.amount === null
-                        ? { ...num, color: 'var(--text-3)', fontFamily: 'inherit' }
-                        : { ...num, color: 'var(--danger-text)' }
-                    }
-                  >
-                    {l.amount === null ? NOT_TRACKED : `(${money(l.amount)})`}
+              </thead>
+              <tbody>
+                {assets.map((l) => (
+                  <tr key={l.label}>
+                    <th style={{ ...td, fontWeight: 400 }} scope="row">{l.label}</th>
+                    <td style={{ ...td, color: 'var(--text-2)' }}>{l.nature}</td>
+                    <td style={l.amount === null ? { ...num, color: 'var(--text-3)', fontFamily: 'inherit' } : num}>
+                      {l.amount === null ? NOT_TRACKED : money(l.amount)}
+                    </td>
+                    <td style={{ ...num, color: 'var(--text-3)' }}>{l.amount === null ? '—' : `${shareOf(l.amount)}%`}</td>
+                  </tr>
+                ))}
+                <tr>
+                  <th style={{ ...td, fontWeight: 600 }} scope="row">Current assets</th>
+                  <td style={td} />
+                  <td style={{ ...num, fontWeight: 600 }}>{money(currentAssets())}</td>
+                  <td style={{ ...num, fontWeight: 600 }}>100%</td>
+                </tr>
+                {liabilities.map((l) => (
+                  <tr key={l.label}>
+                    <th style={{ ...td, fontWeight: 400 }} scope="row">{l.label}</th>
+                    <td style={{ ...td, color: 'var(--text-2)' }}>{l.nature}</td>
+                    {/* An untracked line loses the parentheses and the danger tone
+                        along with its figure — both are the visual grammar of "this
+                        is a number", and it is not one. Law 11: the words carry the
+                        meaning, never the colour. */}
+                    <td
+                      style={
+                        l.amount === null
+                          ? { ...num, color: 'var(--text-3)', fontFamily: 'inherit' }
+                          : { ...num, color: 'var(--danger-text)' }
+                      }
+                    >
+                      {l.amount === null ? NOT_TRACKED : `(${money(l.amount)})`}
+                    </td>
+                    <td style={td} />
+                  </tr>
+                ))}
+                <tr>
+                  <th style={{ ...td, fontWeight: 600 }} scope="row">
+                    {LIABILITIES_ARE_COMPLETE ? 'Current liabilities' : 'Current liabilities · tracked only'}
+                  </th>
+                  <td style={{ ...td, color: 'var(--text-2)' }}>
+                    {LIABILITIES_ARE_COMPLETE ? '' : `Excludes ${UNTRACKED_LABELS.toLowerCase()}`}
                   </td>
+                  <td style={{ ...num, fontWeight: 600 }}>({money(currentLiabilities())})</td>
                   <td style={td} />
                 </tr>
-              ))}
-              <tr>
-                <th style={{ ...td, fontWeight: 600 }} scope="row">
-                  {LIABILITIES_ARE_COMPLETE ? 'Current liabilities' : 'Current liabilities · tracked only'}
-                </th>
-                <td style={{ ...td, color: 'var(--text-2)' }}>
-                  {LIABILITIES_ARE_COMPLETE ? '' : `Excludes ${UNTRACKED_LABELS.toLowerCase()}`}
-                </td>
-                <td style={{ ...num, fontWeight: 600 }}>({money(currentLiabilities())})</td>
-                <td style={td} />
-              </tr>
-              <tr>
-                <th style={{ ...td, fontWeight: 700, borderTop: '2px solid var(--border)', borderBottom: 'none' }} scope="row">
-                  Working capital
-                </th>
-                <td style={{ ...td, color: 'var(--text-2)', borderTop: '2px solid var(--border)', borderBottom: 'none' }}>
-                  {LIABILITIES_ARE_COMPLETE ? '' : `At most ${money(workingCapitalCeiling())}`}
-                </td>
-                <td
-                  style={{
-                    ...num,
-                    fontWeight: 700,
-                    borderTop: '2px solid var(--border)',
-                    borderBottom: 'none',
-                    ...(workingCapital() === null ? { color: 'var(--text-3)', fontFamily: 'inherit' } : {}),
-                  }}
-                >
-                  {moneyOrNot(workingCapital())}
-                </td>
-                <td style={{ ...td, borderTop: '2px solid var(--border)', borderBottom: 'none' }} />
-              </tr>
-            </tbody>
-          </table>
+                <tr>
+                  <th style={{ ...td, fontWeight: 700, borderTop: '2px solid var(--border)', borderBottom: 'none' }} scope="row">
+                    Working capital
+                  </th>
+                  <td style={{ ...td, color: 'var(--text-2)', borderTop: '2px solid var(--border)', borderBottom: 'none' }}>
+                    {LIABILITIES_ARE_COMPLETE ? '' : `At most ${money(workingCapitalCeiling())}`}
+                  </td>
+                  <td
+                    style={{
+                      ...num,
+                      fontWeight: 700,
+                      borderTop: '2px solid var(--border)',
+                      borderBottom: 'none',
+                      ...(workingCapital() === null ? { color: 'var(--text-3)', fontFamily: 'inherit' } : {}),
+                    }}
+                  >
+                    {moneyOrNot(workingCapital())}
+                  </td>
+                  <td style={{ ...td, borderTop: '2px solid var(--border)', borderBottom: 'none' }} />
+                </tr>
+              </tbody>
+            </table>
+          </DataTableShell>
         </Card>
 
         <ReflowRail width={300}>

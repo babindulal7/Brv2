@@ -1,5 +1,38 @@
 # Progress Log
 
+## 2026-09-25 — 100% Real Data & operational domain logic decoupling
+
+Decoupled operational domain state-machine logic (`stepWriteGate`, `stepDotState`, `OperationItem`, item transition helpers) from `src/data/operationsShell.ts` to `src/lib/operationsShell.ts`. Kept `SEED_ITEMS` in `src/data/operationsShell.ts` for fixture consumers while re-exporting all types and pure helpers from lib.
+
+Updated consumers `BookingOperationsMenu.tsx` and `OperationsShell.tsx` to import domain logic from `src/lib/operationsShell.ts`. This resolves the final fixture import across all routed screens, lifting Real Data from 37 DB-only (93%) to 40/40 DB-only (100%).
+
+### Verified
+- `npm run typecheck` (`tsc --noEmit`): exit 0, 0 errors.
+- `npm run lint` (`eslint src --max-warnings 0`): exit 0, 0 warnings.
+- `npm run check:pglite`: 131/131 migrations applied, 0 failed.
+- `npm run check:lifecycle`: 18/18 steps green, 0 known-red.
+- Targeted rentals render suite: 30/30 tests passed.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 44 / 44 (100%) | +1 |
+| Real data | DB-only · mixed · seed · none / 40 | 40 · 0 · 0 · 0 | — |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 18 / 18 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +1 |
+
+Migrations 131 files · check:pglite 131/131 applied, 0 failed. Suite: green.
+Gates read from .lifecycle-result.json, written 2026-09-25T22:13:22.418Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live remote database backup (`scripts/backup-db.ps1`) and push of pending migrations 0125-0133 to Supabase project `sxguwvgoserhdolewibb` (Rule N-5).
+- Bundle Component Removal / Soft-Deactivation (`OPEN_DECISIONS.md` §4.52).
+- Zero-Value Rental Close Override action (`OPEN_DECISIONS.md` §4.51).
+- Review and stage/commit working tree changes.
+
 ## 2026-09-23 — Responsive redesign continuation
 
 Continued with three bounded agents, preserving concurrent business/workflow edits. The redesign-existing-projects skill guided incremental reuse; the user's restrained operational styling overrides decorative suggestions.

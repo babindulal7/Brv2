@@ -6,23 +6,23 @@ export interface StickyFloorBarProps {
   progress: {
     current: number
     total: number
-    label?: string
-    complete?: boolean
+    label?: string | undefined
+    complete?: boolean | undefined
   }
   onScan: () => void
   primaryAction: {
     label: string
     onClick: () => void
-    disabled?: boolean
-    loading?: boolean
-    icon?: IconName
+    disabled?: boolean | undefined
+    loading?: boolean | undefined
+    icon?: IconName | undefined
   }
   secondaryAction?: {
     label: string
     onClick: () => void
-    disabled?: boolean
-    icon?: IconName
-  }
+    disabled?: boolean | undefined
+    icon?: IconName | undefined
+  } | undefined
 }
 
 /**

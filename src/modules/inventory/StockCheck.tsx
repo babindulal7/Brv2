@@ -7,6 +7,7 @@ import type { Kpi } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { BarcodeScannerModal } from '../../components/ui/BarcodeScannerModal'
 import { useViewport } from '../../lib/device'
@@ -29,6 +30,7 @@ import {
   STOCK_CHECK_STATE_META,
 } from '../../lib/queries/stockAudits'
 import type { StockAuditItemRow, StockAuditListRow, StockCheckUnitState } from '../../lib/queries/stockAudits'
+import './inventory.css'
 
 /**
  * **§7.3 Stock Check.**
@@ -629,15 +631,15 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
   /* ── The manifest ────────────────────────────────────────────────────── */
 
   const chipRow = (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', overflowX: 'auto', maxWidth: '100%' }}>
+    <div className="rsp-chip-scroll inventory-chip-track">
       {(
         [
-          { id: 'all', label: `All (${countOf(expectedKpi, expectedKpi.total)})` },
-          { id: 'verified', label: `Verified (${countOf(foundKpi, foundKpi.total)})` },
-          { id: 'unverified', label: `Unverified (${countOf(unverifiedKpi, unverifiedKpi.total)})` },
-          { id: 'missing', label: `Missing (${countOf(missingKpi, missingKpi.total)})` },
-          { id: 'unexpected', label: `Unexpected (${unexpectedUnits.length})` },
-        ] as Array<{ id: FilterMode; label: string }>
+          { id: 'all', name: 'All', count: countOf(expectedKpi, expectedKpi.total) },
+          { id: 'verified', name: 'Verified', count: countOf(foundKpi, foundKpi.total) },
+          { id: 'unverified', name: 'Unverified', count: countOf(unverifiedKpi, unverifiedKpi.total) },
+          { id: 'missing', name: 'Missing', count: countOf(missingKpi, missingKpi.total) },
+          { id: 'unexpected', name: 'Unexpected', count: String(unexpectedUnits.length) },
+        ] as Array<{ id: FilterMode; name: string; count: string }>
       ).map((t) => {
         const active = filterMode === t.id
         return (
@@ -646,22 +648,12 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
             type="button"
             onClick={() => setFilterMode(t.id)}
             aria-pressed={active}
-            style={{
-              flexShrink: 0,
-              minHeight: 44,
-              padding: '4px 10px',
-              borderRadius: 4,
-              background: active ? 'var(--hover)' : 'transparent',
-              border: `1px solid ${active ? 'var(--nav-active-accent)' : 'transparent'}`,
-              color: active ? 'var(--text)' : 'var(--text2)',
-              fontWeight: active ? 700 : 500,
-              fontSize: 'var(--t-th)',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              whiteSpace: 'nowrap',
-            }}
+            className={`inventory-filter-chip ${active ? 'is-active' : ''}`}
           >
-            {t.label}
+            {t.name}
+            <span className="figure" style={{ color: active ? 'var(--nav-active-accent)' : 'var(--muted)', fontWeight: 600 }}>
+              {t.count}
+            </span>
           </button>
         )
       })}
@@ -712,14 +704,16 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
       bodyStyle={{ padding: 0 }}
     >
       {filterMode === 'unexpected' ? (
-        <div style={{ overflowX: 'auto', padding: 'var(--sp-md)' }}>
-          {unexpectedUnits.length === 0 ? (
+        unexpectedUnits.length === 0 ? (
+          <div style={{ padding: 'var(--sp-md)' }}>
             <EmptyState
               icon={<Icon name="alert_triangle" size={22} />}
               title="No misplaced or unexpected items scanned yet"
               description="Codes that answer 'not on this manifest' are listed here for this session only — nothing is saved, and a misplaced item never marks an expected unit missing."
             />
-          ) : (
+          </div>
+        ) : (
+          <DataTableShell ariaLabel="Unexpected scanned units" data-table-scroll style={{ overflowX: 'auto', padding: 'var(--sp-md)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
@@ -761,8 +755,8 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
                 ))}
               </tbody>
             </table>
-          )}
-        </div>
+          </DataTableShell>
+        )
       ) : (
         <PageBody
           loading={items.loading}
@@ -810,37 +804,37 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
               })}
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
+            <DataTableShell ariaLabel="Manifest expected units" data-table-scroll style={{ overflowX: 'auto', borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>
+              <table className="inventory-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
-                    <th style={{ padding: 8 }}>Item &amp; tag</th>
+                  <tr style={{ background: 'var(--th-bg)' }}>
+                    <th style={{ padding: '10px 12px' }}>Item &amp; tag</th>
                     {/* Tablet drops the serial column — §7.3's "same, fewer columns". */}
-                    {desktop && <th style={{ padding: 8 }}>Serial number</th>}
-                    <th style={{ padding: 8 }}>Rack / shelf / bin</th>
-                    <th style={{ padding: 8 }}>State</th>
-                    <th style={{ padding: 8, textAlign: 'right' }}>Action</th>
+                    {desktop && <th style={{ padding: '10px 12px' }}>Serial number</th>}
+                    <th style={{ padding: '10px 12px' }}>Rack / shelf / bin</th>
+                    <th style={{ padding: '10px 12px' }}>State</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'right' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.rows.map((it) => {
                     const state = unitStateOfOutcome(it.outcome)
                     return (
-                      <tr key={it.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ padding: '10px 8px' }}>{itemTitle(it)}</td>
+                      <tr key={it.id} className="inventory-parent-row">
+                        <td style={{ padding: '12px' }}>{itemTitle(it)}</td>
                         {desktop && (
-                          <td style={{ padding: '10px 8px' }}>
-                            <span className="identifier" style={{ color: 'var(--text2)' }}>
+                          <td style={{ padding: '12px' }}>
+                            <span className="inventory-asset-code identifier">
                               {it.serialNo ?? '—'}
                             </span>
                           </td>
                         )}
-                        <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>
-                          {locationOf(it)}
+                        <td style={{ padding: '12px', color: 'var(--text2)' }}>
+                          <div style={{ fontWeight: 500 }}>{locationOf(it)}</div>
                           {itemMeta(it)}
                         </td>
-                        <td style={{ padding: '10px 8px' }}>{stateBadge(state)}</td>
-                        <td style={{ padding: '10px 8px', textAlign: 'right' }}>
+                        <td style={{ padding: '12px' }}>{stateBadge(state)}</td>
+                        <td style={{ padding: '12px', textAlign: 'right' }}>
                           {state === 'Unverified' && rowActions(it)}
                         </td>
                       </tr>
@@ -848,7 +842,7 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
                   })}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
           )}
         </PageBody>
       )}
@@ -863,6 +857,7 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
 
   return (
     <PageShell width="full">
+      <div className="inventory-v2">
       {/* §5 — breadcrumb only. The Shell carries the crumb trail and PLAN.md
           Phase 5 forbids a Back button. Embedded, the tab strip above already
           says where we are. */}
@@ -1037,6 +1032,7 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
           setScanInput(item.serial ?? item.assetTag ?? item.id)
         }}
       />
+      </div>
     </PageShell>
   )
 }

@@ -3,64 +3,68 @@ import { Input } from '../../components/ui'
 import type { InputProps } from '../../components/ui/Input'
 import Icon from '../../components/ui/Icon'
 
+export interface PasswordInputProps
+  extends Omit<InputProps, 'type' | 'iconRight' | 'onClear' | 'label' | 'error' | 'helperText'> {
+  showCapsLockWarning?: boolean
+}
+
 /**
- * The shared `Input` with a show/hide toggle, for every password field in the
- * auth flow (`Login`, `ResetPassword` twice).
- *
- * Lives in `modules/auth` rather than `components/ui` for the same reason
- * `AuthCard` does: nothing outside the signed-out screens renders a password,
- * and a `ui` primitive would invite one to appear where a PIN or a session
- * should be doing the work.
- *
- * The toggle is a real button, not `Input`'s `iconRight` slot — that slot is
- * `pointer-events: none` by design (it decorates, `onClear` interacts), and
- * widening its contract for one consumer would change every read-only icon in
- * the app. `aria-pressed` carries the state; the glyph swap (`eye`/`eye_off`)
- * carries it visually, so the state never depends on colour (Law 11).
+ * The shared `Input` with a show/hide toggle and Caps Lock detection,
+ * for every password field in the auth flow (`Login`, `ResetPassword`).
  */
-/**
- * `label`/`error`/`helperText` are omitted, not just unused: the toggle is
- * anchored to the top of `Input`'s wrapper, which is the input row only while
- * `Input` renders nothing above it. The auth screens all label externally.
- */
-export const PasswordInput = forwardRef<
-  HTMLInputElement,
-  Omit<InputProps, 'type' | 'iconRight' | 'onClear' | 'label' | 'error' | 'helperText'>
->(
-  function PasswordInput({ style, ...props }, ref) {
+export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
+  function PasswordInput({ style, showCapsLockWarning = true, onKeyDown, onKeyUp, onFocus, onBlur, ...props }, ref) {
     const [visible, setVisible] = useState(false)
+    const [capsLock, setCapsLock] = useState(false)
+    const [focused, setFocused] = useState(false)
+
+    const checkCapsLock = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (typeof e.getModifierState === 'function') {
+        setCapsLock(e.getModifierState('CapsLock'))
+      }
+    }
 
     return (
-      <div style={{ position: 'relative' }}>
+      <div className="auth-password-wrapper" style={{ position: 'relative' }}>
         <Input
           ref={ref}
           type={visible ? 'text' : 'password'}
           style={{ paddingRight: 44, ...style }}
+          onKeyDown={(e) => {
+            checkCapsLock(e)
+            onKeyDown?.(e)
+          }}
+          onKeyUp={(e) => {
+            checkCapsLock(e)
+            onKeyUp?.(e)
+          }}
+          onFocus={(e) => {
+            setFocused(true)
+            onFocus?.(e)
+          }}
+          onBlur={(e) => {
+            setFocused(false)
+            onBlur?.(e)
+          }}
           {...props}
         />
         <button
           type="button"
+          className="auth-password-toggle"
           onClick={() => setVisible((v) => !v)}
           aria-label={visible ? 'Hide password' : 'Show password'}
           aria-pressed={visible}
-          style={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            height: 44,
-            width: 44,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            borderRadius: 'var(--r-input)',
-          }}
+          tabIndex={-1}
         >
           <Icon name={visible ? 'eye_off' : 'eye'} size={18} />
         </button>
+
+        {showCapsLockWarning && capsLock && focused && (
+          <div className="auth-capslock-hint" role="status" aria-live="polite">
+            <Icon name="alert_circle" size={14} />
+            <span>Caps Lock is ON</span>
+          </div>
+        )}
       </div>
     )
   }

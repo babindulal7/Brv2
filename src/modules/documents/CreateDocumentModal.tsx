@@ -5,6 +5,7 @@ import { useAuth } from '../../lib/auth'
 import { useToast } from '../../components/ui/Toast'
 import { createDocument } from '../../actions/documents/createDocument'
 import { generateClientUuid } from '../../lib/dataAccess'
+import './documents.css'
 
 const DOC_TYPES = [
   'Quotation',
@@ -95,6 +96,7 @@ export function CreateDocumentModal({
 
   const inputStyle = {
     width: '100%',
+    minHeight: 44,
     padding: '8px 12px',
     borderRadius: 'var(--r-sm)',
     border: '1px solid var(--border)',
@@ -104,6 +106,7 @@ export function CreateDocumentModal({
     fontFamily: 'inherit',
     outline: 'none',
     boxSizing: 'border-box' as const,
+    transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
   }
 
   const labelStyle = {

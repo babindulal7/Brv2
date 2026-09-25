@@ -163,7 +163,7 @@ export function BarcodeLookupModal({ isOpen, onClose }: BarcodeLookupModalProps)
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="🔍 Find by Barcode or Serial"
+      title="Find by Barcode or Serial"
       size="md"
     >
       <form onSubmit={handleSearch} style={{ display: 'grid', gap: 'var(--sp-md)' }}>

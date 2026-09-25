@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, KpiStrip } from '../../components/ui/Page'
+import { SearchInput } from '../../components/ui/SearchInput'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -912,16 +914,15 @@ export function Maintenance() {
         })}
 
         <span style={{ marginLeft: phone ? 0 : 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', width: phone ? '100%' : 'auto', flexWrap: phone ? 'nowrap' : 'wrap' }}>
-          <label className="focus-host" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', flex: phone ? '1 1 0' : undefined, minWidth: 0, boxSizing: 'border-box' }}>
-            <Icon name="search" size={14} style={{ color: 'var(--muted)' }} />
-            <input
+          <div style={{ flex: phone ? '1 1 0' : undefined, width: phone ? undefined : 240, minWidth: 0 }}>
+            <SearchInput
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={setSearchQuery}
+              onClear={() => setSearchQuery('')}
               placeholder="Search job, equipment, serial…"
               aria-label="Search maintenance jobs"
-              style={{ width: phone ? '100%' : 190, border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
             />
-          </label>
+          </div>
           <Button icon="download" aria-label="Export maintenance records" onClick={() => exportCsv(filteredRecords, money)}>
             {phone ? '' : 'Export'}
           </Button>
@@ -963,7 +964,7 @@ export function Maintenance() {
              as square notches once --r-card went 8 -> 14 (v4.2 §6). `overflowX:
              auto` already makes this element a clip box, so giving it the
              card's top radius rounds the header with it. */
-          <div style={{ overflowX: 'auto', borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>
+          <DataTableShell ariaLabel="Maintenance jobs" style={{ borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>
             {/* §7.4 TABLET — "same, fewer columns". Technician, Vendor and
                 Booking Impact are dropped there, which takes the 1080px minimum
                 down inside the 768–1279 band instead of scrolling it sideways. */}
@@ -1133,7 +1134,7 @@ export function Maintenance() {
                 })}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--text2)', flexWrap: 'wrap' }}>

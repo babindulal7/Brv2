@@ -35,6 +35,7 @@
 
 import { idempotentInsert } from './dataAccess'
 import { logAuditEvent } from './audit'
+import { captureError } from './monitoring'
 import { planTransition, type BookingStatus, type CloseGateInput, type Flag, type TransitionPlan } from './workflow'
 import type { SystemRole } from '../types/database'
 
@@ -120,21 +121,25 @@ export async function applyBookingTransition(req: BookingTransitionRequest): Pro
     { queueOnFailure: false },
   )
 
-  await logAuditEvent({
-    eventClass: 'status change',
-    category: 'Rentals',
-    module: 'Rentals',
-    action: 'Update',
-    severity: 'Informational',
-    tableName: 'bookings',
-    recordId: req.bookingId,
-    actorId: req.actorId,
-    actorRole: req.actorRole,
-    branchId: req.branchId,
-    oldValues: { stage: req.from },
-    newValues: { stage: req.to },
-    reason,
-  })
+  try {
+    await logAuditEvent({
+      eventClass: 'status change',
+      category: 'Rentals',
+      module: 'Rentals',
+      action: 'Update',
+      severity: 'Informational',
+      tableName: 'bookings',
+      recordId: req.bookingId,
+      actorId: req.actorId,
+      actorRole: req.actorRole,
+      branchId: req.branchId,
+      oldValues: { stage: req.from },
+      newValues: { stage: req.to },
+      reason,
+    })
+  } catch (auditErr) {
+    captureError(auditErr, { where: 'bookingTransition.logAuditEvent', bookingId: req.bookingId })
+  }
 
   return { ok: true, plan }
 }

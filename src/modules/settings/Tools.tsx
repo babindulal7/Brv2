@@ -4,7 +4,9 @@ import type { CSSProperties, ReactNode } from 'react'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { InfoTooltip } from '../../components/ui/InfoTooltip'
-import { Card, PageHeader, Button, Rail, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, Button, Rail, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { thStyle } from '../../components/ui/TableHeaderCell'
 import { Donut, Legend } from '../../components/ui/Charts'
@@ -1122,7 +1124,11 @@ const OPEN_DECISIONS: ReadonlyArray<{ q: string; why: string }> = [
   },
 ]
 
-export default function Tools() {
+export interface ToolsProps {
+  embedded?: boolean
+}
+
+export default function Tools({ embedded = false }: ToolsProps = {}) {
   const money = useCanViewMoney()
 
   useEffect(() => {
@@ -1188,31 +1194,34 @@ export default function Tools() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="tool"
         title="Tools"
         description="Calculators and utilities that have no home elsewhere. Anything with a module is opened there, never rebuilt here."
         actions={
-          <Link
-            to="/settings"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              height: 34,
-              padding: '0 12px',
-              borderRadius: 'var(--r-btn)',
-              border: '1px solid var(--btn-secondary-border)',
-              background: 'var(--btn-secondary-bg)',
-              color: 'var(--text)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
-            <Icon name="settings" size={14} />
-            Back to Settings
-          </Link>
+          !embedded ? (
+            <Link
+              to="/settings"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                height: 34,
+                padding: '0 12px',
+                borderRadius: 'var(--r-btn)',
+                border: '1px solid var(--btn-secondary-border)',
+                background: 'var(--btn-secondary-bg)',
+                color: 'var(--text)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                textDecoration: 'none',
+              }}
+            >
+              <Icon name="settings" size={14} />
+              Back to Settings
+            </Link>
+          ) : undefined
         }
       />
 
@@ -1445,7 +1454,7 @@ export default function Tools() {
               one of them. Two stay, one is cut, one is gated, and the rest deep-link — so this page is not a partial copy
               of the render, it is the render after the scoping rule was applied.
             </p>
-            <div style={{ overflowX: 'auto' }}>
+            <DataTableShell ariaLabel="Render category disposition">
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 440 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
@@ -1471,7 +1480,7 @@ export default function Tools() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
           </Card>
 
           <Card title="Open — needs Babin">

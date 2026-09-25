@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import Icon from '../../components/ui/Icon'
 import { InfoTooltip } from '../../components/ui/InfoTooltip'
 import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
@@ -17,6 +19,7 @@ import { readSettings } from '../../lib/settingsStore'
 import { fetchDailyClosing, varianceLine, type DailyClosing as ClosingFigures } from '../../lib/queries/closing'
 import { dailyDigest } from '../../lib/whatsappTemplates'
 import { buildWaLink } from '../../lib/whatsapp'
+import './finance.css'
 
 /**
  * # Daily Closing — the day's position, counted and signed off
@@ -125,6 +128,14 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
 
   const variance = figures ? varianceLine(figures.collected.cash, counted, formatMoney) : 'not counted'
 
+  const varianceTone = useMemo(() => {
+    if (!figures || counted === null) return 'is-uncounted'
+    const delta = counted - figures.collected.cash
+    if (delta === 0) return 'is-balanced'
+    if (delta > 0) return 'is-surplus'
+    return 'is-deficit'
+  }, [figures, counted])
+
   const bsToday = toBs(today)
   const dateLabel = bsToday ? `${formatAd(today)} · ${formatBs(bsToday)}` : formatAd(today)
 
@@ -203,7 +214,7 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
 
   if (!maySeeMoney) {
     const restrictedContent = (
-      <>
+      <div className="finance-v2">
         <ScreenHeader embedded={embedded} icon="card" title="Daily Closing" description={dateLabel} />
         <Card title="Not your screen">
           <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
@@ -211,47 +222,37 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
             everywhere, and a closing with the money removed would be a blank page rather than a smaller one.
           </p>
         </Card>
-      </>
+      </div>
     )
 
     if (embedded) return <div>{restrictedContent}</div>
     return <PageShell width="full">{restrictedContent}</PageShell>
   }
 
-  const row = (label: string, value: string, hint?: string) => (
+  const row = (label: string, value: string, hint?: string, badge?: ReactNode) => (
     <div
       key={label}
-      style={{
-        display: 'flex',
-        alignItems: 'baseline',
-        justifyContent: 'space-between',
-        gap: 12,
-        padding: '9px 0',
-        borderBottom: '1px solid var(--border)',
-      }}
+      className="finance-closing-row"
     >
-      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <span className="finance-closing-row-label">
         {label}
         {hint && <InfoTooltip content={hint} />}
       </span>
-      <span style={{ fontSize: 'var(--t-body)', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+      {badge ? (
+        badge
+      ) : (
+        <span className="finance-closing-row-value">{value}</span>
+      )}
     </div>
   )
 
   const bodyContent = (
-    <>
+    <div className="finance-v2">
       <ScreenHeader embedded={embedded} icon="card" title="Daily Closing" description={dateLabel} />
 
       <PageBody loading={loading} error={error} onRetry={load} empty={false}>
         {figures && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: onPhone ? '1fr' : 'minmax(0, 1fr) minmax(0, 1fr)',
-              gap: 'var(--sp-md)',
-              alignItems: 'start',
-            }}
-          >
+          <div className="finance-closing-grid">
             <Card title="The day">
               {row('Out today', String(figures.pickupsCount))}
               {row('Returned today', String(figures.returnsCount))}
@@ -291,7 +292,7 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
             <Card title="Count the drawer">
               <label
                 htmlFor="counted-cash"
-                style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginBottom: 6 }}
+                style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginBottom: 6, fontWeight: 600 }}
               >
                 Counted cash
               </label>
@@ -301,18 +302,7 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
                 value={countRaw}
                 onChange={(e) => setCountRaw(e.target.value)}
                 placeholder="e.g. 12,500"
-                style={{
-                  width: '100%',
-                  height: 44,
-                  padding: '0 12px',
-                  borderRadius: 'var(--r-btn)',
-                  border: `1px solid ${countInvalid ? 'var(--st-danger-fg)' : 'var(--border)'}`,
-                  background: 'var(--surface-2)',
-                  color: 'var(--text)',
-                  fontSize: 'var(--t-body)',
-                  fontFamily: 'inherit',
-                  fontVariantNumeric: 'tabular-nums',
-                }}
+                className={`finance-drawer-input ${countInvalid ? 'is-invalid' : ''}`}
               />
               {countInvalid && (
                 /* Law 12 — inline and persistent, never a toast. */
@@ -323,7 +313,12 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
 
               <div style={{ marginTop: 12 }}>
                 {row('Expected in the drawer', formatMoney(figures.collected.cash), 'cash takings only')}
-                {row('Variance', variance)}
+                {row(
+                  'Variance',
+                  variance,
+                  undefined,
+                  <span className={`finance-variance-pill ${varianceTone}`}>{variance}</span>,
+                )}
               </div>
 
               <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
@@ -332,31 +327,21 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
               </p>
             </Card>
 
-            <div style={{ ...cardStyle, gridColumn: onPhone ? 'auto' : '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+            <div className="finance-closing-actions-dock">
               {/* §5.4's "Send digest", and the approve that cannot exist yet. */}
               {digestHref ? (
                 <a
                   href={digestHref}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    minHeight: 44,
-                    padding: '0 16px',
-                    borderRadius: 'var(--r-btn)',
-                    background: 'var(--btn-primary-bg)',
-                    color: 'var(--btn-primary-fg)',
-                    fontWeight: 700,
-                    fontSize: 'var(--t-meta)',
-                    textDecoration: 'none',
-                  }}
+                  className="finance-whatsapp-btn"
                 >
-                  Send digest on WhatsApp
+                  <Icon name="message" size={16} />
+                  <span>Send digest on WhatsApp</span>
                 </a>
               ) : (
                 <Unavailable reason={digestReason}>
-                  <Button variant="primary" disabled>
+                  <Button variant="primary" disabled icon="message">
                     Send digest on WhatsApp
                   </Button>
                 </Unavailable>
@@ -369,6 +354,7 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
               {mayApprove &&
                 (approvedId ? (
                   <span style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, gap: 7, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--st-in-fg)' }}>
+                    <Icon name="check" size={16} />
                     Closed and signed — this day is now a record.
                   </span>
                 ) : (
@@ -396,7 +382,7 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
           </div>
         )}
       </PageBody>
-    </>
+    </div>
   )
 
   if (embedded) {

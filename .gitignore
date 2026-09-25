@@ -27,13 +27,11 @@ docs/docs.zip
 # Regenerable runtime noise, not project history.
 .codex-temp/
 
-# Claude Code's per-session git worktrees. Each is a complete second checkout
-# with its own node_modules, and it does not inherit this file — so the Booqable
-# sync scripts inside two of them still held the API token in plaintext for the
-# six days after it was scrubbed from the main tree's history. Purged 8 Sep 2026;
-# never track or keep them. See docs/STAGE_0.md S0-1 and RULINGS-2026-09-08 R-30.
-# (graft/.cache, the other place the token sat, is already covered by /graft/.)
-.claude/worktrees/
+# Claude Code local config and worktrees
+.claude/
+
+# Unpacked documentation archive
+md2/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/

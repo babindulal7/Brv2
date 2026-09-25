@@ -72,22 +72,78 @@ export function QuickCreateMenu({ role, compact = false }: { role: SystemRole | 
     navigate(to)
   }
 
+  const rentalAction = actions.find((a) => a.id === 'rental')
+  const secondaryActions = actions.filter((a) => a.id !== 'rental')
+
   return (
-    <div style={{ position: 'relative', flexShrink: 0 }}>
-      <Button
-        ref={triggerRef}
-        type="button"
-        variant="primary"
-        icon={<Icon name="plus" size={16} />}
-        aria-label="Create"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-controls={open ? menuId : undefined}
-        onClick={() => setOpen((current) => !current)}
-        style={compact ? { minWidth: 44, padding: 0 } : undefined}
-      >
-        {compact ? undefined : 'Create'}
-      </Button>
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+      {compact || !rentalAction ? (
+        <Button
+          ref={triggerRef}
+          type="button"
+          variant="primary"
+          icon={<Icon name="plus" size={16} />}
+          aria-label="Create"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-controls={open ? menuId : undefined}
+          onClick={() => setOpen((current) => !current)}
+          style={compact ? { minWidth: 44, padding: 0 } : undefined}
+        >
+          {compact ? undefined : 'Create'}
+        </Button>
+      ) : (
+        <div style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
+          <Button
+            type="button"
+            variant="primary"
+            icon={<Icon name="plus" size={16} />}
+            onClick={() => navigate(rentalAction.to)}
+            style={{
+              borderTopRightRadius: secondaryActions.length > 0 ? 0 : 'var(--r-btn)',
+              borderBottomRightRadius: secondaryActions.length > 0 ? 0 : 'var(--r-btn)',
+              fontWeight: 600,
+            }}
+            title="Create new rental booking (Primary Action)"
+          >
+            New Rental
+          </Button>
+          {secondaryActions.length > 0 && (
+            <button
+              ref={triggerRef}
+              type="button"
+              aria-label="More create actions"
+              aria-haspopup="menu"
+              aria-expanded={open}
+              aria-controls={open ? menuId : undefined}
+              onClick={() => setOpen((c) => !c)}
+              style={{
+                minHeight: 'var(--control-height)',
+                width: 32,
+                padding: '0 4px',
+                borderTopRightRadius: 'var(--r-btn)',
+                borderBottomRightRadius: 'var(--r-btn)',
+                borderTopLeftRadius: 0,
+                borderBottomLeftRadius: 0,
+                border: '1px solid transparent',
+                borderLeft: '1px solid rgba(255, 255, 255, 0.25)',
+                background: 'var(--btn-primary-bg)',
+                color: 'var(--btn-primary-fg)',
+                display: 'grid',
+                placeItems: 'center',
+                cursor: 'pointer',
+                boxShadow: 'var(--shadow-card), inset 0 1px 0 rgba(255, 255, 255, 0.25)',
+                transition: 'background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.9')}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+              title="More actions (New Client, Add Equipment...)"
+            >
+              <Icon name="chevron_down" size={14} />
+            </button>
+          )}
+        </div>
+      )}
 
       {open && (
         <div

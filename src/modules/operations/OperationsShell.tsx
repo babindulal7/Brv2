@@ -4,7 +4,7 @@ import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
 import { LoadingSkeleton } from '../../components/ui/StateViews'
 import { JOB_ORDER, BOOKING_STATUS, JOBS, type BookingStatus, type JobName } from '../../lib/workflow'
-import { stepWriteGate, stepDotState } from '../../data/operationsShell'
+import { stepWriteGate, stepDotState } from '../../lib/operationsShell'
 import { fetchFloorBooking, type FloorBooking } from '../../lib/queries/bookings'
 import { DomainEvents, EVENT_TYPES } from '../../events/eventBus'
 
@@ -338,7 +338,7 @@ export default function OperationsShell({
                       : 'Not open yet'
 
             const countStr = measured ? ` ${measured.done}/${measured.total}` : ''
-            const displayLabel = `${LABEL[candidate]}${isCompleted ? ' ✓' : isBlocked ? ' 🔒' : ''} · ${stateLabel}${countStr}`
+            const displayLabel = `${isBlocked ? '🔒 ' : ''}${LABEL[candidate]} · ${stateLabel}${countStr}`
 
             return (
               <Button
@@ -349,6 +349,7 @@ export default function OperationsShell({
                 disabled={isBlocked}
                 title={!gate.allowed ? gate.reason ?? undefined : undefined}
                 onClick={() => requestJob(candidate)}
+                icon={isCompleted ? 'check' : isBlocked ? 'lock' : undefined}
                 style={{
                   minHeight: 'var(--tap)',
                   opacity: isBlocked ? 0.6 : 1,

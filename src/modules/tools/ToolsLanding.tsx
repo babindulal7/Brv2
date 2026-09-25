@@ -259,9 +259,9 @@ export default function ToolsLanding() {
         </div>
       )}
 
-      {activeTab === 'depreciation' && money && <DepreciationCalculator />}
-      {activeTab === 'pricing' && money && <PricingCalculator />}
-      {activeTab === 'cinematography' && <CineTools />}
+      {activeTab === 'depreciation' && money && <DepreciationCalculator embedded />}
+      {activeTab === 'pricing' && money && <PricingCalculator embedded />}
+      {activeTab === 'cinematography' && <CineTools embedded />}
 
       <FooterNote extra={['All calculators run locally within Tools without navigating away']} />
     </PageShell>

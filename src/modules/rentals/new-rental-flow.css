@@ -1,14 +1,55 @@
 .new-rental-stepper-container { scroll-margin-top: 12px; }
 .new-rental-mobile-progress { display: grid; gap: 4px; width: 100%; }
-.new-rental-mobile-progress > span { color: var(--text2); font-size: 12px; }
-.new-rental-mobile-progress > strong { font-size: 16px; }
-.new-rental-mobile-progress progress { width: 100%; height: 4px; margin-top: 8px; accent-color: var(--primary); }
-.new-rental-mobile-actions { position: fixed; left: 0; right: 0; z-index: 10; padding: 8px var(--page-padding); background: var(--surface, var(--card)); border-top: 1px solid var(--border); }
-.new-rental-compact-summary { display: flex; width: 100%; min-height: 44px; align-items: center; justify-content: space-between; gap: 8px; border: 0; padding: 4px 0; background: transparent; color: var(--text); text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
-.new-rental-compact-summary span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.new-rental-compact-summary strong { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.new-rental-mobile-progress > span { color: var(--text2); font-size: 12px; font-weight: 500; }
+.new-rental-mobile-progress > strong { font-size: 16px; font-weight: 700; color: var(--text); }
+.new-rental-mobile-progress progress { width: 100%; height: 5px; margin-top: 8px; border-radius: 4px; overflow: hidden; accent-color: var(--primary); }
+.new-rental-mobile-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding: 10px var(--page-padding) calc(10px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--surface, var(--card)) 88%, transparent);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.new-rental-compact-summary {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: var(--r-btn);
+  padding: 6px 12px;
+  background: var(--card2, var(--surface));
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.new-rental-compact-summary:hover {
+  border-color: var(--border2);
+}
+.new-rental-compact-summary:active {
+  transform: scale(0.99);
+}
+.new-rental-compact-summary span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
+.new-rental-compact-summary strong {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono, JetBrains Mono, monospace);
+  font-size: 14px;
+  color: var(--brand, var(--text));
+}
 .new-rental-mobile-action-buttons { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(0, 2fr); gap: 8px; }
-.new-rental-mobile-action-buttons button { min-height: 44px; justify-content: center; }
+.new-rental-mobile-action-buttons button { min-height: 44px; justify-content: center; font-weight: 600; }
 @media (max-width: 767px) {
   /* The action footer belongs to the viewport, not the padded scroll content.
      A transform animation would establish a containing block for fixed items. */
@@ -18,3 +59,4 @@
   .new-rental-shell .new-rental-step-footer > div { flex-wrap: wrap; }
   .new-rental-shell #rail-booking-summary { scroll-margin-bottom: 120px; }
 }
+

@@ -4,6 +4,7 @@ import Icon from '../../components/ui/Icon'
 import { Input } from '../../components/ui/Input'
 import { Select } from '../../components/ui/Select'
 import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -23,6 +24,7 @@ import {
   type NumberSequenceRow,
   type SequenceShape,
 } from '../../lib/queries/numbering'
+import '../settings/settings.css'
 
 /**
  * Administration → **Numbering Sequences** — the registry the product really
@@ -439,7 +441,7 @@ export default function NumberingSequences() {
   const testNumbers = selectedShape && testCount > 0 ? previewNextNumbers(selectedShape, testCount) : []
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+    <div className="settings-v2" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
       <PageHeader
         icon="queues"
         title="Numbering Sequences"
@@ -512,59 +514,61 @@ export default function NumberingSequences() {
               ))}
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
-                <thead>
-                  <tr style={{ background: 'var(--th-bg)' }}>
-                    {['Sequence', 'Prefix', 'Format', 'Padding', 'Year Segment', 'Current Counter', 'Next Number', 'Last Advanced'].map((h) => (
-                      <th key={h} style={th}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {list.rows.map((r) => (
-                    <tr key={r.sequenceKey} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td className="identifier" style={{ ...td, fontWeight: 700 }}>
-                        {r.sequenceKey}
-                      </td>
-                      <td style={td}>
-                        <PrefixChip prefix={r.prefix} />
-                      </td>
-                      {/* Derived from the row's own columns (formatConvention),
-                          so this column can never disagree with the generator. */}
-                      <td className="identifier" style={{ ...td, color: 'var(--text2)' }}>
-                        {formatConvention(r)}
-                      </td>
-                      <td className="figure" style={{ ...td, color: 'var(--text2)' }}>
-                        {r.padding}
-                      </td>
-                      <td style={td}>
-                        <YearSegmentChip includeYear={r.includeYear} />
-                      </td>
-                      <td className="figure" style={{ ...td, fontWeight: 600 }}>
-                        {r.currentValue}
-                        {r.includeYear && (
-                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 500 }}>
-                            in {r.currentYear}
-                          </span>
-                        )}
-                      </td>
-                      <td
-                        className="identifier"
-                        style={{ ...td, fontWeight: 700 }}
-                        title="Computed from the stored counter via the next_document_number() convention — reading this consumes nothing."
-                      >
-                        {previewNextNumber(r)}
-                      </td>
-                      <td style={{ ...td, color: 'var(--text2)' }}>
-                        <WhenCell iso={r.updatedAtAd} />
-                      </td>
+            <div className="admin-table-shell">
+              <DataTableShell ariaLabel="Document numbering sequences" data-table-scroll style={{ overflowX: 'auto' }}>
+                <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--th-bg)' }}>
+                      {['Sequence', 'Prefix', 'Format', 'Padding', 'Year Segment', 'Current Counter', 'Next Number', 'Last Advanced'].map((h) => (
+                        <th key={h} className="admin-th" style={th}>
+                          {h}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {list.rows.map((r) => (
+                      <tr key={r.sequenceKey} className="admin-row" style={{ borderTop: '1px solid var(--border)' }}>
+                        <td className="identifier admin-td settings-mono" style={{ ...td, fontWeight: 700 }}>
+                          {r.sequenceKey}
+                        </td>
+                        <td className="admin-td" style={td}>
+                          <PrefixChip prefix={r.prefix} />
+                        </td>
+                        {/* Derived from the row's own columns (formatConvention),
+                            so this column can never disagree with the generator. */}
+                        <td className="identifier admin-td settings-mono" style={{ ...td, color: 'var(--text2)' }}>
+                          {formatConvention(r)}
+                        </td>
+                        <td className="figure admin-td settings-mono" style={{ ...td, color: 'var(--text2)' }}>
+                          {r.padding}
+                        </td>
+                        <td className="admin-td" style={td}>
+                          <YearSegmentChip includeYear={r.includeYear} />
+                        </td>
+                        <td className="figure admin-td settings-mono" style={{ ...td, fontWeight: 600 }}>
+                          {r.currentValue}
+                          {r.includeYear && (
+                            <span className="figure settings-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 500 }}>
+                              in {r.currentYear}
+                            </span>
+                          )}
+                        </td>
+                        <td
+                          className="identifier admin-td settings-mono"
+                          style={{ ...td, fontWeight: 700 }}
+                          title="Computed from the stored counter via the next_document_number() convention — reading this consumes nothing."
+                        >
+                          {previewNextNumber(r)}
+                        </td>
+                        <td className="admin-td" style={{ ...td, color: 'var(--text2)' }}>
+                          <WhenCell iso={r.updatedAtAd} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </DataTableShell>
             </div>
           )}
         </Card>
@@ -594,7 +598,7 @@ export default function NumberingSequences() {
               <div style={{ marginTop: 'var(--sp-md)' }}>
                 <span style={fieldLabel}>Next Number</span>
                 <div
-                  className="identifier"
+                  className="identifier settings-mono"
                   aria-live="polite"
                   style={{
                     padding: '11px 12px',

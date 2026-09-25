@@ -3,7 +3,9 @@ import type { CSSProperties } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Select } from '../../components/ui'
-import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { parseCsv, csvCell } from '../../lib/csv'
@@ -87,7 +89,11 @@ function downloadSampleCsv() {
   URL.revokeObjectURL(url)
 }
 
-export default function ImportCenter() {
+export interface ImportCenterProps {
+  embedded?: boolean
+}
+
+export default function ImportCenter({ embedded = false }: ImportCenterProps = {}) {
   const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -256,14 +262,17 @@ export default function ImportCenter() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', paddingBottom: 32 }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="upload"
         title="Import Clients"
         description="Upload a CSV, map its columns and validate every row. Committing the import is not connected yet — nothing here creates a client."
         actions={
-          <Button icon="external_link" onClick={() => navigate('/clients')}>
-            Back to Clients
-          </Button>
+          !embedded ? (
+            <Button icon="external_link" onClick={() => navigate('/clients')}>
+              Back to Clients
+            </Button>
+          ) : undefined
         }
       />
 
@@ -369,7 +378,7 @@ export default function ImportCenter() {
 
             <div>
               <h2 style={{ margin: '0 0 10px', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Map Columns</h2>
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="CSV column mapping" data-table-scroll style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
@@ -400,7 +409,7 @@ export default function ImportCenter() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
               {!readyToPreview && (
                 <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Icon name="error" size={13} />
@@ -447,7 +456,7 @@ export default function ImportCenter() {
               )}
 
               <Card title="Preview & Validate" bodyStyle={{ padding: 0 }}>
-                <div style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto' }}>
+                <DataTableShell ariaLabel="CSV import preview" data-table-scroll style={{ overflowX: 'auto', maxHeight: 420, overflowY: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
@@ -524,7 +533,7 @@ export default function ImportCenter() {
                       })}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               </Card>
 
               {/* The commit bar. It used to say how many rows "will be imported"

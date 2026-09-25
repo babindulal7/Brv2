@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import Icon from '../../components/ui/Icon'
 import { InfoTooltip } from '../../components/ui/InfoTooltip'
-import { Card, PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { LineChart } from '../../components/ui/Charts'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { useViewport } from '../../lib/device'
 import { formatMoney, parseMoney, rupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
@@ -72,7 +74,11 @@ type Tab = 'book' | 'ird'
 
 const WHOLE_FLEET = '__fleet__'
 
-export default function DepreciationCalculator() {
+export interface DepreciationCalculatorProps {
+  embedded?: boolean
+}
+
+export default function DepreciationCalculator({ embedded = false }: DepreciationCalculatorProps = {}) {
   const viewport = useViewport()
   const [tab, setTab] = useState<Tab>('book')
   const [assets, setAssets] = useState<DepreciableAsset[]>([])
@@ -126,7 +132,8 @@ export default function DepreciationCalculator() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="chart"
         title="Depreciation"
         description="Book and IRD pool views. Nothing here is saved against an asset — it is a working sheet."
@@ -297,7 +304,7 @@ export default function DepreciationCalculator() {
                       ))}
                     </div>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <DataTableShell ariaLabel="Depreciation schedule" data-table-scroll style={{ overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 420 }}>
                         <thead>
                           <tr style={{ background: 'var(--th-bg)' }}>
@@ -339,7 +346,7 @@ export default function DepreciationCalculator() {
                           </tr>
                         </tfoot>
                       </table>
-                    </div>
+                    </DataTableShell>
                   )}
                 </Card>
 

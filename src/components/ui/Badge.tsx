@@ -155,6 +155,7 @@ export const Badge: React.FC<BadgeProps> = ({
    */
   const shape = isExt ? EXT_MARK : STATUS_BLOCK
   const compact = size === 'sm'
+  const isLiveActive = status === 'On Rent' || flag === 'Overdue' || flag === 'Due Soon'
 
   return (
     <span
@@ -177,6 +178,14 @@ export const Badge: React.FC<BadgeProps> = ({
         lineHeight: 1.1,
       }}
     >
+      {/* Perpetual live micro-indicator for active operations */}
+      {isLiveActive && (
+        <span
+          className="status-live-dot"
+          aria-hidden="true"
+          style={{ width: compact ? 5 : 6, height: compact ? 5 : 6 }}
+        />
+      )}
       {/* §7.4 — never colour alone: the icon and the word both always render. */}
       {effectiveIcon && <span style={{ display: 'inline-flex', flexShrink: 0 }}>{effectiveIcon}</span>}
       <span>{effectiveLabel}</span>

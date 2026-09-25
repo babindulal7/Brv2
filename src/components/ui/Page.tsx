@@ -74,7 +74,7 @@ export function PageHeader({
   icon?: IconName
   title: string
   eyebrow?: ReactNode
-  description?: string
+  description?: ReactNode
   actions?: ReactNode
   breadcrumb?: ReactNode
   status?: ReactNode
@@ -82,7 +82,7 @@ export function PageHeader({
   const resolvedEyebrow = eyebrow
 
   return (
-    <header className="page-header animate-entrance" style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
+    <header className="page-header animate-entrance" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
       <div className="page-header__copy" style={{ minWidth: 0, flex: '1 1 16rem' }}>
         {breadcrumb && <div style={{ marginBottom: 'var(--space-2)' }}>{breadcrumb}</div>}
         {resolvedEyebrow && (
@@ -126,7 +126,23 @@ export function PageHeader({
           {status}
         </div>
       </div>
-      {actions && <div className="page-header__actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap', maxWidth: '100%' }}>{actions}</div>}
+      {actions && (
+        <div
+          className="page-header__actions"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--sp-sm)',
+            flexWrap: 'wrap',
+            maxWidth: '100%',
+            marginLeft: 'auto',
+            alignSelf: 'flex-start',
+            flexShrink: 0,
+          }}
+        >
+          {actions}
+        </div>
+      )}
     </header>
   )
 }
@@ -148,7 +164,7 @@ export function Button({
   ...props
 }: Omit<ButtonProps, 'icon'> & {
   children: ReactNode
-  icon?: IconName
+  icon?: IconName | undefined
 }) {
   return (
     <SharedButton
@@ -512,3 +528,7 @@ export function FooterNote({ extra }: { extra?: string[] }) {
     </div>
   )
 }
+
+export { PageActions, type PageActionsProps } from './PageActions'
+export { ScreenHeader, type ScreenHeaderProps } from './ScreenHeader'
+export { OverflowMenu, type OverflowMenuItem, type OverflowMenuProps } from './OverflowMenu'

@@ -4,6 +4,8 @@ import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../../components/ui/Icon'
 import type { IconName } from '../../../components/ui/Icon'
 import { Card, Button, SummaryRows, cardStyle } from '../../../components/ui/Page'
+import { SearchInput } from '../../../components/ui/SearchInput'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { thStyle as th } from '../../../components/ui/TableHeaderCell'
 import { ErrorBanner } from '../../../components/ui/StateViews'
 import { Donut, Legend } from '../../../components/ui/Charts'
@@ -716,31 +718,21 @@ export function BranchesPane({
             title="Branches & warehouses"
             action={
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <Icon name="search" size={13} style={{ color: 'var(--muted)' }} />
-                  <span className="sr-only" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
-                    Search branch or warehouse
-                  </span>
-                  <input
+                <div style={{ width: 260 }}>
+                  <SearchInput
                     value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value)
+                    onChange={(val) => {
+                      setQuery(val)
+                      setPage(1)
+                    }}
+                    onClear={() => {
+                      setQuery('')
                       setPage(1)
                     }}
                     placeholder="Search branch, code, manager, city, warehouse…"
-                    style={{
-                      minHeight: 30,
-                      width: 236,
-                      padding: '0 9px',
-                      borderRadius: 'var(--r-input)',
-                      border: '1px solid var(--input-border)',
-                      background: 'var(--input-bg)',
-                      color: 'var(--text)',
-                      fontSize: 'var(--t-meta)',
-                      fontFamily: 'inherit',
-                    }}
+                    aria-label="Search branch or warehouse"
                   />
-                </label>
+                </div>
                 <select
                   value={status}
                   onChange={(e) => {
@@ -806,7 +798,7 @@ export function BranchesPane({
                 )}
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="Branches and warehouses" data-table-scroll style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 800 }}>
                   <thead>
                     <tr>
@@ -957,7 +949,7 @@ export function BranchesPane({
                     )}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap', marginTop: 'var(--sp-md)' }}>
@@ -1021,44 +1013,46 @@ export function BranchesPane({
                 money-blind session does not get an emptied version of it. */}
             {money && (
               <Card title="Branch Performance" action={<span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>This month</span>}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th scope="col" style={th}>Branch</th>
-                      <th scope="col" style={{ ...th, textAlign: 'right' }}>Revenue</th>
-                      <th scope="col" style={{ ...th, textAlign: 'right' }}>Utilization</th>
-                      <th scope="col" style={{ ...th, textAlign: 'right' }}>Growth</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((b) => (
-                      <tr key={b.id}>
-                        <td style={{ ...td, fontWeight: 600 }}>{b.name}</td>
-                        <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} className="figure">
-                          {formatMoney(b.revenue)}
-                        </td>
-                        <td style={{ ...td, textAlign: 'right' }} className="figure">
-                          {b.utilization}%
-                        </td>
-                        <td style={{ ...td, textAlign: 'right' }}>
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 3,
-                              fontWeight: 700,
-                              fontSize: 'var(--t-th)',
-                              color: b.growthPercent >= 0 ? 'var(--success-text)' : 'var(--danger-text)',
-                            }}
-                          >
-                            <Icon name={b.growthPercent >= 0 ? 'arrow_up' : 'arrow_down'} size={11} fill />
-                            {Math.abs(b.growthPercent)}%
-                          </span>
-                        </td>
+                <DataTableShell ariaLabel="Branch performance" data-table-scroll style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th scope="col" style={th}>Branch</th>
+                        <th scope="col" style={{ ...th, textAlign: 'right' }}>Revenue</th>
+                        <th scope="col" style={{ ...th, textAlign: 'right' }}>Utilization</th>
+                        <th scope="col" style={{ ...th, textAlign: 'right' }}>Growth</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {rows.map((b) => (
+                        <tr key={b.id}>
+                          <td style={{ ...td, fontWeight: 600 }}>{b.name}</td>
+                          <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }} className="figure">
+                            {formatMoney(b.revenue)}
+                          </td>
+                          <td style={{ ...td, textAlign: 'right' }} className="figure">
+                            {b.utilization}%
+                          </td>
+                          <td style={{ ...td, textAlign: 'right' }}>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 3,
+                                fontWeight: 700,
+                                fontSize: 'var(--t-th)',
+                                color: b.growthPercent >= 0 ? 'var(--success-text)' : 'var(--danger-text)',
+                              }}
+                            >
+                              <Icon name={b.growthPercent >= 0 ? 'arrow_up' : 'arrow_down'} size={11} fill />
+                              {Math.abs(b.growthPercent)}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </DataTableShell>
               </Card>
             )}
 

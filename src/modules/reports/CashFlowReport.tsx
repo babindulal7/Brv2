@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, cardStyle, useRailGridColumns } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
@@ -282,50 +283,52 @@ export default function CashFlowReport() {
 
       <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', marginTop: 'var(--sp-md)' }}>
         <Card title={`Cash movement · ${period}`}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <caption style={{ captionSide: 'top', textAlign: 'left', paddingBottom: 8, fontSize: 'var(--fs-meta)', color: 'var(--text-3)' }}>
-              Cash basis. Deposits held in trust are excluded from every line below.
-            </caption>
-            <thead>
-              <tr>
-                <th style={th} scope="col">Line</th>
-                <th style={{ ...th, textAlign: 'right' }} scope="col">NPR</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th style={{ ...td, fontWeight: 600 }} scope="row">Opening cash balance</th>
-                <td style={num}>{money(OPENING_CASH)}</td>
-              </tr>
-              {CASH_LINES.map((l) => (
-                <tr key={l.label}>
-                  <th style={{ ...td, fontWeight: 400 }} scope="row">
-                    {l.label}
-                    {l.detail && (
-                      <span style={{ display: 'block', fontSize: 'var(--fs-meta)', color: 'var(--text-3)' }}>{l.detail}</span>
-                    )}
-                  </th>
-                  <td style={{ ...num, color: (l.amount as number) < 0 ? 'var(--danger-text)' : 'var(--text-1)' }}>
-                    {signed(l.amount)}
-                  </td>
+          <DataTableShell ariaLabel={`Cash movement · ${period}`}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <caption style={{ captionSide: 'top', textAlign: 'left', paddingBottom: 8, fontSize: 'var(--fs-meta)', color: 'var(--text-3)' }}>
+                Cash basis. Deposits held in trust are excluded from every line below.
+              </caption>
+              <thead>
+                <tr>
+                  <th style={th} scope="col">Line</th>
+                  <th style={{ ...th, textAlign: 'right' }} scope="col">NPR</th>
                 </tr>
-              ))}
-              <tr>
-                <th style={{ ...td, fontWeight: 600 }} scope="row">Net operating cash</th>
-                <td style={{ ...num, fontWeight: 600 }}>{signed(netOperatingCash())}</td>
-              </tr>
-              <tr>
-                <th style={{ ...td, fontWeight: 700, borderTop: '2px solid var(--border)' }} scope="row">
-                  Net cash movement
-                </th>
-                <td style={{ ...num, fontWeight: 700, borderTop: '2px solid var(--border)' }}>{signed(netCash())}</td>
-              </tr>
-              <tr>
-                <th style={{ ...td, fontWeight: 700, borderBottom: 'none' }} scope="row">Closing cash balance</th>
-                <td style={{ ...num, fontWeight: 700, borderBottom: 'none' }}>{money(closingCash())}</td>
-              </tr>
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                <tr>
+                  <th style={{ ...td, fontWeight: 600 }} scope="row">Opening cash balance</th>
+                  <td style={num}>{money(OPENING_CASH)}</td>
+                </tr>
+                {CASH_LINES.map((l) => (
+                  <tr key={l.label}>
+                    <th style={{ ...td, fontWeight: 400 }} scope="row">
+                      {l.label}
+                      {l.detail && (
+                        <span style={{ display: 'block', fontSize: 'var(--fs-meta)', color: 'var(--text-3)' }}>{l.detail}</span>
+                      )}
+                    </th>
+                    <td style={{ ...num, color: (l.amount as number) < 0 ? 'var(--danger-text)' : 'var(--text-1)' }}>
+                      {signed(l.amount)}
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <th style={{ ...td, fontWeight: 600 }} scope="row">Net operating cash</th>
+                  <td style={{ ...num, fontWeight: 600 }}>{signed(netOperatingCash())}</td>
+                </tr>
+                <tr>
+                  <th style={{ ...td, fontWeight: 700, borderTop: '2px solid var(--border)' }} scope="row">
+                    Net cash movement
+                  </th>
+                  <td style={{ ...num, fontWeight: 700, borderTop: '2px solid var(--border)' }}>{signed(netCash())}</td>
+                </tr>
+                <tr>
+                  <th style={{ ...td, fontWeight: 700, borderBottom: 'none' }} scope="row">Closing cash balance</th>
+                  <td style={{ ...num, fontWeight: 700, borderBottom: 'none' }}>{money(closingCash())}</td>
+                </tr>
+              </tbody>
+            </table>
+          </DataTableShell>
 
           <p style={{ marginTop: 11, padding: '9px 11px', ...cardStyle, fontSize: 'var(--fs-meta)', color: 'var(--text-2)' }}>
             Deposits held in trust ({money(DEPOSITS_HELD)}) are tracked separately and excluded above —

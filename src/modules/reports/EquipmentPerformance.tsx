@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
@@ -154,7 +155,7 @@ export default function EquipmentPerformance() {
           is no rail at all. */}
       <section aria-label="Top Performing Equipment" style={cardStyle}>
         <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Top Performing Equipment</div>
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Top Performing Equipment">
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 520 }}>
             <thead>
               <tr style={{ color: 'var(--text2)' }}>
@@ -177,12 +178,12 @@ export default function EquipmentPerformance() {
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
       </section>
 
       <section aria-label="Worst Performing Equipment" style={cardStyle}>
         <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Equipment Needing Attention</div>
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Equipment Needing Attention">
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 520 }}>
             <thead>
               <tr style={{ color: 'var(--text2)' }}>
@@ -205,7 +206,7 @@ export default function EquipmentPerformance() {
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
       </section>
     </div>
   )

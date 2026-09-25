@@ -4,7 +4,9 @@ import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Input, Select, DateField } from '../../components/ui'
-import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
+import { PageActions } from '../../components/ui/PageActions'
 import { Modal } from '../../components/ui/Modal'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
@@ -233,7 +235,12 @@ const NOT_SAVED_YET: string[] = [
   'Professions, segments, source and “referred by”',
 ]
 
-export default function AddClient() {
+export interface AddClientProps {
+  embedded?: boolean
+  onDone?: () => void
+}
+
+export default function AddClient({ embedded = false, onDone }: AddClientProps = {}) {
   const navigate = useNavigate()
   const { showSuccessToast } = useToast()
   const money = useCanViewMoney()
@@ -557,6 +564,7 @@ export default function AddClient() {
 
   function handleCancel() {
     if (isDirty) setShowDiscard(true)
+    else if (onDone) onDone()
     else navigate('/clients')
   }
 
@@ -699,18 +707,23 @@ export default function AddClient() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', paddingBottom: 32 }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         title="Add New Client"
         description="Create an accurate client profile with the details needed for bookings, payments and documents."
         actions={
-          <>
-            <Button variant="ghost" onClick={handleCancel} disabled={saving}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleSave} disabled={saving || saved}>
-              {saved ? 'Client Saved' : saving ? 'Saving Client…' : 'Save Client'}
-            </Button>
-          </>
+          <PageActions
+            secondary={
+              <Button variant="ghost" onClick={handleCancel} disabled={saving}>
+                Cancel
+              </Button>
+            }
+            primary={
+              <Button variant="primary" onClick={handleSave} disabled={saving || saved}>
+                {saved ? 'Client Saved' : saving ? 'Saving Client…' : 'Save Client'}
+              </Button>
+            }
+          />
         }
       />
 
@@ -1315,7 +1328,14 @@ export default function AddClient() {
             <Button variant="secondary" onClick={() => setShowDiscard(false)}>
               Keep Editing
             </Button>
-            <Button variant="danger" onClick={() => navigate('/clients')}>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setShowDiscard(false)
+                if (onDone) onDone()
+                else navigate('/clients')
+              }}
+            >
               Discard
             </Button>
           </div>

@@ -63,7 +63,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
           id={inputId}
           ref={ref}
           value={value}
-          className={className}
+          className={['ui-input', className].filter(Boolean).join(' ')}
           style={{
             width: '100%',
             minHeight: 44,
@@ -77,8 +77,17 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
             color: 'var(--text)',
             transition: 'border-color 0.15s ease',
             ...style,
+            ...(icon ? { paddingLeft: 38 } : {}),
+            ...(showClear ? { paddingRight: 52 } : showRightIcon ? { paddingRight: 38 } : {}),
           }}
           {...props}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && onClear && value) {
+              e.preventDefault()
+              onClear()
+            }
+            props.onKeyDown?.(e)
+          }}
           aria-invalid={error ? true : props['aria-invalid']}
           aria-describedby={descriptionIds}
         />

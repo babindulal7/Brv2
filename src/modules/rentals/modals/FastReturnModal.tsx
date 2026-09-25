@@ -373,7 +373,7 @@ export function FastReturnModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="⚡ Fast Check-in / Return"
+      title="Fast Check-in / Return"
       size="md"
     >
       <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 'var(--sp-md)' }}>

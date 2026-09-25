@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, PageHeader, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import { PageBody } from '../../components/ui/PageBody'
 import { EditableRows } from '../../components/ui/EditableRows'
@@ -36,6 +37,7 @@ import { ServiceDueBadge } from '../../components/ui/ServiceDueBadge'
 import { ServicePlanCard } from './components/ServicePlanCard'
 import { readServiceDue } from '../../lib/queries/serviceDue'
 import type { ServiceRow } from '../../lib/serviceDue'
+import './inventory.css'
 
 /**
  * # Asset Detail — `/inventory/:assetId`
@@ -287,9 +289,9 @@ function conditionChip(condition: Condition) {
 /** One fact in the expanded unit record. `value` is already formatted or an honest '—'. */
 function UnitFact({ label, value }: { label: string; value: string }) {
   return (
-    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2, padding: '4px 10px', borderRadius: 'var(--r-xs)', background: 'var(--card)', border: '1px solid var(--border)' }}>
-      <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase' }}>{label}</span>
-      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>{value}</span>
+    <span className="asset-fact-pill">
+      <span style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
+      <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>{value}</span>
     </span>
   )
 }
@@ -448,17 +450,7 @@ export default function AssetDetail() {
               <span style={{ color: 'var(--text2)' }}>{product.category ?? '—'}</span>
               <span>›</span>
               <span style={{ color: 'var(--text)', fontWeight: 600 }}>{product.name}</span>
-              <span
-                className="identifier"
-                style={{
-                  padding: '2px 8px',
-                  borderRadius: 4,
-                  background: 'var(--card2)',
-                  border: '1px solid var(--border)',
-                  fontSize: 'var(--t-th)',
-                  color: 'var(--nav-active-accent)',
-                }}
-              >
+              <span className="inventory-asset-code">
                 {product.assetCode}
               </span>
             </div>
@@ -481,33 +473,12 @@ export default function AssetDetail() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20, maxWidth: 1400, margin: '0 auto', paddingBottom: 60 }}>
 
       {/* Hero Header Block */}
-      <div
-        style={{
-          ...cardStyle,
-          padding: 20,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 20,
-        }}
-      >
+      <div className="asset-hero-card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-lg)' }}>
           {/* No image column is selected by the query, so the glyph always
               renders — a real gap, not a missing join. */}
-          <div
-            style={{
-              width: 72,
-              height: 72,
-              borderRadius: 10,
-              background: 'var(--card2)',
-              border: '1px solid var(--border)',
-              display: 'grid',
-              placeItems: 'center',
-              overflow: 'hidden',
-            }}
-          >
-            <Icon name="box" size={36} style={{ color: 'var(--muted)' }} />
+          <div className="asset-hero-thumb">
+            <Icon name="box" size={36} />
           </div>
 
           <div>
@@ -543,15 +514,15 @@ export default function AssetDetail() {
               <span>·</span>
               <span>Category: <strong style={{ color: 'var(--text)' }}>{product.category ?? '—'}</strong></span>
               <span>·</span>
-              <span className="identifier" style={{ color: 'var(--nav-active-accent)' }}>{product.assetCode}</span>
+              <span className="inventory-asset-code">{product.assetCode}</span>
             </div>
           </div>
         </div>
 
         {/* Derived Availability Ratio — real unit rows, retired excluded (§4.3) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-lg)', background: 'var(--card2)', padding: '10px 18px', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)' }}>
+        <div className="asset-availability-pill">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 600 }}>
+            <span style={{ fontSize: '10px', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.06em' }}>
               Live Availability
             </span>
             {serialised ? (
@@ -578,6 +549,7 @@ export default function AssetDetail() {
                 height: 10,
                 borderRadius: 'var(--r-badge)',
                 background: inStockCount > 0 ? 'var(--success-text)' : 'var(--danger-text)',
+                boxShadow: inStockCount > 0 ? '0 0 6px rgba(16, 185, 129, 0.4)' : '0 0 6px rgba(239, 68, 68, 0.4)',
               }}
             />
           )}
@@ -586,8 +558,8 @@ export default function AssetDetail() {
 
       {/* Answer Strip: real figures where a column exists, honest gaps where not */}
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols(2 + (utilization ? 1 : 0) + (money ? 1 : 0))}, minmax(0,1fr))`, gap: 14 }}>
-        <div style={{ ...cardStyle, padding: '14px 16px' }}>
-          <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>AVAILABLE NOW</div>
+        <div style={{ ...cardStyle, padding: '14px 18px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>AVAILABLE NOW</div>
           {serialised ? (
             <>
               <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success-text)', marginTop: 'var(--sp-xs)' }}>
@@ -607,28 +579,28 @@ export default function AssetDetail() {
           )}
         </div>
 
-        <div style={{ ...cardStyle, padding: '14px 16px' }}>
-          <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>NEXT FREE</div>
+        <div style={{ ...cardStyle, padding: '14px 18px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>NEXT FREE</div>
           <NotTracked>Not tracked yet — needs the per-unit booking timeline.</NotTracked>
         </div>
 
         {utilization && (
-          <div style={{ ...cardStyle, padding: '14px 16px' }}>
-            <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>UTILISATION (90D)</div>
+          <div style={{ ...cardStyle, padding: '14px 18px' }}>
+            <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>UTILISATION (90D)</div>
             <NotTracked>Not tracked yet — needs the utilization engine.</NotTracked>
           </div>
         )}
 
         {money && (
-          <div style={{ ...cardStyle, padding: '14px 16px' }}>
-            <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>RECOVERY %</div>
+          <div style={{ ...cardStyle, padding: '14px 18px' }}>
+            <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>RECOVERY %</div>
             <NotTracked>Not tracked yet — needs the revenue engine.</NotTracked>
           </div>
         )}
       </div>
 
       {/* Tabs Navigation */}
-      <div style={{ display: 'flex', gap: 'var(--sp-sm)', borderBottom: '1px solid var(--border)', paddingBottom: 'var(--sp-sm)', overflowX: 'auto', overscrollBehaviorX: 'contain' }}>
+      <div className="asset-tab-strip">
         {tabs.map(t => {
           const active = activeTab === t
           return (
@@ -636,20 +608,7 @@ export default function AssetDetail() {
               key={t}
               type="button"
               onClick={() => setActiveTab(t)}
-              style={{
-                // Law 15 — this strip is the record's only section switch, and
-                // below 768 it is the segmented control spec 7.5 draws.
-                minHeight: 44,
-                flexShrink: 0,
-                padding: '0 16px',
-                borderRadius: 'var(--r-btn)',
-                border: `1px solid ${active ? 'var(--nav-active-accent)' : 'transparent'}`,
-                background: active ? 'var(--card2)' : 'transparent',
-                color: active ? 'var(--text)' : 'var(--text2)',
-                fontWeight: active ? 700 : 500,
-                fontSize: 'var(--t-meta)',
-                cursor: 'pointer',
-              }}
+              className={['asset-tab-btn', active ? 'is-active' : ''].filter(Boolean).join(' ')}
             >
               {t}
             </button>
@@ -669,11 +628,11 @@ export default function AssetDetail() {
           ) : viewport === 'phone' ? (
             /* Shell rule: "Tables become card rows below 768." Each unit becomes
                one card carrying the same facts and the same two actions. */
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+            <div className="inventory-card-grid">
               {units.map((u) => (
-                <article key={u.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <article key={u.id} className="inventory-model-card">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                    <span className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>{u.assetTag}</span>
+                    <span className="inventory-asset-code" style={{ fontSize: 'var(--t-meta)' }}>{u.assetTag}</span>
                     {statusChip(u.state)}
                     {conditionChip(u.condition)}
                   </div>
@@ -683,9 +642,9 @@ export default function AssetDetail() {
                     {' · '}
                     <span className="figure">{u.runningHours}h</span> run
                   </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <Button variant="ghost" onClick={() => setLabelUnit(u)}>Label</Button>
-                    <Button variant="ghost" onClick={() => setEditingUnit((v) => (v === u.id ? null : u.id))}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <Button variant="ghost" size="sm" onClick={() => setLabelUnit(u)}>Label</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setEditingUnit((v) => (v === u.id ? null : u.id))}>
                       {editingUnit === u.id ? 'Close' : 'Edit'}
                     </Button>
                   </div>
@@ -694,9 +653,9 @@ export default function AssetDetail() {
               ))}
             </div>
           ) : (
-            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)', minWidth: viewport === 'tablet' ? 720 : 900 }}>
+            <div className="inventory-table-shell" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
+              <DataTableShell ariaLabel="Asset units">
+                <table className="inventory-table operations-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)', minWidth: viewport === 'tablet' ? 720 : 900 }}>
                   <thead>
                     <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
                       <th style={{ padding: '8px', width: 44 }} />
@@ -715,23 +674,33 @@ export default function AssetDetail() {
                       const expanded = expandedUnits.has(u.id)
                       return (
                         <Fragment key={u.id}>
-                          <tr style={{ borderBottom: expanded ? 'none' : '1px solid var(--border)' }}>
-                            <td style={{ padding: '0 4px' }}>
+                          <tr className={expanded ? 'inventory-parent-row is-open' : 'inventory-parent-row'} style={{ borderBottom: expanded ? 'none' : '1px solid var(--border)' }}>
+                            <td style={{ padding: '0 6px' }}>
                               <button
                                 type="button"
                                 onClick={() => toggleUnit(u.id)}
                                 aria-label={expanded ? `Collapse ${u.assetTag}` : `Expand ${u.assetTag}`}
-                                /* Law 15 — 44px floor, same as the tab strip. */
-                                style={{ minWidth: 44, minHeight: 44, border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', display: 'grid', placeItems: 'center' }}
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 6,
+                                  border: '1px solid var(--border)',
+                                  background: expanded ? 'var(--nav-active-bg)' : 'var(--card2)',
+                                  color: expanded ? 'var(--nav-active-accent)' : 'var(--text2)',
+                                  cursor: 'pointer',
+                                  display: 'grid',
+                                  placeItems: 'center',
+                                  transition: 'all var(--dur-fast) var(--ease)',
+                                }}
                               >
-                                <Icon name={expanded ? 'arrow_down' : 'arrow_right'} size={12} />
+                                <Icon name={expanded ? 'chevron_down' : 'chevron_right'} size={14} />
                               </button>
                             </td>
                             <td style={{ padding: '10px 8px' }}>
                               {/* `asset_tag` is the NOT NULL unique key (0004:195);
                                   `serial_no` is nullable, so the tag leads. */}
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
-                                <span className="identifier" style={{ fontWeight: 600, color: 'var(--text)' }}>
+                                <span className="inventory-asset-code">
                                   {u.assetTag}
                                 </span>
                                 {/* R-28: warns only. It sits beside the identifier and
@@ -816,7 +785,7 @@ export default function AssetDetail() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             </div>
           )}
         </Card>
@@ -855,23 +824,31 @@ export default function AssetDetail() {
         <ServicePlanCard productId={product.id} />
         <Card title="Service & Maintenance Record">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-            {/* Summary strip — derived from the fetched unit rows. */}
-            <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', paddingBottom: 14, borderBottom: '1px solid var(--border)' }}>
-              <div>
-                <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>LAST SERVICE</div>
-                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600, marginTop: 2 }}>
+            {/* Bento summary strip — derived from the fetched unit rows. */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: 12,
+                paddingBottom: 14,
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <div style={{ padding: '10px 14px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>LAST SERVICE</div>
+                <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600, marginTop: 4 }}>
                   {lastServiceAd ? adDate(lastServiceAd) : 'Not recorded'}
                 </div>
               </div>
-              <div>
-                <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>NEXT DUE</div>
-                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600, marginTop: 2 }}>
+              <div style={{ padding: '10px 14px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>NEXT DUE</div>
+                <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600, marginTop: 4 }}>
                   {nextServiceAd ? adDate(nextServiceAd) : 'Not scheduled'}
                 </div>
               </div>
-              <div>
-                <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>UNITS IN MAINTENANCE</div>
-                <div className="figure" style={{ fontSize: 'var(--t-meta)', color: product.unitsByState.Maintenance > 0 ? 'var(--danger-text)' : 'var(--text)', fontWeight: 600, marginTop: 2 }}>
+              <div style={{ padding: '10px 14px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>UNITS IN MAINTENANCE</div>
+                <div className="figure" style={{ fontSize: 'var(--t-meta)', color: product.unitsByState.Maintenance > 0 ? 'var(--danger-text)' : 'var(--text)', fontWeight: 700, marginTop: 4 }}>
                   {product.unitsByState.Maintenance}
                 </div>
               </div>
@@ -879,11 +856,11 @@ export default function AssetDetail() {
 
             {units.length > 0 && viewport === 'phone' ? (
               /* Shell rule — the columns become one card per unit. */
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
+              <div className="inventory-card-grid">
                 {units.map((u) => (
-                  <article key={u.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  <article key={u.id} className="inventory-model-card">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                      <span className="identifier" style={{ fontWeight: 700 }}>{u.assetTag}</span>
+                      <span className="inventory-asset-code">{u.assetTag}</span>
                       {conditionChip(u.condition)}
                     </div>
                     <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
@@ -899,9 +876,9 @@ export default function AssetDetail() {
                 ))}
               </div>
             ) : units.length > 0 ? (
-              <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)', minWidth: viewport === 'tablet' ? 640 : 760 }}>
+              <div className="inventory-table-shell" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
+                <DataTableShell ariaLabel="Unit maintenance records">
+                  <table className="inventory-table operations-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)', minWidth: viewport === 'tablet' ? 640 : 760 }}>
                     <thead>
                       <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
                         <th style={{ padding: '8px' }}>Unit</th>
@@ -916,7 +893,7 @@ export default function AssetDetail() {
                     <tbody>
                       {units.map((u) => (
                         <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td style={{ padding: '10px 8px' }}><span className="identifier">{u.assetTag}</span></td>
+                          <td style={{ padding: '10px 8px' }}><span className="inventory-asset-code">{u.assetTag}</span></td>
                           <td style={{ padding: '10px 8px' }}>{conditionChip(u.condition)}</td>
                           <td style={{ padding: '10px 8px' }}><span className="figure">{u.runningHours}h</span></td>
                           <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{adDate(u.lastMaintenanceAtAd)}</td>
@@ -927,7 +904,7 @@ export default function AssetDetail() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               </div>
             ) : (
               <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No unit rows carry maintenance dates for this product.</div>
@@ -945,34 +922,34 @@ export default function AssetDetail() {
       {activeTab === 'Money' && money && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols(4)}, minmax(0,1fr))`, gap: 14 }}>
-            <div style={{ ...cardStyle, padding: 'var(--sp-lg)' }}>
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>DAILY RATE</div>
+            <div style={{ ...cardStyle, padding: '14px 18px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>DAILY RATE</div>
               {product.dailyRate !== null ? (
                 <>
-                  <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: 'var(--sp-xs)' }}>{formatMoney(product.dailyRate)}</div>
-                  <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>Standard list rate</div>
+                  <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: 'var(--sp-xs)', color: 'var(--text)' }}>{formatMoney(product.dailyRate)}</div>
+                  <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>Standard list rate</div>
                 </>
               ) : (
                 <NotTracked>Not on record for this asset.</NotTracked>
               )}
             </div>
-            <div style={{ ...cardStyle, padding: 'var(--sp-lg)' }}>
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>REPLACEMENT VALUE</div>
+            <div style={{ ...cardStyle, padding: '14px 18px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>REPLACEMENT VALUE</div>
               {product.replacementValue !== null ? (
                 <>
-                  <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: 'var(--sp-xs)' }}>{formatMoney(product.replacementValue)}</div>
-                  <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)' }}>As recorded on the SKU</div>
+                  <div className="figure" style={{ fontSize: '1.4rem', fontWeight: 700, marginTop: 'var(--sp-xs)', color: 'var(--text)' }}>{formatMoney(product.replacementValue)}</div>
+                  <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>As recorded on the SKU</div>
                 </>
               ) : (
                 <NotTracked>Not on record for this asset.</NotTracked>
               )}
             </div>
-            <div style={{ ...cardStyle, padding: 'var(--sp-lg)' }}>
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>LIFETIME EARNINGS</div>
+            <div style={{ ...cardStyle, padding: '14px 18px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>LIFETIME EARNINGS</div>
               <NotTracked>Not tracked yet — needs the revenue engine.</NotTracked>
             </div>
-            <div style={{ ...cardStyle, padding: 'var(--sp-lg)' }}>
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>REPAIRS TO DATE</div>
+            <div style={{ ...cardStyle, padding: '14px 18px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>REPAIRS TO DATE</div>
               <NotTracked>Not tracked yet — needs a maintenance-cost ledger.</NotTracked>
             </div>
           </div>
@@ -1009,37 +986,61 @@ export default function AssetDetail() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.6)',
+            background: 'rgba(0,0,0,0.65)',
+            backdropFilter: 'blur(4px)',
             display: 'grid',
             placeItems: 'center',
             zIndex: 1000,
+            padding: 16,
           }}
         >
-          <div style={{ ...cardStyle, width: 'min(400px, calc(100vw - 32px))', padding: 'var(--sp-xl)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+          <div
+            style={{
+              ...cardStyle,
+              width: 'min(420px, calc(100vw - 32px))',
+              padding: '24px',
+              borderRadius: 'var(--r-card, 16px)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--sp-lg)',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)',
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700 }}>Asset QR Label</h2>
               <button
                 type="button"
                 onClick={() => setLabelUnit(null)}
                 aria-label="Close"
-                style={{ minWidth: 44, minHeight: 44, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--muted)', display: 'grid', placeItems: 'center' }}
+                style={{
+                  minWidth: 44,
+                  minHeight: 44,
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-btn)',
+                  background: 'var(--card2)',
+                  cursor: 'pointer',
+                  color: 'var(--text2)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  transition: 'all var(--dur-fast) var(--ease)',
+                }}
               >
-                <Icon name="close" size={18} />
+                <Icon name="close" size={16} />
               </button>
             </div>
 
-            <div style={{ padding: 20, borderRadius: 'var(--r-sm)', background: '#fff', color: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <div style={{ padding: 20, borderRadius: 'var(--r-btn)', background: '#fff', color: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.1)' }}>
               <div style={{ fontWeight: 800, fontSize: '1.1rem', letterSpacing: 0.5 }}>BABIN RENTALS</div>
-              <div style={{ width: 120, height: 120, border: '2px solid #000', display: 'grid', placeItems: 'center', padding: 'var(--sp-sm)' }}>
+              <div style={{ width: 120, height: 120, border: '2px solid #000', display: 'grid', placeItems: 'center', padding: 'var(--sp-sm)', borderRadius: 8 }}>
                 <Icon name="queues" size={80} style={{ color: '#000' }} />
               </div>
-              <div className="identifier" style={{ fontSize: '1rem', fontWeight: 800, color: '#000' }}>
+              <div className="inventory-asset-code" style={{ fontSize: '1rem', fontWeight: 800, color: '#000', background: 'rgba(0,0,0,0.06)' }}>
                 {labelUnit.assetTag}
               </div>
               {labelUnit.serialNo && (
                 <div className="identifier" style={{ fontSize: '0.8rem', color: '#444' }}>{labelUnit.serialNo}</div>
               )}
-              <div style={{ fontSize: '0.8rem', color: '#444' }}>
+              <div style={{ fontSize: '0.8rem', color: '#444', textAlign: 'center' }}>
                 {product.name} · {product.assetCode}
               </div>
             </div>
@@ -1048,7 +1049,7 @@ export default function AssetDetail() {
                 is no primary "Print" button pretending otherwise. */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Label printing is not wired yet — this is a preview.</span>
-              <Button variant="secondary" onClick={() => setLabelUnit(null)}>Close</Button>
+              <Button variant="secondary" onClick={() => setLabelUnit(null)} style={{ minHeight: 44, padding: '0 16px' }}>Close</Button>
             </div>
           </div>
         </div>

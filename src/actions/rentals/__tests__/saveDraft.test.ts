@@ -123,6 +123,23 @@ describe('durable New Rental drafts', () => {
     expect(loaded.bookingClientUuid).toBe(BOOKING_KEY)
   })
 
+  it('preserves §4.58 return-pickup logistics fields in draft round-trip', async () => {
+    const data = completeDraft({
+      returnPickupType: 'Babin Pickup',
+      returnPickupAddress: 'Patan Durbar Square, Lalitpur',
+      returnPickupTime: '19:30',
+      returnPickupChargePaisa: 150000,
+    })
+    await saveDraftConfig.execute({ clientUuid: DRAFT_KEY, bookingClientUuid: BOOKING_KEY, data }, COORDINATOR)
+    const loaded = await fetchRentalDraft(DRAFT_ID)
+    expect(loaded.data).toMatchObject({
+      returnPickupType: 'Babin Pickup',
+      returnPickupAddress: 'Patan Durbar Square, Lalitpur',
+      returnPickupTime: '19:30',
+      returnPickupChargePaisa: 150000,
+    })
+  })
+
   it('edits the same draft row and preserves its booking idempotency key and bookingNo', async () => {
     await saveDraftConfig.execute({ clientUuid: DRAFT_KEY, bookingClientUuid: BOOKING_KEY, data: completeDraft() }, COORDINATOR)
     const edited = completeDraft({ project: 'Revised campaign', advancePaisa: 7500000 })

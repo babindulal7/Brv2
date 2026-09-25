@@ -95,6 +95,7 @@ const REGISTRY = {
   sun: IconSun,
   zap: IconBolt,
   close: IconX,
+  x: IconX,
   chevron_right: IconChevronRight,
   chevron_left: IconChevronLeft,
   chevron_down: IconChevronDown,
@@ -177,6 +178,7 @@ const REGISTRY = {
   // Add Client — client type segmented control + document rows
   company: IconBuilding,
   person: IconUser,
+  user: IconUser,
   student: IconSchool,
   id_card: IconId,
 

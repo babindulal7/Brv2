@@ -53,6 +53,10 @@ export interface RentalDraftData {
   vehicle: string
   numberPlate: string
   driverContact: string
+  returnPickupType?: 'Client Return' | 'Babin Pickup' | undefined
+  returnPickupAddress?: string | undefined
+  returnPickupTime?: string | undefined
+  returnPickupChargePaisa?: number | undefined
   discountPct: number
   vatOn: boolean
   vatRatePercent: number

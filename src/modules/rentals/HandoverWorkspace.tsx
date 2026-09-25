@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FloorAside } from '../operations/FloorAside'
 import { StickyFloorBar } from '../operations/StickyFloorBar'
@@ -26,6 +27,7 @@ import type { FloorLineInput } from '../../actions/rentals/floorVerb'
 import { CompactButton } from '../../components/ui/TouchTarget'
 import { deliveryTypeLabel } from '../../lib/format'
 import { formatGateError } from '../../lib/gates'
+import './rentals.css'
 
 /**
  * **Handover Workspace** — `Handover Workflow.md` v1.1 (Build Locked), wired
@@ -1252,7 +1254,7 @@ export default function HandoverWorkspace({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', marginLeft: 'auto', alignSelf: 'flex-start', flexShrink: 0 }}>
                 <Link to={`/rentals/${id}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}>
                   <Icon name="external_link" size={14} />
                   View Booking
@@ -1264,7 +1266,7 @@ export default function HandoverWorkspace({
                 `fetchFloorBooking`. No money anywhere (Law 6 / §8.3): the seed
                 build's Payment cell was local state wearing a strip cell, and
                 is gone — gates 3 and 4 carry that fact, amount-free. */}
-            <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
+            <div className="floor-summary-bar">
               {[
                 { l: 'Client', v: floor.clientName ?? '—', big: true },
                 { l: 'Pickup', v: bsLabel(floor.pickupAtAd), s: floor.pickupAtAd ? formatAd(new Date(floor.pickupAtAd)) : undefined },
@@ -1275,12 +1277,12 @@ export default function HandoverWorkspace({
                 { l: 'Units', v: String(totalUnits) },
                 { l: 'Delivery', v: deliveryTypeLabel(floor.deliveryType) },
               ].map((f) => (
-                <div key={f.l} style={{ padding: '11px 14px', borderRight: '1px solid var(--border)', minWidth: 0, flex: '1 1 auto' }}>
-                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.l}</div>
-                  <div style={{ fontSize: f.big ? 'var(--t-h3)' : 'var(--t-body)', fontWeight: f.big ? 700 : 600, color: 'var(--text)', marginTop: 3, whiteSpace: 'nowrap' }}>
+                <div key={f.l} className="floor-summary-cell">
+                  <div className="floor-summary-label">{f.l}</div>
+                  <div className={`floor-summary-value ${f.big ? 'is-primary' : ''}`}>
                     {f.v}
                   </div>
-                  {f.s && <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{f.s}</div>}
+                  {f.s && <div className="floor-summary-sub">{f.s}</div>}
                 </div>
               ))}
             </div>
@@ -1337,15 +1339,21 @@ export default function HandoverWorkspace({
                     </>
                   }
                 >
-                  <div style={{ display: 'flex', gap: 7, padding: '9px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center' }}>
-                    <input
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onKeyDown={handleSearchKeyDown}
-                      placeholder="Search equipment or scan barcode (press Enter)…"
-                      aria-label="Search equipment or scan barcode"
-                      style={{ flex: 1, minWidth: 180, minHeight: 44, padding: '0 9px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-                    />
+                  <div style={{ display: 'flex', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center', background: 'var(--card2)' }}>
+                    <div className="floor-scanner-input-wrap">
+                      <span className="floor-scanner-icon">
+                        <Icon name="barcode" size={18} />
+                      </span>
+                      <input
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={handleSearchKeyDown}
+                        placeholder="Search equipment or scan barcode (press Enter)…"
+                        aria-label="Search equipment or scan barcode"
+                        className="floor-scanner-input"
+                      />
+                      <span className="floor-scanner-enter-hint"><kbd>↵</kbd> Enter</span>
+                    </div>
                     <SegmentedControl
                       ariaLabel="Filter handover checklist items"
                       size="sm"
@@ -1376,15 +1384,19 @@ export default function HandoverWorkspace({
                         const tone = STATUS[ROW_TONE[s]]
                         const recorded = r.prior !== null
                         return (
-                          <article key={r.key} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
-                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 44 }}>
+                          <article
+                            key={r.key}
+                            className={`floor-card-item ${s === 'Picked Up' ? 'is-packed' : s === 'Missing' ? 'is-missing' : ''}`}
+                            style={{ opacity: recorded ? 0.75 : 1 }}
+                          >
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 44, cursor: recorded ? 'not-allowed' : 'pointer' }}>
                               <input
                                 type="checkbox"
                                 checked={s === 'Picked Up'}
                                 disabled={recorded}
                                 aria-label={`Mark ${r.name} picked up`}
                                 title={recorded ? 'Recorded in an earlier session' : undefined}
-                                style={{ width: 22, height: 22, marginTop: 2, flexShrink: 0 }}
+                                style={{ width: 22, height: 22, marginTop: 2, flexShrink: 0, cursor: recorded ? 'not-allowed' : 'pointer' }}
                                 onChange={() => {
                                   if (mark?.state === 'Picked Up') clearMark(r.key)
                                   else pick(r.key, 'manual')
@@ -1395,7 +1407,7 @@ export default function HandoverWorkspace({
                                   <span style={{ fontWeight: 600 }}>{r.name}</span>
                                   {r.qty > 1 && <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>×{r.qty}</span>}
                                   {r.required && (
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', height: 15, padding: '0 5px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', height: 16, padding: '0 6px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
                                       Required
                                     </span>
                                   )}
@@ -1405,9 +1417,12 @@ export default function HandoverWorkspace({
                                   {recorded && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>earlier session</span>}
                                 </span>
                                 {r.serial && (
-                                  <Link to={`/inventory/${r.serial}`} className="identifier" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none', marginTop: 2 }}>
-                                    {r.serial}
-                                  </Link>
+                                  <div style={{ marginTop: 4 }}>
+                                    <Link to={`/inventory/${r.serial}`} className="floor-serial-badge" style={{ textDecoration: 'none' }}>
+                                      <Icon name="barcode" size={11} />
+                                      <span>{r.serial}</span>
+                                    </Link>
+                                  </div>
                                 )}
                               </span>
                             </label>
@@ -1435,7 +1450,7 @@ export default function HandoverWorkspace({
                       )}
                     </div>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <DataTableShell ariaLabel="Handover items">
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                         <thead>
                           <tr style={{ background: 'var(--th-bg)' }}>
@@ -1464,7 +1479,11 @@ export default function HandoverWorkspace({
                             const tone = STATUS[ROW_TONE[s]]
                             const recorded = r.prior !== null
                             return (
-                              <tr key={r.key} style={{ borderBottom: '1px solid var(--border)', opacity: recorded ? 0.7 : 1 }}>
+                              <tr
+                                key={r.key}
+                                className={`floor-table-row ${s === 'Picked Up' ? 'is-packed' : s === 'Missing' ? 'is-missing' : ''}`}
+                                style={{ opacity: recorded ? 0.75 : 1 }}
+                              >
                                 <td style={{ ...td, width: 26 }}>
                                   <input
                                     type="checkbox"
@@ -1472,6 +1491,7 @@ export default function HandoverWorkspace({
                                     disabled={recorded}
                                     aria-label={`Mark ${r.name} picked up`}
                                     title={recorded ? 'Recorded in an earlier session' : undefined}
+                                    style={{ cursor: recorded ? 'not-allowed' : 'pointer' }}
                                     onChange={() => {
                                       if (mark?.state === 'Picked Up') clearMark(r.key)
                                       else pick(r.key, 'manual')
@@ -1482,17 +1502,18 @@ export default function HandoverWorkspace({
                                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <span style={{ fontWeight: 600 }}>{r.name}</span>
                                     {r.required && (
-                                      <span style={{ display: 'inline-flex', alignItems: 'center', height: 15, padding: '0 5px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', height: 16, padding: '0 6px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
                                         Required
                                       </span>
                                     )}
                                   </span>
                                   <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{r.group}</span>
                                 </td>
-                                <td className="identifier" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                                <td style={{ ...td, fontSize: 'var(--t-meta)' }}>
                                   {r.serial ? (
-                                    <Link to={`/inventory/${r.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                                      {r.serial}
+                                    <Link to={`/inventory/${r.serial}`} className="floor-serial-badge" style={{ textDecoration: 'none' }}>
+                                      <Icon name="barcode" size={11} />
+                                      <span>{r.serial}</span>
                                     </Link>
                                   ) : (
                                     <span style={{ color: 'var(--muted)' }}>—</span>
@@ -1531,7 +1552,7 @@ export default function HandoverWorkspace({
                           )}
                         </tbody>
                       </table>
-                    </div>
+                    </DataTableShell>
                   )}
                 </Card>
 
@@ -1539,11 +1560,11 @@ export default function HandoverWorkspace({
                 <Card title="Session Gates">
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
                     {gates.map((g) => (
-                      <div key={g.n} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '7px 9px', borderRadius: 'var(--r-sm)', background: g.passing ? 'var(--st-in-bg)' : 'var(--st-progress-bg)' }}>
-                        <Icon name={g.passing ? 'checklist' : 'alert_triangle'} size={14} style={{ color: g.passing ? 'var(--st-in-fg)' : 'var(--st-progress-fg)', marginTop: 2, flexShrink: 0 }} />
+                      <div key={g.n} className={`floor-gate-row ${g.passing ? 'is-pass' : 'is-pending'}`}>
+                        <Icon name={g.passing ? 'checklist' : 'alert_triangle'} size={14} style={{ color: g.passing ? 'var(--success-text)' : 'var(--progress-text)', marginTop: 2, flexShrink: 0 }} />
                         <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: g.passing ? 'var(--st-in-fg)' : 'var(--text)' }}>{g.label}</div>
-                          {!g.passing && g.blocking && <div style={{ fontSize: 'var(--t-meta)', color: 'var(--st-progress-fg)', marginTop: 2 }}>{g.blocking}</div>}
+                          <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: g.passing ? 'var(--text)' : 'var(--progress-text)' }}>{g.label}</div>
+                          {!g.passing && g.blocking && <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{g.blocking}</div>}
                         </div>
                         {!g.passing && g.resolve && (moneyGateClearer ? (
                           <button type="button" onClick={g.resolve} style={{ minHeight: 44, border: 'none', background: 'transparent', color: 'var(--link)', fontWeight: 600, fontSize: 'var(--t-meta)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>

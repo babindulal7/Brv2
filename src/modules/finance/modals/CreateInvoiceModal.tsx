@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { BsAdDate } from '../../../components/ui/BsAdDate'
 import { Unavailable } from '../../../components/ui/Unavailable'
 import { useToast } from '../../../components/ui/Toast'
@@ -472,7 +473,7 @@ export function CreateInvoiceModal({ isOpen, onClose, bookingNo, onSuccess }: Cr
                 What will be billed — {preview.lines.length} line{preview.lines.length === 1 ? '' : 's'} from{' '}
                 {preview.bookingNo}
               </span>
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="Invoice lines preview">
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
@@ -499,7 +500,7 @@ export function CreateInvoiceModal({ isOpen, onClose, bookingNo, onSuccess }: Cr
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
               <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                 Read from the booking and copied onto the invoice as a snapshot — a later change to a product’s rate
                 does not re-price this bill. Nothing here is editable from this screen: a charge is added by editing

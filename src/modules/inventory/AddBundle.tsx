@@ -10,7 +10,9 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui/Select'
 import { InfoTooltip } from '../../components/ui/InfoTooltip'
-import { Card, PageHeader, Button, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
+import { Card, Button, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { RestrictedState } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
@@ -652,7 +654,8 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
   if (!money) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-        <PageHeader
+        <ScreenHeader
+          embedded={embedded}
           icon="plus"
           title="New Bundle"
           description="Create a reusable equipment kit and set bundle pricing."
@@ -1054,7 +1057,8 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
       )}
 
       {/* §2 — breadcrumb only, and the shell already renders it. No Back button. */}
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="plus"
         title="New Bundle"
         description="Create a reusable equipment kit and set bundle pricing."
@@ -1507,7 +1511,7 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                   />
                 </label>
               </div>
-              <div style={{ maxHeight: 460, overflowY: 'auto' }}>
+              <DataTableShell ariaLabel="Catalogue availability for bundle" style={{ maxHeight: 460, overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
@@ -1584,7 +1588,7 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                     )}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             </Section>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
@@ -1685,7 +1689,7 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                      corners once v4.2 §6 raised --r-card from 8. `overflowX:
                      auto` already makes this a clip box, so the radius rounds
                      the totals row with it. */
-                  <div style={{ overflowX: 'auto', borderRadius: '0 0 var(--r-card) var(--r-card)' }}>
+                  <DataTableShell ariaLabel="Bundle components and rate breakdown" style={{ borderRadius: '0 0 var(--r-card) var(--r-card)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                       <thead>
                         <tr style={{ background: 'var(--th-bg)' }}>
@@ -1765,7 +1769,7 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                         </tr>
                       </tfoot>
                     </table>
-                  </div>
+                  </DataTableShell>
                 )}
               </Section>
 
@@ -2400,7 +2404,7 @@ function Prompt({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 60,
+        zIndex: 'var(--z-modal)' as unknown as number,
         display: 'grid',
         placeItems: 'center',
         padding: 'var(--sp-lg)',

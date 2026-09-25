@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, Button, KpiStrip, cardStyle, Rail } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, Rail } from '../../components/ui/Page'
+import { SearchInput } from '../../components/ui'
 import type { Kpi } from '../../components/ui/Page'
 import {
   ActiveFilterChips,
@@ -23,6 +24,7 @@ import {
   type FacetSelection,
 } from './clientFacets'
 import { Modal } from '../../components/ui/Modal'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
@@ -51,6 +53,7 @@ import {
   type ClientRecord,
   type CreditStopVerdict,
 } from '../../lib/queries/clients'
+import './clients.css'
 
 /* ── last-rental sort key ──────────────────────────────────────────────── */
 
@@ -396,6 +399,22 @@ function csvCell(v: string | number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
+const CLIENT_FACET_KEYS = ['status', 'membership', 'clientType', 'orgType', 'district', 'segment', 'outstanding'] as const
+
+function parseFacetSelFromParams(searchParams: URLSearchParams): FacetSelection {
+  const result: Record<string, readonly string[]> = {}
+  for (const key of CLIENT_FACET_KEYS) {
+    const val = searchParams.get(`f_${key}`)
+    if (val) {
+      const items = val.split(',').map((s) => s.trim()).filter(Boolean)
+      if (items.length > 0) {
+        result[key] = items
+      }
+    }
+  }
+  return result
+}
+
 export function ClientsDirectory({
   clients,
   onRequestAdd,
@@ -422,18 +441,28 @@ export function ClientsDirectory({
 }) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
+  const [params, setParams] = useSearchParams()
+
+  const patchParams = useCallback(
+    (next: Record<string, string | null>, replace = false) => {
+      const merged = new URLSearchParams(params)
+      for (const [k, v] of Object.entries(next)) {
+        if (v === null) merged.delete(k)
+        else merged.set(k, v)
+      }
+      setParams(merged, replace ? { replace: true } : undefined)
+    },
+    [params, setParams],
+  )
 
   /*
    * ── the faceted filter panel (P6) ──────────────────────────────────────
    *
-   * Local state, not a URL param, and deliberately so: the directory's owned
-   * params (`filter`, `blocked`, `stop`, `q`) are each ONE value, while a
-   * selection here is a map of arrays. Encoding that in the query string would
-   * make every checkbox a history entry, so Back would walk the operator out of
-   * a filter one tick at a time instead of leaving the screen. The chips above
-   * keep their param behaviour; the panel is a working surface.
+   * Synced to the URL query string (`?f_<key>=...`), so refreshing the page
+   * or sharing the link preserves active multi-facet filters. Uses `replace: true`
+   * so checking facets does not build an unwanted history stack.
    */
-  const [facetSel, setFacetSel] = useState<FacetSelection>({})
+  const facetSel: FacetSelection = useMemo(() => parseFacetSelFromParams(params), [params])
   const [internalFiltersOpen, setInternalFiltersOpen] = useState(false)
   const filtersOpen = controlledFiltersOpen ?? internalFiltersOpen
   const setFiltersOpen = (open: boolean) => {
@@ -442,17 +471,15 @@ export function ClientsDirectory({
   }
   const facets = useMemo(() => clientFacetsFor(money), [money])
 
-  const toggleFacet = useCallback((key: string, value: string) => {
-    setFacetSel((prev) => {
-      const cur = prev[key] ?? []
+  const toggleFacet = useCallback(
+    (key: string, value: string) => {
+      const cur = facetSel[key] ?? []
       const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value]
-      if (next.length === 0) {
-        const { [key]: _dropped, ...rest } = prev
-        return rest
-      }
-      return { ...prev, [key]: next }
-    })
-  }, [])
+      patchParams({ [`f_${key}`]: next.length > 0 ? next.join(',') : null }, true)
+      setPage(1)
+    },
+    [facetSel, patchParams],
+  )
   const { user } = useAuth()
   const online = useNetwork()
   // `gateContext` builds a fresh object every call — memoized on the one
@@ -476,7 +503,6 @@ export function ClientsDirectory({
   // Deposit, so a Warehouse or Technician session never receives the column.
   const pii = canViewPII(gctx)
   const { showSuccessToast } = useToast()
-  const [params, setParams] = useSearchParams()
   /* DEVICES.md §7 build order item 1 — below 768 the table can't be read even
      scrolled, so the phone gets the card view unconditionally (Law 13: branch
      on capability, not platform).
@@ -755,25 +781,6 @@ export function ClientsDirectory({
 
   const resetPage = () => setPage(1)
 
-  /**
-   * Merge-writes the params this directory owns, deleting a key handed `null`
-   * — `OperationsQueues.tsx`'s `patch()` helper, the named house pattern for
-   * multi-param URL state. Merging from the CURRENT params is what keeps
-   * `?tab=`, which `Clients.tsx` owns on this same URL, untouched: two owners,
-   * one query string, no clobbering.
-   *
-   * `replace` exists for one caller — the middle of a search burst — so a
-   * word of typing is one history entry, not twelve.
-   */
-  const patchParams = (next: Record<string, string | null>, replace = false) => {
-    const merged = new URLSearchParams(params)
-    for (const [k, v] of Object.entries(next)) {
-      if (v === null) merged.delete(k)
-      else merged.set(k, v)
-    }
-    setParams(merged, replace ? { replace: true } : undefined)
-  }
-
   const applyFilter = (f: FilterKey) => {
     patchParams({ filter: f === 'all' ? null : FILTER_PARAM[f] })
     setActiveSavedView(null)
@@ -784,18 +791,16 @@ export function ClientsDirectory({
     setActiveSavedView(null)
   }
 
-
   const clearAll = () => {
     /* Every owned param in ONE write — two navigations would make "Clear all"
        take two presses of Back to undo, which is not one action. */
-    patchParams({ filter: null, blocked: null, stop: null, q: null })
+    const patch: Record<string, string | null> = { filter: null, blocked: null, stop: null, q: null }
+    for (const key of CLIENT_FACET_KEYS) {
+      patch[`f_${key}`] = null
+    }
+    patchParams(patch)
     setSort({ key: 'name', dir: 'asc' })
     setActiveSavedView(null)
-    /* The facet panel is local state, not a URL param, so it is not covered by
-       the single `patchParams` write above and has to be cleared beside it —
-       otherwise "Clear all" leaves the drawer's badge reading "4 active" over
-       an unfiltered list. */
-    setFacetSel({})
   }
 
   /**
@@ -1113,7 +1118,7 @@ export function ClientsDirectory({
 
       {/* ── quick filters + view switch ───────────────────────────────── */}
       <div
-        className="rsp-chip-scroll"
+        className="client-chip-track rsp-chip-scroll"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1131,6 +1136,7 @@ export function ClientsDirectory({
               type="button"
               onClick={() => applyFilter(c.key)}
               aria-pressed={on}
+              className={`client-filter-chip ${on ? 'is-active' : ''}`}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1152,7 +1158,7 @@ export function ClientsDirectory({
             >
               {c.label}
               <span
-                className="figure"
+                className="client-chip-badge figure client-mono"
                 style={{
                   minWidth: 18,
                   height: 18,
@@ -1190,6 +1196,7 @@ export function ClientsDirectory({
               onClick={() => toggleOverlay(c.key)}
               aria-pressed={on}
               disabled={Boolean(c.unavailable)}
+              className={`client-overlay-chip ${on ? 'is-active' : ''}`}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1216,7 +1223,7 @@ export function ClientsDirectory({
                 <span style={{ fontSize: 'var(--t-th)', fontWeight: 600 }}>check unavailable</span>
               ) : (
                 <span
-                  className="figure"
+                  className="client-chip-badge figure client-mono"
                   style={{
                     minWidth: 18,
                     height: 18,
@@ -1249,41 +1256,22 @@ export function ClientsDirectory({
         })}
 
         <span style={{ marginLeft: phone ? 0 : 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', width: phone ? '100%' : 'auto', flexWrap: phone ? 'nowrap' : 'nowrap' }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, position: 'relative', flex: phone ? '1 1 0' : undefined, minWidth: 0 }}>
-            <Icon name="search" size={15} style={{ color: 'var(--muted)', position: 'absolute', left: 9 }} />
-            <input
-              type="search"
+          <div style={{ flex: phone ? '1 1 0' : undefined, width: phone ? undefined : 280, minWidth: 0 }}>
+            <SearchInput
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const midBurst = Boolean(searchQuery) && Boolean(searchInput)
-                  patchParams({ q: searchInput || null }, midBurst)
-                }
+              onChange={setSearchInput}
+              onClear={() => {
+                setSearchInput('')
+                patchParams({ q: null }, true)
               }}
-              /* No "company". `ClientRecord.company` has no source in
-                 `client_directory_v` — the live view's 31 columns carry no
-                 company field and `toClientRecord` never sets one — so this
-                 placeholder was advertising a haystack with nothing in it.
-                 (0005_clients.sql:36: "There is no separate companies table";
-                 for an Organisation the company name IS `clients.name`, which
-                 this box already searches.) */
+              onSearchSubmit={(val) => {
+                const midBurst = Boolean(searchQuery) && Boolean(val)
+                patchParams({ q: val || null }, midBurst)
+              }}
               placeholder="Search client, phone, email, PAN…"
               aria-label="Search clients"
-              style={{
-                width: phone ? '100%' : 280,
-                minHeight: 44,
-                padding: '0 10px 0 29px',
-                borderRadius: 'var(--r-input)',
-                border: '1px solid var(--input-border)',
-                background: 'var(--input-bg)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-                fontFamily: 'inherit',
-                boxSizing: 'border-box',
-              }}
             />
-          </label>
+          </div>
 
           {tabular &&
             (['Table', 'Cards'] as ViewKey[]).map((v) => (
@@ -1630,54 +1618,43 @@ export function ClientsDirectory({
                 />
               </div>
             ) : !tabular || view === 'Cards' ? (
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(258px, 1fr))',
-                  gap: 'var(--sp-md)',
-                  padding: 14,
-                }}
-              >
+              <div className="client-grid-container">
                 {pageRowsWithIntel.map(({ client, glance, detail }) => {
                   const action = primaryAction(client)
                   return (
-                    <article key={client.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    <article key={client.id} className="client-bento-card">
                       <IntelCard
                         glance={glance}
                         detail={detail}
                         detailTitle={client.name}
                         detailSubtitle={`${client.id} · ${client.clientType}`}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                        <div className="client-card-header">
                           <span
                             aria-hidden
+                            className="client-avatar-badge"
                             style={{
-                              width: 34,
-                              height: 34,
-                              borderRadius: 9,
-                              display: 'grid',
-                              placeItems: 'center',
                               background: STATUS[TIER_TONE[client.membership]].bg,
                               color: STATUS[TIER_TONE[client.membership]].fg,
-                              fontSize: 'var(--t-meta)',
-                              fontWeight: 700,
-                              flexShrink: 0,
+                              border: STATUS[TIER_TONE[client.membership]].border
+                                ? `1px solid ${STATUS[TIER_TONE[client.membership]].border}`
+                                : undefined,
                             }}
                           >
                             {client.name.slice(0, 2).toUpperCase()}
                           </span>
-                          <span style={{ minWidth: 0 }}>
-                            <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span className="client-card-meta">
+                            <span className="client-card-name">
                               {client.name}
                             </span>
-                            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                            <span className="client-card-sub">
                               {client.clientType}
                             </span>
                           </span>
                         </div>
                       </IntelCard>
 
-                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                      <div className="client-card-tags">
                         <Tone text={client.membership} tone={TIER_TONE[client.membership]} />
                         {client.isVip && <Tone text="VIP" entity />}
                         {client.isBlocked && <Tone text="Blocked" tone="danger" />}
@@ -1697,27 +1674,27 @@ export function ClientsDirectory({
                       </div>
 
                       {pii && (
-                        <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                          <div className="figure">{client.phone}</div>
-                          <div style={{ color: 'var(--muted)' }}>{client.email}</div>
+                        <div className="client-card-contact">
+                          <div className="figure client-mono" style={{ fontWeight: 600, color: 'var(--text)' }}>{client.phone}</div>
+                          <div style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{client.email}</div>
                         </div>
                       )}
 
-                      <div style={{ display: 'flex', gap: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                        <span>
-                          <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>
+                      <div className="client-card-stats">
+                        <span className="client-stat-badge">
+                          <span className="figure client-mono" style={{ color: 'var(--text)', fontWeight: 600 }}>
                             {client.currentRentalsCount}
                           </span>{' '}
                           active
                         </span>
                         {money && client.outstandingPaisa > 0 && (
-                          <span className="figure" style={{ color: 'var(--danger-text)', fontWeight: 600 }}>
+                          <span className="figure client-mono" style={{ color: 'var(--danger-text)', fontWeight: 600 }}>
                             {formatMoney(client.outstandingPaisa)} due
                           </span>
                         )}
                       </div>
 
-                      <div style={{ marginTop: 'auto', display: 'flex', gap: 6 }}>
+                      <div className="client-card-actions">
                         <Button variant={action.variant} onClick={action.run}>
                           {action.label}
                         </Button>
@@ -1736,8 +1713,8 @@ export function ClientsDirectory({
                 band; the dropped facts are all still on the row's IntelCard and
                 in the profile panel, so nothing becomes unreachable.
               */
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: narrow ? 620 : money ? 1180 : 900 }}>
+              <DataTableShell ariaLabel="Clients directory" data-table-scroll className="client-table-shell" style={{ overflowX: 'auto' }}>
+                <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: narrow ? 620 : money ? 1180 : 900 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       <th style={{ ...th, width: 30 }}>
@@ -1793,6 +1770,7 @@ export function ClientsDirectory({
                               setSelectedClientId(isSelected ? null : client.id)
                             }
                           }}
+                          className={`client-row ${isSelected ? 'is-selected' : ''}`}
                           style={{
                             borderBottom: '1px solid var(--border)',
                             background: isSelected ? 'var(--tr-hover)' : 'transparent',
@@ -1883,7 +1861,7 @@ export function ClientsDirectory({
 
                           {pii && !narrow && (
                             <td style={td}>
-                              <span className="figure" style={{ display: 'block', color: 'var(--text)' }}>
+                              <span className="figure client-mono" style={{ display: 'block', color: 'var(--text)' }}>
                                 {client.phone}
                               </span>
                               <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
@@ -1901,11 +1879,11 @@ export function ClientsDirectory({
                           {!narrow && (
                           <td style={td}>
                             {client.currentRentalsCount > 0 ? (
-                              <span className="figure" style={{ color: 'var(--link)', fontWeight: 600 }}>
+                              <span className="figure client-mono" style={{ color: 'var(--link)', fontWeight: 600 }}>
                                 {client.currentRentalsCount} active
                               </span>
                             ) : (
-                              <span className="figure" style={{ color: 'var(--muted)' }}>
+                              <span className="figure client-mono" style={{ color: 'var(--muted)' }}>
                                 0
                               </span>
                             )}
@@ -1915,7 +1893,7 @@ export function ClientsDirectory({
                           {money && (
                             <td style={td}>
                               {client.outstandingPaisa > 0 ? (
-                                <span className="figure" style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
+                                <span className="figure client-mono" style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
                                   {formatMoney(client.outstandingPaisa)}
                                 </span>
                               ) : (
@@ -1928,7 +1906,7 @@ export function ClientsDirectory({
                             <td style={td}>
                               {client.depositHeldPaisa > 0 ? (
                                 <>
-                                  <span className="figure" style={{ display: 'block', color: 'var(--text)' }}>
+                                  <span className="figure client-mono" style={{ display: 'block', color: 'var(--text)' }}>
                                     {formatMoney(client.depositHeldPaisa)}
                                   </span>
                                   {client.currentRentalsCount === 0 && (
@@ -1952,10 +1930,10 @@ export function ClientsDirectory({
                                 {/* No " BS" appended here: `queries/clients.ts` already suffixes a
                                     BS label, and leaves the suffix off when it fell back to the AD
                                     date — appending it blindly stamped "BS" on an English date. */}
-                                <span className="figure" style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
+                                <span className="figure client-mono" style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>
                                   {client.lastRentalBs}
                                 </span>
-                                <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                                <span className="figure client-mono" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                                   {client.lastRentalAd}
                                 </span>
                               </>
@@ -2084,7 +2062,7 @@ export function ClientsDirectory({
                     })}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             )}
 
             <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>

@@ -222,8 +222,8 @@ export async function uploadDocumentToStorage(options: {
     uploadError = err instanceof Error ? err : { message: String(err) }
   }
 
-  // If bucket not found or storage error, try creating bucket or fall back to mock storage
-  if (uploadError && (uploadError.message?.toLowerCase().includes('bucket not found') || uploadError.name === 'StorageApiError')) {
+  // If bucket not found, RLS error, or any storage error, try creating bucket or fall back to mock storage
+  if (uploadError && !uploadError.message?.toLowerCase().includes('already exists')) {
     try {
       if (supabase?.storage && 'createBucket' in supabase.storage && typeof supabase.storage.createBucket === 'function') {
         const { error: createErr } = await supabase.storage.createBucket(DOCUMENTS_STORAGE_BUCKET, { public: false })

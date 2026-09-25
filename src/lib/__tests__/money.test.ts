@@ -130,6 +130,16 @@ describe('parseMoney', () => {
     expect(parseMoney('abc')).toBeNull()
     expect(parseMoney('1.2.3')).toBeNull()
     expect(parseMoney('Rs')).toBeNull()
+    expect(parseMoney('-')).toBeNull()
+    expect(parseMoney('.')).toBeNull()
+  })
+
+  it('eliminates IEEE 754 float drift on boundary numbers (e.g. 19.99)', () => {
+    expect(parseMoney('19.99')).toBe(1999)
+    expect(parseMoney('0.01')).toBe(1)
+    expect(parseMoney('-19.99')).toBe(-1999)
+    expect(parseMoney('1234.567')).toBe(123457)
+    expect(parseMoney('1234.562')).toBe(123456)
   })
 })
 

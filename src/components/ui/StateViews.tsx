@@ -112,7 +112,12 @@ export function LoadingSkeleton({
   /** The "Loading rentals…" text §2.1 requires — omit only where the skeleton sits right under a heading that already says what's loading. */
   label?: string
 }) {
-  const pulse = { background: 'var(--card2)', borderRadius: 'var(--r-xs)', animation: 'pulse 1.5s ease-in-out infinite' } as const
+  const pulse = {
+    background: 'linear-gradient(90deg, var(--card2) 0%, color-mix(in srgb, var(--surface) 65%, var(--card2)) 50%, var(--card2) 100%)',
+    backgroundSize: '200% 100%',
+    borderRadius: 'var(--r-xs)',
+    animation: 'skeletonShimmer 1.8s cubic-bezier(0.16, 1, 0.3, 1) infinite',
+  } as const
   const labelEl = label && (
     <p style={{ margin: '0 0 10px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{label}</p>
   )

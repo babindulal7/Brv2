@@ -11,8 +11,9 @@ import { EquipmentRightRail } from './components/EquipmentRightRail'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Modal } from '../../components/ui/Modal'
-import { PageHeader, Button, FooterNote, Rail, cardStyle } from '../../components/ui/Page'
-import Icon from '../../components/ui/Icon'
+import { Button, FooterNote, Rail, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
+import { PageActions } from '../../components/ui/PageActions'
 import { Link, useNavigate } from 'react-router-dom'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
@@ -212,74 +213,61 @@ function AddEquipmentLayout({ embedded, onDone }: { embedded?: boolean; onDone?:
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', paddingBottom: 'var(--sp-3xl)' }}>
       {/* §2 — breadcrumb */}
-      <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-        {embedded ? (
-          <button
-            type="button"
-            onClick={handleExit}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text2)',
-              cursor: 'pointer',
-              fontSize: 'var(--t-meta)',
-              fontFamily: 'inherit',
-              padding: 0,
-            }}
-          >
-            <Icon name="chevron_left" size={14} />
-            Back to Inventory
-          </button>
-        ) : (
+      {!embedded && (
+        <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
           <Link to="/inventory" style={{ color: 'var(--text2)', textDecoration: 'none' }}>
             Inventory
           </Link>
-        )}
-        <span aria-hidden>›</span>
-        <span style={{ color: 'var(--text)', fontWeight: 600 }}>Add Equipment</span>
-        {/* Not an identifier and no longer styled as one: the Asset Code is
-            assigned on save by the database, so the crumb carries the state of
-            the code rather than a code (see `data/addEquipment.ts`'s note). */}
-        <span
-          style={{
-            padding: '2px 8px',
-            borderRadius: 4,
-            background: 'var(--card2)',
-            border: '1px solid var(--border)',
-            fontSize: 'var(--t-th)',
-            color: 'var(--muted)',
-          }}
-        >
-          Asset code · {assetCode}
-        </span>
-      </nav>
+          <span aria-hidden>›</span>
+          <span style={{ color: 'var(--text)', fontWeight: 600 }}>Add Equipment</span>
+          {/* Not an identifier and no longer styled as one: the Asset Code is
+              assigned on save by the database, so the crumb carries the state of
+              the code rather than a code (see `data/addEquipment.ts`'s note). */}
+          <span
+            style={{
+              padding: '2px 8px',
+              borderRadius: 4,
+              background: 'var(--card2)',
+              border: '1px solid var(--border)',
+              fontSize: 'var(--t-th)',
+              color: 'var(--muted)',
+            }}
+          >
+            Asset code · {assetCode}
+          </span>
+        </nav>
+      )}
 
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="box"
         title="Add Equipment"
         description="Create an equipment record: its identity, its serialised units, where it lives, what it belongs to and what it works with."
         actions={
-          <>
-            <Button variant="ghost" onClick={() => (isDirty ? setShowDiscard(true) : handleExit())}>
-              Cancel
-            </Button>
-            {!phone && (
-              <Unavailable reason={PREVIEW_UNAVAILABLE_REASON}>
-                <Button variant="secondary" icon="eye" disabled>
-                  Preview
+          <PageActions
+            secondary={
+              <>
+                <Button variant="ghost" onClick={() => (isDirty ? setShowDiscard(true) : handleExit())}>
+                  Cancel
                 </Button>
-              </Unavailable>
-            )}
-            <Button variant="secondary" onClick={() => submit('draft')} disabled={saving}>
-              {saving ? 'Saving…' : phone ? 'Draft' : 'Save Draft'}
-            </Button>
-            <Button variant="primary" icon="check" onClick={() => submit('create')} disabled={saving}>
-              {saving ? 'Saving…' : phone ? 'Create' : 'Create Equipment'}
-            </Button>
-          </>
+                {!phone && (
+                  <Unavailable reason={PREVIEW_UNAVAILABLE_REASON}>
+                    <Button variant="secondary" icon="eye" disabled>
+                      Preview
+                    </Button>
+                  </Unavailable>
+                )}
+                <Button variant="secondary" onClick={() => submit('draft')} disabled={saving}>
+                  {saving ? 'Saving…' : phone ? 'Draft' : 'Save Draft'}
+                </Button>
+              </>
+            }
+            primary={
+              <Button variant="primary" icon="check" onClick={() => submit('create')} disabled={saving}>
+                {saving ? 'Saving…' : phone ? 'Create' : 'Create Equipment'}
+              </Button>
+            }
+          />
         }
       />
 

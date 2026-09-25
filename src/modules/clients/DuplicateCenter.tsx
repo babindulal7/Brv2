@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, FooterNote, SummaryRows } from '../../components/ui/Page'
+import { Card, Button, FooterNote, SummaryRows } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
 import { Modal } from '../../components/ui/Modal'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -192,7 +193,11 @@ function GroupCard({
   )
 }
 
-export default function DuplicateCenter() {
+export interface DuplicateCenterProps {
+  embedded?: boolean
+}
+
+export default function DuplicateCenter({ embedded = false }: DuplicateCenterProps = {}) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const { showSuccessToast } = useToast()
@@ -360,14 +365,17 @@ export default function DuplicateCenter() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="users"
         title="Duplicate & Merge Center"
         description={headerDescription}
         actions={
-          <Button icon="external_link" onClick={() => navigate('/clients')}>
-            Back to Clients
-          </Button>
+          !embedded ? (
+            <Button icon="external_link" onClick={() => navigate('/clients')}>
+              Back to Clients
+            </Button>
+          ) : undefined
         }
       />
 

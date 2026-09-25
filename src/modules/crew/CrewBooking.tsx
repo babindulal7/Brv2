@@ -3,8 +3,9 @@ import { useNavigate, Link } from 'react-router-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import { Card, Button, PageHeader, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { thStyle } from '../../components/ui/TableHeaderCell'
-import { Input } from '../../components/ui/Input'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import Icon from '../../components/ui/Icon'
@@ -19,6 +20,7 @@ import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
 import { useViewport } from '../../lib/device'
 import { getBusinessToday } from '../../lib/bs'
+import './crew.css'
 import {
   listCrewAssignments,
   listCrewMembers,
@@ -398,7 +400,8 @@ export function CrewBooking() {
 
   return (
     <PageShell width="full">
-      <PageHeader
+      <div className="crew-v2">
+        <PageHeader
         icon="crew"
         // The nav item (`data/nav.ts:73`), the route breadcrumb (`App.tsx:264`)
         // and spec 06's own heading all read "Crew Assist". The `<h1>` said
@@ -449,6 +452,7 @@ export function CrewBooking() {
               Clamped per band the way `KpiStrip` (Page.tsx:204) does: four 1fr
               columns keep every tile legible on a 375px phone. */}
           <div
+            className="crew-kpi-grid"
             style={{
               display: 'grid',
               gridTemplateColumns: `repeat(${kpiColumns(4, viewport)}, minmax(0,1fr))`,
@@ -478,7 +482,7 @@ export function CrewBooking() {
               counts live in `data/crew.ts` so the chip and its number cannot drift. */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
             <div
-              className="rsp-chip-scroll"
+              className="crew-chip-track rsp-chip-scroll"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -495,6 +499,7 @@ export function CrewBooking() {
                   type="button"
                   aria-pressed={rosterChip === label}
                   onClick={() => setRosterChip(label)}
+                  className={`crew-filter-chip ${rosterChip === label ? 'is-active' : ''}`}
                   style={{
                     // Law 15 — 44×44 at every width, desktop included.
                     minHeight: 44,
@@ -511,17 +516,18 @@ export function CrewBooking() {
                     color: rosterChip === label ? 'var(--nav-active-accent)' : 'var(--text)',
                   }}
                 >
-                  {label} <span className="figure" style={{ opacity: 0.85, marginLeft: 'var(--sp-xs)' }}>{chipCounts[label]}</span>
+                  {label} <span className="crew-chip-badge">{chipCounts[label]}</span>
                 </button>
               ))}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: phone ? '100%' : 'auto' }}>
               <div style={{ flex: phone ? 1 : undefined, width: phone ? undefined : 240 }}>
-                <Input
+                <SearchInput
                   placeholder="Search crew, role, production…"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={setSearchQuery}
+                  onClear={() => setSearchQuery('')}
                 />
               </div>
               {!phone && (
@@ -567,8 +573,8 @@ export function CrewBooking() {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
+                  <DataTableShell ariaLabel="Crew roster" data-table-scroll className="crew-table-shell" style={{ overflowX: 'auto' }}>
+                    <table className="crew-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
                       <thead>
                         <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 'var(--t-th)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           <th style={thStyle}>Name</th>
@@ -582,14 +588,14 @@ export function CrewBooking() {
                         {filteredRoster.map((m) => {
                           const tone = STATUS[ROSTER_STATE_TONE[m.state]]
                           return (
-                            <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <tr key={m.id} className="crew-row" style={{ borderBottom: '1px solid var(--border)' }}>
                               <td style={{ padding: '12px 14px', fontWeight: 600, color: 'var(--text)' }}>{m.name}</td>
                               <td style={{ padding: '12px 14px', color: 'var(--text2)' }}>{m.role}</td>
                               <td style={{ padding: '12px 14px' }}>
                                 <StateChip label={m.state} tone={ROSTER_STATE_TONE[m.state]} />
                               </td>
                               {canCrewMoney && (
-                                <td className="figure" style={{ padding: '12px 14px', color: tone.fg === '' ? undefined : 'var(--text)' }}>
+                                <td className="figure crew-mono" style={{ padding: '12px 14px', color: tone.fg === '' ? undefined : 'var(--text)' }}>
                                   {formatMoney(m.dayRatePaisa)} / day
                                 </td>
                               )}
@@ -605,7 +611,7 @@ export function CrewBooking() {
                         })}
                       </tbody>
                     </table>
-                  </div>
+                  </DataTableShell>
                 )}
               </Card>
 
@@ -649,8 +655,8 @@ export function CrewBooking() {
                     ))}
                   </div>
                 ) : (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
+                  <DataTableShell ariaLabel="Crew assignments" data-table-scroll className="crew-table-shell" style={{ overflowX: 'auto' }}>
+                    <table className="crew-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
                       <thead>
                         <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 'var(--t-th)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                           <th style={{ ...thStyle, width: 36 }}>
@@ -686,7 +692,8 @@ export function CrewBooking() {
                           return (
                             <tr
                               key={c.id}
-                              style={{ borderBottom: '1px solid var(--border)', background: inConflict ? 'var(--st-danger-bg)' : 'transparent' }}
+                              className={`crew-row ${inConflict ? 'is-conflict' : ''}`}
+                              style={{ borderBottom: '1px solid var(--border)', background: inConflict ? 'var(--st-danger-bg)' : undefined }}
                             >
                               <td style={{ padding: '12px 14px' }}>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 'var(--tap)', minHeight: 'var(--tap)' }}>
@@ -716,7 +723,7 @@ export function CrewBooking() {
                                     {/* HIS v2.1 §4.2 — was unconditional; the hover card's own
                                         Contact group already gated the same phone number. */}
                                     {canViewPII(gctx) && (
-                                      <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{c.phone}</div>
+                                      <div className="figure crew-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{c.phone}</div>
                                     )}
                                   </div>
                                 </IntelCard>
@@ -724,23 +731,23 @@ export function CrewBooking() {
                               {desktop && (
                                 <td style={{ padding: '12px 14px' }}>
                                   <div style={{ fontWeight: 500, color: 'var(--text)' }}>{c.production}</div>
-                                  <Link to={`/rentals/${c.linkedBooking}`} className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--link)', marginTop: 2, display: 'block', textDecoration: 'none' }}>
+                                  <Link to={`/rentals/${c.linkedBooking}`} className="figure crew-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--link)', marginTop: 2, display: 'block', textDecoration: 'none' }}>
                                     {c.linkedBooking}
                                   </Link>
                                 </td>
                               )}
                               <td style={{ padding: '12px 14px' }}>
-                                <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
+                                <div className="figure crew-mono" style={{ fontWeight: 600, color: 'var(--text)' }}>
                                   {c.startDateBs} — {c.endDateBs}
                                 </div>
-                                <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
+                                <div className="figure crew-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
                                   {c.startDateAd} — {c.endDateAd} ({c.days} day{c.days === 1 ? '' : 's'})
                                 </div>
                               </td>
                               {desktop && canCrewMoney && (
                                 <td style={{ padding: '12px 14px' }}>
-                                  <div className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{formatMoney(c.totalCostPaisa)}</div>
-                                  <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{formatMoney(c.dayRatePaisa)} / day</div>
+                                  <div className="figure crew-mono" style={{ fontWeight: 600, color: 'var(--text)' }}>{formatMoney(c.totalCostPaisa)}</div>
+                                  <div className="figure crew-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{formatMoney(c.dayRatePaisa)} / day</div>
                                 </td>
                               )}
                               <td style={{ padding: '12px 14px' }}>
@@ -770,7 +777,7 @@ export function CrewBooking() {
                         })}
                       </tbody>
                     </table>
-                  </div>
+                  </DataTableShell>
                 )}
               </Card>
             </div>
@@ -786,7 +793,8 @@ export function CrewBooking() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>{railContent}</div>
             )}
           </div>
-      </>
+        </>
+      </div>
     </PageShell>
   )
 }
@@ -829,7 +837,7 @@ function StateChip({ label, tone }: { label: string; tone: StatusKey }) {
 /** §6.1's phone drawing for the CREW list: `name · role / rate [Book]`. */
 function RosterCard({ member, showRate }: { member: CrewMember; showRate: boolean }) {
   return (
-    <article style={{ ...cardStyle, padding: 'var(--sp-sm) var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <article className="crew-card-item" style={{ ...cardStyle, padding: 'var(--sp-sm) var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 600, color: 'var(--text)' }}>{member.name}</div>
@@ -839,7 +847,7 @@ function RosterCard({ member, showRate }: { member: CrewMember; showRate: boolea
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
         {showRate ? (
-          <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          <span className="figure crew-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             {formatMoney(member.dayRatePaisa)} / day
           </span>
         ) : (
@@ -870,6 +878,7 @@ function AssignmentCard({
   const toneKey = assignmentTone(c, onShootToday(c))
   return (
     <article
+      className={`crew-card-item ${inConflict ? 'is-conflict' : ''}`}
       style={{
         ...cardStyle,
         padding: 'var(--sp-sm) var(--sp-md)',
@@ -885,11 +894,11 @@ function AssignmentCard({
         {c.isInternalStaff && <Tag label="STAFF" tone="neutral" />}
         {inConflict && <Tag label="CONFLICT" tone="danger" />}
       </div>
-      <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+      <div className="figure crew-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
         {c.linkedBooking} · {c.startDateAd} — {c.endDateAd} ({c.days} day{c.days === 1 ? '' : 's'})
       </div>
       {showMoney && (
-        <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        <div className="figure crew-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
           {formatMoney(c.totalCostPaisa)} · {formatMoney(c.dayRatePaisa)} / day
         </div>
       )}
@@ -911,15 +920,15 @@ function AssignmentCard({
 function KpiTile({ label, value, note, icon, accent }: { label: string; value: string; note: string; icon: IconName; accent: StatusKey }) {
   const c = STATUS[accent]
   return (
-    <article className="lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-        <span style={{ width: 30, height: 30, borderRadius: 'var(--r-sm)', background: c.bg, color: c.fg, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+    <article className="crew-kpi-card lift" style={{ minWidth: 0 }}>
+      <div className="crew-kpi-header" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <span className="crew-kpi-icon" style={{ width: 30, height: 30, borderRadius: 'var(--r-sm)', background: c.bg, color: c.fg, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
           <Icon name={icon} size={16} fill />
         </span>
-        <div title={label} style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+        <div className="crew-kpi-label" title={label} style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
       </div>
-      <div className="figure" style={{ marginTop: 9, fontSize: 'clamp(16px, 1.5vw, 22px)', fontWeight: 700, color: 'var(--text)' }}>{value}</div>
-      <div title={note} style={{ marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</div>
+      <div className="figure crew-kpi-value" style={{ marginTop: 9, fontSize: 'clamp(16px, 1.5vw, 22px)', fontWeight: 700, color: 'var(--text)' }}>{value}</div>
+      <div className="crew-kpi-note" title={note} style={{ marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</div>
     </article>
   )
 }
@@ -991,7 +1000,7 @@ function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignmen
       {rows.length === 0 ? (
         <EmptyState title="No bookings this week" description="Nobody on the roster has an assignment overlapping this week." />
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div className="crew-calendar-shell">
           <div style={{ display: 'grid', gridTemplateColumns: '160px repeat(7, minmax(110px,1fr))', minWidth: 940 }}>
             <div />
             {days.map((d) => {
@@ -1001,15 +1010,7 @@ function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignmen
               return (
                 <div
                   key={d.getTime()}
-                  className="figure"
-                  style={{
-                    padding: '6px 8px',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 600,
-                    color: isToday ? 'var(--nav-active-accent)' : 'var(--text2)',
-                    textAlign: 'center',
-                    borderBottom: `2px solid ${isToday ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                  }}
+                  className={`figure crew-mono crew-calendar-day-header ${isToday ? 'is-today' : ''}`}
                 >
                   {weekday(d)} {monthDay(d)}
                 </div>
@@ -1043,6 +1044,7 @@ function WeekCalendar({ assignments, conflictIds }: { assignments: CrewAssignmen
                           role="img"
                           aria-label={`${block.production} — ${block.status}${conflictIds.has(block.id) ? ', conflict' : ''}`}
                           title={`${block.production} — ${block.status}${conflictIds.has(block.id) ? ' · CONFLICT' : ''}`}
+                          className="crew-calendar-block"
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -1226,7 +1228,7 @@ function AlertsList({
 
         if (r.to) {
           return (
-            <Link key={i} to={r.to} style={ALERT_ROW_LAYOUT}>
+            <Link key={i} to={r.to} className="crew-alert-row" style={ALERT_ROW_LAYOUT}>
               {body}
             </Link>
           )
@@ -1237,7 +1239,7 @@ function AlertsList({
               key={i}
               type="button"
               onClick={r.onSelect}
-              className="press"
+              className="press crew-alert-row"
               style={{ ...ALERT_ROW_LAYOUT, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit' }}
             >
               {body}
@@ -1245,7 +1247,7 @@ function AlertsList({
           )
         }
         return (
-          <div key={i} style={ALERT_ROW_LAYOUT}>
+          <div key={i} className="crew-alert-row" style={ALERT_ROW_LAYOUT}>
             {body}
           </div>
         )

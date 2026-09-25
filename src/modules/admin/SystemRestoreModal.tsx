@@ -308,7 +308,7 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      zIndex: 9999,
+      zIndex: 'var(--z-system)' as unknown as number,
       padding: 20
     }}>
       <style>{`

@@ -44,8 +44,14 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     // Parse options from children if `options` is not provided
     const parsedOptions: SelectOption[] = options || React.Children.toArray(children).map(child => {
       if (React.isValidElement(child) && child.type === 'option') {
+        /* RULING 2026-09-23 (visual pass): bare `<option>Label</option>` children
+           carried no `value`, so the native shadow select mounted them with
+           `key={undefined}` — React's unique-key warning on every screen — and
+           the trigger's open-value comparison read undefined. A bare option's
+           value is its text content (that's how a native select answers it),
+           so the parse does exactly that. */
         return {
-          value: child.props.value,
+          value: child.props.value ?? String(child.props.children),
           label: child.props.children,
           disabled: child.props.disabled
         }

@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, PageActions, Button, FooterNote, cardStyle } from '../../components/ui/Page'
+import { SearchInput } from '../../components/ui'
 import { PageShell } from '../../components/ui/PageShell'
 import { PageBody } from '../../components/ui/PageBody'
 import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
@@ -42,6 +43,7 @@ import { AppSidePanel } from '../../components/shell/AppSidePanel'
 import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { Pagination } from '../../components/ui/Pagination'
+import { DataTableShell } from '../../components/ui/DataTable'
 import './operations.css'
 import { useOperationsWorkspace } from './OperationsWorkspaceContext'
 
@@ -448,13 +450,11 @@ export default function OperationsQueues() {
   const [projectFilter, setProjectFilter] = useState('all')
   const [showDateMenu, setShowDateMenu] = useState(false)
   const [showMoreFilters, setShowMoreFilters] = useState(false)
-  const [showActionMenu, setShowActionMenu] = useState(false)
   const [selectedBookingNos, setSelectedBookingNos] = useState<Set<string>>(() => new Set())
   const [page, setPage] = useState(0)
   const [pageSize, setPageSize] = useState(20)
   const queueSearchRef = useRef<HTMLInputElement | null>(null)
   const dateMenuRef = useRef<HTMLDivElement | null>(null)
-  const actionMenuRef = useRef<HTMLDivElement | null>(null)
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
   const tabular = viewport !== 'phone'
@@ -512,7 +512,6 @@ export default function OperationsQueues() {
       if (event.key === 'Escape') {
         setShowDateMenu(false)
         setShowMoreFilters(false)
-        setShowActionMenu(false)
       }
       if (event.key === '/' && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement)) {
         event.preventDefault()
@@ -524,15 +523,14 @@ export default function OperationsQueues() {
   }, [])
 
   useEffect(() => {
-    if (!showDateMenu && !showActionMenu) return
+    if (!showDateMenu) return
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node
       if (!dateMenuRef.current?.contains(target)) setShowDateMenu(false)
-      if (!actionMenuRef.current?.contains(target)) setShowActionMenu(false)
     }
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
-  }, [showDateMenu, showActionMenu])
+  }, [showDateMenu])
 
   const nowAd = businessNowAd()
   const todayNepal = dayOffsetFromToday(0)
@@ -687,16 +685,19 @@ export default function OperationsQueues() {
           }
           title="Operations"
           actions={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
-              <Button
-                variant="outline"
-                icon="box"
-                onClick={() => routeNavigate('/operations/sub-rental')}
-              >
-                Sub-Rentals
-              </Button>
-              <DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refreshAll} loading={list.loading} />
-            </div>
+            <PageActions
+              secondary={[
+                <Button
+                  key="sub-rentals"
+                  variant="outline"
+                  icon="box"
+                  onClick={() => routeNavigate('/operations/sub-rental')}
+                >
+                  Sub-Rentals
+                </Button>,
+              ]}
+              extra={<DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refreshAll} loading={list.loading} />}
+            />
           }
         />
       </div>
@@ -712,7 +713,15 @@ export default function OperationsQueues() {
         }}
       >
 
-      <div className="operations-v2__topline">
+      <div className="operations-v2__queues" role="group" aria-label="Operational queues">
+        {CHIPS.map((q) => <QueueChip key={q.job} queue={q} active={selected === q.job} total={counts[q.job].total} loading={counts[q.job].loading} error={counts[q.job].error} onToggle={() => setActive(selected === q.job ? null : q.job)} />)}
+        <Link to="/inventory/cases" onClick={(event) => { event.preventDefault(); patch({ queue: selected === 'Cases' ? null : 'cases', quick: null }) }} aria-pressed={selected === 'Cases'} className="operations-v2__queue" style={{ ...chipStyle(selected === 'Cases'), textDecoration: 'none' }}>
+          <Icon name="eye" size={15} style={{ color: STATUS.danger.fg }} /> Cases
+          <span className="figure" style={{ minWidth: 22, padding: '1px 6px', borderRadius: 'var(--r-badge)', background: STATUS.danger.bg, color: STATUS.danger.fg, textAlign: 'center' }}>{openCases}</span>
+        </Link>
+      </div>
+
+      <div className="operations-v2__filters" aria-label="Operations filters">
         <div ref={dateMenuRef} className="operations-v2__date-wrap">
           <Button variant="outline" icon="calendar" iconRight={<Icon name={showDateMenu ? 'chevron_up' : 'chevron_down'} size={14} />} onClick={() => setShowDateMenu((open) => !open)} aria-expanded={showDateMenu} aria-controls="operations-date-menu">
             {scope === 'custom' ? 'Custom range' : `${SCOPE_LABEL[scope]} · ${todayNepal}`}
@@ -734,32 +743,18 @@ export default function OperationsQueues() {
             </div>
           )}
         </div>
-        <Button variant="outline" icon="search" onClick={() => setBarcodeModalOpen(true)}>Scan</Button>
-        <Button variant="outline" icon="refresh" onClick={refreshAll}>Refresh</Button>
-        <div ref={actionMenuRef} className="operations-v2__more-wrap">
-          <Button variant="outline" icon="more_vert" onClick={() => setShowActionMenu((open) => !open)} aria-expanded={showActionMenu} aria-label="More Operations actions">More</Button>
-          {showActionMenu && <div className="operations-v2__popover operations-v2__action-popover" role="menu" aria-label="More Operations actions">
-            <Button variant="ghost" icon="return_arrow" onClick={() => { setFastReturnOpen(true); setShowActionMenu(false) }}>Fast Return</Button>
-          </div>}
-        </div>
-      </div>
-
-      <div className="operations-v2__queues" role="group" aria-label="Operational queues">
-        {CHIPS.map((q) => <QueueChip key={q.job} queue={q} active={selected === q.job} total={counts[q.job].total} loading={counts[q.job].loading} error={counts[q.job].error} onToggle={() => setActive(selected === q.job ? null : q.job)} />)}
-        <Link to="/inventory/cases" onClick={(event) => { event.preventDefault(); patch({ queue: selected === 'Cases' ? null : 'cases', quick: null }) }} aria-pressed={selected === 'Cases'} className="operations-v2__queue" style={{ ...chipStyle(selected === 'Cases'), textDecoration: 'none' }}>
-          <Icon name="eye" size={15} style={{ color: STATUS.danger.fg }} /> Cases
-          <span className="figure" style={{ minWidth: 22, padding: '1px 6px', borderRadius: 'var(--r-badge)', background: STATUS.danger.bg, color: STATUS.danger.fg, textAlign: 'center' }}>{openCases}</span>
-        </Link>
-      </div>
-
-      <div className="operations-v2__filters" aria-label="Operations filters">
-        <div className="operations-v2__date-wrap">
-          <Button variant="outline" onClick={() => setShowDateMenu(true)} iconRight={<Icon name="chevron_down" size={14} />}>{SCOPE_LABEL[scope]}</Button>
-        </div>
-        <select className="operations-v2__filter-select" aria-label="Staff filter" defaultValue="all"><option value="all">All staff</option></select>
         <select className="operations-v2__filter-select" aria-label="Client filter" value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}><option value="all">All clients</option>{clients.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
         <select className="operations-v2__filter-select" aria-label="Project filter" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}><option value="all">All projects</option>{projects.map((project) => <option key={project} value={project}>{project}</option>)}</select>
-        <input ref={queueSearchRef} className="operations-v2__search" type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Search ID, client, project…" aria-label="Search ID, client, project" />
+        <div style={{ flex: '1 1 240px', minWidth: 180 }}>
+          <SearchInput
+            ref={queueSearchRef}
+            value={searchInput}
+            onChange={setSearchInput}
+            onClear={() => setSearchInput('')}
+            placeholder="Search ID, client, project…"
+            aria-label="Search ID, client, project"
+          />
+        </div>
         {(isFiltered || search || clientFilter !== 'all' || projectFilter !== 'all') && <Button variant="ghost" onClick={clearOperationFilters}>Clear filters</Button>}
       </div>
 
@@ -779,9 +774,125 @@ export default function OperationsQueues() {
 
       {selected === 'Cases' ? <CasesWorkspace embedded /> : (
         <Card style={{ overflow: 'hidden' }} bodyStyle={{ padding: 0 }}>
-          <PageBody loading={list.loading} error={list.error} onRetry={refreshAll} hasRows={jobs.length > 0} empty={list.isEmpty} emptyIsFiltered={list.isFiltered} onClearFilters={clearOperationFilters} noun="jobs" skeleton="table" skeletonRows={6} emptyTitle={emptyTitle} emptyMessage={emptyMessage}>
-            {!tabular && <div style={{ padding: 10, display: 'grid', gap: 8 }}>{pagedJobs.map((job) => <article key={job.id} style={{ ...cardStyle, padding: 14, display: 'grid', gap: 8 }}><div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><Link to={`/rentals/${job.bookingNo}`} className="identifier">{job.bookingNo}</Link><StageBadge stage={job.stage} /></div><div>{job.clientName} · {job.project ?? '—'}</div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span>{formatDueAt(job.dueAtAd)} · {job.itemCount} items</span><Button size="sm" onClick={() => navigate(jobRoute(job.bookingNo, job.job))}>{job.job}</Button></div></article>)}</div>}
-            {tabular && <div style={{ overflowX: 'auto' }}><table className="operations-v2__table"><thead><tr><th style={{ ...th, width: 44 }}><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisibleBookings} aria-label="Select visible bookings" /></th>{['Booking', 'Client', 'Project', 'Items', 'Stage', 'Time', 'Action', ''].map((heading, index) => <th key={heading || index} style={th}>{heading}</th>)}</tr></thead><tbody>{pagedJobs.map((job) => <tr key={job.id} style={{ borderLeft: job.isPastDue ? '2px solid var(--danger)' : '2px solid transparent' }}><td style={{ ...td, width: 44 }}><input type="checkbox" checked={selectedBookingNos.has(job.bookingNo)} onChange={() => toggleBooking(job.bookingNo)} aria-label={`Select ${job.bookingNo}`} /></td><td style={td}><Link to={`/rentals/${job.bookingNo}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 700, textDecoration: 'none' }}>{job.bookingNo}</Link></td><td style={td}><Link to={`/clients/${job.clientId}`} style={{ color: 'inherit', textDecoration: 'none' }}>{job.clientName}</Link></td><td style={{ ...td, color: 'var(--text2)' }}>{job.project ?? '—'}</td><td className="figure" style={td}>{job.itemCount}</td><td style={td}><StageBadge stage={job.stage} /></td><td className="figure" style={{ ...td, fontWeight: job.isPastDue ? 700 : 500, color: job.isPastDue ? 'var(--danger-text)' : 'var(--text)' }}>{formatDueAt(job.dueAtAd)}</td><td style={td}><Button size="sm" variant="secondary" onClick={() => navigate(jobRoute(job.bookingNo, job.job))}>{job.job}</Button></td><td style={{ ...td, width: 44 }}><Link to={`/rentals/${job.bookingNo}`} aria-label={`More for booking ${job.bookingNo}`} style={{ color: 'var(--muted)' }}><Icon name="chevron_right" size={18} /></Link></td></tr>)}</tbody></table>{jobs.length > 0 && visibleJobs.length === 0 && <div className="operations-v2__empty-search">No jobs match “{search}”.</div>}</div>}
+          <PageBody
+            loading={list.loading}
+            error={list.error}
+            onRetry={refreshAll}
+            hasRows={jobs.length > 0}
+            empty={list.isEmpty}
+            emptyIsFiltered={list.isFiltered}
+            onClearFilters={clearOperationFilters}
+            noun="jobs"
+            skeleton="table"
+            skeletonRows={6}
+            emptyTitle={emptyTitle}
+            emptyMessage={emptyMessage}
+          >
+            {!tabular && (
+              <div style={{ padding: 'var(--sp-sm)', display: 'grid', gap: 'var(--sp-sm)' }}>
+                {pagedJobs.map((job) => (
+                  <article
+                    key={job.id}
+                    style={{
+                      ...cardStyle,
+                      padding: '12px 14px',
+                      display: 'grid',
+                      gap: 8,
+                      borderLeft: job.isPastDue ? '3px solid var(--danger)' : undefined,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <Link to={`/rentals/${job.bookingNo}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 700, textDecoration: 'none' }}>
+                        {job.bookingNo}
+                      </Link>
+                      <StageBadge stage={job.stage} />
+                    </div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
+                      <span style={{ fontWeight: 600 }}>{job.clientName}</span>
+                      {job.project && <span style={{ color: 'var(--text2)' }}> · {job.project}</span>}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                        <span className="figure" style={{ fontWeight: job.isPastDue ? 700 : 500, color: job.isPastDue ? 'var(--danger-text)' : 'inherit' }}>
+                          {formatDueAt(job.dueAtAd)}
+                        </span>
+                        {' · '}
+                        <span className="figure">{job.itemCount}</span> items
+                      </span>
+                      <Button size="sm" variant="secondary" onClick={() => navigate(jobRoute(job.bookingNo, job.job))}>
+                        {job.job}
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+            {tabular && (
+              <DataTableShell ariaLabel="Operations queues" data-table-scroll style={{ overflowX: 'auto' }}>
+                <table className="operations-v2__table">
+                  <thead>
+                    <tr>
+                      <th style={{ ...th, width: 44 }}>
+                        <input
+                          type="checkbox"
+                          checked={allVisibleSelected}
+                          onChange={toggleVisibleBookings}
+                          aria-label="Select visible bookings"
+                        />
+                      </th>
+                      {['Booking', 'Client', 'Project', 'Items', 'Stage', 'Time', 'Action', ''].map((heading, index) => (
+                        <th key={heading || index} style={th}>{heading}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedJobs.map((job) => (
+                      <tr key={job.id} style={{ borderLeft: job.isPastDue ? '2px solid var(--danger)' : '2px solid transparent' }}>
+                        <td style={{ ...td, width: 44 }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedBookingNos.has(job.bookingNo)}
+                            onChange={() => toggleBooking(job.bookingNo)}
+                            aria-label={`Select ${job.bookingNo}`}
+                          />
+                        </td>
+                        <td style={td}>
+                          <Link to={`/rentals/${job.bookingNo}`} className="identifier" style={{ color: 'var(--link)', fontWeight: 700, textDecoration: 'none' }}>
+                            {job.bookingNo}
+                          </Link>
+                        </td>
+                        <td style={td}>
+                          <Link to={`/clients/${job.clientId}`} style={{ color: 'inherit', textDecoration: 'none', fontWeight: 500 }}>
+                            {job.clientName}
+                          </Link>
+                        </td>
+                        <td style={{ ...td, color: 'var(--text2)' }}>{job.project ?? '—'}</td>
+                        <td className="figure" style={{ ...td, fontWeight: 600 }}>{job.itemCount}</td>
+                        <td style={td}>
+                          <StageBadge stage={job.stage} />
+                        </td>
+                        <td className="figure" style={{ ...td, fontWeight: job.isPastDue ? 700 : 500, color: job.isPastDue ? 'var(--danger-text)' : 'var(--text)' }}>
+                          {formatDueAt(job.dueAtAd)}
+                        </td>
+                        <td style={td}>
+                          <Button size="sm" variant="secondary" onClick={() => navigate(jobRoute(job.bookingNo, job.job))}>
+                            {job.job}
+                          </Button>
+                        </td>
+                        <td style={{ ...td, width: 44 }}>
+                          <Link to={`/rentals/${job.bookingNo}`} aria-label={`More for booking ${job.bookingNo}`} style={{ color: 'var(--muted)', display: 'inline-flex', alignItems: 'center' }}>
+                            <Icon name="chevron_right" size={18} />
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {jobs.length > 0 && visibleJobs.length === 0 && (
+                  <div className="operations-v2__empty-search">No jobs match “{search}”.</div>
+                )}
+              </DataTableShell>
+            )}
           </PageBody>
           <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
             <Pagination

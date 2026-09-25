@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { stepWriteGate } from '../../data/operationsShell'
+import { stepWriteGate } from '../../lib/operationsShell'
 import type { BookingStatus, JobName } from '../../lib/workflow'
 import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 

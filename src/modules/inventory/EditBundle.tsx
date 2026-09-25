@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Card, PageHeader, Button, FooterNote } from '../../components/ui/Page'
+import { Card, Button, FooterNote } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import { PageBody } from '../../components/ui/PageBody'
 import { Input } from '../../components/ui/Input'
@@ -367,7 +369,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
   if (!user || !canUpdateBundle(user.role)) {
     return (
       <PageShell width="full">
-        <PageHeader icon="queues" title="Edit bundle" description={bundleRef ?? ''} />
+        <ScreenHeader embedded={embedded} icon="queues" title="Edit bundle" description={bundleRef ?? ''} />
         <PageBody
           restricted
           restrictedReason="Editing a bundle writes both the bundle and its components, and bundles_manage admits Owner, Admin and Manager only. The control is absent rather than refused."
@@ -383,7 +385,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
   if (!bundle || !draft) {
     return (
       <PageShell width="full">
-        <PageHeader icon="queues" title="Edit bundle" description={bundleRef ?? ''} />
+        <ScreenHeader embedded={embedded} icon="queues" title="Edit bundle" description={bundleRef ?? ''} />
         <PageBody
           loading={record.loading}
           error={record.error}
@@ -505,7 +507,8 @@ export default function EditBundle(props: EditBundleProps = {}) {
 
   return (
     <PageShell width="full">
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="queues"
         title={`Edit ${bundle.name}`}
         description={`${bundle.bundleCode} · ${bundle.items.length} component${bundle.items.length === 1 ? '' : 's'}`}
@@ -616,7 +619,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
       )}
 
       <Card title={`Components (${draft.lines.length + draft.adds.length})`}>
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Bundle components">
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
             <thead>
               <tr>
@@ -724,7 +727,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
               )}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
 
         <p style={{ ...labelStyle, marginTop: 'var(--sp-md)', marginBottom: 0 }}>
           A saved component cannot be removed. There is no DELETE grant on <code>bundle_items</code>,
@@ -752,7 +755,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
           <p style={labelStyle}>No product matches “{query.trim()}”.</p>
         )}
         {results.length > 0 && (
-          <div style={{ overflowX: 'auto', marginTop: 'var(--sp-sm)' }}>
+          <DataTableShell ariaLabel="Search results to add to bundle" style={{ marginTop: 'var(--sp-sm)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 480 }}>
               <thead>
                 <tr>
@@ -792,7 +795,7 @@ export default function EditBundle(props: EditBundleProps = {}) {
                 })}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         )}
       </Card>
 

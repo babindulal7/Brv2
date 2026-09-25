@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import {
@@ -133,52 +134,56 @@ export default function InventoryReports() {
           self-scrolling rail. There is no aside content on this page, so there
           is no rail at all. */}
       <section aria-label="Asset Health" style={cardStyle}>
-            <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Asset Health Distribution</div>
+        <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Asset Health Distribution</div>
+        <DataTableShell ariaLabel="Asset Health Distribution">
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
+            <thead>
+              <tr style={{ color: 'var(--text2)' }}>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Status</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Count</th>
+                <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Percentage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ASSET_HEALTH.map((h) => (
+                <tr key={h.status} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{h.status}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{h.count}</td>
+                  <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{h.percentage}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </DataTableShell>
+      </section>
+
+      {money && (
+        <section aria-label="Top Categories by Value" style={cardStyle}>
+          <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Top Categories by Value</div>
+          <DataTableShell ariaLabel="Top Categories by Value">
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
               <thead>
                 <tr style={{ color: 'var(--text2)' }}>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Status</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Count</th>
-                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Percentage</th>
+                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Category</th>
+                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Asset Count</th>
+                  <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Total Value</th>
                 </tr>
               </thead>
               <tbody>
-                {ASSET_HEALTH.map((h) => (
-                  <tr key={h.status} style={{ borderTop: '1px solid var(--border)' }}>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{h.status}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{h.count}</td>
-                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{h.percentage}%</td>
+                {TOP_CATEGORIES.map((c) => (
+                  <tr key={c.name} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{c.name}</td>
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.count}</td>
+                    {/* Seed values are rupees — `rupees()`, never a bare
+                        `as Paisa` cast, which printed these 100× too small. */}
+                    <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(rupees(c.value))}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </section>
-
-          {money && (
-            <section aria-label="Top Categories by Value" style={cardStyle}>
-              <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Top Categories by Value</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
-                <thead>
-                  <tr style={{ color: 'var(--text2)' }}>
-                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Category</th>
-                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Asset Count</th>
-                    <th style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>Total Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {TOP_CATEGORIES.map((c) => (
-                    <tr key={c.name} style={{ borderTop: '1px solid var(--border)' }}>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)', fontWeight: 600 }}>{c.name}</td>
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{c.count}</td>
-                      {/* Seed values are rupees — `rupees()`, never a bare
-                          `as Paisa` cast, which printed these 100× too small. */}
-                      <td style={{ padding: 'var(--sp-sm) var(--sp-md)' }}>{formatMoney(rupees(c.value))}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </section>
-          )}
+          </DataTableShell>
+        </section>
+      )}
     </div>
   )
 }

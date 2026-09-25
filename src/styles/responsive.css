@@ -52,6 +52,7 @@
 
   .page-header__actions {
     justify-content: flex-start;
+    margin-left: 0;
   }
 
   .surface-card__header {
@@ -166,7 +167,7 @@
 
 /* ══ BELOW DESKTOP — anything under 1280 ═══════════════════════════════════ */
 @media (max-width: 1279px) {
-  :root { --page-padding: clamp(16px, 1.6vw, 20px); --app-panel-width: 300px; }
+  :root { --page-padding: clamp(12px, 1.4vw, 16px); --app-panel-width: 300px; }
 
   .page-toolbar__actions { margin-left: 0; }
   .app-page-toolbar__end { margin-left: 0; }

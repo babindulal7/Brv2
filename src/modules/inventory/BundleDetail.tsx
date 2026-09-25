@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import EditBundle from './EditBundle'
 import type { Kpi } from '../../components/ui/Page'
@@ -31,6 +32,7 @@ import {
   type BundleState,
 } from '../../lib/queries/useBundles'
 import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
+import './inventory.css'
 
 /**
  * **Bundle detail** — `/inventory/bundles/:bundleRef`.
@@ -261,7 +263,15 @@ export function BundleDetail() {
       <PageHeader
         icon={iconFor(bundle.category)}
         title={bundle.name}
-        description={`${bundle.id} · ${bundle.category} (Primary) · ${bundle.lines.length} components`}
+        description={
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className="inventory-asset-code identifier">{bundle.id}</span>
+            <span>·</span>
+            <span>{bundle.category} (Primary)</span>
+            <span>·</span>
+            <span>{bundle.lines.length} components</span>
+          </span>
+        }
         actions={
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
             <Badge tone={STATE_TONE[state]} label={state} />
@@ -298,7 +308,13 @@ export function BundleDetail() {
         carried in from the list. It is not a filter: it does not decide what is
         shown, it decides what "available" means for all of it.
       */}
-      <Card title="Available for">
+      <div className="bundle-window-card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <span className="inventory-thumb-sm" style={{ display: 'inline-grid', placeItems: 'center' }}>
+            <Icon name="calendar" size={13} />
+          </span>
+          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Available for</span>
+        </div>
         <div style={{ display: 'flex', gap: 'var(--sp-md)', flexWrap: 'wrap', alignItems: 'center' }}>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
             From
@@ -310,11 +326,11 @@ export function BundleDetail() {
           </label>
           <BsAd date={new Date(fromAd)} prefix="From" />
           <BsAd date={new Date(toAd)} prefix="To" />
-          <span style={{ ...subtle, flexBasis: '100%' }}>
+          <span style={{ ...subtle, flexBasis: '100%', marginTop: 2 }}>
             Returns are half-open: a rental ending on the To date does not block this window.
           </span>
         </div>
-      </Card>
+      </div>
 
       <Card title="Readiness">
         <div style={{ display: 'flex', gap: 'var(--sp-lg)', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -330,8 +346,8 @@ export function BundleDetail() {
         there means the line is covered, not that the reason is missing.
       */}
       <Card title={`Components (${bundle.lines.length})`} bodyStyle={{ padding: 0 }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: tabular ? 720 : undefined }}>
+        <DataTableShell ariaLabel="Bundle components">
+          <table className="inventory-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: tabular ? 720 : undefined }}>
             <thead>
               <tr style={{ background: 'var(--th-bg)' }}>
                 <th style={th}>Group</th>
@@ -347,14 +363,16 @@ export function BundleDetail() {
               {bundle.lines.map((l, i) => {
                 const short = l.unitsAvailable < l.quantity
                 return (
-                  <tr key={`${l.group}-${l.model}-${i}`} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <tr key={`${l.group}-${l.model}-${i}`} className="inventory-child-row" style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={td}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <Icon name={iconFor(l.group)} size={13} />
+                        <span className="inventory-thumb-sm" style={{ display: 'inline-grid', placeItems: 'center' }}>
+                          <Icon name={iconFor(l.group)} size={13} />
+                        </span>
                         {l.group}
                       </span>
                     </td>
-                    <td style={td}>
+                    <td style={{ ...td, fontWeight: 500 }}>
                       {l.model}
                       {!isPriced(l) && (
                         <span style={{ ...subtle, marginLeft: 6 }} title="Priced in the booking's own section, not in the bundle rate.">
@@ -411,7 +429,7 @@ export function BundleDetail() {
               })}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
       </Card>
 
       {/*

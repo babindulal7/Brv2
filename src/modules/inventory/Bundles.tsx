@@ -6,7 +6,8 @@ import { AddBundle } from './AddBundle'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui/Select'
-import { Card, Button, KpiStrip, cardStyle, Rail, SummaryRows } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, Rail, SummaryRows } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageBody } from '../../components/ui/PageBody'
 import type { Kpi } from '../../components/ui/Page'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -41,6 +42,7 @@ import { useBundleRecords } from '../../lib/queries/useBundles'
 import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
 import { DateField } from '../../components/ui/DateField'
 import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
+import './inventory.css'
 
 /**
  * **Bundles** — Inventory's second tab (Foundation §5.1 makes it a tab, never a
@@ -645,7 +647,7 @@ export function Bundles() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div className="inventory-v2">
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -714,10 +716,10 @@ export function Bundles() {
 
           {/* §2 — chips, then the invariant readout that can fail (§1.1). */}
           <div
-            className="rsp-chip-scroll"
+            className="rsp-chip-scroll inventory-chip-track"
             style={{
               display: 'flex',
-              gap: 6,
+              gap: 8,
               flexWrap: phone ? 'nowrap' : 'wrap',
               overflowX: phone ? 'auto' : 'visible',
               alignItems: 'center',
@@ -735,26 +737,10 @@ export function Bundles() {
                     setPage(1)
                   }}
                   aria-pressed={on}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    minHeight: 44,
-                    padding: '0 14px',
-                    borderRadius: 'var(--r-sm)',
-                    border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                    background: on ? 'var(--nav-active-bg)' : 'var(--card)',
-                    color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: on ? 600 : 500,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                  }}
+                  className={`inventory-filter-chip ${on ? 'is-active' : ''}`}
                 >
                   {c.label}
-                  <span className="figure" style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)' }}>
+                  <span className="figure" style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)', fontWeight: 600 }}>
                     {c.count}
                   </span>
                 </button>
@@ -763,13 +749,12 @@ export function Bundles() {
 
             <span
               aria-live="polite"
+              className="bundle-invariant-badge"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                fontSize: 'var(--t-th)',
-                fontWeight: 600,
                 color: chipsReconcile ? 'var(--success-text)' : 'var(--ready-text)',
+                borderColor: chipsReconcile
+                  ? 'color-mix(in srgb, var(--success-text) 25%, var(--border))'
+                  : 'color-mix(in srgb, var(--warn-text) 25%, var(--border))',
               }}
             >
               <Icon name={chipsReconcile ? 'check' : 'alert_triangle'} size={12} />
@@ -790,22 +775,21 @@ export function Bundles() {
             in the filter row would have read as one more narrowing control.
           */}
           <div
+            className="bundle-window-card"
             style={{
               display: 'flex',
               gap: 'var(--sp-sm)',
               flexWrap: 'wrap',
               alignItems: 'center',
-              padding: '10px 12px',
-              borderRadius: 'var(--r-input)',
-              background: 'var(--card2)',
-              border: '1px solid var(--border)',
             }}
           >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
-              <Icon name="calendar" size={14} />
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>
+              <span className="inventory-thumb-sm" style={{ display: 'inline-grid', placeItems: 'center' }}>
+                <Icon name="calendar" size={13} />
+              </span>
               Available for
             </span>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
               From
               <DateField
                 ariaLabel="Availability window from"
@@ -815,7 +799,7 @@ export function Bundles() {
                 style={selectStyle}
               />
             </label>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
               To
               <DateField
                 ariaLabel="Availability window to"
@@ -828,7 +812,7 @@ export function Bundles() {
             </label>
             <BsAd date={new Date(fromAd)} prefix="From" />
             <BsAd date={new Date(toAd)} prefix="To" />
-            <span style={{ ...subtle, flexBasis: '100%' }}>
+            <span style={{ ...subtle, flexBasis: '100%', marginTop: 2 }}>
               Every ready / blocked figure below answers “free for this window”, not “free in
               general”. Returns are half-open: a rental ending on the To date does not block it.
             </span>
@@ -962,59 +946,56 @@ export function Bundles() {
               />
             ) : effectiveView === 'grid' ? (
               <div
+                className="bundle-grid"
                 style={{
                   display: 'grid',
-                  // Spec 7.2 sets the bands explicitly — TABLET 2-up, PHONE
-                  // 1-up full-width — rather than letting `auto-fill` decide.
                   gridTemplateColumns:
-                    viewport === 'phone' ? '1fr' : viewport === 'tablet' ? 'repeat(2, minmax(0,1fr))' : 'repeat(auto-fill, minmax(232px, 1fr))',
-                  gap: 10,
+                    viewport === 'phone' ? '1fr' : viewport === 'tablet' ? 'repeat(2, minmax(0,1fr))' : 'repeat(auto-fill, minmax(248px, 1fr))',
+                  gap: 12,
                   padding: 'var(--sp-md)',
                 }}
               >
                 {visible.map((b) => {
                   const f = factsOf(b)
+                  const isSelected = preview?.id === b.id
                   return (
                     <button
                       key={b.id}
                       type="button"
                       onClick={() => setPreviewId(b.id)}
-                      aria-pressed={preview?.id === b.id}
-                      style={{
-                        ...cardStyle,
-                        textAlign: 'left',
-                        padding: 11,
-                        cursor: 'pointer',
-                        borderColor: preview?.id === b.id ? 'var(--nav-active-accent)' : 'var(--border)',
-                        font: 'inherit',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 7,
-                      }}
+                      aria-pressed={isSelected}
+                      className={`bundle-grid-card ${isSelected ? 'is-selected' : ''}`}
                     >
                       <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                         <span
                           aria-hidden
-                          style={{ width: 30, height: 30, borderRadius: 7, display: 'grid', placeItems: 'center', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                          className="inventory-thumb"
                         >
-                          <Icon name={iconFor(b.category)} size={15} />
+                          <Icon name={iconFor(b.category)} size={16} />
                         </span>
                         <span style={{ minWidth: 0 }}>
                           <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{b.name}</span>
-                          <span className="identifier" style={{ ...subtle, display: 'block' }}>{b.id}</span>
+                          <span className="inventory-asset-code identifier" style={{ display: 'inline-block', marginTop: 2 }}>{b.id}</span>
                         </span>
                       </span>
                       <StatePill state={b.archived ? 'Archived' : f.state} />
-                      <span className="figure" style={{ ...subtle }}>
+                      <span className="figure" style={{ ...subtle, fontWeight: 500 }}>
                         {f.totalItems} items · {ratioLabelOf(f)}
                       </span>
                       {money && (
-                        <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-                          {formatMoney(b.bundleRatePaisa)}
-                          <span style={{ ...subtle, marginLeft: 6, textDecoration: 'line-through' }}>
-                            {formatMoney(f.sumOfPartsPaisa)}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                          <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                            {formatMoney(b.bundleRatePaisa)}
+                            <span style={{ ...subtle, marginLeft: 6, textDecoration: 'line-through', fontWeight: 400 }}>
+                              {formatMoney(f.sumOfPartsPaisa)}
+                            </span>
                           </span>
-                        </span>
+                          {f.savingPct > 0 && (
+                            <span className="bundle-savings-badge">
+                              Save {f.savingPct}%
+                            </span>
+                          )}
+                        </div>
                       )}
                     </button>
                   )
@@ -1024,17 +1005,17 @@ export function Bundles() {
               /* Flush in the card's top corners with an opaque --th-bg header
                  behind it; takes the card radius so the header does not paint
                  square notches over the 14px arc. See Maintenance.tsx. */
-              <div style={{ overflowX: 'auto', borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: money ? 1100 : 960 }}>
+              <DataTableShell ariaLabel="Bundles directory" style={{ borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>
+                <table className="inventory-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: money ? 1100 : 960 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
-                      <th style={{ ...th, width: 30 }} scope="col">
+                      <th style={{ ...th, width: 34, textAlign: 'center' }} scope="col">
                         <input
                           type="checkbox"
                           aria-label="Select every bundle on this page"
                           checked={allOnPageSelected}
                           onChange={toggleAllOnPage}
-                          style={{ accentColor: 'var(--nav-active-accent)' }}
+                          style={{ accentColor: 'var(--nav-active-accent)', width: 16, height: 16 }}
                         />
                       </th>
                       {sortHeader('name', 'Bundle')}
@@ -1057,22 +1038,23 @@ export function Bundles() {
                       const f = factsOf(b)
                       const open = expanded.has(b.id)
                       const isPreview = preview?.id === b.id
+                      const isRowSelected = selected.has(b.id)
                       const showBlocked = f.state === 'Partially Available' || f.state === 'On Maintenance'
                       return (
                         <tr
                           key={b.id}
+                          className={`inventory-parent-row ${isPreview ? 'is-inspected' : ''} ${isRowSelected ? 'is-selected' : ''}`}
                           style={{
                             borderBottom: '1px solid var(--border)',
-                            background: isPreview ? 'var(--nav-active-bg)' : 'transparent',
                           }}
                         >
-                          <td style={td}>
+                          <td style={{ ...td, textAlign: 'center' }}>
                             <input
                               type="checkbox"
                               aria-label={`Select ${b.name}`}
-                              checked={selected.has(b.id)}
+                              checked={isRowSelected}
                               onChange={() => toggleRow(b.id)}
-                              style={{ accentColor: 'var(--nav-active-accent)' }}
+                              style={{ accentColor: 'var(--nav-active-accent)', width: 16, height: 16 }}
                             />
                           </td>
 
@@ -1088,17 +1070,18 @@ export function Bundles() {
                                 onClick={() => setPreviewId(b.id)}
                                 aria-pressed={isPreview}
                                 title="Show this bundle in the preview rail"
-                                style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'transparent', border: 'none', padding: 0, font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'var(--text)' }}
+                                style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'transparent', border: 'none', padding: 0, font: 'inherit', textAlign: 'left', cursor: 'pointer', color: 'var(--text)' }}
                               >
                                 <span
                                   aria-hidden
-                                  style={{ width: 38, height: 34, flexShrink: 0, borderRadius: 7, display: 'grid', placeItems: 'center', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--muted)' }}
+                                  className="inventory-thumb"
+                                  style={{ width: 34, height: 34 }}
                                 >
-                                  <Icon name={iconFor(b.category)} size={17} />
+                                  <Icon name={iconFor(b.category)} size={16} />
                                 </span>
                                 <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
                                   <span style={{ fontWeight: 600 }}>{b.name}</span>
-                                  <span className="identifier" style={subtle}>
+                                  <span className="inventory-asset-code identifier" style={{ alignSelf: 'flex-start' }}>
                                     {b.id}
                                   </span>
                                 </span>
@@ -1215,21 +1198,14 @@ export function Bundles() {
                               <span className="figure" style={{ display: 'block', ...subtle, textDecoration: 'line-through' }}>
                                 {formatMoney(f.sumOfPartsPaisa)}
                               </span>
-                              <span
-                                className="figure"
-                                style={{
-                                  display: 'inline-block',
-                                  marginTop: 3,
-                                  fontSize: 'var(--t-th)',
-                                  fontWeight: 700,
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                  background: 'var(--st-in-bg)',
-                                  color: 'var(--st-in-fg)',
-                                }}
-                              >
-                                Save {f.savingPct}%
-                              </span>
+                              {f.savingPct > 0 && (
+                                <span
+                                  className="bundle-savings-badge figure"
+                                  style={{ marginTop: 3 }}
+                                >
+                                  Save {f.savingPct}%
+                                </span>
+                              )}
                             </td>
                           )}
 
@@ -1273,7 +1249,7 @@ export function Bundles() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             )}
 
             {/* §4.5 / §5.3 — the bulk bar appears only when a selection exists. */}
@@ -1600,22 +1576,6 @@ function PricingCard({ bundle, facts }: { bundle: BundleRecord; facts: BundleFac
 /** §5 of the render — exactly three tiles. Every one states what it does or why it cannot. */
 function QuickActionsCard({ bundle, money }: { bundle: BundleRecord; money: boolean }) {
   const { openOperations } = useOperationsWorkspace()
-  const tile: CSSProperties = {
-    flex: 1,
-    minWidth: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 5,
-    padding: '11px 6px',
-    borderRadius: 'var(--r-sm)',
-    border: '1px solid var(--border)',
-    background: 'var(--card2)',
-    fontSize: 'var(--t-th)',
-    fontFamily: 'inherit',
-    color: 'var(--text)',
-    textAlign: 'center',
-  }
 
   return (
     <Card title="Quick Actions">
@@ -1624,14 +1584,14 @@ function QuickActionsCard({ bundle, money }: { bundle: BundleRecord; money: bool
           <button
             type="button"
             onClick={() => bundle.booking && openOperations(bundle.booking.id, bundle.booking.state === 'reserved' ? 'Booked' : 'On Rent', 'Pack')}
-            style={{ ...tile, cursor: 'pointer' }}
+            className="bundle-quick-tile"
           >
             <Icon name="checklist" size={17} style={{ color: 'var(--text2)' }} />
             Packing List
           </button>
         ) : (
           <Unavailable reason="A packing list belongs to a booking, and this bundle is not on one.">
-            <span style={{ ...tile, color: 'var(--disabled)', cursor: 'not-allowed' }}>
+            <span className="bundle-quick-tile" style={{ color: 'var(--disabled)', cursor: 'not-allowed' }}>
               <Icon name="checklist" size={17} />
               Packing List
             </span>
@@ -1639,13 +1599,13 @@ function QuickActionsCard({ bundle, money }: { bundle: BundleRecord; money: bool
         )}
 
         <Unavailable reason="Label printing is not built — there is no label renderer in this release.">
-          <span style={{ ...tile, color: 'var(--disabled)', cursor: 'not-allowed' }}>
+          <span className="bundle-quick-tile" style={{ color: 'var(--disabled)', cursor: 'not-allowed' }}>
             <Icon name="receipt" size={17} />
             Generate Labels
           </span>
         </Unavailable>
 
-        <button type="button" onClick={() => exportOneBundle(bundle, money)} style={{ ...tile, cursor: 'pointer' }}>
+        <button type="button" onClick={() => exportOneBundle(bundle, money)} className="bundle-quick-tile">
           <Icon name="download" size={17} style={{ color: 'var(--text2)' }} />
           Export Lines
         </button>

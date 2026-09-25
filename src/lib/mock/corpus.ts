@@ -28,6 +28,7 @@
 import { buildCorpus, seedUuid, INVOICE_ISSUED_STATUS } from '../seed'
 import { toRupees, type Paisa } from '../money'
 import type { Row, Store } from './engine'
+import { DOCUMENTS } from '../../data/documents'
 
 /** Tables the app queries that the corpus cannot fill. Shown in the banner. */
 export const UNSERVED = [
@@ -179,6 +180,7 @@ export function buildStore(options?: BuildStoreOptions): Store {
       purchase_requests: [],
       stock_transfers: [],
       stock_transfer_lines: [],
+      document_registry: [],
     }
     for (const t of UNSERVED) emptyStore[t] = []
     emptyStore['probe'] = []
@@ -694,6 +696,22 @@ export function buildStore(options?: BuildStoreOptions): Store {
     })
   }
 
+  const documentRegistry: Row[] = DOCUMENTS.map((d, index) => ({
+    id: id(`doc:${d.id || index}`),
+    client_uuid: seedUuid(`doc:${d.id || index}`),
+    document_no: d.id,
+    document_type: d.type,
+    booking_id: d.relatedKind === 'booking' ? d.relatedTo : null,
+    client_id: null,
+    lifecycle_status: d.archived ? 'Void' : d.status,
+    file_url: `/documents/${d.id}.pdf`,
+    file_size_bytes: 102400,
+    generated_by: USERS[0]?.['id'] ?? null,
+    signed_at: d.status === 'Signed' ? iso(d.createdAd) : null,
+    signed_by_name: d.status === 'Signed' ? (d.signer ?? d.party) : null,
+    created_at: iso(d.createdAd),
+  }))
+
   const store: Store = {
     users: USERS,
     branches: BRANCHES,
@@ -719,6 +737,7 @@ export function buildStore(options?: BuildStoreOptions): Store {
     purchase_requests: purchaseRequests,
     stock_transfers: stockTransfers,
     stock_transfer_lines: stockTransferLines,
+    document_registry: documentRegistry,
   }
   for (const t of UNSERVED) store[t] = []
   store['probe'] = []

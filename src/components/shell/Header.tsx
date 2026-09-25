@@ -1,5 +1,5 @@
 import Icon from '../ui/Icon'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../lib/auth'
 import { useViewport } from '../../lib/device'
@@ -50,12 +50,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
   const isPhone = vp === 'phone'
   const [profileOpen, setProfileOpen] = useState(false)
   const [showHandover, setShowHandover] = useState(false)
-  const [now, setNow] = useState(new Date())
 
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 60000)
-    return () => clearInterval(t)
-  }, [])
 
   const handleLogoutRequest = () => {
     if (!user) return
@@ -168,7 +163,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
               minWidth: 0,
               minHeight: 44,
               padding: '0 14px',
-              borderRadius: 'var(--r-btn)',
+              borderRadius: 'var(--r-input)',
               background: 'var(--input-bg)',
               border: '1px solid var(--input-border)',
               boxShadow: 'var(--specular-rim), 0 1px 3px rgba(0, 0, 0, 0.04)',
@@ -219,136 +214,97 @@ export default function Header({ crumbs, actions }: HeaderProps) {
             )}
           </button>
 
-          {/* Live Clock & Sync Status Badge */}
-          <div className="header-sync-context" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <button
-              className="header-sync-control"
-              type="button"
-              onClick={() => triggerSync()}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 11px',
-                borderRadius: 999,
-                background:
-                  syncStatus === 'syncing'
-                    ? 'var(--nav-active-bg)'
-                    : syncStatus === 'pending'
-                    ? 'rgba(232, 118, 45, 0.12)'
-                    : syncStatus === 'offline'
-                    ? 'var(--surface-2)'
-                    : syncStatus === 'error'
-                    ? 'var(--danger-soft)'
-                    : 'var(--surface-2)',
-                border: '1px solid var(--border)',
-                boxShadow: 'var(--specular-rim)',
-                fontSize: '11px',
-                fontWeight: 600,
-                color:
-                  syncStatus === 'syncing'
-                    ? 'var(--primary-text)'
-                    : syncStatus === 'pending'
-                    ? 'var(--warn-text)'
-                    : syncStatus === 'offline'
-                    ? 'var(--muted)'
-                    : syncStatus === 'error'
-                    ? 'var(--danger-text)'
-                    : 'var(--success-text)',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                transition: 'all var(--dur-fast) var(--ease)',
-              }}
-              title={
-                syncStatus === 'syncing'
-                  ? 'Syncing with Supabase Cloud...'
-                  : syncStatus === 'pending'
-                  ? `${pendingCount} offline mutations pending. Click to sync now.`
-                  : syncStatus === 'offline'
-                  ? 'Offline Mode active (Dexie cache). Click to sync when reconnected.'
-                  : syncStatus === 'error'
-                  ? `Sync failed: ${syncError ?? 'no reason reported'}. Click to retry.`
-                  : 'Cloud Database & Local Cache Synced. Click to force sync.'
-              }
-            >
-              <span
+          {/* Sync Status Badge — shown only during sync operations, pending changes, or issues (§4) */}
+          {(syncStatus !== 'synced' || pendingCount > 0) && (
+            <div className="header-sync-context" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <button
+                className="header-sync-control"
+                type="button"
+                onClick={() => triggerSync()}
                 style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  display: 'inline-block',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 11px',
+                  borderRadius: 999,
                   background:
+                    syncStatus === 'syncing'
+                      ? 'var(--nav-active-bg)'
+                      : syncStatus === 'pending'
+                      ? 'rgba(232, 118, 45, 0.12)'
+                      : syncStatus === 'offline'
+                      ? 'var(--surface-2)'
+                      : syncStatus === 'error'
+                      ? 'var(--danger-soft)'
+                      : 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--specular-rim)',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  color:
                     syncStatus === 'syncing'
                       ? 'var(--primary-text)'
                       : syncStatus === 'pending'
                       ? 'var(--warn-text)'
-                      : syncStatus === 'error'
-                      ? 'var(--danger-text)'
                       : syncStatus === 'offline'
                       ? 'var(--muted)'
-                      : 'var(--success-text)',
-                  boxShadow:
-                    syncStatus === 'syncing'
-                      ? '0 0 6px var(--primary-text)'
                       : syncStatus === 'error'
-                      ? '0 0 6px var(--danger-text)'
-                      : undefined,
+                      ? 'var(--danger-text)'
+                      : 'var(--success-text)',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  transition: 'all var(--dur-fast) var(--ease)',
                 }}
-              />
-              <span>
-                {syncStatus === 'syncing'
-                  ? 'Syncing…'
-                  : syncStatus === 'pending'
-                  ? `Pending (${pendingCount})`
-                  : syncStatus === 'offline'
-                  ? 'Offline'
-                  : syncStatus === 'error'
-                  ? 'Sync Error'
-                  : 'Synced'}
-              </span>
-            </button>
-
-            {/* Measured at 768px: this group is 220px of a 236px strip once the
-                search has collapsed to its icon, so the least informative chip
-                folds away on a tablet — the device shows the time; the sync and
-                branch chips are the two that carry state (A6). */}
-            {vp !== 'tablet' && (
-              <div
-                className="header-clock"
-                style={{
-                  fontSize: '12px',
-                  fontWeight: 700,
-                  color: 'var(--text)',
-                  fontFamily: 'var(--font-mono, monospace)',
-                  fontVariantNumeric: 'tabular-nums',
-                  padding: '3px 8px',
-                  background: 'var(--surface-2)',
-                  borderRadius: 'var(--r-xs)',
-                  border: '1px solid var(--border)',
-                }}
+                title={
+                  syncStatus === 'syncing'
+                    ? 'Syncing with Supabase Cloud...'
+                    : syncStatus === 'pending'
+                    ? `${pendingCount} offline mutations pending. Click to sync now.`
+                    : syncStatus === 'offline'
+                    ? 'Offline Mode active (Dexie cache). Click to sync when reconnected.'
+                    : syncStatus === 'error'
+                    ? `Sync failed: ${syncError ?? 'no reason reported'}. Click to retry.`
+                    : 'Cloud Database & Local Cache Synced. Click to force sync.'
+                }
               >
-                {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
-              </div>
-            )}
-
-            <span
-              className="header-branch"
-              style={{
-                fontSize: '11px',
-                fontWeight: 600,
-                padding: '3px 8px',
-                borderRadius: 'var(--r-xs)',
-                background: 'var(--surface-2)',
-                color: 'var(--text2)',
-                border: '1px solid var(--border)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 'var(--sp-xs)',
-              }}
-            >
-              Kathmandu HQ
-            </span>
-          </div>
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    display: 'inline-block',
+                    background:
+                      syncStatus === 'syncing'
+                        ? 'var(--primary-text)'
+                        : syncStatus === 'pending'
+                        ? 'var(--warn-text)'
+                        : syncStatus === 'error'
+                        ? 'var(--danger-text)'
+                        : syncStatus === 'offline'
+                        ? 'var(--muted)'
+                        : 'var(--success-text)',
+                    boxShadow:
+                      syncStatus === 'syncing'
+                        ? '0 0 6px var(--primary-text)'
+                        : syncStatus === 'error'
+                        ? '0 0 6px var(--danger-text)'
+                        : undefined,
+                  }}
+                />
+                <span>
+                  {syncStatus === 'syncing'
+                    ? 'Syncing…'
+                    : syncStatus === 'pending'
+                    ? `Pending (${pendingCount})`
+                    : syncStatus === 'offline'
+                    ? 'Offline'
+                    : syncStatus === 'error'
+                    ? 'Sync Error'
+                    : 'Synced'}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

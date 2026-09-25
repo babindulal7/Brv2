@@ -4,6 +4,7 @@ import { PinPad } from '../../components/ui/PinPad'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { useAuth } from '../../lib/auth'
 import type { PinVerdict } from '../../lib/auth'
+import './auth.css'
 
 /**
  * **The session lock.**
@@ -157,34 +158,10 @@ export default function ScreenLock({ onUnlock }: { onUnlock: () => void }) {
       aria-modal="true"
       aria-label="Session locked"
       tabIndex={-1}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 9999,
-        background: 'var(--bg)',
-        backdropFilter: 'blur(10px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'var(--sp-lg)',
-        outline: 'none',
-        overflowY: 'auto',
-      }}
+      className="screenlock-overlay"
     >
-      <div style={{ maxWidth: 320, width: '100%', textAlign: 'center' }}>
-        <div
-          style={{
-            width: 64,
-            height: 64,
-            borderRadius: '50%',
-            background: 'var(--st-neutral-bg)',
-            color: 'var(--text)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 16px',
-          }}
-        >
+      <div className="screenlock-card">
+        <div className="screenlock-icon-badge">
           <Icon name="lock" size={32} />
         </div>
 

@@ -234,7 +234,7 @@ export const CommandPalette: React.FC = () => {
           zIndex: 1,
           width: '100%',
           maxWidth: 640,
-          maxHeight: '70vh',
+          maxHeight: '70dvh',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',

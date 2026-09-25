@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { useViewport } from '../../lib/device'
-import { Card, PageHeader, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { Card, PageHeader, PageActions, Button, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import type { Kpi } from '../../components/ui/Page'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
@@ -22,6 +23,7 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { TIER_TONE, type ClientRecord, STACK_NOTE } from '../../lib/queries/clients'
 import { STATUS } from '../../lib/status'
 import { FilterButton } from '../../components/ui/FilterDrawer'
+import './clients.css'
 
 /**
  * Clients — directory, memberships, referrals, credit, imports, and duplicates.
@@ -159,29 +161,18 @@ export default function Clients() {
           : {})}
         title="Clients"
         actions={
-          <>
-            <Button variant="primary" icon="plus" aria-label="New Client" onClick={() => setTab('new')}>
-              {phone ? 'New' : 'New Client'}
-            </Button>
-            {!phone && (
-              <>
-                <Button icon="upload" onClick={() => setTab('import')}>
-                  Import
-                </Button>
-                <Button icon="download" onClick={exportCsv}>
-                  Export
-                </Button>
-                <Button icon="users" onClick={() => setTab('duplicates')}>
-                  Find Duplicates
-                </Button>
-              </>
-            )}
-            {phone && (
-              <Button icon="download" aria-label="Export clients" onClick={exportCsv}>
-                Export
+          <PageActions
+            primary={
+              <Button variant="primary" icon="plus" aria-label="New Client" onClick={() => setTab('new')}>
+                {phone ? 'New' : 'New Client'}
               </Button>
-            )}
-          </>
+            }
+            secondary={[
+              <Button key="export" icon="download" aria-label="Export clients" onClick={exportCsv}>
+                {phone ? '' : 'Export'}
+              </Button>,
+            ]}
+          />
         }
         />
       }
@@ -216,9 +207,9 @@ export default function Clients() {
           </PageBody>
         </>
       )}
-      {activeTab === 'new' && <AddClient />}
-      {activeTab === 'import' && <ImportCenter />}
-      {activeTab === 'duplicates' && <DuplicateCenter />}
+      {activeTab === 'new' && <AddClient embedded onDone={() => setTab('clients')} />}
+      {activeTab === 'import' && <ImportCenter embedded />}
+      {activeTab === 'duplicates' && <DuplicateCenter embedded />}
       {activeTab === 'membership' && <Membership embedded />}
       {activeTab === 'referral' && <ReferralView />}
       {activeTab === 'credit' && money && (
@@ -335,7 +326,7 @@ function ReferralView() {
             Back to Referrals
           </Button>
         </div>
-        <GenerateReferralCode />
+        <GenerateReferralCode embedded onDone={() => setComposing(false)} />
       </div>
     )
   }
@@ -465,20 +456,11 @@ function CreditView({
           emptyTitle="No membership plan is on file"
           emptyMessage="`membership_plans` holds no active plan, so there is no tier, no default credit limit and no plan discount to state. The five tiers this table used to list were written into the page."
         >
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+          <div className="credit-policy-grid">
             {plans.rows.map((p) => (
               <div
                 key={p.level}
-                style={{
-                  padding: 'var(--sp-md)',
-                  borderRadius: 'var(--r-card)',
-                  background: 'var(--card2)',
-                  border: '1px solid var(--border)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 6,
-                  minWidth: 0,
-                }}
+                className="credit-policy-card"
               >
                 <span
                   style={{
@@ -497,7 +479,7 @@ function CreditView({
                 >
                   {p.label}
                 </span>
-                <span className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                <span className="figure client-mono" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
                   {/* null is withheld, never zero — see `MembershipPlanRow`. */}
                   {p.defaultCreditLimit === null ? '—' : formatMoney(p.defaultCreditLimit)}
                 </span>
@@ -506,7 +488,7 @@ function CreditView({
                       figure — the two are the same value here, so neither is
                       claimed as a number. */}
                   Discount{' '}
-                  <span className="figure">
+                  <span className="figure client-mono">
                     {p.individualDiscountPct === null ? 'Negotiated' : `${p.individualDiscountPct}%`}
                   </span>
                 </span>
@@ -544,8 +526,8 @@ function CreditView({
           emptyTitle="No account carries an approved credit limit"
           emptyMessage="Every loaded client has a limit of zero, so none of them can rent on credit today."
         >
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+          <DataTableShell ariaLabel="Approved credit limits">
+            <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)' }}>
                   <th style={th}>Client</th>
@@ -557,7 +539,7 @@ function CreditView({
               </thead>
               <tbody>
                 {withLimit.map((c) => (
-                  <tr key={c.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <tr key={c.id} className="client-row" style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ ...td, fontWeight: 600 }}>
                       <Link to={`/clients/${c.id}`} style={{ color: 'inherit', textDecoration: 'none' }}>
                         {c.name}
@@ -580,11 +562,11 @@ function CreditView({
                         {c.membership}
                       </span>
                     </td>
-                    <td className="figure" style={td}>
+                    <td className="figure client-mono" style={td}>
                       {formatMoney(c.creditLimitPaisa)}
                     </td>
                     <td
-                      className="figure"
+                      className="figure client-mono"
                       style={{ ...td, fontWeight: c.outstandingPaisa > 0 ? 600 : 400, color: c.outstandingPaisa > 0 ? 'var(--danger-text)' : 'var(--text2)' }}
                     >
                       {formatMoney(c.outstandingPaisa)}
@@ -612,7 +594,7 @@ function CreditView({
                 ))}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         </PageBody>
       </Card>
     </div>

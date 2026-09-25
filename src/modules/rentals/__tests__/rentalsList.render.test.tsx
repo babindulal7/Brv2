@@ -465,7 +465,7 @@ describe('§Step 8 & 9 — quick action permissions and mobile card parity', () 
     authStub.role = 'Owner'
     await mount(1280)
     expect(button('New Rental')).toBeDefined()
-    expect(button('⚡ Fast Return')).toBeDefined()
+    expect(button('Fast Return')).toBeDefined()
     expect(button('Record Payment')).toBeDefined()
     expect(button('Scan Barcode')).toBeDefined()
   })
@@ -475,13 +475,13 @@ describe('§Step 8 & 9 — quick action permissions and mobile card parity', () 
     await mount(1280)
     expect(button('New Rental')).toBeUndefined()
     expect(button('Record Payment')).toBeUndefined()
-    expect(button('⚡ Fast Return')).toBeDefined()
+    expect(button('Fast Return')).toBeDefined()
   })
 
   it('hides Fast Return for Accounts, keeps Record Payment', async () => {
     authStub.role = 'Accounts'
     await mount(1280)
-    expect(button('⚡ Fast Return')).toBeUndefined()
+    expect(button('Fast Return')).toBeUndefined()
     expect(button('Record Payment')).toBeDefined()
   })
 

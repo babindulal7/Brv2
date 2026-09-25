@@ -2,9 +2,10 @@ import { useState, useMemo, useEffect } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { PageHeader } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import { Button } from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Badge } from '../../components/ui/Badge'
@@ -31,7 +32,7 @@ import {
   type CaseStatus,
   type CasePriority,
 } from '../../lib/queries/cases'
-import { IconSearch, IconPlus, IconDownload } from '@tabler/icons-react'
+import { IconPlus, IconDownload } from '@tabler/icons-react'
 import { LogCaseModal } from './modals/LogCaseModal'
 import { ResolveCaseModal } from './modals/ResolveCaseModal'
 import { useDomainEvent } from '../../events/useDomainEvent'
@@ -469,16 +470,15 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: phone ? '100%' : 'auto' }}>
           <div style={{ flex: phone ? 1 : undefined, width: phone ? undefined : 240 }}>
-            <Input
+            <SearchInput
               placeholder="Search ID, title, client…"
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  patch({ q: searchInput || null })
-                }
+              onChange={setSearchInput}
+              onClear={() => {
+                setSearchInput('')
+                patch({ q: null })
               }}
-              icon={<IconSearch size={16} />}
+              onSearchSubmit={(val) => patch({ q: val || null })}
             />
           </div>
           {/* Both were success-toasts for work that never happened — the exact
@@ -528,7 +528,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
             onAction={() => (routeCaseId ? navigate('/inventory/cases') : patch({ status: null, q: null }))}
           />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <DataTableShell ariaLabel="Incident cases">
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -647,7 +647,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
                 ))}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         )}
       </Card>
 

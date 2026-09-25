@@ -9,7 +9,7 @@ Status: **Seed-only**
 
 The booking workspace. Lazily imported at `src/App.tsx:27` and mounted at `/rentals/new` inside `Shell` with the crumbs "Rentals List → New Rental" (`src/App.tsx:176-183`), declared before `/rentals/:bookingNo` so `new` is not read as a booking id (`src/App.tsx:175`).
 
-Six collapsible sections down a main column plus a rail; every figure on it is computed from constant arrays in `src/data/*.ts` and from literals held in component state (`NewRental.tsx:1180-1281`). The page holds the entire booking in React state and has **no persisted row until Confirm**. Confirm Booking is wired: `confirmBooking` dispatches `createRental` (one `create_booking` RPC — header, lines, discounts, crew and transport) and then `confirmRental` on the id that comes back. What used to be true — the long comment saying it dispatched nothing because the client ids are `C-1`-style codes and the equipment ids are not `products.id` uuids — is now a set of *pre-flight refusals* inside `confirmBooking`: it refuses, with a stated reason and before any write, when the selected client carries no `dbId` or when any line's id is not a uuid.
+Six collapsible sections down a main column plus a rail; every figure on it is computed from constant arrays in `src/data/*.ts` and from literals held in component state (`NewRental.tsx:1180-1281`). The page holds the entire booking in React state and has no persisted row: its own comment at `NewRental.tsx:1522-1555` states that Confirm Booking dispatches nothing because the client ids are `C-1`-style codes and the equipment ids are not `products.id` uuids.
 
 ---
 
@@ -28,10 +28,10 @@ Six collapsible sections down a main column plus a rail; every figure on it is c
 | 2 | Inline error paragraph, only when `actionError` is set | `NewRental.tsx:2290-2295`, style `:250-259` |
 | 3 | Status strip card, 4 cells: Client · Dates (BS over AD) · Stage · Rental Outstanding | `NewRental.tsx:2302-2328`, cell component `:658-685` |
 | 4 | Two-track grid `minmax(0,1fr) auto` — main column + sticky rail | `NewRental.tsx:2330-3019` |
-| 4a | Section 0 **Client** — `ClientCombobox` whose trailing slot carries one control: the add-client button while no client is selected, the health eye once one is. Then `Client History`; then Project · Project Type · Government ID / PAN | `NewRental.tsx:2339-2406` |
+| 4a | Section 0 **Client** — `ClientCombobox` + health eye + `New Client` + `Client History`; then Project · Project Type · Government ID / PAN | `NewRental.tsx:2339-2406` |
 | 4b | Section 1 **Dates** — two `DateTimeField`s (Out, Return) and a read-only Days figure | `NewRental.tsx:2412-2446` |
 | 4c | Section 2 **Equipment, Bundles & Services** — `AddItemPanel`, a conflict strip, the line table (parent-first, children nested), then Items · Bundles · Rental Days · Equipment Subtotal | `NewRental.tsx:2448-2626` |
-| 4d | Section 3 **Crew** — `CrewSearch`, a roster combobox rendered in the section body (the header slot holds no control), crew table with per-row expand for Overtime / Meals / Accommodation, Crew Subtotal, `Clear crew` | `NewRental.tsx:2630-2750` |
+| 4d | Section 3 **Crew** — "Add Member…" select in the header slot, crew table with per-row expand for Overtime / Meals / Accommodation, Crew Subtotal, `Clear crew` | `NewRental.tsx:2630-2750` |
 | 4e | Section 4 **Delivery** — Delivery Type select, Delivery Charge, Fuel Charge, Transport Total | `NewRental.tsx:2755-2811` |
 | 4f | Section 5 **Pricing & Payments** — three blocks: Rental Charges (+ Discount % field and the Law 10 approval pair), Payments — rental only, Payment History | `NewRental.tsx:2817-2959` |
 | 4g | Save-state line: "Saving…" / "Not saved" / "Offline · Changes saved locally" / "All changes saved" | `NewRental.tsx:2968-2993` |
@@ -57,7 +57,7 @@ Both tables set a `minWidth` inside an `overflowX: auto` wrapper rather than ref
 
 | Screen area | Kind | Detail |
 |---|---|---|
-| Client combobox, selected client, client name in header/strip | SEED | `CLIENTS_DATA`, an array literal at `src/data/clients.ts:171`, copied into `clientPool` state at `NewRental.tsx:1160`. A fresh draft selects **no** client — `selectedClientId` starts `null`; it used to default to `CLIENTS_DATA[0]`, which both contradicted "a new booking starts empty" and vanished silently once the live pool replaced the seed. `ClientCombobox` imports the same array itself (`booking/ClientCombobox.tsx:44`) |
+| Client combobox, selected client, client name in header/strip | SEED | `CLIENTS_DATA`, an array literal at `src/data/clients.ts:171`, copied into `clientPool` state at `NewRental.tsx:1160` and defaulted to `CLIENTS_DATA[0]` at `:1161`. `ClientCombobox` imports the same array itself (`booking/ClientCombobox.tsx:44`) |
 | Client health eye, quick view, history drawer | SEED | `clientHealth()` (`booking/clientHealth.ts`, called `NewRental.tsx:1637`) computes off the same `ClientRecord`. Its own header says every threshold is a placeholder (`clientHealth.ts:54`) and that none of the signals can be derived from the current seed layer (`clientHealth.ts:128`, `:159`, `:188`) |
 | Equipment catalogue and the three default lines | SEED | `EQUIPMENT_CATALOGUE` is flattened at module load from `PARENTS` (`src/data/inventory.ts:475`) at `NewRental.tsx:118-144`; the opening three lines are picked at `:1229-1239` |
 | Add Item panel results (bundles, equipment, accessories) | SEED | `booking/itemCatalogue.ts:54-59` reads `INVENTORY_MODELS` (`src/data/addBundle.ts:125`), `BUNDLES`/`ACTIVE_BUNDLES` (`src/data/bundles.ts:173`, `:498`), `bundlesUsing` (`src/data/addEquipment.ts`) and `PARENTS`/`CATEGORY_OPTIONS` (`src/data/inventory.ts:475`, `:693`) |
@@ -74,7 +74,7 @@ Both tables set a `minWidth` inside an `overflowX: auto` wrapper rather than ref
 | Payment History block | — | Nothing rendered; `EmptyState` with an explanation (`NewRental.tsx:2946-2949`). The comment at `:2919-2944` records that a fabricated two-row table was removed |
 | All money arithmetic | engine, not data | `price()` (`src/lib/money.ts:125`) called at `NewRental.tsx:1310-1323`; per-line amounts by `lineAmountPaisa` `:169-171` |
 | Anything served by the local corpus | LOCAL — **not used** | `src/lib/mock/corpus.ts` serves `clients`, `products`, `product_units`, `bookings`, `booking_lines`, `booking_crew_lines`, `invoices`, `payments`, `security_deposits` (`corpus.ts:405-423`). This page imports no `lib/queries/*` module and no corpus module, so none of those rows reach it |
-| Client creation from the add-client control in the field's trailing slot (or the combobox's "Create New Client" row) | DB | The only real write reachable from this route: `idempotentInsert('clients', …)` (`src/actions/clients/createClient.ts:389`) after `supabase.rpc('next_document_number', { p_sequence_key: 'client' })` (`:338`), dispatched from `booking/AddClientModal.tsx:617` |
+| Client creation from the `New Client` button | DB | The only real write reachable from this route: `idempotentInsert('clients', …)` (`src/actions/clients/createClient.ts:389`) after `supabase.rpc('next_document_number', { p_sequence_key: 'client' })` (`:338`), dispatched from `booking/AddClientModal.tsx:617` |
 
 Invented on this page: the client list and every client balance/credit figure, the whole equipment catalogue and its rates, statuses and locations, the crew roster and day rates, the deposit required (Rs 50,000), the deposit received (Rs 25,000), the advance paid (Rs 15,000), the 7% booking discount, the 5% line discounts, the 3-day line duration, the pickup/return dates and times, the project name and type, the `Quote · Draft` stage, the two Activity Timeline rows and their actor, and the five Documents tiles — every rupee shown on this screen is derived from those.
 
@@ -86,18 +86,18 @@ Invented on this page: the client list and every client balance/credit figure, t
 |---|---|---|---|---|---|---|
 | 1 | `Save Draft` (header, `:2261`) | `saveDraft({ id: 'draft-new' }, ctx)` at `NewRental.tsx:1486` | `rental.draft` | `src/actions/rentals/saveDraft.ts:8-36` | **false** (never set; default `false` at `core.ts:89`) | **Yes** — `core.ts:188` → `rbac.canWriteBookingDesk` (`rbac.ts:215`) |
 | 2 | `Cancel` → "Cancel booking" dialog (`:3164-3174`) | `cancelRental({ id: 'draft-new', reason }, ctx)` at `NewRental.tsx:1608-1610` | `rental.cancel` | `src/actions/rentals/cancelRental.ts:8-36` | **false** (never set) | **Yes** — `core.ts:189` → `rbac.canWriteBookingDesk` |
-| 3 | `Confirm Booking` (rail and sticky bar) | `createRental(payload, ctx)`, then `confirmRental({ id }, ctx)` on the returned booking id — both in `confirmBooking` | `rental.create`, then `rental.confirm` | `src/actions/rentals/createRental.ts`, `src/actions/rentals/confirmRental.ts` | **true** for both (`createRental.ts:312`, `confirmRental.ts:302`) | **Yes** — `core.ts:187` → `rbac.canWriteBookingDesk`; `core.ts:160` → `rbac.canConfirmRental` |
-| 4 | Add a new client (trailing-slot button, or the combobox's "Create New Client" row) → `AddClientModal` Save | `createClient(payload, ctx)` at `booking/AddClientModal.tsx:617` | `client.create` | `src/actions/clients/createClient.ts:256-461` | **true** (`:274`) | **Yes** — `core.ts:163` → `rbac.canCreateClient` (`rbac.ts:145`) |
+| 3 | `Confirm Booking` (rail `:2055`, sticky bar `:3087`) | **none** | — | — | — | — |
+| 4 | `New Client` → `AddClientModal` Save | `createClient(payload, ctx)` at `booking/AddClientModal.tsx:617` | `client.create` | `src/actions/clients/createClient.ts:256-461` | **true** (`:274`) | **Yes** — `core.ts:163` → `rbac.canCreateClient` (`rbac.ts:145`) |
 
 Statements of what each one does, in the terms the code supports:
 
 1. **Save Draft** — renders, dispatches `SAVE_DRAFT`, action is a stub (`core.ts:223` throws `ActionNotImplementedError` before the permission check, before `validate` and before `execute`). The page catches it, sets `saveState = 'error'` and writes the message into the inline error line (`NewRental.tsx:1508-1512`). `showSuccessToast('Draft saved', …)` is on the resolved path only (`:1500-1507`), so the toast cannot fire; `draftPersisted` therefore never becomes true, and the second Cancel behaviour is unreachable in this build.
 2. **Cancel (post-save)** — renders, dispatches `CANCEL_RENTAL`, action is a stub (`core.ts` fails it closed). Unreachable today because `draftPersisted` (`:1473`) only flips inside the `saveDraft` success path.
 3. **Cancel (pre-save)** — `discardDraft` (`:1575-1578`) closes the dialog and calls `navigate('/rentals')`. Dispatches nothing; nothing is persisted, so nothing is lost server-side.
-4. **Confirm Booking** — returns early if `confirmBlocked`, refuses without a session, then runs four pre-flight refusals that each set an error string and return without writing: no `client.dbId` (the selected client is sample data), no lines, `!canBookingMoney` (Law 6 hides rates, so every line would persist at Rs 0), and any line whose id is not a uuid. Past those it mints one Law 8 idempotency key for the press, reads the operator's `branch_id` off their `users` row, and awaits `createRental` — which returns a **Quote** — then `confirmRental` on that Quote's id. `CreateRentalPartialError` and a failure between the two writes are both caught and reported by name, and a retry of the same press confirms the same Quote rather than creating a second. `navigate('/rentals')` runs only when both writes land.
-5. **Add a new client** — the one dispatch on this route that can complete. `createClient` mints its idempotency key at the press (`AddClientModal.tsx:614`, `newClientUuid` from `lib/supabase`), and `execute` inserts into `clients`. Note the action file's own header (`createClient.ts:59-66`) still says `client.create` resolves to no rule and is denied for every role — that text is stale; `core.ts:163` maps it.
+4. **Confirm Booking** — returns early if `confirmBlocked` (`:1516`), refuses without a session (`:1518-1521`), then **sets an error string and returns** (`:1556-1561`). There is no call to `createRental`, `confirmRental` or anything else; the comment at `:1522-1555` gives the reason (seed ids are not uuids). `navigate('/rentals')` is deliberately not called.
+5. **New Client** — the one dispatch on this route that can complete. `createClient` mints its idempotency key at the press (`AddClientModal.tsx:614`, `newClientUuid` from `lib/supabase`), and `execute` inserts into `clients`. Note the action file's own header (`createClient.ts:59-66`) still says `client.create` resolves to no rule and is denied for every role — that text is stale; `core.ts:163` maps it.
 
-`newClientUuid` is imported by `NewRental.tsx` as well as by `AddClientModal.tsx:13`: `confirmBooking` mints one key per Confirm press and one per discount, crew and transport row, so a double-click replays the same `create_booking` instead of minting a second booking.
+No `client_uuid` is minted anywhere in `NewRental.tsx` (`newClientUuid` is imported only by `AddClientModal.tsx:13`), which is consistent with the page never attempting a booking write.
 
 Buttons with no handler, or handlers that do nothing:
 
@@ -169,6 +169,7 @@ The delivery-notice text is deliberately not gated on `canTakePayment` (`:1360-1
 **Stubs and dead controls**
 
 - `saveDraft` and `cancelRental` are stubs — neither file sets `implemented`, so `core.ts:223` fails them closed (`saveDraft.ts:8`, `cancelRental.ts:8`). Both still carry the `console.log('[DB TX] …')` line (`saveDraft.ts:17`, `cancelRental.ts:17`) that `core.ts:9-18` describes as the removed pattern; it is harmless only because the dispatcher never reaches `execute`.
+- Confirm Booking dispatches nothing at all (`NewRental.tsx:1556-1561`).
 - Receive Payment / Receive Deposit have no `onClick` (`:1992-1993`).
 - Quick Actions ▸ Share and ▸ More have no `onClick` (`:2082`).
 - Operations menu items are inert and the menu is permanently disabled on this screen (`:496-524`, `:2266`).
@@ -191,7 +192,7 @@ The delivery-notice text is deliberately not gated on `canTakePayment` (`:1360-1
 - `reviewItems` sets Documents to `ok: false` unconditionally (`:1712`), so "Review · n/8" can never reach 8/8 (`:2096`).
 - The Delivery section declares a two-column grid (`:2762`) with a single child (`:2763-2809`); the right half is always empty at tablet and desktop.
 - The default lines are filtered to `status === 'In Stock'` (`:1233`), so `conflictLines` (`:1332`) is empty by construction on first paint and the conflict strip always opens green.
-- The crew picker's selectable `<option>Add Member…</option>` placeholder is gone with the `<Select>` — `CrewSearch` replaced it. What survives is worse and real: five of the roster's eight roles (`Director of Photography`, `1st AC`, `2nd AC`, `Drone Operator`, `DIT` — seven of the twelve people) are not `crew_role` enum members, so `createRental` refuses them by name (`CREW_ROLES` in `src/actions/rentals/createRental.ts`, checked in its `validate`). The page imports that same list and derives the warning from it: the picker states the reason on each affected row rather than hiding the person, and an assigned person carrying one of those roles raises a **Critical** blocking notice, so Confirm is refused with the person named instead of throwing. The mismatch itself is a `TODO(decision)` in `NewRental.tsx`.
+- The crew picker's placeholder `<option>Add Member…</option>` (`:2645`) carries no `value`, so choosing it passes the literal label to `addCrew` (`:2640`), which finds no member and returns (`:1423-1427`). Harmless, but the placeholder is selectable.
 - `days` (`:1283-1288`) is a whole-day difference and never consumes the pickup/return times captured at `:1191-1192`; the comment at `:1185-1190` states this is deliberate and unfixed.
 - A line's `days` seeds to the literal `3` (`:1223`) and never re-syncs with the booking's computed `days`, so a line can price for 3 days on a 10-day booking until its stepper is touched.
 - `readVatRatePercent()` runs once per mount (`:1276`), so a VAT rate changed in Settings during a session does not reach an open booking.

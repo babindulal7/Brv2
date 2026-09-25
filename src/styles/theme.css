@@ -24,8 +24,10 @@
   --z-dropdown: 1100;    /* menus, popovers, comboboxes */
   --z-sticky-nav: 1200;  /* sticky headers / sub-navigation bars */
   --z-overlay: 1300;     /* backdrops, full-screen scrims behind a modal/drawer */
-  --z-modal: 1400;       /* modal dialogs and drawers, above their own overlay */
-  --z-system: 10500;     /* system-critical: screen lock, system restore, toasts */
+  --z-drawer: 1350;      /* slide-over filter and context drawers */
+  --z-modal: 1400;       /* modal dialogs, above their own overlay */
+  --z-toast: 9000;       /* toasts, notifications, alerts */
+  --z-system: 10500;     /* system-critical: screen lock, system restore */
 
   /* Global Layout Tokens */
   --app-sidebar-width: 256px;
@@ -530,16 +532,15 @@
      a full re-declaration of the palette. The palette now belongs to THIS
      file alone; ui-v2.css carries component/layout rules only. */
 
-  /* Spacing scale (paired with --sp-* above; --space-* is the name new
-     page-shell/toolbar/drawer rules use). */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
+  /* Spacing scale (aliased to canonical --sp-* tokens) */
+  --space-1: var(--sp-xs);
+  --space-2: var(--sp-sm);
+  --space-3: var(--sp-md);
+  --space-4: var(--sp-lg);
   --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-10: 40px;
+  --space-6: var(--sp-xl);
+  --space-8: var(--sp-2xl);
+  --space-10: var(--sp-3xl);
   --space-12: 48px;
   --space-16: 64px;
 
@@ -549,7 +550,7 @@
 
   /* Page-shell geometry. responsive.css narrows --page-padding below 1280;
      no other file may change either token. */
-  --page-padding: var(--space-6);
+  --page-padding: clamp(14px, 1.35vw, 18px);
   --section-gap: var(--space-4);
 
   /* Brand aliases. ui-v2-era rules and a handful of components read --brand;
@@ -1190,6 +1191,10 @@ p {
 .page-header {
   width: 100%;
   max-width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
   padding-bottom: 2px;
 }
 
@@ -1199,7 +1204,13 @@ p {
 }
 
 .page-header__actions {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--sp-sm);
+  margin-left: auto;
+  align-self: flex-start;
+  flex-shrink: 0;
 }
 
 /* Cards must not clip or isolate the dropdowns rendered inside them. */

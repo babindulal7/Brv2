@@ -1,13 +1,15 @@
 import { useMemo, useState, useEffect, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CreateDocumentModal } from './CreateDocumentModal'
+import './documents.css'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input } from '../../components/ui/Input'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { Select } from '../../components/ui/Select'
-import { Card, Button, KpiStrip, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, Button, KpiStrip, Rail, FooterNote } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { useViewport } from '../../lib/device'
 import { ScreenHeader } from '../finance/TabHeader'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -42,6 +44,7 @@ import {
   RELATED_TARGET,
   ROW_MENU,
   SORTS,
+  documentsFor,
   categoriesFor,
   expiringFor,
   kpisFor,
@@ -57,48 +60,6 @@ import { DateField } from '../../components/ui/DateField'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { Pagination } from '../../components/ui/Pagination'
 
-const th = {
-  textAlign: 'left' as const,
-  padding: '9px 8px',
-  fontSize: 'var(--t-th)',
-  fontWeight: 600,
-  color: 'var(--text2)',
-  whiteSpace: 'nowrap' as const,
-  borderBottom: '1px solid var(--border)',
-}
-/*
- * §7.3's row floor ("rows >= 56px"), expressed with the token instead of with
- * padding arithmetic — `height` on a `<td>` is read as a MINIMUM, so it raises
- * the short rows and leaves the horizontal padding, the sticky Actions column
- * and the two-line date cell exactly as they are.
- *
- * Same argument as the `menuItem` note below, one level out. That comment grew
- * the PAINT of the row-menu entries because contiguous rows cannot be given
- * overhanging 44px targets without one row stealing its neighbour's taps; a
- * table row is the same geometry. Every row here ends in four controls — view,
- * download, send, and the menu whose last entry is Archive — so a boundary
- * press resolving to the row below archives the wrong document.
- *
- * Those four controls are still painted 24x24 and are NOT yet at the Law 15 hit
- * area; that is a separate gap, flagged rather than fixed here. But the row
- * floor is its precondition: there is nowhere to put a 44px target until the
- * row is tall enough to contain one, so this has to land first.
- */
-const td = {
-  height: 'var(--row-min-h)',
-  padding: '9px 8px',
-  fontSize: 'var(--t-meta)',
-  color: 'var(--text)',
-  verticalAlign: 'top' as const,
-  whiteSpace: 'nowrap' as const,
-}
-/** Pins the Actions column so it survives the table's horizontal scroll. */
-const stickyRight = {
-  position: 'sticky' as const,
-  right: 0,
-  textAlign: 'right' as const,
-  borderLeft: '1px solid var(--border)',
-}
 /* Law 15 — the law is the hit area, and `--tap` holds the number. Kept as
    `minHeight` so the three call sites that used to bump this to 34 or shrink it
    to 28 (search, sort, rows-per-page) can no longer opt below the floor: a
@@ -205,11 +166,12 @@ function ActionIcon({ name, label, why }: { name: IconName; label: string; why: 
       disabled
       aria-label={`${label} — unavailable`}
       title={`${label} — ${why}`}
+      className="doc-action-btn"
       style={{
-        minWidth: 36,
-        minHeight: 36,
-        width: 36,
-        height: 36,
+        minWidth: 'var(--tap)',
+        minHeight: 'var(--tap)',
+        width: 'var(--tap)',
+        height: 'var(--tap)',
         borderRadius: 'var(--r-xs)',
         border: 'none',
         background: 'transparent',
@@ -246,19 +208,20 @@ function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle
         aria-label={`Actions for ${row.id}`}
         aria-haspopup="menu"
         aria-expanded={open}
+        className={`doc-action-btn ${open ? 'is-active' : ''}`}
         onClick={() => {
           if (!open) measure()
           onToggle()
         }}
         style={{
-          minWidth: 36,
-          minHeight: 36,
-          width: 36,
-          height: 36,
+          minWidth: 'var(--tap)',
+          minHeight: 'var(--tap)',
+          width: 'var(--tap)',
+          height: 'var(--tap)',
           borderRadius: 'var(--r-xs)',
           border: 'none',
           background: open ? 'var(--hover-card)' : 'transparent',
-          color: 'var(--muted)',
+          color: open ? 'var(--text)' : 'var(--muted)',
           cursor: 'pointer',
           display: 'grid',
           placeItems: 'center',
@@ -444,20 +407,21 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   // it on every render.
   const gctx = useMemo(() => gateContext(role), [role])
 
-  const categories = useMemo(() => categoriesFor(money), [money])
-  const [docRows, setDocRows] = useState<DocRow[]>([])
+  const [docRows, setDocRows] = useState<DocRow[]>(() => documentsFor(money))
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const refetchDocs = useCallback(() => {
     listDocuments().then((res) => {
-      setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
+      if (res.rows.length > 0) {
+        setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
+      }
     }).catch(() => {})
   }, [money])
 
   useEffect(() => {
     let mounted = true
     listDocuments().then((res) => {
-      if (mounted) {
+      if (mounted && res.rows.length > 0) {
         setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
       }
     }).catch(() => {})
@@ -466,8 +430,9 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
     }
   }, [money])
 
-  const allDocs = docRows
-  const kpis = useMemo(() => kpisFor(money), [money])
+  const allDocs: DocRow[] = docRows.length > 0 ? docRows : documentsFor(money)
+  const categories = useMemo(() => categoriesFor(money, allDocs), [money, allDocs])
+  const kpis = useMemo(() => kpisFor(money, allDocs), [money, allDocs])
   const slices = useMemo(() => summarySlices(categories), [categories])
   const missing = useMemo(() => missingFor(money), [money])
   const expiring = useMemo(() => expiringFor(money), [money])
@@ -679,155 +644,121 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
 
   return (
     <PageShell width="full" onClick={() => setMenuFor(null)}>
-      <ScreenHeader
-        embedded={embedded}
-        leading={
-          <FilterButton
-            onClick={() => setFiltersOpen(!filtersOpen)}
-            activeCount={documentFilterCount}
-            controls="documents-filters"
-            expanded={filtersOpen}
-          />
-        }
-        title="Documents"
-        actions={
-          <>
-            {!phone && (
-              <>
-                <Unavailable reason={NOT_BUILT}>
-                  <Button icon="upload" disabled>
-                    Upload Document
-                  </Button>
-                </Unavailable>
-                <Unavailable reason={NOT_BUILT}>
-                  <Button icon="upload" disabled>
-                    Import
-                  </Button>
-                </Unavailable>
-              </>
-            )}
-            <Button icon="download" aria-label="Export documents" onClick={exportCsv}>
-              {phone ? '' : 'Export'}
-            </Button>
-            <Button
-              icon="plus"
-              variant="primary"
-              aria-label="Create Document"
-              onClick={() => setIsCreateOpen(true)}
-            >
-              {phone ? '' : 'Create Document'}
-            </Button>
-          </>
-        }
-      />
+      <div className="doc-v2">
+        <ScreenHeader
+          embedded={embedded}
+          leading={
+            <FilterButton
+              onClick={() => setFiltersOpen(!filtersOpen)}
+              activeCount={documentFilterCount}
+              controls="documents-filters"
+              expanded={filtersOpen}
+            />
+          }
+          title="Documents"
+          actions={
+            <>
+              {!phone && (
+                <>
+                  <Unavailable reason={NOT_BUILT}>
+                    <Button icon="upload" disabled>
+                      Upload Document
+                    </Button>
+                  </Unavailable>
+                  <Unavailable reason={NOT_BUILT}>
+                    <Button icon="upload" disabled>
+                      Import
+                    </Button>
+                  </Unavailable>
+                </>
+              )}
+              <Button icon="download" aria-label="Export documents" onClick={exportCsv}>
+                {phone ? '' : 'Export'}
+              </Button>
+              <Button
+                icon="plus"
+                variant="primary"
+                aria-label="Create Document"
+                onClick={() => setIsCreateOpen(true)}
+              >
+                {phone ? '' : 'Create Document'}
+              </Button>
+            </>
+          }
+        />
 
-      <KpiStrip items={kpis} columns={kpis.length} />
+        <KpiStrip items={kpis} columns={kpis.length} />
 
-      {/* §2 — tabs. The rail's category list below shares this one selection,
-          so the two controls can never disagree about what is on screen. */}
-      <div
-        className="rsp-chip-scroll"
-        style={{
-          display: 'flex',
-          gap: 'var(--sp-xs)',
-          borderBottom: '1px solid var(--border)',
-          flexWrap: 'nowrap',
-          overflowX: 'auto',
-          paddingBottom: 1,
-        }}
-      >
-        {[{ key: 'All' as const, tab: ALL_TAB }, ...categories].map((t) => {
-          const on = category === t.key
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => pickCategory(t.key)}
-              aria-current={on ? 'page' : undefined}
-              style={{
-                minHeight: 44,
-                padding: '0 12px',
-                border: 'none',
-                borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                background: 'transparent',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 700 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
-                marginBottom: -1,
-              }}
-            >
-              {t.tab}
-            </button>
-          )
-        })}
-      </div>
+        {/* §2 — tabs. The rail's category list below shares this one selection,
+            so the two controls can never disagree about what is on screen. */}
+        <div className="doc-tab-track rsp-chip-scroll">
+          {[{ key: 'All' as const, tab: ALL_TAB, count: total }, ...categories].map((t) => {
+            const on = category === t.key
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => pickCategory(t.key)}
+                aria-current={on ? 'page' : undefined}
+                className={`doc-tab-btn ${on ? 'is-active' : ''}`}
+              >
+                <span>{t.tab}</span>
+                <span className="doc-tab-count doc-mono">{t.count}</span>
+              </button>
+            )
+          })}
+        </div>
 
-      {/* Filters open from the list toolbar and occupy no grid width. */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: filtersOpen && !phone
-            ? 'minmax(230px, 280px) minmax(0,1fr) auto'
-            : desktop
-              ? 'minmax(0,1fr) auto'
-              : 'minmax(0,1fr)',
-          gap: 'var(--sp-md)',
-          alignItems: 'start',
-        }}
-      >
-        {(() => {
-          const categoriesContent = (
-          <>
-          <Card title="Document Categories" bodyStyle={{ padding: 6 }}>
-            {[{ key: 'All' as const, rail: ALL_TAB, icon: 'file' as IconName, count: total }, ...categories].map((c) => {
-              const on = category === c.key
-              const tint = c.key === 'All' ? 'var(--text2)' : catColor(categoryIndex(c.key as CategoryKey))
-              return (
-                <button
-                  key={c.key}
-                  type="button"
-                  onClick={() => pickCategory(c.key)}
-                  aria-pressed={on}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 'var(--sp-sm)',
-                    width: '100%',
-                    height: 32,
-                    padding: '0 8px',
-                    borderRadius: 'var(--r-sm)',
-                    border: 'none',
-                    background: on ? 'var(--nav-active-bg)' : 'transparent',
-                    color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: on ? 700 : 500,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  <Icon name={c.icon} size={14} style={{ color: on ? 'var(--nav-active-accent)' : tint, flexShrink: 0 }} />
-                  <span
-                    style={{
-                      flex: 1,
-                      textAlign: 'left',
-                      minWidth: 0,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
+        {/* Filters open from the list toolbar and occupy no grid width. */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: filtersOpen && !phone
+              ? 'minmax(230px, 280px) minmax(0,1fr) auto'
+              : desktop
+                ? 'minmax(0,1fr) auto'
+                : 'minmax(0,1fr)',
+            gap: 'var(--sp-md)',
+            alignItems: 'start',
+          }}
+        >
+          {(() => {
+            const categoriesContent = (
+            <>
+            <Card title="Document Categories" bodyStyle={{ padding: 6 }}>
+              {[{ key: 'All' as const, rail: ALL_TAB, icon: 'file' as IconName, count: total }, ...categories].map((c) => {
+                const on = category === c.key
+                const tint = c.key === 'All' ? 'var(--text2)' : catColor(categoryIndex(c.key as CategoryKey))
+                return (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() => pickCategory(c.key)}
+                    aria-pressed={on}
+                    className={`doc-rail-cat-btn ${on ? 'is-active' : ''}`}
                   >
-                    {c.rail}
-                  </span>
-                  <span className="figure" style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)', flexShrink: 0 }}>
-                    {c.count.toLocaleString('en-IN')}
-                  </span>
-                </button>
-              )
-            })}
-          </Card>
+                    <span className="doc-rail-cat-icon">
+                      <Icon name={c.icon} size={14} style={{ color: on ? 'var(--nav-active-accent)' : tint, flexShrink: 0 }} />
+                    </span>
+                    <span
+                      style={{
+                        flex: 1,
+                        textAlign: 'left',
+                        minWidth: 0,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {c.rail}
+                    </span>
+                    <span className="doc-rail-cat-count figure doc-mono" style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)', flexShrink: 0 }}>
+                      {c.count.toLocaleString('en-IN')}
+                    </span>
+                  </button>
+                )
+              })}
+            </Card>
 
           <Card
             title="Filters"
@@ -1001,39 +932,31 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               />
             }
           />
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--sp-sm)',
-              padding: '10px 12px',
-              borderBottom: '1px solid var(--border)',
-              flexWrap: 'wrap',
-            }}
-          >
+          <div className="doc-toolbar-shell">
             {/* Global command search navigates records; this field filters the
                 displayed documents, including when hosted inside Finance. */}
-              <span style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 190 }}>
-                <Icon name="search" size={14} style={{ position: 'absolute', left: 10, color: 'var(--muted)' }} />
-                <Input
-                  type="search"
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value)
-                    setPage(1)
-                  }}
-                  placeholder="Search in documents…"
-                  aria-label="Search documents by name, ID, type, record or client"
-                  style={{ ...fieldStyle, height: 34, paddingLeft: 30 }}
-                />
-              </span>
+            <div className="doc-search-wrapper">
+              <SearchInput
+                value={query}
+                onChange={(val) => {
+                  setQuery(val)
+                  setPage(1)
+                }}
+                onClear={() => {
+                  setQuery('')
+                  setPage(1)
+                }}
+                placeholder="Search in documents…"
+                aria-label="Search documents by name, ID, type, record or client"
+              />
+            </div>
 
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               Sort by
               <Select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortKey)}
-                style={{ ...fieldStyle, width: 'auto', height: 34 }}
+                className="doc-sort-select"
               >
                 {SORTS.map((s) => (
                   <option key={s} value={s}>
@@ -1043,7 +966,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               </Select>
             </label>
 
-            <span style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}>
+            <span className="doc-view-toggle">
               {([['Table', false], ['Cards', true]] as const).map(([label, isCards]) => {
                 // `cardView`, not `cards` — below 768 the width forces cards, so
                 // the pressed state has to say what is actually rendering.
@@ -1056,19 +979,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                     aria-pressed={on}
                     aria-label={`${label} view`}
                     title={`${label} view`}
-                    style={{
-                      // Law 15 — 44××4 at every width; this was 30×28.
-                      minWidth: 44,
-                      minHeight: 44,
-                      borderRadius: 7,
-                      border: 'none',
-                      background: on ? 'var(--card)' : 'transparent',
-                      color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                      cursor: 'pointer',
-                      display: 'grid',
-                      placeItems: 'center',
-                      boxShadow: on ? 'var(--shadow-card)' : 'none',
-                    }}
+                    className={`doc-view-btn ${on ? 'is-active' : ''}`}
                   >
                     <Icon name={isCards ? 'queues' : 'checklist'} size={15} />
                   </button>
@@ -1079,18 +990,8 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
 
           {/* §11 — the bulk bar appears only on selection. */}
           {selected.size > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--sp-sm)',
-                padding: '8px 12px',
-                borderBottom: '1px solid var(--border)',
-                background: 'var(--nav-active-bg)',
-                flexWrap: 'wrap',
-              }}
-            >
-              <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--nav-active-accent)' }}>
+            <div className="doc-bulk-bar">
+              <span className="doc-bulk-count figure doc-mono">
                 {selected.size} selected
               </span>
               {/*
@@ -1156,47 +1057,49 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             </div>
           ) : cardView ? (
             <div
+              className="doc-cards-grid"
               style={{
-                display: 'grid',
                 gridTemplateColumns:
                   viewport === 'phone' ? 'repeat(2, minmax(0,1fr))' : viewport === 'tablet' ? 'repeat(3, minmax(0,1fr))' : 'repeat(auto-fill, minmax(238px, 1fr))',
-                gap: 'var(--sp-md)',
-                padding: 'var(--sp-md)',
               }}
             >
               {visible.map((d) => {
                 const cat = categories.find((c) => c.key === d.category)
+                const bs = toBs(d.createdAd)
                 return (
-                  <article key={d.id} style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+                  <article key={d.id} className="doc-card">
+                    <div className="doc-card-header">
                       <DocTile icon={cat?.icon ?? 'file'} index={categoryIndex(d.category)} />
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                      <span style={{ minWidth: 0, flex: 1 }}>
+                        <span className="doc-card-title">
                           {d.name}
                         </span>
-                        <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                        <span className="identifier doc-card-id doc-mono">
                           {d.id}
                         </span>
                       </span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <div className="doc-card-meta">
                       <TypeChip text={d.type} />
                       <StatusPill status={d.status} />
                     </div>
-                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{d.party}</span>
-                    <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                      {d.recordState} · <span className="figure">{formatAd(d.createdAd)}</span>
-                    </span>
+                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 500 }}>{d.party}</span>
+                    <div className="doc-card-footer">
+                      <span>{d.recordState}</span>
+                      <span className="figure doc-mono">
+                        {bs ? formatBs(bs) : formatAd(d.createdAd)}
+                      </span>
+                    </div>
                   </article>
                 )
               })}
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
+            <DataTableShell ariaLabel="Documents" data-table-scroll className="doc-table-shell">
+              <table className="doc-table">
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
-                    <th style={{ ...th, width: 30 }}>
+                    <th className="doc-th" style={{ width: 30 }}>
                       <input
                         type="checkbox"
                         aria-label="Select every document on this page"
@@ -1211,18 +1114,18 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                         }
                       />
                     </th>
-                    <th style={th}>{sortHeader('Document Name', 'Document Name')}</th>
-                    <th style={th}>{sortHeader('Type', 'Type')}</th>
-                    <th style={th}>Related To</th>
+                    <th className="doc-th">{sortHeader('Document Name', 'Document Name')}</th>
+                    <th className="doc-th">{sortHeader('Type', 'Type')}</th>
+                    <th className="doc-th">Related To</th>
                     {/* The render's header reads "Client / Vendor"; the word
                         "customer" appears nowhere in this product. */}
-                    <th style={th}>{sortHeader('Client / Vendor', 'Client / Vendor')}</th>
-                    <th style={th}>{sortHeader('Status', 'Status')}</th>
-                    <th style={th}>{sortHeader('Created On', 'Created Date')}</th>
+                    <th className="doc-th">{sortHeader('Client / Vendor', 'Client / Vendor')}</th>
+                    <th className="doc-th">{sortHeader('Status', 'Status')}</th>
+                    <th className="doc-th">{sortHeader('Created On', 'Created Date')}</th>
                     {/* Eight columns do not fit a 300px-rail layout below a very
                         wide viewport, so the actions pin to the right edge and
                         stay reachable instead of scrolling out of sight. */}
-                    <th style={{ ...th, ...stickyRight, background: 'var(--th-bg)' }}>Actions</th>
+                    <th className="doc-th doc-sticky-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1231,8 +1134,8 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                     const bs = toBs(d.createdAd)
                     const target = RELATED_TARGET[d.relatedKind]
                     return (
-                      <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={{ ...td, width: 30 }}>
+                      <tr key={d.id} className="doc-row">
+                        <td className="doc-td" style={{ width: 30 }}>
                           <input
                             type="checkbox"
                             aria-label={`Select ${d.id}`}
@@ -1241,7 +1144,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                           />
                         </td>
 
-                        <td style={td}>
+                        <td className="doc-td">
                           <IntelCard
                             glance={glance}
                             detail={detail}
@@ -1255,7 +1158,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                                   {d.name}
                                 </span>
                                 {/* §4 — one prefix per type; templates carry id · version. */}
-                                <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
+                                <span className="identifier doc-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
                                   {d.id}
                                 </span>
                               </span>
@@ -1263,15 +1166,15 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                           </IntelCard>
                         </td>
 
-                        <td style={td}>
+                        <td className="doc-td">
                           <TypeChip text={d.type} />
                         </td>
 
-                        <td style={td}>
+                        <td className="doc-td">
                           {target.route ? (
                             <Link
                               to={`${target.route}/${d.relatedTo}`}
-                              className="identifier"
+                              className="identifier doc-mono"
                               style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--link)', textDecoration: 'none' }}
                             >
                               {d.relatedTo}
@@ -1280,16 +1183,16 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                             <span style={{ color: 'var(--muted)' }}>—</span>
                           ) : (
                             <Unavailable reason={`The ${target.label} screen is not built yet`}>
-                              <span className="identifier" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                              <span className="identifier doc-mono" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>
                                 {d.relatedTo}
                               </span>
                             </Unavailable>
                           )}
                         </td>
 
-                        <td style={{ ...td, color: 'var(--text2)', whiteSpace: 'normal' }}>{d.party}</td>
+                        <td className="doc-td" style={{ color: 'var(--text2)', whiteSpace: 'normal' }}>{d.party}</td>
 
-                        <td style={td}>
+                        <td className="doc-td">
                           <StatusPill status={d.status} />
                           {/* §5.2 — the record's state, never merged into the pill. */}
                           <span
@@ -1306,18 +1209,18 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                           </span>
                         </td>
 
-                        <td style={td}>
+                        <td className="doc-td">
                           {/* §3 — BS above AD, both from the one Date Engine. */}
-                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
+                          <span className="figure doc-mono" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text)', fontWeight: 600 }}>
                             {bs ? formatBs(bs) : '—'}
                           </span>
-                          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
+                          <span className="figure doc-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
                             {formatAd(d.createdAd)}, {d.createdTime}
                           </span>
                         </td>
 
                         <td
-                          style={{ ...td, ...stickyRight, padding: '9px 6px', background: 'var(--card)' }}
+                          className="doc-td doc-sticky-actions"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
@@ -1336,7 +1239,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                   })}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
           )}
 
           <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
@@ -1394,22 +1297,19 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               {allDocs
                 .filter((d) => d.status === 'Pending Signature' && !d.archived)
                 .map((p) => (
-                  <div key={p.id} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', fontSize: 'var(--t-meta)' }}>
+                  <div key={p.id} className="doc-alert-item">
                     <Icon name="crew" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
                     <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: 'block', color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <span style={{ display: 'block', color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {p.type}
                       </span>
                       <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                        <span className="identifier">{p.relatedTo}</span> · {p.party}
+                        <span className="identifier doc-mono">{p.relatedTo}</span> · {p.party}
                       </span>
                     </span>
                     <span
-                      className="figure"
+                      className="doc-alert-ageing doc-mono"
                       style={{
-                        fontSize: 'var(--t-th)',
-                        fontWeight: 700,
-                        flexShrink: 0,
                         color: p.ageingSevere ? 'var(--danger-text)' : 'var(--progress-text)',
                       }}
                     >
@@ -1418,7 +1318,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                   </div>
                 ))}
               <p style={{ margin: 0, paddingTop: 2, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                <span className="figure">{PENDING_SIGNATURE_TOTAL}</span> documents pending signature across the
+                <span className="figure doc-mono">{PENDING_SIGNATURE_TOTAL}</span> documents pending signature across the
                 installation.
               </p>
             </div>
@@ -1437,13 +1337,13 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {missing.map((m) => (
-                <div key={m.doc + m.booking} style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', fontSize: 'var(--t-meta)' }}>
+                <div key={m.doc + m.booking} className="doc-alert-item">
                   <Icon name="alert_triangle" size={13} style={{ color: 'var(--danger-text)', flexShrink: 0 }} />
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: 'block', fontWeight: 600, color: 'var(--text)' }}>{m.doc}</span>
                     {/* §0 — the panel names the booking and the client. */}
                     <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                      <Link to={`/rentals/${m.booking}`} className="identifier" style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                      <Link to={`/rentals/${m.booking}`} className="identifier doc-mono" style={{ color: 'var(--link)', textDecoration: 'none' }}>
                         {m.booking}
                       </Link>{' '}
                       · {m.client}
@@ -1468,7 +1368,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                 </div>
               ))}
               <p style={{ margin: 0, paddingTop: 2, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                <span className="figure">{MISSING_TOTAL}</span> missing in active rentals — each blocks its own gate.
+                <span className="figure doc-mono">{MISSING_TOTAL}</span> missing in active rentals — each blocks its own gate.
               </p>
             </div>
           </Card>
@@ -1479,10 +1379,10 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           <Card title="Expiring / Due Soon">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {expiring.map((e) => (
-                <div key={e.doc} style={{ fontSize: 'var(--t-meta)' }}>
+                <div key={e.doc} className="doc-alert-item" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 3 }}>
                   <span style={{ display: 'block', color: 'var(--text)', fontWeight: 600 }}>{e.doc}</span>
                   <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
-                    {e.what} <span style={{ color: 'var(--progress-text)', fontWeight: 700 }}>{e.when}</span>
+                    {e.what} <span className="doc-mono" style={{ color: 'var(--progress-text)', fontWeight: 700 }}>{e.when}</span>
                   </span>
                   <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{e.action}</span>
                 </div>
@@ -1491,30 +1391,14 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           </Card>
 
           <Card title="Quick Actions" bodyStyle={{ padding: 10 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(quickActions.length, 4)}, minmax(0,1fr))`, gap: 7 }}>
+            <div className="doc-qa-grid" style={{ gridTemplateColumns: `repeat(${Math.min(quickActions.length, 4)}, minmax(0,1fr))` }}>
               {quickActions.map((q) => (
                 <button
                   key={q.label}
                   type="button"
                   disabled
                   title={`${q.label} — ${NOT_BUILT}`}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 5,
-                    padding: '10px 4px',
-                    borderRadius: 10,
-                    border: '1px solid var(--border)',
-                    background: 'var(--card2)',
-                    color: 'var(--disabled)',
-                    fontSize: 'var(--t-th)',
-                    fontWeight: 600,
-                    fontFamily: 'inherit',
-                    cursor: 'not-allowed',
-                    textAlign: 'center',
-                    lineHeight: 1.25,
-                  }}
+                  className="doc-qa-tile"
                 >
                   <Icon name={q.icon} size={17} />
                   {q.label}
@@ -1532,7 +1416,8 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                 justifyContent: 'center',
                 gap: 7,
                 width: '100%',
-                height: 34,
+                minHeight: 44,
+                height: 44,
                 marginTop: 'var(--sp-sm)',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--btn-secondary-border)',
@@ -1575,6 +1460,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         onClose={() => setIsCreateOpen(false)}
         onSuccess={refetchDocs}
       />
+      </div>
     </PageShell>
   )
 }

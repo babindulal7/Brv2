@@ -1,0 +1,410 @@
+/* ==========================================================================
+   Clients CRM Workspace — Bento 2.0 & High-Density Operational Styling
+   ========================================================================== */
+
+.client-v2 {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 16px);
+}
+
+/* ── Filter & Navigation Chips Track ────────────────────────────────────── */
+.client-chip-track {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+  padding: 2px 2px 6px;
+}
+
+@media (max-width: 768px) {
+  .client-chip-track {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    padding-bottom: 8px;
+  }
+}
+
+.client-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--r-btn, 8px);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text2);
+  font-size: var(--t-meta, 13px);
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.client-filter-chip:hover {
+  background: var(--card2, var(--hover-card));
+  border-color: var(--border2, var(--border));
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.client-filter-chip.is-active {
+  background: var(--nav-active-bg);
+  border-color: var(--nav-active-accent);
+  color: var(--nav-active-accent);
+  font-weight: 600;
+  box-shadow: 0 0 0 1px var(--nav-active-accent), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.client-overlay-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0 13px;
+  border-radius: var(--r-btn, 8px);
+  border: 1px dashed var(--border);
+  background: var(--card);
+  color: var(--text2);
+  font-size: var(--t-meta, 13px);
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+}
+
+.client-overlay-chip:hover:not(:disabled) {
+  background: var(--card2, var(--hover-card));
+  border-color: var(--nav-active-accent);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.client-overlay-chip.is-active {
+  background: var(--nav-active-bg);
+  border-color: var(--nav-active-accent);
+  color: var(--nav-active-accent);
+  font-weight: 600;
+  border-style: solid;
+  box-shadow: 0 0 0 1px var(--nav-active-accent), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.client-overlay-chip:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.client-chip-badge {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--card2);
+  color: var(--text);
+  font-size: var(--t-meta, 12px);
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  font-feature-settings: "tnum" 1;
+  padding: 0 4px;
+}
+
+.client-filter-chip.is-active .client-chip-badge,
+.client-overlay-chip.is-active .client-chip-badge {
+  background: color-mix(in srgb, var(--nav-active-accent) 20%, var(--card));
+  color: var(--nav-active-accent);
+}
+
+/* ── Bento Grid Cards ───────────────────────────────────────────────────── */
+.client-grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4, 16px);
+  padding: 16px;
+}
+
+.client-bento-card {
+  border-radius: var(--r-card, 12px);
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+  position: relative;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.client-bento-card:hover {
+  border-color: var(--border2, var(--border));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
+}
+
+.client-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.client-avatar-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  flex-shrink: 0;
+  letter-spacing: -0.02em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.client-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.client-card-name {
+  font-size: var(--t-ui, 14px);
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-card-sub {
+  font-size: var(--t-meta, 12px);
+  color: var(--muted);
+  font-family: var(--font-mono, monospace);
+}
+
+.client-card-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.client-card-contact {
+  padding: 8px 10px;
+  background: var(--card2);
+  border-radius: var(--r-sm, 6px);
+  border: 1px solid var(--border);
+  font-size: var(--t-meta, 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.client-card-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+  font-size: var(--t-meta, 12px);
+}
+
+.client-stat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono, monospace);
+  font-feature-settings: "tnum" 1;
+}
+
+.client-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+/* ── Client Table Shell & Formatting ────────────────────────────────────── */
+.client-table-shell {
+  overflow-x: auto;
+  border-radius: var(--r-card, 12px);
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+
+.client-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.client-table thead tr th {
+  height: 44px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text2);
+  background: var(--th-bg, var(--card2));
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  white-space: nowrap;
+}
+
+.client-row {
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--dur-fast, 150ms) var(--ease);
+}
+
+.client-row:hover {
+  background: color-mix(in srgb, var(--nav-active-bg) 40%, transparent);
+}
+
+.client-row.is-selected {
+  background: var(--nav-active-bg);
+}
+
+.client-row td {
+  height: var(--row-min-h, 56px);
+  padding: 10px 12px;
+  font-size: var(--t-meta, 13px);
+  color: var(--text);
+  vertical-align: middle;
+}
+
+/* ── Monospace Figures & Identifiers ────────────────────────────────────── */
+.client-mono {
+  font-family: var(--font-mono, monospace);
+  font-feature-settings: "tnum" 1;
+}
+
+.client-id-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono, monospace);
+  color: var(--text2);
+}
+
+/* ── Membership Plan Bento Cards ────────────────────────────────────────── */
+.membership-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+}
+
+.membership-plan-card {
+  border-radius: var(--r-card, 12px);
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  position: relative;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.membership-plan-card:hover {
+  border-color: var(--border2, var(--border));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+  transform: translateY(-2px);
+}
+
+.membership-plan-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.membership-plan-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.membership-price-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.membership-price-amount {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.02em;
+}
+
+.membership-benefit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+}
+
+.membership-benefit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-meta, 12px);
+  color: var(--text2);
+}
+
+/* ── Credit Policy Grid ─────────────────────────────────────────────────── */
+.credit-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.credit-policy-card {
+  padding: 14px;
+  border-radius: var(--r-card, 12px);
+  background: var(--card2);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  transition: all var(--dur-fast, 150ms) var(--ease);
+}
+
+.credit-policy-card:hover {
+  border-color: var(--border2, var(--border));
+  transform: translateY(-1px);
+}

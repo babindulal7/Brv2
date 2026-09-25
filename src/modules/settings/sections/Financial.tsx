@@ -1,4 +1,5 @@
 import { Card } from '../../../components/ui/Page'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { thStyle as th } from '../../../components/ui/TableHeaderCell'
 import { toRupees } from '../../../lib/money'
 import { FEE_PER_CREW_DAY_PAISA } from '../../../lib/queries/crew'
@@ -173,7 +174,7 @@ export function FinancialPane() {
           </span>
         }
       >
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Membership matrix" data-table-scroll style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
             <thead>
               <tr>
@@ -205,7 +206,7 @@ export function FinancialPane() {
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
         <p style={{ margin: '10px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.55 }}>
           Discounts are ungated — ruled by the owner, 31 Aug 2026 (Law 10 as amended). No reason, no approver, no cap
           below 100%; a negative discount is refused because it is a price rise, and above 100% because it is a negative

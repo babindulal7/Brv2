@@ -2,7 +2,8 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, PageHeader, Button, KpiStrip, FooterNote, SummaryRows } from '../../components/ui/Page'
+import { Card, PageHeader, PageActions, Button, KpiStrip, FooterNote, SummaryRows } from '../../components/ui/Page'
+import type { OverflowMenuItem } from '../../components/ui/OverflowMenu'
 import type { Kpi } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { Badge } from '../../components/ui/Badge'
@@ -13,6 +14,7 @@ import { useViewport } from '../../lib/device'
 import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Modal } from '../../components/ui/Modal'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { useToast } from '../../components/ui/Toast'
 import { useClientProfile } from '../../lib/queries/useClients'
 import { useList } from '../../lib/queries/useList'
@@ -52,6 +54,7 @@ import { UpgradeTierModal } from './modals/UpgradeTierModal'
 import { VerifyKycModal } from './modals/VerifyKycModal'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
+import './clients.css'
 
 /**
  * Client Detail — the confirmed gap named by three sources this session (the
@@ -625,13 +628,48 @@ export default function ClientDetail() {
     }
   }
 
+  const creditAvailablePaisa =
+    client.creditLimitPaisa !== undefined && client.creditUsedPaisa !== undefined
+      ? (Math.max(0, client.creditLimitPaisa - client.creditUsedPaisa) as Paisa)
+      : undefined
+
   const kpis: Kpi[] = [
-    { label: 'Total Rentals', value: String(client.totalRentalsCount), icon: 'checklist', accent: 'primary', note: `${client.currentRentalsCount} active now` },
+    { label: 'Active Rentals', value: String(client.currentRentalsCount), icon: 'checklist', accent: 'primary', note: `${client.totalRentalsCount} total` },
     ...(money
       ? [
           { label: 'Outstanding', value: formatMoney(client.outstandingPaisa), icon: 'card' as const, accent: (client.outstandingPaisa > 0 ? 'danger' : 'success') as BrandKey },
-          { label: 'Deposit Held', value: formatMoney(client.depositHeldPaisa), icon: 'box' as const, accent: 'progress' as const },
+          ...(creditAvailablePaisa !== undefined
+            ? [{ label: 'Credit Available', value: formatMoney(creditAvailablePaisa), icon: 'card' as const, accent: 'progress' as const }]
+            : [{ label: 'Deposit Held', value: formatMoney(client.depositHeldPaisa), icon: 'box' as const, accent: 'progress' as const }]
+          ),
           { label: 'Lifetime Spend', value: formatMoney(client.totalSpentPaisa), icon: 'activity' as const, accent: 'success' as const },
+        ]
+      : []),
+  ]
+
+  const overflowItems: OverflowMenuItem[] = [
+    {
+      label: 'Verify KYC',
+      icon: 'checklist',
+      onClick: () => setIsVerifyKycOpen(true),
+    },
+    {
+      label: 'Merge Duplicate',
+      icon: 'users',
+      onClick: () => navigate('/clients/duplicates'),
+    },
+    ...(money
+      ? [
+          {
+            label: 'Adjust Credit Limit',
+            icon: 'card' as const,
+            onClick: () => setIsAdjustCreditOpen(true),
+          },
+          {
+            label: 'Upgrade Tier',
+            icon: 'sparkles' as const,
+            onClick: () => setIsUpgradeTierOpen(true),
+          },
         ]
       : []),
   ]
@@ -656,24 +694,37 @@ export default function ClientDetail() {
           title={client.name}
           description={`${client.id} · ${client.clientType}`}
           actions={
-            <>
-              {/* VIP is a `client_flags` flag_type exactly as Blocked is, but
-                  `client_directory_v` publishes only `is_blocked` (0054). The
-                  mapper therefore never sets `isVip`, so this badge cannot appear
-                  on a database record — kept because `ClientRecord` still carries
-                  the field and other surfaces set it, not because this page can
-                  reach it. */}
-              {client.isVip && <Tone text="VIP" entity />}
-              {client.isBlocked && <Tone text="Blocked" tone="danger" icon="alert_triangle" />}
-              {/* Rulings §11.2.4 — beside Blocked, never instead of it: a client
-                  is routinely Active AND blocked AND on stop, and folding the
-                  three into one badge is how a real state disappears. */}
-              {creditStop?.onStop && (
-                <Tone text="On Stop" tone="danger" icon="lock" reason={creditStop.reasons.join(' ')} />
-              )}
-              {edit.editing ? (
+            <PageActions
+              extra={
                 <>
+                  {client.isVip && <Tone text="VIP" entity />}
+                  {client.isBlocked && <Tone text="Blocked" tone="danger" icon="alert_triangle" />}
+                  {creditStop?.onStop && (
+                    <Tone text="On Stop" tone="danger" icon="lock" reason={creditStop.reasons.join(' ')} />
+                  )}
+                </>
+              }
+              primary={
+                edit.editing ? undefined : client.isBlocked ? (
+                  <Unavailable reason={`Blocked${client.blockReason ? `: ${client.blockReason}` : ''} — clear the block before starting a rental`}>
+                    <Button variant="primary" icon="plus" disabled>
+                      Start Rental
+                    </Button>
+                  </Unavailable>
+                ) : (
                   <Button
+                    variant="primary"
+                    icon="plus"
+                    onClick={() => navigate(`/rentals/new?clientId=${encodeURIComponent(client.id)}`)}
+                  >
+                    Start Rental
+                  </Button>
+                )
+              }
+              secondary={
+                edit.editing ? [
+                  <Button
+                    key="done"
                     icon="check"
                     onClick={() => {
                       const outcome = edit.stopEditing()
@@ -685,8 +736,9 @@ export default function ClientDetail() {
                     }}
                   >
                     Done
-                  </Button>
+                  </Button>,
                   <Button
+                    key="discard"
                     icon="close"
                     variant="ghost"
                     onClick={() => {
@@ -695,84 +747,41 @@ export default function ClientDetail() {
                     }}
                   >
                     Discard
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  icon="tool"
-                  onClick={() => {
-                    setLeaveError(null)
-                    edit.startEditing()
-                  }}
-                >
-                  Edit Client
-                </Button>
-              )}
-              <Button icon="checklist" variant="secondary" onClick={() => setIsVerifyKycOpen(true)}>
-                Verify KYC
-              </Button>
-              <Button icon="users" onClick={() => navigate('/clients/duplicates')}>
-                Merge Duplicate
-              </Button>
-              {/*
-                ── CL-06 — Block / Unblock is live ──────────────────────────
-                This control was disabled behind an `Unavailable` reason whose
-                every clause had gone false. Re-checked 6 Sep 2026, each against
-                the file it named:
-
-                  · `actions/clients/blockClient.ts` — `implemented: true`, with
-                    a body that writes `client_flags` and verifies the row;
-                  · `actions/core.ts` — `case 'client.block': return
-                    rbac.canBlockClient(ctx.role)`, so the capability RESOLVES;
-                    it is no longer one of the strings that falls through to
-                    `undefined`;
-                  · `lib/rbac.ts` — `canBlockClient` is Owner, Admin, Manager.
-
-                So the whole path is built and ruled, and the only thing still
-                refusing the verb was this screen — while the same verb was
-                reachable from the directory's own dialog.
-
-                It dispatches the way the other live verbs on these screens do
-                (`createClient` in `AddClient.tsx`, `blockClient` in
-                `ClientsDirectory.tsx`): awaited, success reported from the
-                resolved path ONLY, failure inline and persistent.
-
-                The gate is the capability itself rather than a bare `disabled`,
-                so a role the dispatcher would refuse never gets a live control.
-              */}
-              {canBlock ? (
-                <Button
-                  icon={client.isBlocked ? 'checklist' : 'alert_triangle'}
-                  variant={client.isBlocked ? 'secondary' : 'danger'}
-                  onClick={() => openBlockDialog(client.isBlocked ? 'unblock' : 'block')}
-                >
-                  {client.isBlocked ? 'Unblock Client' : 'Block Client'}
-                </Button>
-              ) : (
-                <Unavailable
-                  reason={`Blocking a client is Owner, Admin or Manager only — lib/rbac.ts canBlockClient, which actions/core.ts maps the client.block capability to. Your role (${role}) would be refused by the dispatcher before the write, so the control is greyed rather than failing on press.`}
-                >
-                  <Button icon={client.isBlocked ? 'checklist' : 'alert_triangle'} variant="secondary" disabled>
-                    {client.isBlocked ? 'Unblock Client' : 'Block Client'}
-                  </Button>
-                </Unavailable>
-              )}
-              {client.isBlocked ? (
-                <Unavailable reason={`Blocked${client.blockReason ? `: ${client.blockReason}` : ''} — clear the block before starting a rental`}>
-                  <Button variant="primary" icon="plus" disabled>
-                    Start Rental
-                  </Button>
-                </Unavailable>
-              ) : (
-                <Button
-                  variant="primary"
-                  icon="plus"
-                  onClick={() => navigate(`/rentals/new?clientId=${encodeURIComponent(client.id)}`)}
-                >
-                  Start Rental
-                </Button>
-              )}
-            </>
+                  </Button>,
+                ] : [
+                  <Button
+                    key="edit"
+                    icon="tool"
+                    onClick={() => {
+                      setLeaveError(null)
+                      edit.startEditing()
+                    }}
+                  >
+                    Edit Client
+                  </Button>,
+                  canBlock ? (
+                    <Button
+                      key="block"
+                      icon={client.isBlocked ? 'checklist' : 'alert_triangle'}
+                      variant={client.isBlocked ? 'secondary' : 'danger'}
+                      onClick={() => openBlockDialog(client.isBlocked ? 'unblock' : 'block')}
+                    >
+                      {client.isBlocked ? 'Unblock Client' : 'Block Client'}
+                    </Button>
+                  ) : (
+                    <Unavailable
+                      key="block"
+                      reason={`Blocking a client is Owner, Admin or Manager only — lib/rbac.ts canBlockClient, which actions/core.ts maps the client.block capability to. Your role (${role}) would be refused by the dispatcher before the write, so the control is greyed rather than failing on press.`}
+                    >
+                      <Button icon={client.isBlocked ? 'checklist' : 'alert_triangle'} variant="secondary" disabled>
+                        {client.isBlocked ? 'Unblock Client' : 'Block Client'}
+                      </Button>
+                    </Unavailable>
+                  ),
+                ]
+              }
+              overflow={overflowItems}
+            />
           }
         />
       }
@@ -791,6 +800,18 @@ export default function ClientDetail() {
                 // operator would read as the recorded reason.
                 (client.blockReason ?? 'The reason is recorded on the flag but is not carried by this view.')
               : 'Contact a manager for details.'
+          }
+        />
+      )}
+
+      {/* OS7 §18 — If client is on stop, display one strong warning panel */}
+      {creditStop?.onStop && !client.isBlocked && (
+        <ErrorBanner
+          title="Client On Stop."
+          message={
+            creditStop.reasons.length > 0
+              ? `${creditStop.reasons.join('. ')}. New rental confirmation is blocked until the account issue is resolved.`
+              : 'New rental confirmation is blocked until the account issue is resolved.'
           }
         />
       )}
@@ -1180,8 +1201,8 @@ export default function ClientDetail() {
               </div>
             ) : (
             <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+              <DataTableShell ariaLabel="Client rentals" data-table-scroll className="client-table-shell" style={{ overflowX: 'auto' }}>
+                <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                   <thead>
                     <tr style={{ background: 'var(--card2)' }}>
                       <th style={th}>Booking</th>
@@ -1193,9 +1214,9 @@ export default function ClientDetail() {
                   </thead>
                   <tbody>
                     {rentals.rows.map((r) => (
-                      <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <tr key={r.id} className="client-row" style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={td}>
-                          <span className="identifier" style={{ color: 'var(--link)', fontWeight: 600 }}>{r.bookingNo}</span>
+                          <span className="identifier client-mono" style={{ color: 'var(--link)', fontWeight: 600 }}>{r.bookingNo}</span>
                         </td>
                         {/* `project` is nullable on `bookings` — the em dash is the
                             column being empty, not a lookup that failed. */}
@@ -1209,7 +1230,7 @@ export default function ClientDetail() {
                             <span style={{ marginLeft: 6, color: 'var(--danger-text)', fontSize: 'var(--t-th)' }}>Cancelled</span>
                           )}
                         </td>
-                        <td style={{ ...td, color: 'var(--text2)' }}>{formatAd(new Date(r.pickupAtAd))}</td>
+                        <td className="figure client-mono" style={{ ...td, color: 'var(--text2)' }}>{formatAd(new Date(r.pickupAtAd))}</td>
                         <td style={{ ...td, textAlign: 'right' }}>
                           <Link to={`/rentals/${r.bookingNo}`} style={{ color: 'var(--link)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}>
                             Open
@@ -1219,7 +1240,7 @@ export default function ClientDetail() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             </div>
             )}
           </PageBody>
@@ -1294,8 +1315,8 @@ export default function ClientDetail() {
                 </div>
               ) : (
               <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+                <DataTableShell ariaLabel="Client invoices" data-table-scroll className="client-table-shell" style={{ overflowX: 'auto' }}>
+                  <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
                     <thead>
                       <tr style={{ background: 'var(--card2)' }}>
                         <th style={th}>Invoice</th>
@@ -1308,12 +1329,12 @@ export default function ClientDetail() {
                     </thead>
                     <tbody>
                       {invoices.rows.map((inv) => (
-                        <tr key={inv.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <tr key={inv.id} className="client-row" style={{ borderBottom: '1px solid var(--border)' }}>
                           <td style={td}>
-                            <span className="identifier" style={{ fontWeight: 600 }}>{inv.invoiceNo}</span>
+                            <span className="identifier client-mono" style={{ fontWeight: 600 }}>{inv.invoiceNo}</span>
                           </td>
                           <td style={td}>
-                            <Link to={`/rentals/${inv.bookingNo}`} className="identifier" style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                            <Link to={`/rentals/${inv.bookingNo}`} className="identifier client-mono" style={{ color: 'var(--link)', textDecoration: 'none' }}>
                               {inv.bookingNo}
                             </Link>
                           </td>
@@ -1322,11 +1343,11 @@ export default function ClientDetail() {
                               single "Amount" string is what made `Finance.tsx`
                               parse "Rs 1,234.50" back as Rs 1,23,450. */}
                           <td style={{ ...td, textAlign: 'right' }}>
-                            <span className="figure" style={{ fontWeight: 600 }}>{formatMoney(inv.totalAmount)}</span>
+                            <span className="figure client-mono" style={{ fontWeight: 600 }}>{formatMoney(inv.totalAmount)}</span>
                           </td>
                           <td style={{ ...td, textAlign: 'right' }}>
                             <span
-                              className="figure"
+                              className="figure client-mono"
                               style={{ color: inv.outstandingAmount > 0 ? 'var(--danger-text)' : 'var(--text2)' }}
                             >
                               {formatMoney(inv.outstandingAmount)}
@@ -1335,12 +1356,12 @@ export default function ClientDetail() {
                           <td style={td}>
                             <Tone text={inv.status} tone={INVOICE_TOKEN[inv.status]} />
                           </td>
-                          <td style={{ ...td, color: 'var(--text2)' }}>{inv.dueDateAd}</td>
+                          <td className="figure client-mono" style={{ ...td, color: 'var(--text2)' }}>{inv.dueDateAd}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               </div>
               )}
             </PageBody>
@@ -1374,8 +1395,8 @@ export default function ClientDetail() {
             emptyMessage="No documents have been recorded against this client yet. Click 'Add Document' to create a quotation, contract, or note."
           >
             <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="operations-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+              <DataTableShell ariaLabel="Client documents" data-table-scroll className="client-table-shell" style={{ overflowX: 'auto' }}>
+                <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
                   <thead>
                     <tr style={{ background: 'var(--card2)' }}>
                       <th style={th}>Document No</th>
@@ -1387,13 +1408,13 @@ export default function ClientDetail() {
                   </thead>
                   <tbody>
                     {documents.rows.map((doc) => (
-                      <tr key={doc.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <tr key={doc.id} className="client-row" style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={td}>
-                          <span className="figure identifier" style={{ fontWeight: 600 }}>{doc.id}</span>
+                          <span className="figure identifier client-mono" style={{ fontWeight: 600 }}>{doc.id}</span>
                         </td>
                         <td style={{ ...td, fontWeight: 600 }}>{doc.type}</td>
                         <td style={{ ...td, color: 'var(--text2)' }}>{doc.category}</td>
-                        <td style={{ ...td, color: 'var(--text2)' }}>{doc.createdTime}</td>
+                        <td className="figure client-mono" style={{ ...td, color: 'var(--text2)' }}>{doc.createdTime}</td>
                         <td style={td}>
                           <Badge tone="neutral" label={doc.status} size="sm" />
                         </td>
@@ -1401,7 +1422,7 @@ export default function ClientDetail() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             </div>
           </PageBody>
         </Card>

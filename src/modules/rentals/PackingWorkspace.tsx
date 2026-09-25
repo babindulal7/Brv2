@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FloorAside, floorPlacements } from '../operations/FloorAside'
 import { StickyFloorBar } from '../operations/StickyFloorBar'
@@ -29,6 +30,7 @@ import { serviceStatus, type ServiceRow } from '../../lib/serviceDue'
 import { formatGateError } from '../../lib/gates'
 import { clearFloorScan, loadFloorScan, saveFloorScan } from '../../lib/floorScanStorage'
 import { rentalDaysBetween } from '../../lib/rentalDays'
+import './rentals.css'
 
 /**
  * **Packing Workspace** — `Packing Workflow.md` v2.1 (Build Locked), wired live.
@@ -1176,7 +1178,7 @@ export default function PackingWorkspace({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', marginLeft: 'auto', alignSelf: 'flex-start', flexShrink: 0 }}>
                 {/*
                   PK-08 — this carried no `onClick` at all. It painted as a live
                   secondary button, depressed under the `press` class, and did
@@ -1224,7 +1226,7 @@ export default function PackingWorkspace({
             {/* §4 — read-only booking summary, one compact row. BS above AD.
                 Every cell is a real column off `fetchFloorBooking`; the seed
                 build's invented Payment / Crew cells are gone rather than faked. */}
-            <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
+            <div className="floor-summary-bar">
               {[
                 { l: 'Client', v: floor.clientName ?? '—', big: true },
                 { l: 'Pickup', v: bsLabel(floor.pickupAtAd), s: floor.pickupAtAd ? formatAd(new Date(floor.pickupAtAd)) : undefined },
@@ -1239,12 +1241,12 @@ export default function PackingWorkspace({
                 { l: 'Units', v: String(totalUnits) },
                 { l: 'Delivery', v: deliveryTypeLabel(floor.deliveryType) },
               ].map((f) => (
-                <div key={f.l} style={{ padding: '11px 14px', borderRight: '1px solid var(--border)', minWidth: 0, flex: '1 1 auto' }}>
-                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.l}</div>
-                  <div style={{ fontSize: f.big ? 'var(--t-h3)' : 'var(--t-body)', fontWeight: f.big ? 700 : 600, color: 'var(--text)', marginTop: 3, whiteSpace: 'nowrap' }}>
+                <div key={f.l} className="floor-summary-cell">
+                  <div className="floor-summary-label">{f.l}</div>
+                  <div className={`floor-summary-value ${f.big ? 'is-primary' : ''}`}>
                     {f.v}
                   </div>
-                  {f.s && <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{f.s}</div>}
+                  {f.s && <div className="floor-summary-sub">{f.s}</div>}
                 </div>
               ))}
             </div>
@@ -1283,33 +1285,20 @@ export default function PackingWorkspace({
                     </span>
                   </div>
 
-                  <div style={{ marginTop: 8 }}>
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {groups.map((g) => {
                       const done = g.rows.filter((r) => stateOf(r.key) === 'Packed').length
+                      const isActive = highlight === g.name
                       return (
                         <button
                           key={g.name}
                           type="button"
-                          onClick={() => setHighlight(highlight === g.name ? null : g.name)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 'var(--sp-sm)',
-                            width: '100%',
-                            padding: '7px 6px',
-                            borderRadius: 7,
-                            border: 'none',
-                            background: highlight === g.name ? 'var(--nav-active-bg)' : 'transparent',
-                            color: 'var(--text2)',
-                            fontSize: 'var(--t-meta)',
-                            cursor: 'pointer',
-                            fontFamily: 'inherit',
-                            textAlign: 'left',
-                          }}
+                          onClick={() => setHighlight(isActive ? null : g.name)}
+                          className={`floor-group-item-btn ${isActive ? 'is-active' : ''}`}
                         >
                           <Icon
                             name={done === g.rows.length ? 'checklist' : 'box'}
-                            size={13}
+                            size={14}
                             style={{ color: done === g.rows.length ? 'var(--success-text)' : 'var(--muted)', flexShrink: 0 }}
                           />
                           <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</span>
@@ -1368,13 +1357,13 @@ export default function PackingWorkspace({
                     )
                   }
                 >
-                  <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                  <div className="floor-scanner-hud">
                     <form
                       onSubmit={handleAmbientBarcodeSubmit}
                       style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', width: '100%' }}
                     >
-                      <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
-                        <span style={{ position: 'absolute', left: 12, color: 'var(--primary)', display: 'grid', placeItems: 'center' }}>
+                      <div className="floor-scanner-input-wrap">
+                        <span className="floor-scanner-icon">
                           <Icon name="barcode" size={18} />
                         </span>
                         <Input
@@ -1383,16 +1372,9 @@ export default function PackingWorkspace({
                           onChange={(e) => setAmbientBarcode(e.target.value)}
                           placeholder="Scan or type barcode/serial number and press Enter…"
                           aria-label="Scan or type barcode"
-                          style={{
-                            width: '100%',
-                            minHeight: 44,
-                            paddingLeft: 38,
-                            borderRadius: 'var(--r-btn)',
-                            background: 'var(--surface)',
-                            fontSize: 'var(--t-meta)',
-                            border: '1px solid var(--primary)',
-                          }}
+                          className="floor-scanner-input"
                         />
+                        <span className="floor-scanner-enter-hint"><kbd>↵</kbd> Enter</span>
                       </div>
                       <Button type="submit" variant="secondary" style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}>
                         {/* RULING 2026-09-23: one filled primary per workspace, and it is the completion gate (Complete Packing). The ambient scan-into-mark control is auxiliary — secondary, not primary. */}
@@ -1447,14 +1429,15 @@ export default function PackingWorkspace({
                         return (
                           <article
                             key={r.key}
-                            style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 7, opacity: dim ? 0.35 : 1 }}
+                            className={`floor-card-item ${s === 'Packed' ? 'is-packed' : s === 'Missing' ? 'is-missing' : ''}`}
+                            style={{ opacity: dim ? 0.35 : 1 }}
                           >
-                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 44 }}>
+                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 44, cursor: 'pointer' }}>
                               <input
                                 type="checkbox"
                                 checked={s === 'Packed'}
                                 aria-label={`Pack ${r.name}`}
-                                style={{ width: 22, height: 22, marginTop: 2, flexShrink: 0 }}
+                                style={{ width: 22, height: 22, marginTop: 2, flexShrink: 0, cursor: 'pointer' }}
                                 onChange={() => {
                                   if (s === 'Packed') clearMark(r.key)
                                   else pack(r.key, 'manual')
@@ -1465,7 +1448,7 @@ export default function PackingWorkspace({
                                   <span style={{ fontWeight: 600 }}>{r.name}</span>
                                   {r.qty > 1 && <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>×{r.qty}</span>}
                                   {r.required && (
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', height: 15, padding: '0 5px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', height: 16, padding: '0 6px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
                                       Required
                                     </span>
                                   )}
@@ -1474,9 +1457,12 @@ export default function PackingWorkspace({
                                   </span>
                                 </span>
                                 {r.serial && (
-                                  <Link to={`/inventory/${r.serial}`} className="identifier" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none', marginTop: 2 }}>
-                                    {r.serial}
-                                  </Link>
+                                  <div style={{ marginTop: 4 }}>
+                                    <Link to={`/inventory/${r.serial}`} className="floor-serial-badge" style={{ textDecoration: 'none' }}>
+                                      <Icon name="barcode" size={11} />
+                                      <span>{r.serial}</span>
+                                    </Link>
+                                  </div>
                                 )}
                                 <ServiceDueLine row={r.assetId === null ? undefined : serviceByUnit.get(r.assetId)} />
                               </span>
@@ -1505,7 +1491,7 @@ export default function PackingWorkspace({
                       )}
                     </div>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <DataTableShell ariaLabel="Items to pack">
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                         <thead>
                           <tr style={{ background: 'var(--th-bg)' }}>
@@ -1523,12 +1509,13 @@ export default function PackingWorkspace({
                             const tone = LINE_TONE[s]
                             const dim = highlight !== null && r.group !== highlight
                             return (
-                              <tr key={r.key} style={{ borderBottom: '1px solid var(--border)', opacity: dim ? 0.35 : 1 }}>
+                              <tr key={r.key} className={`floor-table-row ${s === 'Packed' ? 'is-packed' : s === 'Missing' ? 'is-missing' : ''}`} style={{ opacity: dim ? 0.35 : 1 }}>
                                 <td style={{ ...td, width: 26 }}>
                                   <input
                                     type="checkbox"
                                     checked={s === 'Packed'}
                                     aria-label={`Pack ${r.name}`}
+                                    style={{ cursor: 'pointer' }}
                                     onChange={() => {
                                       if (s === 'Packed') clearMark(r.key)
                                       else pack(r.key, 'manual')
@@ -1539,17 +1526,18 @@ export default function PackingWorkspace({
                                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <span style={{ fontWeight: 600 }}>{r.name}</span>
                                     {r.required && (
-                                      <span style={{ display: 'inline-flex', alignItems: 'center', height: 15, padding: '0 5px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', height: 16, padding: '0 6px', borderRadius: 4, background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontSize: 'var(--t-meta)', fontWeight: 700 }}>
                                         Required
                                       </span>
                                     )}
                                   </span>
                                   <ServiceDueLine row={r.assetId === null ? undefined : serviceByUnit.get(r.assetId)} />
                                 </td>
-                                <td className="identifier" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                                <td style={{ ...td, fontSize: 'var(--t-meta)' }}>
                                   {r.serial ? (
-                                    <Link to={`/inventory/${r.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>
-                                      {r.serial}
+                                    <Link to={`/inventory/${r.serial}`} className="floor-serial-badge" style={{ textDecoration: 'none' }}>
+                                      <Icon name="barcode" size={11} />
+                                      <span>{r.serial}</span>
                                     </Link>
                                   ) : (
                                     <span style={{ color: 'var(--muted)' }}>—</span>
@@ -1590,7 +1578,7 @@ export default function PackingWorkspace({
                           )}
                         </tbody>
                       </table>
-                    </div>
+                    </DataTableShell>
                   )}
 
                   {/*
@@ -1644,19 +1632,19 @@ export default function PackingWorkspace({
                   (Law 12); the reason stays on screen while the block lasts.
                 */}
                 <Card title="Blockers">
-                  <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {gates.map((g) => (
-                      <div key={g.label} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)', lineHeight: 1.45 }}>
+                      <div key={g.label} className={`floor-gate-row ${g.pass ? 'is-pass' : 'is-pending'}`}>
                         <Icon
                           name={g.pass ? 'checklist' : 'alert_triangle'}
-                          size={13}
+                          size={14}
                           style={{ color: g.pass ? 'var(--success-text)' : 'var(--progress-text)', flexShrink: 0, marginTop: 1 }}
                         />
-                        <span style={{ minWidth: 0 }}>
-                          <span style={{ display: 'block', fontWeight: 600, color: g.pass ? 'var(--text2)' : 'var(--progress-text)' }}>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: 'block', fontWeight: 600, color: g.pass ? 'var(--text)' : 'var(--progress-text)' }}>
                             {g.label}
                           </span>
-                          {g.detail && <span style={{ display: 'block', color: 'var(--muted)' }}>{g.detail}</span>}
+                          {g.detail && <span style={{ display: 'block', color: 'var(--muted)', marginTop: 2 }}>{g.detail}</span>}
                         </span>
                       </div>
                     ))}
@@ -1711,29 +1699,31 @@ export default function PackingWorkspace({
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  disabled={!canComplete}
-                  onClick={completePacking}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 7,
-                    width: '100%',
-                    minHeight: 44,
-                    padding: '0 16px',
-                    borderRadius: 'var(--r-btn)',
-                    fontSize: 'var(--t-ui)',
-                    fontWeight: 600,
-                    fontFamily: 'inherit',
-                    cursor: canComplete ? 'pointer' : 'not-allowed',
-                    ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
-                  }}
-                >
-                  <Icon name="checklist" size={15} />
-                  {dispatching ? 'Recording…' : 'Complete Packing'}
-                </button>
+                {!embedded && (
+                  <button
+                    type="button"
+                    disabled={!canComplete}
+                    onClick={completePacking}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 7,
+                      width: '100%',
+                      minHeight: 44,
+                      padding: '0 16px',
+                      borderRadius: 'var(--r-btn)',
+                      fontSize: 'var(--t-ui)',
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      cursor: canComplete ? 'pointer' : 'not-allowed',
+                      ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+                    }}
+                  >
+                    <Icon name="checklist" size={15} />
+                    {dispatching ? 'Recording…' : 'Complete Packing'}
+                  </button>
+                )}
 
                 {/* Law 12 — inline and persistent, never a toast. This is what
                     the operator sees instead of being navigated away from a

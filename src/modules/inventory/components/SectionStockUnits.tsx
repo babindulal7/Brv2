@@ -1,5 +1,6 @@
 import Icon from '../../../components/ui/Icon'
 import { Button } from '../../../components/ui/Page'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { Field, SectionCard, inputStyle, fieldRow, ConditionBadge, DraftStatusBadge, BsAbove, th, td, barcodePayload } from './EquipmentShared'
 import { useEquipmentContext } from './AddEquipmentContext'
 import { TRACKING_MODES, QUANTITY_UNITS, INTAKE_CONDITIONS } from '../../../lib/queries/addEquipment'
@@ -93,7 +94,7 @@ export function SectionStockUnits() {
 
             {serialised ? (
               <>
-                <div style={{ overflowX: 'auto' }}>
+                <DataTableShell ariaLabel="Stock units table">
                   <table style={{ width: '100%', minWidth: 720, borderCollapse: 'collapse' }}>
                     <thead>
                       <tr>
@@ -206,7 +207,7 @@ export function SectionStockUnits() {
                       })}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <Button variant="secondary" icon="plus" onClick={addUnit}>

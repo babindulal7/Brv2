@@ -29,7 +29,6 @@ import { WorkspaceProvider, useWorkspace } from './lib/workspaceContext'
 const Today             = lazy(() => import('./modules/today/Today'))
 const RentalsList       = lazy(() => import('./modules/rentals/RentalsList'))
 const BookingDetail     = lazy(() => import('./modules/rentals/BookingDetail'))
-const NewRental         = lazy(() => import('./modules/rentals/NewRental'))
 const PackingWorkspace  = lazy(() => import('./modules/rentals/PackingWorkspace'))
 const HandoverWorkspace = lazy(() => import('./modules/rentals/HandoverWorkspace'))
 const ReturnWorkspace   = lazy(() => import('./modules/rentals/ReturnWorkspace'))
@@ -52,31 +51,13 @@ const NumberingSequences = lazy(() => import('./modules/admin/NumberingSequences
 const CashFlowReport    = lazy(() => import('./modules/reports/CashFlowReport'))
 const WorkingCapital    = lazy(() => import('./modules/reports/WorkingCapitalReport'))
 const Inventory         = lazy(() => import('./modules/inventory/Inventory'))
-const AddBundle         = lazy(() => import('./modules/inventory/AddBundle').then(m => ({ default: m.AddBundle })))
 const BundleDetail      = lazy(() => import('./modules/inventory/BundleDetail'))
-const EditBundle        = lazy(() => import('./modules/inventory/EditBundle'))
-/* 06 Inventory renders — these screens existed but were unreachable. */
-const AddEquipment      = lazy(() => import('./modules/inventory/AddEquipment'))
 const AssetDetail       = lazy(() => import('./modules/inventory/AssetDetail'))
-const Warehouses        = lazy(() => import('./modules/inventory/Warehouses'))
-const StockCheck        = lazy(() => import('./modules/inventory/StockCheck'))
 const PurchaseRequests  = lazy(() => import('./modules/inventory/PurchaseRequests'))
 const Calendar          = lazy(() => import('./modules/calendar/Calendar'))
 const Documents         = lazy(() => import('./modules/documents/Documents'))
 const OperationsQueues  = lazy(() => import('./modules/operations/OperationsQueues'))
 const Finance           = lazy(() => import('./modules/finance/Finance'))
-/* `09_FINANCE.md` §9.3 — the Payments TAB. Read-only by law: `payments` is
-   immutable (Law 4), so the screen records and reverses but never edits. */
-const Payments          = lazy(() => import('./modules/finance/Payments'))
-/* `09_FINANCE.md` §9.4 — the Expenses TAB. Not the same screen as
-   `/reports/expenses`, which is the Expense *report* over a fixture; this is the
-   ledger, reading `expenses` through `lib/queries/finance.ts`. */
-const Expenses          = lazy(() => import('./modules/finance/Expenses'))
-/* WHATSAPP_LINKS_SPEC v1.0 §5.4. A ROUTE, not a tab and not a nav entry: the
-   nav is the ruled 11 and `09_FINANCE.md` line 4 rules Finance's six tabs, so
-   a seventh of either would breach a written list. Reached from the Finance
-   Dashboard. Placement is the one part of this screen nobody has ruled — see
-   its header. */
 const DailyClosing      = lazy(() => import('./modules/finance/DailyClosing'))
 const Settings          = lazy(() => import('./modules/settings/Settings'))
 const ToolsLanding      = lazy(() => import('./modules/tools/ToolsLanding'))
@@ -85,21 +66,6 @@ const ClientDetail      = lazy(() => import('./modules/clients/ClientDetail'))
 const CasesWorkspace    = lazy(() => import('./modules/operations/CasesWorkspace').then(m => ({ default: m.CasesWorkspace })))
 const CrewBooking       = lazy(() => import('./modules/crew/CrewBooking').then(m => ({ default: m.CrewBooking })))
 const SubRental         = lazy(() => import('./modules/operations/SubRental').then(m => ({ default: m.SubRental })))
-
-/**
- * Route table follows the ID registry in Navigation & Platform Shells v2.0 §7.
- *   /rentals/B-715      /clients/C-34
- *   /inventory/EQ000234        /cases/CASE-2026-0041
- * Never `BR-` — that is the branch prefix.
- */
-void AddEquipment
-void AddBundle
-void EditBundle
-void NewRental
-void StockCheck
-void Payments
-void Expenses
-void Warehouses
 
 function RentalsNewRedirect() {
   const [searchParams] = useSearchParams()
@@ -124,9 +90,10 @@ export default function App() {
     <ToastProvider>
       <SyncProvider>
         <OperationsWorkspaceProvider>
-        <CommandPalette />
-        {showOnboarding && <WelcomeOnboarding onClose={() => setShowOnboarding(false)} />}
-        <Routes>
+          <WorkspaceProvider>
+            <CommandPalette />
+            {showOnboarding && <WelcomeOnboarding onClose={() => setShowOnboarding(false)} />}
+            <Routes>
           <Route path="/login" element={<Login />} />
         {/*
           Password reset, built 15 Aug 2026. Mounted beside /login and outside
@@ -183,16 +150,20 @@ export default function App() {
         <Route
           path="/dashboard"
           element={
-            <Shell crumbs={[{ label: 'Dashboard' }]} search="Search booking no, client, equipment…">
+            <Shell crumbs={[{ label: 'Today' }]} search="Search booking no, client, equipment…">
               <Today />
             </Shell>
           }
         />
 
-        {/* Legacy path — the page lived at /today until the 30 Aug rename, so
-            bookmarks and any deep link keep working. `replace` so Back does
-            not bounce through the retired address. */}
-        <Route path="/today" element={<Navigate to="/dashboard" replace />} />
+        <Route
+          path="/today"
+          element={
+            <Shell crumbs={[{ label: 'Today' }]} search="Search booking no, client, equipment…">
+              <Today />
+            </Shell>
+          }
+        />
 
         <Route
           path="/rentals"
@@ -741,6 +712,7 @@ export default function App() {
           }
         />
       </Routes>
+          </WorkspaceProvider>
         </OperationsWorkspaceProvider>
       </SyncProvider>
     </ToastProvider>
@@ -997,7 +969,7 @@ function Shell({
   // user actually asked for, so hold until the first session lookup resolves.
   if (authLoading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--app)', color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
+      <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: 'var(--app)', color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
         Restoring session…
       </div>
     )
@@ -1037,42 +1009,40 @@ function Shell({
     (!isStaff(user.role) && isStaffSurface(pathname))
 
   return (
-    <WorkspaceProvider>
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100dvh',
-          overflow: 'hidden',
-          /* v4.2 §3 — the shell is TRANSPARENT so <body>'s fixed canvas gradient
-             is the app's backdrop. Painting --app here was hiding the canvas
-             behind an opaque flat fill, which also left the glass surfaces
-             nothing to blur. Theme transition moved to body (theme.css). */
-          background: 'transparent',
-        }}
-      >
-        <a className="skip-to-content" href="#main-content">Skip to content</a>
-        <MockBanner />
-        <OfflineBanner />
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100dvh',
+        overflow: 'hidden',
+        /* v4.2 §3 — the shell is TRANSPARENT so <body>'s fixed canvas gradient
+           is the app's backdrop. Painting --app here was hiding the canvas
+           behind an opaque flat fill, which also left the glass surfaces
+           nothing to blur. Theme transition moved to body (theme.css). */
+        background: 'transparent',
+      }}
+    >
+      <a className="skip-to-content" href="#main-content">Skip to content</a>
+      <MockBanner />
+      <OfflineBanner />
 
-        {/* Global Header spans 100% width, WorkspaceContext provides dynamic actions */}
-        <WorkspaceContextConsumer search={search} crumbs={crumbs} />
+      {/* Global Header spans 100% width, WorkspaceContext provides dynamic actions */}
+      <WorkspaceContextConsumer search={search} crumbs={crumbs} />
 
-        <div className="app-workspace" style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-          {!phone && <Sidebar active={pathname + query} />}
+      <div className="app-workspace" style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+        {!phone && <Sidebar active={pathname + query} />}
 
-          <WorkspaceContent isForbidden={isForbidden} user={user} phone={phone} hasElevatedStickyBar={hasElevatedStickyBar} isFloor={isFloor}>
-            {children}
-          </WorkspaceContent>
-        </div>
-
-        {phone && <BottomBar active={pathname + query} />}
-        <ScannerFab />
-
-        {/* Screen Lock Overlay */}
-        {isLocked && <ScreenLock onUnlock={() => setLocked(false)} />}
+        <WorkspaceContent isForbidden={isForbidden} user={user} phone={phone} hasElevatedStickyBar={hasElevatedStickyBar} isFloor={isFloor}>
+          {children}
+        </WorkspaceContent>
       </div>
-    </WorkspaceProvider>
+
+      {phone && <BottomBar active={pathname + query} />}
+      <ScannerFab />
+
+      {/* Screen Lock Overlay */}
+      {isLocked && <ScreenLock onUnlock={() => setLocked(false)} />}
+    </div>
   )
 }
 

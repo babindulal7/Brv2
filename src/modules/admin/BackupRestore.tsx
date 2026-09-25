@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, ReflowRail, SummaryRows, FooterNote, useRailGridColumns } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Donut, Legend, catColor } from '../../components/ui/Charts'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { ErrorBanner } from '../../components/ui/StateViews'
@@ -12,6 +13,7 @@ import { toBs, formatBs, formatAdDateTime } from '../../lib/bs'
 import { useList } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { listBackupLogs, backupRestriction, type BackupLogListRow } from '../../lib/queries/backup'
+import '../settings/settings.css'
 import { BRAND, BRAND_TEXT, STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import {
@@ -265,7 +267,7 @@ export default function BackupRestore() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div className="settings-v2" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
         icon="box"
         title="Backup & Restore"
@@ -371,31 +373,33 @@ export default function BackupRestore() {
             </Card>
 
             <Card title="Backup Schedule" bodyStyle={{ padding: 0 }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 460 }}>
-                  <thead>
-                    <tr style={{ background: 'var(--th-bg)' }}>
-                      {['Name', 'Frequency', 'Time', 'Next Run', 'Status'].map((h) => (
-                        <th key={h} style={th}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {SCHEDULE.map((s) => (
-                      <tr key={s.name} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td style={td}>{s.name}</td>
-                        <td style={{ ...td, color: 'var(--text2)' }}>{s.frequency}</td>
-                        <td style={{ ...td, color: 'var(--text2)' }}>{s.time}</td>
-                        <td style={{ ...td, color: 'var(--text2)' }}>{s.next}</td>
-                        <td style={td}>
-                          <Pill text="Enabled" status="in" />
-                        </td>
+              <div className="admin-table-shell">
+                <DataTableShell ariaLabel="Automated backup schedule" data-table-scroll style={{ overflowX: 'auto' }}>
+                  <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 460 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--th-bg)' }}>
+                        {['Name', 'Frequency', 'Time', 'Next Run', 'Status'].map((h) => (
+                          <th key={h} className="admin-th" style={th}>
+                            {h}
+                          </th>
+                        ))}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {SCHEDULE.map((s) => (
+                        <tr key={s.name} className="admin-row" style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td className="admin-td" style={td}>{s.name}</td>
+                          <td className="admin-td" style={{ ...td, color: 'var(--text2)' }}>{s.frequency}</td>
+                          <td className="admin-td" style={{ ...td, color: 'var(--text2)' }}>{s.time}</td>
+                          <td className="admin-td" style={{ ...td, color: 'var(--text2)' }}>{s.next}</td>
+                          <td className="admin-td" style={td}>
+                            <Pill text="Enabled" status="in" />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </DataTableShell>
               </div>
             </Card>
           </div>
@@ -421,81 +425,83 @@ export default function BackupRestore() {
                   'It is empty because no backup service has run yet — not because anything was removed.'
                 }
               >
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
-                    <thead>
-                      <tr style={{ background: 'var(--th-bg)' }}>
-                        {['Backup ID', 'Type', 'Started (BS / AD)', 'Completed (BS / AD)', 'Duration', 'Size', 'Destination', 'Status', 'Initiated By', ''].map(
-                          (h, i) => (
-                            <th key={h || i} style={th}>
-                              {h}
-                            </th>
-                          ),
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {history.rows.map((b) => (
-                        <tr key={b.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td className="identifier" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>{b.backupNo}</td>
-                          <td style={td}>
-                            <Pill text={b.backupType} status={TYPE_OF[b.backupType] ?? 'neutral'} />
-                          </td>
-                          {/* BS leads, AD beneath — rendered through `lib/bs.ts`,
-                              never stored (Law 7). */}
-                          <td style={td}>
-                            <WhenCell iso={b.startedAtAd} />
-                          </td>
-                          <td style={td}>
-                            <WhenCell iso={b.completedAtAd} />
-                          </td>
-                          <td className="figure" style={{ ...td, color: 'var(--text2)' }}>{durationBetween(b.startedAtAd, b.completedAtAd)}</td>
-                          <td className="figure" style={{ ...td, color: 'var(--text2)' }}>{formatBytes(b.fileSizeBytes)}</td>
-                          <td style={{ ...td, color: 'var(--text2)' }}>{b.storageLocation}</td>
-                          {/* `error_message` rides the status cell — the row's own
-                              stated failure, straight from the record. */}
-                          <td style={td} title={b.errorMessage ?? undefined}>
-                            <Pill text={b.status} status={STATUS_OF[b.status] ?? 'neutral'} />
-                          </td>
-                          {/* `users` is self-scoped, so the uuid cannot honestly be
-                              resolved to a name — shown truncated, full id on hover.
-                              `null` means no session actor was recorded. */}
-                          <td
-                            className="identifier"
-                            style={{ ...td, color: 'var(--text2)' }}
-                            title={b.initiatedBy ?? undefined}
-                          >
-                            {shortId(b.initiatedBy)}
-                          </td>
-                          {/* §10.7's `[Download] [Restore] ⋮` — Download is real and
-                              Owner-gated; Restore states Phase 2.7 rather than
-                              opening the retired theatre flow. */}
-                          <td style={td}>
-                            <span style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center' }}>
-                              <RowAction
-                                icon="download"
-                                label={`Download backup ${b.backupNo}`}
-                                enabled={mayManage}
-                                reason={OWNER_ONLY}
-                                onClick={() => requestDownload(b.backupNo)}
-                              />
-                              <RowAction
-                                icon="refresh"
-                                label={`Restore from backup ${b.backupNo}`}
-                                enabled={false}
-                                reason={mayManage ? RESTORE_UNAVAILABLE : OWNER_ONLY}
-                              />
-                              <Unavailable reason="The row menu (verify · duplicate · retention) is specified but not built yet.">
-                                <span style={rowActionStyle(false)}>
-                                  <Icon name="more_vert" size={14} />
-                                </span>
-                              </Unavailable>
-                            </span>
-                          </td>
+                <div className="admin-table-shell">
+                  <DataTableShell ariaLabel="System backup history" data-table-scroll style={{ overflowX: 'auto' }}>
+                    <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
+                      <thead>
+                        <tr style={{ background: 'var(--th-bg)' }}>
+                          {['Backup ID', 'Type', 'Started (BS / AD)', 'Completed (BS / AD)', 'Duration', 'Size', 'Destination', 'Status', 'Initiated By', ''].map(
+                            (h, i) => (
+                              <th key={h || i} className="admin-th" style={th}>
+                                {h}
+                              </th>
+                            ),
+                          )}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {history.rows.map((b) => (
+                          <tr key={b.id} className="admin-row" style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td className="identifier admin-td settings-mono" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>{b.backupNo}</td>
+                            <td className="admin-td" style={td}>
+                              <Pill text={b.backupType} status={TYPE_OF[b.backupType] ?? 'neutral'} />
+                            </td>
+                            {/* BS leads, AD beneath — rendered through `lib/bs.ts`,
+                                never stored (Law 7). */}
+                            <td className="admin-td" style={td}>
+                              <WhenCell iso={b.startedAtAd} />
+                            </td>
+                            <td className="admin-td" style={td}>
+                              <WhenCell iso={b.completedAtAd} />
+                            </td>
+                            <td className="figure admin-td settings-mono" style={{ ...td, color: 'var(--text2)' }}>{durationBetween(b.startedAtAd, b.completedAtAd)}</td>
+                            <td className="figure admin-td settings-mono" style={{ ...td, color: 'var(--text2)' }}>{formatBytes(b.fileSizeBytes)}</td>
+                            <td className="admin-td" style={{ ...td, color: 'var(--text2)' }}>{b.storageLocation}</td>
+                            {/* `error_message` rides the status cell — the row's own
+                                stated failure, straight from the record. */}
+                            <td className="admin-td" style={td} title={b.errorMessage ?? undefined}>
+                              <Pill text={b.status} status={STATUS_OF[b.status] ?? 'neutral'} />
+                            </td>
+                            {/* `users` is self-scoped, so the uuid cannot honestly be
+                                resolved to a name — shown truncated, full id on hover.
+                                `null` means no session actor was recorded. */}
+                            <td
+                              className="identifier admin-td settings-mono"
+                              style={{ ...td, color: 'var(--text2)' }}
+                              title={b.initiatedBy ?? undefined}
+                            >
+                              {shortId(b.initiatedBy)}
+                            </td>
+                            {/* §10.7's `[Download] [Restore] ⋮` — Download is real and
+                                Owner-gated; Restore states Phase 2.7 rather than
+                                opening the retired theatre flow. */}
+                            <td className="admin-td" style={td}>
+                              <span style={{ display: 'flex', gap: 'var(--sp-xs)', alignItems: 'center' }}>
+                                <RowAction
+                                  icon="download"
+                                  label={`Download backup ${b.backupNo}`}
+                                  enabled={mayManage}
+                                  reason={OWNER_ONLY}
+                                  onClick={() => requestDownload(b.backupNo)}
+                                />
+                                <RowAction
+                                  icon="refresh"
+                                  label={`Restore from backup ${b.backupNo}`}
+                                  enabled={false}
+                                  reason={mayManage ? RESTORE_UNAVAILABLE : OWNER_ONLY}
+                                />
+                                <Unavailable reason="The row menu (verify · duplicate · retention) is specified but not built yet.">
+                                  <span style={rowActionStyle(false)}>
+                                    <Icon name="more_vert" size={14} />
+                                  </span>
+                                </Unavailable>
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </DataTableShell>
                 </div>
                 {/* Server-side paging over the real count — the seed's seven dead
                     pager buttons and its "1,248 backups" caption are gone. */}

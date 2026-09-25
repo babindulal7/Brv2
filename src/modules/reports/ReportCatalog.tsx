@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner } from '../../components/ui/StateViews'
-import { Input } from '../../components/ui/Input'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { formatMoney } from '../../lib/money'
 import { useViewport } from '../../lib/device'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -33,6 +34,7 @@ import EquipmentPerformance from './EquipmentPerformance'
 import ForecastingReports from './ForecastingReports'
 import CashFlowReport from './CashFlowReport'
 import WorkingCapital from './WorkingCapitalReport'
+import './reports.css'
 
 const DEDICATED_REPORTS: Record<string, React.ComponentType> = {
   '/reports/pulse': Pulse,
@@ -225,7 +227,7 @@ export function ReportCatalog() {
   const columns = viewport === 'desktop' ? 3 : viewport === 'tablet' ? 2 : 1
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div className="report-v2">
       {/* The register's own reconciliation. `data/pulse.ts` and
           `data/inventory.ts` use the same shape: assert, and show the failure on
           the page rather than in a console nobody reads. */}
@@ -234,11 +236,11 @@ export function ReportCatalog() {
       )}
 
       {/* §9.6 header row — the toggle and the search. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap' }}>
+      <div className="report-toolbar-row">
         <div
           role="group"
           aria-label="Report view"
-          style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}
+          className="report-view-toggle"
         >
           {([['Simple', false], ['Detailed', true]] as const).map(([label, isDetailed]) => {
             const on = detailed === isDetailed
@@ -248,18 +250,7 @@ export function ReportCatalog() {
                 type="button"
                 aria-pressed={on}
                 onClick={() => setDetailed(isDetailed)}
-                style={{
-                  minHeight: 34,
-                  padding: '0 14px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: on ? 'var(--card)' : 'transparent',
-                  color: on ? 'var(--text)' : 'var(--text2)',
-                  fontWeight: on ? 700 : 500,
-                  fontSize: 'var(--t-meta)',
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                }}
+                className={`report-toggle-btn ${on ? 'is-active' : ''}`}
               >
                 {label}
               </button>
@@ -267,33 +258,22 @@ export function ReportCatalog() {
           })}
         </div>
 
-        <span style={{ position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 190 }}>
-          <Icon name="search" size={14} style={{ position: 'absolute', left: 10, color: 'var(--muted)' }} />
-          <Input
-            type="search"
+        <div className="report-search-shell">
+          <SearchInput
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={setQuery}
+            onClear={() => setQuery('')}
             placeholder="Find a report…"
             aria-label="Find a report by name or group"
-            style={{ height: 34, paddingLeft: 30 }}
           />
-        </span>
+        </div>
 
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
           Period
           <select
             value={periodKey}
             onChange={(e) => setPeriodKey(e.target.value)}
-            style={{
-              height: 34,
-              padding: '0 8px',
-              borderRadius: 'var(--r-btn)',
-              border: '1px solid var(--border)',
-              background: 'var(--card)',
-              color: 'var(--text)',
-              fontSize: 'var(--t-meta)',
-              fontFamily: 'inherit',
-            }}
+            className="report-period-select"
           >
             {PERIODS.map((p) => (
               <option key={p.key} value={p.key} disabled={p.range === null} title={p.why ?? undefined}>
@@ -409,7 +389,7 @@ function SimpleView({ figures, whyNoFigures }: { figures: PeriodFigures | null; 
         which is the hardest kind to catch.
       */}
       <Card title="Top 8 models by revenue">
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Top 8 models by revenue" data-table-scroll style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--th-bg)' }}>
@@ -430,7 +410,7 @@ function SimpleView({ figures, whyNoFigures }: { figures: PeriodFigures | null; 
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
         <p style={{ margin: '11px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.6 }}>
           Ordered by revenue, not by return: no purchase-cost column exists, so return on investment is{' '}
           <strong>not tracked yet</strong> rather than approximated by revenue.
@@ -477,6 +457,7 @@ function DetailedView({
 }) {
   return (
     <div
+      className="report-catalog-grid"
       style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
@@ -497,6 +478,7 @@ function DetailedView({
               onClick={() => (phone ? setOpenGroup(open ? null : g.key) : undefined)}
               aria-expanded={phone ? open : undefined}
               disabled={!phone}
+              className="report-group-header"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -506,7 +488,7 @@ function DetailedView({
                 padding: '10px 14px',
                 border: 'none',
                 borderBottom: '1px solid var(--border)',
-                background: 'transparent',
+                background: 'var(--card2)',
                 color: 'var(--text)',
                 fontFamily: 'inherit',
                 fontSize: 'var(--t-ui)',
@@ -515,9 +497,9 @@ function DetailedView({
                 cursor: phone ? 'pointer' : 'default',
               }}
             >
-              <span className="figure" style={{ color: 'var(--muted)' }}>{g.key}</span>
+              <span className="figure report-group-code" style={{ color: 'var(--muted)' }}>{g.key}</span>
               <span style={{ flex: 1, minWidth: 0 }}>{g.name}</span>
-              <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+              <span className="figure report-group-count" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
                 {reports.length}
               </span>
               {phone && <Icon name={open ? 'chevron_up' : 'chevron_down'} size={13} />}
@@ -538,7 +520,7 @@ const rowBox = {
   gap: 'var(--sp-sm)',
   flex: 1,
   minWidth: 0,
-  minHeight: 44,
+  minHeight: '44px',
   padding: '8px 14px',
   fontFamily: 'inherit',
   fontSize: 'var(--t-meta)',
@@ -578,7 +560,7 @@ function ReportRow({ report, onOpen, showGroup = false }: { report: CatalogRepor
      as an ordinary row rather than as a link to `undefined`. */
   if (report.financeTab && report.route) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
+      <div className="report-row-shell" style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
         <Link
           to={report.route}
           aria-label={`${report.name} — opens the ${report.financeTab} tab in Finance`}
@@ -587,6 +569,7 @@ function ReportRow({ report, onOpen, showGroup = false }: { report: CatalogRepor
           <Icon name="arrow_right" size={11} style={{ color: 'var(--link)', flexShrink: 0 }} />
           {name}
           <span
+            className="report-tab-badge"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -609,7 +592,7 @@ function ReportRow({ report, onOpen, showGroup = false }: { report: CatalogRepor
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', borderBottom: '1px solid var(--border)' }}>
+    <div className="report-row-shell" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', borderBottom: '1px solid var(--border)' }}>
       <button
         type="button"
         onClick={onOpen}
@@ -619,6 +602,7 @@ function ReportRow({ report, onOpen, showGroup = false }: { report: CatalogRepor
         {name}
         {untracked && (
           <span
+            className="report-untracked-badge"
             style={{
               display: 'inline-flex',
               alignItems: 'center',

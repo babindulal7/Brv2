@@ -3,6 +3,7 @@ import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
@@ -29,6 +30,7 @@ import {
   type PlanView,
   type Usage,
 } from '../../lib/queries/membership'
+import './clients.css'
 
 /* ── small parts ───────────────────────────────────────────────────────── */
 
@@ -127,7 +129,7 @@ function PlanCard({ p, money, onViewMembers, memberCount }: {
 }) {
   const limits = money ? p.limits : p.limits.filter((l) => !l.money)
   return (
-    <article style={{ ...cardStyle, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+    <article className="membership-plan-card" style={{ ...cardStyle, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
         {/*
           The plan's mark. The glyph carries the tier's categorical colour; the
@@ -160,8 +162,8 @@ function PlanCard({ p, money, onViewMembers, memberCount }: {
 
       {/* §8.3 — the annual fee is a rupee figure, so it is absent for Warehouse. */}
       {money && (
-        <div>
-          <span className="figure" style={{ fontSize: p.per ? 19 : 14, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>
+        <div className="membership-price-wrap">
+          <span className="figure membership-price-amount client-mono" style={{ fontSize: p.per ? 19 : 14, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>
             {p.price}
           </span>
           {p.per && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginLeft: 4 }}>{p.per}</span>}
@@ -180,7 +182,7 @@ function PlanCard({ p, money, onViewMembers, memberCount }: {
         {limits.map((l) => (
           <span key={l.label} style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', alignItems: 'baseline' }}>
             <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>{l.label}</span>
-            <span className="figure" style={{ fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+            <span className="figure client-mono" style={{ fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
               {l.value}
             </span>
           </span>
@@ -468,7 +470,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
         </p>
 
         {planView === 'Cards' ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0,1fr))', gap: 10, alignItems: 'stretch' }}>
+          <div className="membership-plan-grid">
             {PLANS.map((p) => (
               <PlanCard
                 key={p.name}
@@ -484,7 +486,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
             ))}
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <DataTableShell ariaLabel="Plan comparison" data-table-scroll style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
               <thead>
                 <tr style={{ background: 'var(--th-bg)' }}>
@@ -517,7 +519,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                 </tr>
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         )}
 
         <p
@@ -536,7 +538,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
       </Card>
 
       {/* ── quick filters ─────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <div className="client-chip-track" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {chips.map((c) => {
           const on = bucket === c.bucket
           return (
@@ -548,11 +550,12 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                 resetPage()
               }}
               aria-pressed={on}
+              className={`client-filter-chip ${on ? 'is-active' : ''}`}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 7,
-                height: 32,
+                minHeight: 44,
                 padding: '0 11px',
                 borderRadius: 'var(--r-sm)',
                 border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
@@ -567,7 +570,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
             >
               {c.label}
               <span
-                className="figure"
+                className="client-chip-badge figure client-mono"
                 style={{
                   minWidth: 18,
                   height: 18,
@@ -699,8 +702,8 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
           <Pagination page={current} total={rows.length} pageSize={perPage} onPageChange={setPage} pageSizeOptions={MEMBER_ROWS_PER_PAGE} onPageSizeChange={(size) => { setPerPage(size); resetPage() }} />
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: money ? 1240 : 880 }}>
+        <DataTableShell ariaLabel="Membership directory" data-table-scroll className="client-table-shell" style={{ overflowX: 'auto' }}>
+          <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: money ? 1240 : 880 }}>
             <thead>
               <tr style={{ background: 'var(--th-bg)' }}>
                 <th style={{ ...th, width: 28 }} />
@@ -731,7 +734,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                 </tr>
               ) : (
                 pageRows.map((m: MemberRow) => (
-                  <tr key={m.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                  <tr key={m.id} className="client-row" style={{ borderBottom: '1px solid var(--border)' }}>
                     <td style={{ ...td, width: 28 }}>
                       <input
                         type="checkbox"
@@ -808,37 +811,37 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                     </td>
 
                     <td style={td}>
-                      <span className="figure" style={{ display: 'block' }}>{m.joinBs}</span>
-                      <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{m.joinAd}</span>
+                      <span className="figure client-mono" style={{ display: 'block' }}>{m.joinBs}</span>
+                      <span className="figure client-mono" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{m.joinAd}</span>
                     </td>
 
                     <td style={td}>
-                      <span className="figure" style={{ display: 'block' }}>{m.renewBs}</span>
-                      <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{m.renewAd}</span>
+                      <span className="figure client-mono" style={{ display: 'block' }}>{m.renewBs}</span>
+                      <span className="figure client-mono" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{m.renewAd}</span>
                     </td>
 
                     <td
-                      className="figure"
+                      className="figure client-mono"
                       style={{ ...td, color: m.daysLeft < 0 ? 'var(--danger-text)' : 'var(--text)', fontWeight: 600 }}
                     >
                       {m.daysLeft} days
                     </td>
 
-                    {money && <td className="figure" style={td}>{formatMoney(m.feePaisa)}</td>}
+                    {money && <td className="figure client-mono" style={td}>{formatMoney(m.feePaisa)}</td>}
 
                     {money && (
                       <td style={td}>
-                        <span className="figure" style={{ display: 'block', color: 'var(--success-text)', fontWeight: 600 }}>
+                        <span className="figure client-mono" style={{ display: 'block', color: 'var(--success-text)', fontWeight: 600 }}>
                           {formatMoney(m.savingsPaisa)}
                         </span>
-                        <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                        <span className="figure client-mono" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                           ({m.savingsNote})
                         </span>
                       </td>
                     )}
 
                     {money && (
-                      <td className="figure" style={{ ...td, fontWeight: 600 }}>
+                      <td className="figure client-mono" style={{ ...td, fontWeight: 600 }}>
                         {formatMoney(m.lifetimePaisa)}
                       </td>
                     )}
@@ -852,12 +855,12 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
 
                     {money && (
                       <td style={td}>
-                        <span className="figure" style={{ display: 'block', fontWeight: 600 }}>
+                        <span className="figure client-mono" style={{ display: 'block', fontWeight: 600 }}>
                           {formatMoney(m.creditPaisa)}
                         </span>
                         {m.creditDefaultPaisa !== undefined && (
                           <span
-                            className="figure"
+                            className="figure client-mono"
                             style={{
                               display: 'block',
                               fontSize: 'var(--t-meta)',
@@ -871,7 +874,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                       </td>
                     )}
 
-                    <td style={{ ...td, width: 40, textAlign: 'right' }}>
+                    <td style={{ ...td, width: 44, textAlign: 'right' }}>
                       {/*
                         There is no `/clients/:id` route, so the honest
                         destination is the directory filtered to this member —
@@ -888,8 +891,8 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                           background: 'transparent',
                           color: 'var(--muted)',
                           cursor: 'pointer',
-                          width: 26,
-                          height: 26,
+                          minWidth: 44,
+                          minHeight: 44,
                           borderRadius: 'var(--r-xs)',
                           display: 'grid',
                           placeItems: 'center',
@@ -903,7 +906,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
               )}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
 
         <div
           style={{

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
-import type { CSSProperties } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import './settings.css'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, Rail, FooterNote, cardStyle, SummaryRows } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
@@ -116,22 +116,6 @@ const TODAY = getBusinessToday()
 /* ── layout atoms ──────────────────────────────────────────────────────── */
 
 const TAB_COLUMN_WIDTH = 208
-
-const tabButtonBase: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 'var(--sp-sm)',
-  width: '100%',
-  minHeight: 44,
-  padding: '0 11px',
-  border: '1px solid transparent',
-  borderRadius: 'var(--r-btn)',
-  background: 'transparent',
-  fontFamily: 'inherit',
-  fontSize: 'var(--t-meta)',
-  textAlign: 'left',
-  cursor: 'pointer',
-}
 
 export default function Settings() {
   const money = useCanViewMoney()
@@ -530,7 +514,7 @@ export default function Settings() {
         }}
       >
         {desktop ? (
-          <nav aria-label="Settings sections" style={{ display: 'flex', flexDirection: 'column', gap: 2, position: 'sticky', top: 0 }}>
+          <nav aria-label="Settings sections" className="settings-nav-col">
             {tabs.map((t) => {
               const on = t.key === active
               return (
@@ -539,13 +523,7 @@ export default function Settings() {
                   type="button"
                   aria-current={on ? 'page' : undefined}
                   onClick={() => go(t.key)}
-                  style={{
-                    ...tabButtonBase,
-                    borderColor: on ? 'var(--nav-active-accent)' : 'transparent',
-                    background: on ? 'var(--nav-active-bg)' : 'transparent',
-                    color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                    fontWeight: on ? 700 : 500,
-                  }}
+                  className={`settings-tab-btn ${on ? 'is-active' : ''}`}
                 >
                   <Icon name={TAB_ICON[t.key]} size={15} style={{ flexShrink: 0 }} />
                   <span style={{ minWidth: 0 }}>{t.label}</span>
@@ -557,7 +535,7 @@ export default function Settings() {
           <div
             role="tablist"
             aria-label="Settings sections"
-            style={{ display: 'flex', gap: 2, borderBottom: '1px solid var(--border)', overflowX: 'auto' }}
+            className="settings-tab-scroll"
           >
             {tabs.map((t) => {
               const on = t.key === active
@@ -568,20 +546,7 @@ export default function Settings() {
                   type="button"
                   aria-selected={on}
                   onClick={() => go(t.key)}
-                  style={{
-                    minHeight: 44,
-                    padding: '0 13px',
-                    border: 'none',
-                    borderBottom: `2px solid ${on ? 'var(--nav-active-accent)' : 'transparent'}`,
-                    background: 'transparent',
-                    color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: on ? 700 : 500,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                  }}
+                  className={`settings-tab-pill ${on ? 'is-active' : ''}`}
                 >
                   {TAB_SHORT_LABEL[t.key]}
                 </button>
@@ -613,62 +578,64 @@ export default function Settings() {
       <VisibleTabs.Provider value={tabs}>
         <EditCtx.Provider value={edit}>
           <PageShell width="settings">
-            <PageHeader
-              icon="settings"
-              title="Settings"
-              actions={headerActions}
-            />
-
-            {/* Law 12 — errors inline, toasts for successes only. */}
-            {leaveError && <ErrorBanner title="Unsaved changes." message={leaveError} />}
-
-            {/* These writes are real — `lib/settingsStore` persists them and
-                `getSetting` reads them back. But localStorage is per-browser,
-                and an Owner changing the VAT rate would reasonably expect it to
-                reach everyone. Saying where the value actually lands is the
-                difference between a working setting and a misleading one. */}
-            {edit.editing && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 'var(--sp-sm)',
-                  padding: '10px 12px',
-                  borderRadius: 'var(--r-sm)',
-                  border: '1px solid var(--border)',
-                  background: 'var(--card2)',
-                  fontSize: 'var(--t-meta)',
-                  color: 'var(--text2)',
-                }}
-              >
-                <Icon name="info" size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--muted)' }} />
-                <span>
-                  Changes save to this browser and survive a reload. No <code>settings</code> table is connected yet, so they
-                  do not reach other users or other devices.
-                </span>
-              </div>
-            )}
-
-            {/* A seed that stops reconciling is shown, not thrown — a
-                module-scope throw runs before React mounts and blanks the app
-                with no message. §11.3's branch ▸ warehouse join is asserted
-                here per branch, not as a group total. */}
-            {SEED_ERRORS.length > 0 && (
-              <ErrorBanner
-                title="Seed data does not reconcile"
-                message={
-                  <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
-                    {SEED_ERRORS.map((e) => (
-                      <li key={e}>{e}</li>
-                    ))}
-                  </ul>
-                }
+            <div className="settings-v2">
+              <PageHeader
+                icon="settings"
+                title="Settings"
+                actions={headerActions}
               />
-            )}
 
-            {body}
+              {/* Law 12 — errors inline, toasts for successes only. */}
+              {leaveError && <ErrorBanner title="Unsaved changes." message={leaveError} />}
 
-            <FooterNote extra={[`Data as of ${asOf}`]} />
+              {/* These writes are real — `lib/settingsStore` persists them and
+                  `getSetting` reads them back. But localStorage is per-browser,
+                  and an Owner changing the VAT rate would reasonably expect it to
+                  reach everyone. Saying where the value actually lands is the
+                  difference between a working setting and a misleading one. */}
+              {edit.editing && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 'var(--sp-sm)',
+                    padding: '10px 12px',
+                    borderRadius: 'var(--r-sm)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--card2)',
+                    fontSize: 'var(--t-meta)',
+                    color: 'var(--text2)',
+                  }}
+                >
+                  <Icon name="info" size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--muted)' }} />
+                  <span>
+                    Changes save to this browser and survive a reload. No <code>settings</code> table is connected yet, so they
+                    do not reach other users or other devices.
+                  </span>
+                </div>
+              )}
+
+              {/* A seed that stops reconciling is shown, not thrown — a
+                  module-scope throw runs before React mounts and blanks the app
+                  with no message. §11.3's branch ▸ warehouse join is asserted
+                  here per branch, not as a group total. */}
+              {SEED_ERRORS.length > 0 && (
+                <ErrorBanner
+                  title="Seed data does not reconcile"
+                  message={
+                    <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)' }}>
+                      {SEED_ERRORS.map((e) => (
+                        <li key={e}>{e}</li>
+                      ))}
+                    </ul>
+                  }
+                />
+              )}
+
+              {body}
+
+              <FooterNote extra={[`Data as of ${asOf}`]} />
+            </div>
           </PageShell>
         </EditCtx.Provider>
       </VisibleTabs.Provider>

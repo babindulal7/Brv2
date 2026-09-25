@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { PageHeader, ReflowRail, KpiStrip, cardStyle, useRailGridColumns } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
@@ -172,7 +173,7 @@ export default function PromotionsReports() {
 
           <section aria-label="Most Used Coupons" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Most Used Coupons</div>
-            <div style={{ overflowX: 'auto' }}>
+            <DataTableShell ariaLabel="Most used coupons" data-table-scroll style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
                 <thead>
                   <tr style={{ color: 'var(--text2)' }}>
@@ -197,12 +198,12 @@ export default function PromotionsReports() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
           </section>
 
           <section aria-label="Bundle Discount Analysis" style={cardStyle}>
             <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Bundle Discount Analysis</div>
-            <div style={{ overflowX: 'auto' }}>
+            <DataTableShell ariaLabel="Bundle discount analysis" data-table-scroll style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
                 <thead>
                   <tr style={{ color: 'var(--text2)' }}>
@@ -225,7 +226,7 @@ export default function PromotionsReports() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
           </section>
 
         </div>

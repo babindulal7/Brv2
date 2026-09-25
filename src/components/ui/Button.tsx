@@ -11,11 +11,11 @@ import Icon, { type IconName } from './Icon'
  */
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger'
-  size?: 'sm' | 'md' | 'lg'
-  loading?: boolean
-  icon?: ReactNode | IconName
-  iconRight?: ReactNode | IconName
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | undefined
+  size?: 'sm' | 'md' | 'lg' | undefined
+  loading?: boolean | undefined
+  icon?: ReactNode | IconName | undefined
+  iconRight?: ReactNode | IconName | undefined
 }
 
 const SIZE_STYLES: Record<

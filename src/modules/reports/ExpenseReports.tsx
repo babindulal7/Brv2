@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, Button, ReflowRail, FooterNote, cardStyle, useRailGridColumns, useBandColumns } from '../../components/ui/Page'
+import { SearchInput } from '../../components/ui/SearchInput'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Donut, Legend } from '../../components/ui/Charts'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
@@ -526,27 +528,21 @@ export default function ExpenseReports() {
             <Sel value={method} onChange={setMethod} all="All Payment Method" options={PAYMENT_METHODS as readonly string[]} onPick={() => setPage(1)} />
             <Sel value={vendor} onChange={setVendor} all="All Vendors" options={vendors} onPick={() => setPage(1)} />
 
-            <input
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setPage(1)
-              }}
-              placeholder="Search expense, vendor, bill no…"
-              aria-label="Search expenses"
-              style={{
-                flex: 1,
-                minWidth: 170,
-                height: 32,
-                padding: '0 10px',
-                borderRadius: 'var(--r-input)',
-                border: '1px solid var(--border)',
-                background: 'var(--card2)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-                fontFamily: 'inherit',
-              }}
-            />
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <SearchInput
+                value={query}
+                onChange={(val) => {
+                  setQuery(val)
+                  setPage(1)
+                }}
+                onClear={() => {
+                  setQuery('')
+                  setPage(1)
+                }}
+                placeholder="Search expense, vendor, bill no…"
+                aria-label="Search expenses"
+              />
+            </div>
 
             {filtered && <Button onClick={clearAll}>Clear</Button>}
           </ReportToolbar>
@@ -563,7 +559,7 @@ export default function ExpenseReports() {
               emptyTitle={filtered ? 'No expenses match these filters' : 'No expenses recorded'}
               emptyMessage={filtered ? 'Clear a filter or widen the range to see records again.' : 'Nothing has been booked to this ledger yet.'}
             >
-              <div style={{ overflowX: 'auto' }}>
+              <DataTableShell ariaLabel="Expenses report">
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
@@ -580,7 +576,7 @@ export default function ExpenseReports() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             </PageBody>
 
             {rows.length > 0 && (

@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
 import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
@@ -21,6 +22,7 @@ import { canIssueInvoice as rbacCanIssueInvoice, canRecordPayment, canVoidInvoic
 import { gateContext } from '../../lib/fieldGating'
 import { useViewport, useTabularLayout } from '../../lib/device'
 import { IntelCard } from '../../components/ui/IntelCard'
+import { DataTableShell } from '../../components/ui/DataTable'
 import {
   listInvoices,
   listPayments,
@@ -56,6 +58,11 @@ import DailyClosing from './DailyClosing'
 import { ReportCatalog } from '../reports/ReportCatalog'
 import { DateField } from '../../components/ui/DateField'
 import { exportInvoicePdf } from '../../lib/pdf/exportPdf'
+import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { Pagination } from '../../components/ui/Pagination'
+import './finance.css'
+
+export const ROWS_PER_PAGE = 25
 
 
 /**
@@ -643,6 +650,7 @@ export default function Finance() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [invoiceFiltersOpen, setInvoiceFiltersOpen] = useState(false)
+  const [page, setPage] = useState(1)
 
   /**
    * Law 13/14 — width decides, never a platform branch. `viewport` collapses
@@ -735,7 +743,14 @@ export default function Finance() {
   }, [railSearch, dateCol, dateFrom, dateTo])
   const railIsFiltered = railSearch.trim() !== '' || dateFrom !== '' || dateTo !== ''
   const invoiceFilterCount = Number(chip !== 'All') + Number(railSearch.trim() !== '') + Number(dateFrom !== '' || dateTo !== '')
-  const invoiceListFilters = useMemo<ListFilters>(() => ({ ...chipFilters, ...railFilters }), [chipFilters, railFilters])
+  const invoiceListFilters = useMemo<ListFilters>(
+    () => ({
+      ...chipFilters,
+      ...railFilters,
+      page: { index: Math.max(0, page - 1), size: ROWS_PER_PAGE },
+    }),
+    [chipFilters, railFilters, page],
+  )
 
   const clearInvoiceFilters = useCallback(() => {
     setChip('All')
@@ -743,6 +758,7 @@ export default function Finance() {
     setDateFrom('')
     setDateTo('')
     setDateCol('issue_date')
+    setPage(1)
   }, [])
 
   /* The other half of the Overdue ↔ date-range exclusivity (see the chip's
@@ -753,6 +769,7 @@ export default function Finance() {
     (v: string) => {
       setDateFrom(v)
       setChip((c) => (c === 'Overdue' ? 'All' : c))
+      setPage(1)
     },
     [],
   )
@@ -760,6 +777,7 @@ export default function Finance() {
     (v: string) => {
       setDateTo(v)
       setChip((c) => (c === 'Overdue' ? 'All' : c))
+      setPage(1)
     },
     [],
   )
@@ -775,6 +793,15 @@ export default function Finance() {
    * chips and clearing back to (All) is exactly the right offer for both.
    */
   const list = useList<InvoiceListRow>(invoiceFetcher, invoiceListFilters, { baseline: LIVE_INVOICES })
+
+  const total = list.total
+  const pageCount = total === null ? 1 : Math.max(1, Math.ceil(total / ROWS_PER_PAGE))
+
+  useEffect(() => {
+    if (total !== null && page > pageCount && pageCount > 0) {
+      setPage(pageCount)
+    }
+  }, [page, pageCount, total])
 
   /* A KPI is never "filtered": its set is the tile's own definition and no
      operator input reaches it. */
@@ -1087,9 +1114,7 @@ export default function Finance() {
   const invoiceCardTitle =
     list.total === null
       ? 'Invoices'
-      : list.total > list.rows.length
-        ? `Invoices · showing ${list.rows.length} of ${list.total}`
-        : `Invoices (${list.total})`
+      : `Invoices (${list.total})`
 
   const exportCsv = useCallback(() => {
     const blob = new Blob([invoicesCsv(list.rows)], { type: 'text/csv;charset=utf-8;' })
@@ -1200,31 +1225,6 @@ export default function Finance() {
 
   const headerActions = (
     <>
-      {/* WHATSAPP_LINKS_SPEC v1.0 §5.4 — the day's closing. A LINK, not a
-          seventh tab: `09_FINANCE.md` line 4 rules the six, and the nav is the
-          ruled 11, so neither list may grow for this. Placement is the part of
-          that spec nobody ruled — it is here because a closing is money and
-          this is where money lives. */}
-      <Link
-        to="/finance/closing"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 7,
-          height: 34,
-          padding: '0 11px',
-          borderRadius: 'var(--r-btn)',
-          border: '1px solid var(--border)',
-          background: 'var(--card)',
-          color: 'var(--text)',
-          fontSize: 'var(--t-meta)',
-          fontWeight: 700,
-          textDecoration: 'none',
-        }}
-      >
-        <Icon name="checklist" size={14} style={{ color: 'var(--muted)' }} />
-        Daily Closing
-      </Link>
       <span
         style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 11px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)' }}
       >
@@ -1317,13 +1317,12 @@ export default function Finance() {
   const invoiceFiltersPanel = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
       <Card title="Find">
-        <input
-          type="search"
+        <SearchInput
           value={railSearch}
-          onChange={(e) => setRailSearch(e.target.value)}
+          onChange={setRailSearch}
+          onClear={() => setRailSearch('')}
           placeholder="Invoice or credit-note no…"
           aria-label="Search invoices by invoice or credit-note number"
-          style={{ ...railInputStyle, width: '100%' }}
         />
       </Card>
       <Card title="Date">
@@ -1355,6 +1354,7 @@ export default function Finance() {
 
   return (
     <PageShell width="full">
+      <div className="finance-v2">
       {/* The three actions are omitted for a money-blind session, not disabled:
           all three operate on records that session may not read. */}
       {/* The header actions belong to the two tabs this file owns: Create
@@ -1510,12 +1510,11 @@ export default function Finance() {
                             <span
                               key={d.dayAd}
                               title={`${formatDayAd(d.dayAd)} · ${formatMoney(d.total as Paisa)}`}
+                              className="finance-daily-bar"
                               style={{
                                 flex: 1,
                                 minWidth: 3,
                                 height: `${Math.max((d.total / dailyPeak) * 100, 2)}%`,
-                                background: 'var(--nav-active-accent)',
-                                borderRadius: '2px 2px 0 0',
                               }}
                             />
                           ))}
@@ -1556,8 +1555,8 @@ export default function Finance() {
                       emptyMessage="Every issued invoice has been settled. Drafts are excluded — a draft has not gone to the client, so it is not owed."
                       {...restriction}
                     >
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <DataTableShell ariaLabel="Outstanding invoices" className="finance-table-shell">
+                        <table className="finance-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                           <thead>
                             <tr style={{ background: 'var(--th-bg)' }}>
                               {['Invoice', 'Client', 'Due', 'Outstanding'].map((h, i) => (
@@ -1569,18 +1568,18 @@ export default function Finance() {
                           </thead>
                           <tbody>
                             {outstanding.rows.slice(0, 8).map((i) => (
-                              <tr key={i.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td className="identifier" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>{i.invoiceNo}</td>
+                              <tr key={i.id} className="finance-row">
+                                <td className="identifier finance-mono" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>{i.invoiceNo}</td>
                                 <td style={td}>{i.clientName}</td>
-                                <td style={{ ...td, color: 'var(--text2)' }}>{formatDayAd(i.dueDateAd)}</td>
-                                <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 600 }}>
+                                <td className="finance-mono" style={{ ...td, color: 'var(--text2)' }}>{formatDayAd(i.dueDateAd)}</td>
+                                <td className="figure finance-mono" style={{ ...td, textAlign: 'right', fontWeight: 600 }}>
                                   {formatMoney(i.outstandingAmount)}
                                 </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
-                      </div>
+                      </DataTableShell>
                       {outstanding.total !== null && outstanding.total > 8 && (
                         <p style={{ margin: 0, padding: '10px 14px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                           The eight due soonest, of {outstanding.total}. The Invoices tab lists them all.
@@ -1599,7 +1598,7 @@ export default function Finance() {
                        `invoiceChipFilters` for why three of the seven are not a
                        `status` filter and what happens if they are made one. */
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                      <div role="group" aria-label="Filter invoices by status" style={{ display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
+                      <div className="finance-chip-track" role="group" aria-label="Filter invoices by status">
                         {INVOICE_CHIPS.map((c) => {
                         const on = chip === c
                         return (
@@ -1625,18 +1624,10 @@ export default function Finance() {
                               : c === 'Void'
                                 ? { title: 'Law 3 — nothing is deleted. Voiding is how an invoice reaches its terminal state, and voided invoices stay readable.' }
                                 : {})}
+                            className={`finance-filter-chip ${on ? 'is-active' : ''}`}
                             style={{
-                              minHeight: 28,
-                              padding: '0 10px',
-                              borderRadius: 'var(--r-badge)',
-                              border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                              background: on ? 'var(--nav-active-accent)' : 'var(--card)',
-                              color: on ? 'var(--on-accent, #fff)' : 'var(--text2)',
-                              fontSize: 'var(--t-meta)',
-                              fontWeight: on ? 700 : 500,
-                              cursor: 'pointer',
-                              fontFamily: 'inherit',
-                              whiteSpace: 'nowrap',
+                              minHeight: 44,
+                              padding: '0 14px',
                             }}
                           >
                             {c}
@@ -1648,6 +1639,18 @@ export default function Finance() {
                   }
                   bodyStyle={{ padding: 0 }}
                 >
+                  {list.total !== null && (
+                    <AppPageToolbar
+                      pagination={
+                        <Pagination
+                          page={page}
+                          total={list.total}
+                          pageSize={ROWS_PER_PAGE}
+                          onPageChange={setPage}
+                        />
+                      }
+                    />
+                  )}
                   {/*
                     Fixed ladder: restricted → error → loading → empty → children.
                     `restricted` is spread here as well as on the page body: this
@@ -1676,8 +1679,8 @@ export default function Finance() {
                     {...restriction}
                   >
                     {tabular ? (
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
+                      <DataTableShell ariaLabel="Invoices" className="finance-table-shell" data-table-scroll style={{ overflowX: 'auto' }}>
+                        <table className="finance-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                           <thead>
                             <tr style={{ background: 'var(--th-bg)' }}>
                               {/* Two money columns rather than one "Amount": the
@@ -1696,8 +1699,8 @@ export default function Finance() {
                           </thead>
                           <tbody>
                             {invoiceRows.map(({ row: i, glance, detail }) => (
-                              <tr key={i.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td className="identifier" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>
+                              <tr key={i.id} className="finance-row" style={{ borderBottom: '1px solid var(--border)' }}>
+                                <td className="identifier finance-mono" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>
                                   <IntelCard
                                     glance={glance}
                                     detail={detail}
@@ -1708,19 +1711,19 @@ export default function Finance() {
                                   </IntelCard>
                                 </td>
                                 <td style={td}>{i.clientName}</td>
-                                <td className="figure" style={{ ...td, color: 'var(--link)', fontSize: 'var(--t-meta)' }}>
+                                <td className="figure finance-mono" style={{ ...td, color: 'var(--link)', fontSize: 'var(--t-meta)' }}>
                                   <Link to={`/rentals/${i.bookingNo}`} style={{ color: 'inherit', textDecoration: 'none' }}>
                                     {i.bookingNo}
                                   </Link>
                                 </td>
-                                <td className="figure" style={{ ...td, fontWeight: 600 }}>{formatMoney(i.totalAmount)}</td>
+                                <td className="figure finance-mono" style={{ ...td, fontWeight: 600 }}>{formatMoney(i.totalAmount)}</td>
                                 <td
-                                  className="figure"
+                                  className="figure finance-mono"
                                   style={{ ...td, color: i.outstandingAmount > 0 ? 'var(--danger-text)' : 'var(--text2)' }}
                                 >
                                   {formatMoney(i.outstandingAmount)}
                                 </td>
-                                <td style={{ ...td, color: 'var(--text2)' }}>{formatDayAd(i.dueDateAd)}</td>
+                                <td className="finance-mono" style={{ ...td, color: 'var(--text2)' }}>{formatDayAd(i.dueDateAd)}</td>
                                 <td style={td}>
                                   <StatusBadge row={i} />
                                 </td>
@@ -1754,7 +1757,7 @@ export default function Finance() {
                             ))}
                           </tbody>
                         </table>
-                      </div>
+                      </DataTableShell>
                     ) : (
                       /* Below 768px a 900px table is a horizontal scrollbar, not a
                          layout (`useTabularLayout`) — same card shape RentalsList
@@ -1763,13 +1766,7 @@ export default function Finance() {
                         {invoiceRows.map(({ row: i, glance, detail }) => (
                           <div
                             key={i.id}
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 'var(--sp-sm)',
-                              padding: '13px 14px',
-                              borderBottom: '1px solid var(--border)',
-                            }}
+                            className="finance-card-item"
                           >
                             <span style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                               <IntelCard
@@ -1778,7 +1775,7 @@ export default function Finance() {
                                 detailTitle={i.invoiceNo}
                                 detailSubtitle={`${i.clientName} · ${i.status}`}
                               >
-                                <span className="identifier" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--link)' }}>
+                                <span className="identifier finance-mono" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--link)' }}>
                                   {i.invoiceNo}
                                 </span>
                               </IntelCard>
@@ -1789,22 +1786,22 @@ export default function Finance() {
 
                             <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)' }}>
                               <Icon name="box" size={12} style={{ color: 'var(--muted)' }} />
-                              <Link to={`/rentals/${i.bookingNo}`} className="figure" style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                              <Link to={`/rentals/${i.bookingNo}`} className="figure finance-mono" style={{ color: 'var(--link)', textDecoration: 'none' }}>
                                 {i.bookingNo}
                               </Link>
                             </span>
 
                             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                              <span className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                              <span className="figure finance-mono" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
                                 {formatMoney(i.totalAmount)}
                               </span>
-                              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Due {formatDayAd(i.dueDateAd)}</span>
+                              <span className="finance-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Due {formatDayAd(i.dueDateAd)}</span>
                             </span>
 
                             <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 'var(--t-meta)' }}>
                               <span style={{ color: 'var(--text2)' }}>Outstanding</span>
                               <span
-                                className="figure"
+                                className="figure finance-mono"
                                 style={{ fontWeight: 600, color: i.outstandingAmount > 0 ? 'var(--danger-text)' : 'var(--text2)' }}
                               >
                                 {formatMoney(i.outstandingAmount)}
@@ -1834,6 +1831,16 @@ export default function Finance() {
                       </div>
                     )}
                   </PageBody>
+                  {list.total !== null && list.total > ROWS_PER_PAGE && (
+                    <div style={{ padding: 'var(--sp-md)', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
+                      <Pagination
+                        page={page}
+                        total={list.total}
+                        pageSize={ROWS_PER_PAGE}
+                        onPageChange={setPage}
+                      />
+                    </div>
+                  )}
                 </Card>
               )}
 
@@ -1972,6 +1979,7 @@ export default function Finance() {
       )}
 
       <FooterNote extra={['Finance consumes operational data and never creates it']} />
+      </div>
     </PageShell>
   )
 }
@@ -2059,7 +2067,8 @@ function RowActions({
         display: 'inline-flex' as const,
         alignItems: 'center' as const,
         justifyContent: 'center' as const,
-        height: 40,
+        minHeight: 44,
+        height: 44,
         flex: '1 1 88px',
         padding: '0 12px',
         border: '1px solid var(--border)',
@@ -2069,9 +2078,13 @@ function RowActions({
         cursor: 'pointer' as const,
       }
     : {
+        display: 'inline-flex' as const,
+        alignItems: 'center' as const,
+        justifyContent: 'center' as const,
+        minHeight: 32,
         border: '1px solid var(--border)',
         background: 'var(--card)',
-        padding: '2px 8px',
+        padding: '4px 10px',
         borderRadius: 'var(--r-btn)',
         fontSize: 'var(--t-meta)',
         cursor: 'pointer' as const,
@@ -2098,17 +2111,17 @@ function RowActions({
         still tells you the action lives here.
       */}
       {canPay && !row.isVoid && row.outstandingAmount > 0 && (
-        <button type="button" onClick={onPay} style={{ ...base, color: 'var(--nav-active-accent)', fontWeight: 600 }}>
+        <button type="button" onClick={onPay} className="finance-action-btn is-primary" style={{ ...base, color: 'var(--nav-active-accent)', fontWeight: 600 }}>
           + Pay
         </button>
       )}
       {canRefund && !row.isVoid && row.paidAmount > 0 && (
-        <button type="button" onClick={onRefund} style={{ ...base, color: 'var(--text2)', fontWeight: 500 }}>
+        <button type="button" onClick={onRefund} className="finance-action-btn" style={{ ...base, color: 'var(--text2)', fontWeight: 500 }}>
           Refund
         </button>
       )}
       {canVoid && !row.isVoid && (
-        <button type="button" onClick={onVoid} style={{ ...base, color: 'var(--danger)', fontWeight: 500 }}>
+        <button type="button" onClick={onVoid} className="finance-action-btn is-danger" style={{ ...base, color: 'var(--danger)', fontWeight: 500 }}>
           Void
         </button>
       )}
@@ -2117,6 +2130,7 @@ function RowActions({
           type="button"
           onClick={onExportPdf}
           aria-label={`Export PDF for ${row.invoiceNo || 'invoice'}`}
+          className="finance-action-btn"
           style={{ ...base, color: 'var(--text)', fontWeight: 500 }}
         >
           PDF

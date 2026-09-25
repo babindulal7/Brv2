@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import Icon from '../../components/ui/Icon'
 import { InfoTooltip } from '../../components/ui/InfoTooltip'
-import { Card, PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, FooterNote, cardStyle } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { price, formatMoney, parseMoney, rupees } from '../../lib/money'
@@ -86,7 +87,11 @@ const NEW_LINE = (id: number): Line => ({ id, label: '', qty: '1', days: '1', ra
  */
 const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, 25] as const
 
-export default function PricingCalculator() {
+export interface PricingCalculatorProps {
+  embedded?: boolean
+}
+
+export default function PricingCalculator({ embedded = false }: PricingCalculatorProps = {}) {
   const viewport = useViewport()
   const isMoney = isMoneySurface('/tools/pricing')
 
@@ -146,7 +151,8 @@ export default function PricingCalculator() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         icon="dollar"
         title="Pricing"
         description={isMoney ? "A quote sandbox on the same engine as New Rental. It books nothing and saves nothing." : "A quote sandbox."}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageBody } from '../../components/ui/PageBody'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
@@ -134,7 +135,7 @@ export default function ForecastingReports() {
           is no rail at all. */}
       <section aria-label="Inventory Purchase Forecast" style={cardStyle}>
         <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Inventory Purchase Forecast</div>
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Inventory Purchase Forecast">
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
             <thead>
               <tr style={{ color: 'var(--text2)' }}>
@@ -155,12 +156,12 @@ export default function ForecastingReports() {
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
       </section>
 
       <section aria-label="Maintenance Forecast" style={cardStyle}>
         <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Maintenance Forecast</div>
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Maintenance Forecast">
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
             <thead>
               <tr style={{ color: 'var(--text2)' }}>
@@ -183,12 +184,12 @@ export default function ForecastingReports() {
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
       </section>
 
       <section aria-label="Seasonal Demand" style={cardStyle}>
         <div style={{ fontSize: 'var(--t-body)', fontWeight: 600, padding: 'var(--sp-md)', borderBottom: '1px solid var(--border)' }}>Seasonal Demand Outlook</div>
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Seasonal Demand Outlook">
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)', minWidth: 500 }}>
             <thead>
               <tr style={{ color: 'var(--text2)' }}>
@@ -209,7 +210,7 @@ export default function ForecastingReports() {
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
       </section>
     </div>
   )

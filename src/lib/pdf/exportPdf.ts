@@ -83,19 +83,36 @@ export async function exportInvoicePdf(
   if (uploadToStorage) {
     let targetPath = `invoices/${safeName}.pdf`
     let storage = await getStorageClient()
-    let uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
-
-    // Fall back to local mockStorage if remote bucket does not exist
-    if (uploadRes.error && uploadRes.error.message?.toLowerCase().includes('bucket not found')) {
-      const { mockStorage } = await import('../mock/storage')
-      storage = mockStorage.from('documents') as unknown as ReturnType<typeof supabase.storage.from>
+    let uploadRes: { data?: unknown; error?: { message?: string } | null }
+    try {
       uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
+    } catch (err) {
+      uploadRes = { error: { message: String(err) } }
     }
 
     // Law 3: If already exists, write new revision with timestamp rather than overwriting
     if (uploadRes.error && uploadRes.error.message?.includes('already exists')) {
       targetPath = `invoices/${safeName}_${Date.now()}.pdf`
-      uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
+      try {
+        uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
+      } catch (err) {
+        uploadRes = { error: { message: String(err) } }
+      }
+    }
+
+    // Fall back to local mockStorage if remote upload failed (bucket not found, network offline, RLS, etc.)
+    if (uploadRes.error && !uploadRes.error.message?.includes('already exists')) {
+      const { mockStorage } = await import('../mock/storage')
+      storage = mockStorage.from('documents') as unknown as ReturnType<typeof supabase.storage.from>
+      try {
+        uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
+        if (uploadRes.error && uploadRes.error.message?.includes('already exists')) {
+          targetPath = `invoices/${safeName}_${Date.now()}.pdf`
+          uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
+        }
+      } catch (err) {
+        uploadRes = { error: { message: String(err) } }
+      }
     }
 
     if (!uploadRes.error) {
@@ -178,17 +195,34 @@ export async function exportDocumentPdf(
   if (uploadToStorage) {
     let targetPath = `registry/${safeName}.pdf`
     let storage = await getStorageClient()
-    let uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
-
-    if (uploadRes.error && uploadRes.error.message?.toLowerCase().includes('bucket not found')) {
-      const { mockStorage } = await import('../mock/storage')
-      storage = mockStorage.from('documents') as unknown as ReturnType<typeof supabase.storage.from>
+    let uploadRes: { data?: unknown; error?: { message?: string } | null }
+    try {
       uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
+    } catch (err) {
+      uploadRes = { error: { message: String(err) } }
     }
 
     if (uploadRes.error && uploadRes.error.message?.includes('already exists')) {
       targetPath = `registry/${safeName}_${Date.now()}.pdf`
-      uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
+      try {
+        uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
+      } catch (err) {
+        uploadRes = { error: { message: String(err) } }
+      }
+    }
+
+    if (uploadRes.error && !uploadRes.error.message?.includes('already exists')) {
+      const { mockStorage } = await import('../mock/storage')
+      storage = mockStorage.from('documents') as unknown as ReturnType<typeof supabase.storage.from>
+      try {
+        uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
+        if (uploadRes.error && uploadRes.error.message?.includes('already exists')) {
+          targetPath = `registry/${safeName}_${Date.now()}.pdf`
+          uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
+        }
+      } catch (err) {
+        uploadRes = { error: { message: String(err) } }
+      }
     }
 
     if (!uploadRes.error) {

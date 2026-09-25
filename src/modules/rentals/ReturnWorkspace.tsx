@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FloorAside } from '../operations/FloorAside'
 import { StickyFloorBar } from '../operations/StickyFloorBar'
@@ -33,6 +34,7 @@ import { deliveryTypeLabel } from '../../lib/format'
 import { formatGateError } from '../../lib/gates'
 import { clearFloorScan, loadFloorScan, saveFloorScan } from '../../lib/floorScanStorage'
 import { rentalDaysBetween } from '../../lib/rentalDays'
+import './rentals.css'
 
 /**
  * **Return & Inspection Workspace** — the floor-loop model
@@ -1108,7 +1110,7 @@ export default function ReturnWorkspace({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center', marginLeft: 'auto', alignSelf: 'flex-start', flexShrink: 0 }}>
                 {/*
                   RT-06 / PK-22 — the same dead control PK-08 fixed on Packing,
                   given the same treatment: `Unavailable` + `disabled`, which is
@@ -1149,7 +1151,7 @@ export default function ReturnWorkspace({
             {/* ── §4 booking strip — read-only, no money (§8.3). Every cell is
                 a real column off `fetchFloorBooking`; the seed build's
                 hardcoded 2026-07-19 dates and invented times are gone. ── */}
-            <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
+            <div className="floor-summary-bar">
               {[
                 { l: 'Client', v: floor.clientName ?? '—', big: true },
                 { l: 'Pickup', v: bsLabel(floor.pickupAtAd), s: floor.pickupAtAd ? formatAd(new Date(floor.pickupAtAd)) : undefined },
@@ -1169,12 +1171,12 @@ export default function ReturnWorkspace({
                 { l: 'Units', v: String(totalUnits) },
                 { l: 'Delivery', v: deliveryTypeLabel(floor.deliveryType) },
               ].map((f) => (
-                <div key={f.l} style={{ padding: '11px 14px', borderRight: '1px solid var(--border)', minWidth: 0, flex: '1 1 auto' }}>
-                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.l}</div>
-                  <div style={{ fontSize: f.big ? 'var(--t-h3)' : 'var(--t-body)', fontWeight: f.big ? 700 : 600, color: 'var(--text)', marginTop: 3, whiteSpace: 'nowrap' }}>
+                <div key={f.l} className="floor-summary-cell">
+                  <div className="floor-summary-label">{f.l}</div>
+                  <div className={`floor-summary-value ${f.big ? 'is-primary' : ''}`}>
                     {f.v}
                   </div>
-                  {f.s && <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{f.s}</div>}
+                  {f.s && <div className="floor-summary-sub">{f.s}</div>}
                 </div>
               ))}
             </div>
@@ -1245,13 +1247,13 @@ export default function ReturnWorkspace({
               {/* ── centre — the triage list over the real rows ─────────────── */}
               <div style={{ minWidth: 0 }}>
                 <Card title="1 · Equipment Checklist" bodyStyle={{ padding: 0 }}>
-                  <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
+                  <div className="floor-scanner-hud">
                     <form
                       onSubmit={handleAmbientBarcodeSubmit}
                       style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', width: '100%' }}
                     >
-                      <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center' }}>
-                        <span style={{ position: 'absolute', left: 12, color: 'var(--primary)', display: 'grid', placeItems: 'center' }}>
+                      <div className="floor-scanner-input-wrap">
+                        <span className="floor-scanner-icon">
                           <Icon name="barcode" size={18} />
                         </span>
                         <Input
@@ -1260,16 +1262,9 @@ export default function ReturnWorkspace({
                           onChange={(e) => setAmbientBarcode(e.target.value)}
                           placeholder="Scan or type barcode/serial number to check in gear…"
                           aria-label="Scan or type barcode to receive"
-                          style={{
-                            width: '100%',
-                            minHeight: 44,
-                            paddingLeft: 38,
-                            borderRadius: 'var(--r-btn)',
-                            background: 'var(--surface)',
-                            fontSize: 'var(--t-meta)',
-                            border: '1px solid var(--primary)',
-                          }}
+                          className="floor-scanner-input"
                         />
+                        <span className="floor-scanner-enter-hint"><kbd>↵</kbd> Check In</span>
                       </div>
                       <Button type="submit" variant="secondary" style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}>
                         {/* RULING 2026-09-23: one filled primary per workspace, and it is the completion gate. The ambient scan-to-check-in control is auxiliary — secondary, not primary. */}
@@ -1309,16 +1304,23 @@ export default function ReturnWorkspace({
                         const mark = marks[r.key]
                         const tone = STATUS[ROW_TONE[s]]
                         return (
-                          <article key={r.key} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <article
+                            key={r.key}
+                            className={`floor-card-item ${s === 'Returned' ? 'is-packed' : s === 'Not Returned' ? 'is-missing' : ''}`}
+                            style={{ opacity: r.alreadyReturned ? 0.75 : 1 }}
+                          >
                             <div>
                               <div style={{ fontWeight: 600, color: 'var(--text)' }}>
                                 {r.name}
                                 {r.qty > 1 && <span className="figure" style={{ fontWeight: 500, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}> ×{r.qty}</span>}
                               </div>
                               {r.serial && (
-                                <Link to={`/inventory/${r.serial}`} className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none' }}>
-                                  {r.serial}
-                                </Link>
+                                <div style={{ marginTop: 4 }}>
+                                  <Link to={`/inventory/${r.serial}`} className="floor-serial-badge" style={{ textDecoration: 'none' }}>
+                                    <Icon name="barcode" size={11} />
+                                    <span>{r.serial}</span>
+                                  </Link>
+                                </div>
                               )}
                             </div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1398,7 +1400,7 @@ export default function ReturnWorkspace({
                       )}
                     </div>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <DataTableShell ariaLabel="Items to return">
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
                         <thead>
                           <tr style={{ background: 'var(--th-bg)' }}>
@@ -1415,14 +1417,20 @@ export default function ReturnWorkspace({
                             const damaged = mark?.state === 'Returned' && (mark.condition === 'Damaged' || mark.condition === 'Lost')
                             return (
                               <Fragment key={r.key}>
-                                <tr style={{ borderBottom: damaged ? undefined : '1px solid var(--border)' }}>
+                                <tr
+                                  className={`floor-table-row ${s === 'Returned' ? 'is-packed' : s === 'Not Returned' ? 'is-missing' : ''}`}
+                                  style={{ borderBottom: damaged ? undefined : '1px solid var(--border)', opacity: r.alreadyReturned ? 0.75 : 1 }}
+                                >
                                   <td className="figure" style={{ ...td, width: 26, color: 'var(--muted)' }}>{i + 1}</td>
                                   <td style={td}>
                                     <span style={{ fontWeight: 600 }}>{r.name}</span>
                                   </td>
-                                  <td className="identifier" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                                  <td style={{ ...td, fontSize: 'var(--t-meta)' }}>
                                     {r.serial ? (
-                                      <Link to={`/inventory/${r.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>{r.serial}</Link>
+                                      <Link to={`/inventory/${r.serial}`} className="floor-serial-badge" style={{ textDecoration: 'none' }}>
+                                        <Icon name="barcode" size={11} />
+                                        <span>{r.serial}</span>
+                                      </Link>
                                     ) : (
                                       <span style={{ color: 'var(--muted)' }}>—</span>
                                     )}
@@ -1509,7 +1517,7 @@ export default function ReturnWorkspace({
                           )}
                         </tbody>
                       </table>
-                    </div>
+                    </DataTableShell>
                   )}
 
                   {/* §6.5 — two counters, never merged: units are not accessories.
@@ -1555,19 +1563,19 @@ export default function ReturnWorkspace({
                   the reason stays on screen while the block lasts.
                 */}
                 <Card title="Session Gates">
-                  <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {gates.map((g) => (
-                      <div key={g.label} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)', lineHeight: 1.45 }}>
+                      <div key={g.label} className={`floor-gate-row ${g.pass ? 'is-pass' : 'is-pending'}`}>
                         <Icon
                           name={g.pass ? 'checklist' : 'alert_triangle'}
-                          size={13}
+                          size={14}
                           style={{ color: g.pass ? 'var(--success-text)' : 'var(--progress-text)', flexShrink: 0, marginTop: 1 }}
                         />
-                        <span style={{ minWidth: 0 }}>
-                          <span style={{ display: 'block', fontWeight: 600, color: g.pass ? 'var(--text2)' : 'var(--progress-text)' }}>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: 'block', fontWeight: 600, color: g.pass ? 'var(--text)' : 'var(--progress-text)' }}>
                             {g.label}
                           </span>
-                          {g.detail && <span style={{ display: 'block', color: 'var(--muted)' }}>{g.detail}</span>}
+                          {g.detail && <span style={{ display: 'block', color: 'var(--muted)', marginTop: 2 }}>{g.detail}</span>}
                         </span>
                       </div>
                     ))}
@@ -1588,29 +1596,31 @@ export default function ReturnWorkspace({
                   </p>
                 </Card>
 
-                <button
-                  type="button"
-                  disabled={!canComplete}
-                  onClick={completeSession}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 7,
-                    width: '100%',
-                    minHeight: 44,
-                    padding: '0 16px',
-                    borderRadius: 'var(--r-btn)',
-                    fontSize: 'var(--t-ui)',
-                    fontWeight: 600,
-                    fontFamily: 'inherit',
-                    cursor: canComplete ? 'pointer' : 'not-allowed',
-                    ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
-                  }}
-                >
-                  <Icon name="checklist" size={15} />
-                  {dispatching ? 'Recording…' : allResolved ? 'Complete Return' : 'Complete Session'}
-                </button>
+                {!embedded && (
+                  <button
+                    type="button"
+                    disabled={!canComplete}
+                    onClick={completeSession}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 7,
+                      width: '100%',
+                      minHeight: 44,
+                      padding: '0 16px',
+                      borderRadius: 'var(--r-btn)',
+                      fontSize: 'var(--t-ui)',
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      cursor: canComplete ? 'pointer' : 'not-allowed',
+                      ...(canComplete ? BLUE_PRIMARY : { background: 'var(--card2)', color: 'var(--muted)', border: '1px solid var(--border)' }),
+                    }}
+                  >
+                    <Icon name="checklist" size={15} />
+                    {dispatching ? 'Recording…' : allResolved ? 'Complete Return' : 'Complete Session'}
+                  </button>
+                )}
 
                 {/* Law 12 — inline and persistent, never a toast. This is what
                     the operator sees instead of being navigated away from a

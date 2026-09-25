@@ -73,43 +73,23 @@ export default function ForgotPassword() {
         <>
           <Link
             to="/login"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '100%',
-              minHeight: 44,
-              borderRadius: 'var(--r-btn)',
-              border: '1px solid var(--border)',
-              background: 'transparent',
-              color: 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
+            className="auth-footer-link"
           >
             Back to sign in
           </Link>
 
           <Unavailable reason="SMS reset is not built: no gateway is wired and the shared-device identity rule is undecided (PLAN.md §4). The email link above does the same job.">
-            <button
+            <Button
               type="button"
+              variant="secondary"
               disabled
               style={{
                 width: '100%',
                 minHeight: 44,
-                borderRadius: 'var(--r-btn)',
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--muted)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 500,
-                fontFamily: 'inherit',
-                cursor: 'not-allowed',
               }}
             >
               Send a code by SMS instead
-            </button>
+            </Button>
           </Unavailable>
         </>
       }
@@ -125,17 +105,11 @@ export default function ForgotPassword() {
           }
         />
       ) : (
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-          <div style={{ textAlign: 'left' }}>
+        <form onSubmit={handleSubmit} className="auth-form">
+          <div className="auth-field">
             <label
               htmlFor="reset-email"
-              style={{
-                display: 'block',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                color: 'var(--text2)',
-                marginBottom: 6,
-              }}
+              className="auth-label"
             >
               Work Email
             </label>
@@ -158,7 +132,7 @@ export default function ForgotPassword() {
             </div>
           )}
 
-          <Button type="submit" variant="primary" disabled={busy} style={{ height: 44, fontSize: 16 }}>
+          <Button type="submit" variant="primary" disabled={busy} style={{ minHeight: 44, fontSize: 16 }}>
             {busy ? 'Sending…' : 'Email me a reset link'}
           </Button>
         </form>

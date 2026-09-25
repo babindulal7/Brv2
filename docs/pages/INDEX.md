@@ -6,15 +6,6 @@ code disagree, the code is written down and the disagreement is noted.
 
 Nothing in this pack is taken from `PLAN.md`, the wireframe MDs, or any spec file.
 
-**Relationship to [`../PERMISSIONS.md`](../PERMISSIONS.md) (added 8 Sep 2026).** That file rules
-*who may do what*; this pack records *what the code actually gates on*, with a `file:line` for
-every predicate. They are not rivals and neither supersedes the other: PERMISSIONS.md §0 asks
-module specs to replace their permission tables with a pointer, and **that instruction does not
-apply to this pack** — the §5 Gates sections here are evidence, and PERMISSIONS.md's own §16
-found its catalogue 26% accurate against exactly this code. Where the two disagree, the Gates
-section is the observation and PERMISSIONS.md is the intent; §16 lists the known gaps. Fixing
-that catalogue should start here, because these tables already name the real predicates.
-
 ## How to read a status
 
 | Status | Meaning |

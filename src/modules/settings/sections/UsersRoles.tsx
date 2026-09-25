@@ -1,5 +1,6 @@
 import Icon from '../../../components/ui/Icon'
 import { Card } from '../../../components/ui/Page'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { thStyle as th } from '../../../components/ui/TableHeaderCell'
 import {
   canViewMoney,
@@ -54,7 +55,7 @@ export function UsersPane() {
         title="Permissions Matrix"
         action={<span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Computed live from lib/rbac — not a copy of it</span>}
       >
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Permissions matrix" data-table-scroll style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead>
               <tr>
@@ -98,7 +99,7 @@ export function UsersPane() {
               ))}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
       </Card>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px,1fr))', gap: 'var(--sp-md)' }}>

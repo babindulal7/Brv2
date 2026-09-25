@@ -9,6 +9,7 @@ import { TouchTarget } from '../../components/ui/TouchTarget'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Badge } from '../../components/ui/Badge'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { StatusKey } from '../../lib/status'
 import {
   usePurchaseRequests,
@@ -27,6 +28,7 @@ import type { ActionContext } from '../../actions/core'
 import { CreatePurchaseRequestModal } from './modals/CreatePurchaseRequestModal'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
+import './inventory.css'
 
 /**
  * The three decisions this screen can take on a purchase request.
@@ -305,22 +307,13 @@ export default function PurchaseRequests() {
 
   return (
     <PageShell width="full">
+      <div className="inventory-v2">
       {/* Header & Metrics */}
       <PageHeader
         title="Purchase Requests"
         description="Data-driven equipment acquisition workflows based on turnaways and sub-rental evidence."
         actions={
-          /*
-           * Both of these had no `onClick`, no destination and nothing behind
-           * them — a primary button with a plus icon that did nothing when
-           * pressed. Kept and stated as unavailable, in the same
-           * `Unavailable`-with-a-reason idiom `inventory/Warehouses.tsx` uses
-           * for Add Warehouse / Print Labels / Refresh, rather than removed:
-           * the reason is the useful part (there is no PR intake route in
-           * `App.tsx`, and the status tabs below are the filtering this screen
-           * actually has), and a silently missing control teaches nothing.
-           */
-          <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
             <Unavailable reason="Filter is not built — the status tabs below are the only filter on this screen.">
               <Button variant="secondary" icon={<Icon name="file" size={14} />} disabled>
                 Filter
@@ -338,60 +331,47 @@ export default function PurchaseRequests() {
           one whose sub-line alone carries money keeps its count and loses the
           sub-line (Pending Approval stays "2", without "NPR 845,000 total").
           The grid is auto-fit, so the row closes up rather than leaving a hole. */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
         {kpis.filter((kpi) => money || !isMoneyText(kpi.value)).map((kpi) => (
-          <div key={kpi.label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: 'var(--sp-lg)' }}>
+          <div key={kpi.label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-card, 12px)', padding: '16px 18px', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.02)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <span
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 'var(--r-xs)',
-                  display: 'grid',
-                  placeItems: 'center',
-                  background: 'var(--hover)',
-                  color: 'var(--nav-active-accent)',
-                }}
+                className="inventory-thumb-sm"
+                style={{ display: 'inline-grid', placeItems: 'center' }}
               >
                 <Icon name={kpi.icon} size={15} />
               </span>
               <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>{kpi.label}</span>
             </div>
-            <div className="figure" style={{ fontSize: '1.45rem', fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-sm)' }}>
+            <div className="figure" style={{ fontSize: '1.65rem', fontWeight: 700, color: 'var(--text)', marginTop: 8 }}>
               {kpi.value}
             </div>
             {(money || !isMoneyText(kpi.change)) && (
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>{kpi.change}</div>
+              <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 4 }}>{kpi.change}</div>
             )}
           </div>
         ))}
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid var(--border)', paddingBottom: 'var(--sp-sm)' }}>
+      <div className="rsp-chip-scroll inventory-chip-track">
         {(['All', 'Draft', 'Submitted', 'Approved', 'Ordered', 'Received'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
-            style={{
-              padding: '6px 14px',
-              borderRadius: 'var(--r-xs)',
-              background: activeTab === t ? 'var(--hover)' : 'transparent',
-              color: activeTab === t ? 'var(--text)' : 'var(--text2)',
-              border: `1px solid ${activeTab === t ? 'var(--nav-active-accent)' : 'transparent'}`,
-              fontWeight: activeTab === t ? 700 : 500,
-              fontSize: 'var(--t-meta)',
-              cursor: 'pointer',
-            }}
+            className={`inventory-filter-chip ${activeTab === t ? 'is-active' : ''}`}
           >
             {t}
+            <span className="figure" style={{ color: activeTab === t ? 'var(--nav-active-accent)' : 'var(--muted)', fontWeight: 600 }}>
+              {t === 'All' ? requestsList.length : requestsList.filter((r) => r.status === t).length}
+            </span>
           </button>
         ))}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: activePR ? '1fr 420px' : '1fr', gap: 'var(--sp-lg)', alignItems: 'start' }}>
         {/* Table View */}
-        <Card title={`${activeTab} Purchase Requests (${filteredPRs.length})`}>
+        <Card title={`${activeTab} Purchase Requests (${filteredPRs.length})`} bodyStyle={{ padding: 0 }}>
           <PageBody
             loading={requests.loading}
             error={requests.error}
@@ -410,20 +390,20 @@ export default function PurchaseRequests() {
               {...(activeTab !== 'All' ? { actionLabel: 'Show all', onAction: () => setActiveTab('All') } : {})}
             />
           ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
+          <DataTableShell ariaLabel="Purchase requests directory" style={{ borderRadius: 'var(--r-card) var(--r-card) 0 0' }}>
+            <table className="inventory-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
               <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left', color: 'var(--muted)' }}>
-                  <th style={{ padding: '8px' }}>PR Number</th>
-                  <th style={{ padding: '8px' }}>Equipment Item</th>
-                  <th style={{ padding: '8px' }}>Qty</th>
-                  <th style={{ padding: '8px' }}>Priority</th>
+                <tr style={{ background: 'var(--th-bg)' }}>
+                  <th style={{ padding: '10px 12px' }}>PR Number</th>
+                  <th style={{ padding: '10px 12px' }}>Equipment Item</th>
+                  <th style={{ padding: '10px 12px' }}>Qty</th>
+                  <th style={{ padding: '10px 12px' }}>Priority</th>
                   {/* Law 6 — the column is nothing but money, so it is dropped
                       entirely for a money-blind session rather than left as an
                       empty or masked column. */}
-                  {money && <th style={{ padding: '8px' }}>Total Cost (Est)</th>}
-                  <th style={{ padding: '8px' }}>Status</th>
-                  <th style={{ padding: '8px' }}>Requested By</th>
+                  {money && <th style={{ padding: '10px 12px', textAlign: 'right' }}>Total Cost (Est)</th>}
+                  <th style={{ padding: '10px 12px' }}>Status</th>
+                  <th style={{ padding: '10px 12px' }}>Requested By</th>
                 </tr>
               </thead>
               <tbody>
@@ -433,26 +413,21 @@ export default function PurchaseRequests() {
                     <tr
                       key={pr.id}
                       onClick={() => selectPr(pr.id)}
-                      style={{
-                        borderBottom: '1px solid var(--border)',
-                        background: isSel ? 'var(--hover)' : 'transparent',
-                        cursor: 'pointer',
-                        transition: 'background 0.1s ease',
-                      }}
+                      className={`inventory-parent-row ${isSel ? 'is-selected' : ''}`}
                     >
-                      <td style={{ padding: '10px 8px' }}>
-                        <span className="identifier" style={{ color: 'var(--nav-active-accent)', fontWeight: 600 }}>
+                      <td style={{ padding: '12px' }}>
+                        <span className="inventory-asset-code identifier">
                           {pr.prNo}
                         </span>
                       </td>
-                      <td style={{ padding: '10px 8px' }}>
+                      <td style={{ padding: '12px' }}>
                         <div style={{ fontWeight: 600, color: 'var(--text)' }}>{pr.fleetItemName}</div>
-                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 2 }}>
                           {pr.reason}
                         </div>
                       </td>
-                      <td style={{ padding: '10px 8px', fontWeight: 600 }}>{pr.requestedQty}</td>
-                      <td style={{ padding: '10px 8px' }}>
+                      <td style={{ padding: '12px', fontWeight: 600 }} className="figure">{pr.requestedQty}</td>
+                      <td style={{ padding: '12px' }}>
                         {/* §8 step 2 — <Badge> is the one thing that paints a
                             status. The hand-built span here carried radius 4,
                             weight 700 and sentence case against §4's block
@@ -473,25 +448,25 @@ export default function PurchaseRequests() {
                         )}
                       </td>
                       {money && (
-                        <td style={{ padding: '10px 8px' }}>
-                          <span className="figure" style={{ fontWeight: 600 }}>
+                        <td style={{ padding: '12px', textAlign: 'right' }}>
+                          <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>
                             {formatMoney(pr.totalEstimatedCost)}
                           </span>
                         </td>
                       )}
-                      <td style={{ padding: '10px 8px' }}>
+                      <td style={{ padding: '12px' }}>
                         <Badge tone={STATUS_TONE[pr.status]} label={pr.status} size="sm" />
                       </td>
-                      <td style={{ padding: '10px 8px' }}>
-                        <div style={{ color: 'var(--text2)' }}>{pr.requestedBy.split(' ')[0]}</div>
-                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{pr.dateCreatedAD}</div>
+                      <td style={{ padding: '12px' }}>
+                        <div style={{ color: 'var(--text2)', fontWeight: 500 }}>{pr.requestedBy.split(' ')[0]}</div>
+                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }} className="figure">{pr.dateCreatedAD}</div>
                       </td>
                     </tr>
                   )
                 })}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
           )}
           </PageBody>
         </Card>
@@ -618,7 +593,7 @@ export default function PurchaseRequests() {
                     <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Refused Bookings (Losses)</div>
                     <div className="figure" style={{ color: 'var(--danger-text)', fontWeight: 700 }}>{activePR.refusedCount} Events</div>
                   </div>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
+                  <DataTableShell ariaLabel="Refused bookings due to shortage" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-th)' }}>
                       <thead style={{ background: 'var(--hover)' }}>
                         <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
@@ -641,7 +616,7 @@ export default function PurchaseRequests() {
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                  </DataTableShell>
                 </div>
 
                 <div>
@@ -661,7 +636,7 @@ export default function PurchaseRequests() {
                         : `${activePR.subRentals.length} ${activePR.subRentals.length === 1 ? 'Event' : 'Events'}`}
                     </div>
                   </div>
-                  <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
+                  <DataTableShell ariaLabel="Sub-rentals used" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-xs)' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-th)' }}>
                       <thead style={{ background: 'var(--hover)' }}>
                         <tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
@@ -682,7 +657,7 @@ export default function PurchaseRequests() {
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                  </DataTableShell>
                 </div>
               </div>
             </Card>
@@ -726,6 +701,7 @@ export default function PurchaseRequests() {
           setRequestsList((prev) => [newPr, ...prev])
         }}
       />
+      </div>
     </PageShell>
   )
 }

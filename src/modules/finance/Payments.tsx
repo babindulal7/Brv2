@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageActions, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
 import { PageBody } from '../../components/ui/PageBody'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { STATUS, PAYMENT_STATUS_TONE } from '../../lib/status'
 import { useViewport } from '../../lib/device'
 import { formatMoney, toRupees } from '../../lib/money'
@@ -29,6 +30,7 @@ import { RefundPaymentModal } from './modals/RefundPaymentModal'
 import { DateField } from '../../components/ui/DateField'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { Pagination } from '../../components/ui/Pagination'
+import './finance.css'
 
 /**
  * **Finance ▸ Payments** — `updated mds/09_FINANCE.md` §9.3, `/finance/payments`.
@@ -714,7 +716,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
     !money || list.total === null ? '' : ` — ${list.total} ${list.total === 1 ? 'payment' : 'payments'}`
 
   const railContent = (
-    <div style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="finance-deposits-rail" style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
         <Icon name="lock" size={14} style={{ flexShrink: 0, color: 'var(--muted)' }} />
         <h3 style={{ margin: 0, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
@@ -752,6 +754,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <PageShell width="full">
+      <div className="finance-v2">
       {/* Page when routed, subtitle + actions when hosted as Finance's Payments
           tab. See `TabHeader.tsx` for why the description and the actions
           survive the demotion and only the `<h1>` goes. */}
@@ -761,21 +764,22 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
         title="Payments"
         description="The receipt ledger. Payments are immutable — a correction is a reversal row, never an edit."
         actions={
-          <>
-            {/* §9.3's one header action. Hidden, not disabled, for a session that
-                cannot see money — Law 6 asks call sites to OMIT the figure and
-                the affordance, and a disabled button still says money is here.
-                `canTakePayment` narrows it further to the roles allowed to
-                record one; see its definition above. */}
-            {money && canTakePayment && (
-              <Button icon="plus" variant="primary" aria-label="Record Payment" onClick={openRecord}>
-                {phone ? '' : 'Record Payment'}
-              </Button>
-            )}
-            <Button icon="refresh" aria-label="Refresh" onClick={refreshAll}>
-              {phone ? '' : 'Refresh'}
-            </Button>
-          </>
+          !embedded ? (
+            <PageActions
+              primary={
+                money && canTakePayment ? (
+                  <Button icon="plus" variant="primary" aria-label="Record Payment" onClick={openRecord}>
+                    {phone ? '' : 'Record Payment'}
+                  </Button>
+                ) : undefined
+              }
+              secondary={[
+                <Button key="refresh" icon="refresh" aria-label="Refresh" onClick={refreshAll}>
+                  {phone ? '' : 'Refresh'}
+                </Button>,
+              ]}
+            />
+          ) : undefined
         }
       />
 
@@ -784,7 +788,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
         <div
           role="group"
           aria-label="Payment filters"
-          className="rsp-chip-scroll"
+          className="finance-chip-track rsp-chip-scroll"
           style={{
             display: 'flex',
             gap: 'var(--sp-sm)',
@@ -799,6 +803,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
               type="button"
               onClick={() => patch({ status: CHIP_PARAM[c], page: null })}
               aria-pressed={chip === c}
+              className={`finance-filter-chip ${chip === c ? 'is-active' : ''}`}
               style={chipStyle(chip === c)}
               {...(c === 'Refunded'
                 ? {
@@ -817,6 +822,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
             disabled
             aria-label="Reversed — not tracked yet. Reversals live in payment_reversals, which has no reader in lib/queries/finance.ts."
             title="Not tracked yet — payment_reversals has no reader in lib/queries/finance.ts, and it carries a narrower role list of its own."
+            className="finance-filter-chip"
             style={chipStyle(false, true)}
           >
             Reversed
@@ -909,13 +915,14 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                 {rows.map((p) => (
                   <article
                     key={p.id}
+                    className="finance-card-item"
                     style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 6 }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
-                      <span className="identifier" style={{ fontWeight: 700, color: 'var(--text)' }}>
+                      <span className="identifier finance-mono" style={{ fontWeight: 700, color: 'var(--text)' }}>
                         {p.paymentNo}
                       </span>
-                      <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>
+                      <span className="figure finance-mono" style={{ fontWeight: 700, color: 'var(--text)' }}>
                         {formatMoney(p.amount)}
                       </span>
                     </div>
@@ -923,7 +930,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)' }}>
                       <Link
                         to={`/rentals/${p.bookingNo}`}
-                        className="identifier"
+                        className="identifier finance-mono"
                         style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }}
                       >
                         {p.bookingNo}
@@ -960,6 +967,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                     </div>
 
                     <span
+                      className="finance-mono"
                       style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}
                       {...(paymentBsLabel(p.paymentDateAd) ? { title: paymentBsLabel(p.paymentDateAd) as string } : {})}
                     >
@@ -974,8 +982,8 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
 
             {/* DESKTOP + TABLET — pay# │ BR# │ client │ method │ amount │ date │ ⋮ */}
             {tabular && (
-              <div data-table-scroll style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
+              <DataTableShell ariaLabel="Payments" className="finance-table-shell" data-table-scroll style={{ overflowX: 'auto' }}>
+                <table className="finance-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       {['Payment', 'Booking', 'Client', 'Method', 'Type', 'Amount', 'Status', 'Date', ''].map((h, i) => (
@@ -987,14 +995,14 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                   </thead>
                   <tbody>
                     {rows.map((p) => (
-                      <tr key={p.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td className="identifier" style={{ ...td, fontWeight: 600 }}>
+                      <tr key={p.id} className="finance-row" style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td className="identifier finance-mono" style={{ ...td, fontWeight: 600 }}>
                           {p.paymentNo}
                         </td>
                         <td style={td}>
                           <Link
                             to={`/rentals/${p.bookingNo}`}
-                            className="identifier"
+                            className="identifier finance-mono"
                             style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none', fontSize: 'var(--t-meta)' }}
                           >
                             {p.bookingNo}
@@ -1018,7 +1026,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                           the only thing that says which direction it went.
                         */}
                         <td style={{ ...td, color: 'var(--text2)' }}>{p.paymentType}</td>
-                        <td className="figure" style={{ ...td, fontWeight: 700 }}>
+                        <td className="figure finance-mono" style={{ ...td, fontWeight: 700 }}>
                           {formatMoney(p.amount)}
                         </td>
                         {/* Likewise: under (All), a Failed or Cancelled row would
@@ -1027,6 +1035,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                           <StatusBadge status={p.status} />
                         </td>
                         <td
+                          className="finance-mono"
                           style={{ ...td, color: 'var(--text2)' }}
                           {...(paymentBsLabel(p.paymentDateAd) ? { title: paymentBsLabel(p.paymentDateAd) as string } : {})}
                         >
@@ -1039,7 +1048,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             )}
 
             {total !== null && total > ROWS_PER_PAGE && (
@@ -1117,6 +1126,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
           currentPaidPaisa={reversalPaidPaisa}
         />
       )}
+      </div>
     </PageShell>
   )
 }

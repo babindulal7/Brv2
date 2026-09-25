@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { PageHeader } from '../../components/ui/Page'
+import { PageHeader, PageActions, Button } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
+import { toBs, formatBs } from '../../lib/bs'
 import { businessDayAd, businessNowAd, overDays, pickupsQuery, toMovementRow, type MovementRow } from '../../lib/queries/today'
 import { listBookings, operationQueue, todaysOutgoing } from '../../lib/queries/bookings'
 import type { ListFilters } from '../../lib/queries/listQuery'
@@ -303,18 +305,27 @@ export default function Today() {
     [returns.rows]
   )
 
-  const readyForHandoverCount = useMemo(
-    () => pickups.rows.filter((r) => r.status === 'Packed' || r.status?.toLowerCase().includes('packed')).length,
-    [pickups.rows]
-  )
+  const readyPickupsCount = useMemo(() => pickups.rows.filter((r) => r.status === 'Packed').length, [pickups.rows])
+  const prepPickupsCount = useMemo(() => pickups.rows.filter((r) => r.status !== 'Packed').length, [pickups.rows])
+  const todayBs = useMemo(() => {
+    const d = new Date(dayAd ? `${dayAd}T00:00:00Z` : Date.now())
+    return Number.isNaN(d.getTime()) ? null : toBs(d)
+  }, [dayAd])
 
   const isDispatchToday = pickupDateFilter.kind === 'quick' && pickupDateFilter.period === 'Today'
 
-  const goToToday = () => {
-    syncBothPanels({ kind: 'quick', period: 'Today' })
-  }
+  const syncBothPanels = useCallback((nextFilter: DateFilter) => {
+    setPickupPage(0)
+    setReturnPage(0)
+    setPickupDateFilter(nextFilter)
+    setReturnDateFilter(nextFilter)
+  }, [setPickupDateFilter, setReturnDateFilter])
 
-  const stepDay = (delta: number) => {
+  const goToToday = useCallback(() => {
+    syncBothPanels({ kind: 'quick', period: 'Today' })
+  }, [syncBothPanels])
+
+  const stepDay = useCallback((delta: number) => {
     let currentDay = dayAd
     if (pickupDateFilter.kind === 'custom') {
       currentDay = pickupDateFilter.from
@@ -331,7 +342,7 @@ export default function Today() {
     } else {
       syncBothPanels({ kind: 'custom', from: nextDay, to: nextDay })
     }
-  }
+  }, [dayAd, pickupDateFilter, syncBothPanels])
 
   const handleGlobalSearchKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -382,69 +393,163 @@ export default function Today() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [dayAd, pickupDateFilter, globalSearch, pickups.rows, returns.rows, openOperations])
-
-  const syncBothPanels = (nextFilter: DateFilter) => {
-    setPickupPage(0)
-    setReturnPage(0)
-    setPickupDateFilter(nextFilter)
-    setReturnDateFilter(nextFilter)
-  }
+  }, [goToToday, stepDay])
 
   return (
     <PageShell
       className="rental-dashboard"
       header={
         <PageHeader
-          title="Dashboard"
+          title="Today"
           description="Prepare pickups, receive returns, and keep equipment moving."
           actions={
-            <div className="dashboard-header-controls">
-              <span className="dashboard-header-controls__label">Sync dispatch day:</span>
-              <div className="dashboard-day-pager" role="group" aria-label="Quick day navigation">
-                <button
-                  type="button"
-                  className="dashboard-day-pager__btn"
-                  aria-label="Previous day"
-                  title="Previous day (Shortcut: [ or P)"
-                  onClick={() => stepDay(-1)}
+            <PageActions
+              extra={
+                <div className="dashboard-header-controls">
+                  <span className="dashboard-header-controls__label">Sync dispatch day:</span>
+                  <div className="dashboard-day-pager" role="group" aria-label="Quick day navigation">
+                    <button
+                      type="button"
+                      className="dashboard-day-pager__btn"
+                      aria-label="Previous day"
+                      title="Previous day (Shortcut: [ or P)"
+                      onClick={() => stepDay(-1)}
+                    >
+                      <Icon name="chevron_left" size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      className={`dashboard-day-pager__btn dashboard-day-pager__btn--today ${isDispatchToday ? 'is-current' : ''}`}
+                      aria-label="Today"
+                      title="Today (Shortcut: T)"
+                      onClick={goToToday}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      className="dashboard-day-pager__btn"
+                      aria-label="Next day"
+                      title="Next day (Shortcut: ] or N)"
+                      onClick={() => stepDay(1)}
+                    >
+                      <Icon name="chevron_right" size={16} />
+                    </button>
+                  </div>
+                  <DateFilterControl
+                    noun="dispatch"
+                    filter={pickupDateFilter}
+                    onChange={syncBothPanels}
+                    today={dayAd}
+                  />
+                </div>
+              }
+              secondary={[
+                <Button
+                  key="barcode"
+                  variant="secondary"
+                  icon="barcode"
+                  onClick={() => counterInputRef.current?.focus()}
+                  title="Quick barcode / serial lookup (/)"
                 >
-                  <Icon name="chevron_left" size={16} />
-                </button>
-                <button
-                  type="button"
-                  className={`dashboard-day-pager__btn dashboard-day-pager__btn--today ${isDispatchToday ? 'is-current' : ''}`}
-                  aria-label="Today"
-                  title="Today (Shortcut: T)"
-                  onClick={goToToday}
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  className="dashboard-day-pager__btn"
-                  aria-label="Next day"
-                  title="Next day (Shortcut: ] or N)"
-                  onClick={() => stepDay(1)}
-                >
-                  <Icon name="chevron_right" size={16} />
-                </button>
-              </div>
-              <DateFilterControl
-                noun="dispatch"
-                filter={pickupDateFilter}
-                onChange={syncBothPanels}
-                today={dayAd}
-              />
-            </div>
+                  Quick Scan
+                </Button>,
+              ]}
+            />
           }
         />
       }
     >
+      {/* Bento 2.0 Operational Movement Snapshot */}
+      <section className="dashboard-bento-strip" aria-label="Daily Movement Snapshot">
+        {/* Tile 1: Dual Calendar & Date Context */}
+        <div className="dashboard-bento-tile">
+          <div className="dashboard-bento-tile__header">
+            <span className="dashboard-bento-tile__label">Operational Day</span>
+            <span className="status-live-dot" title="Live movement sync" />
+          </div>
+          <div className="dashboard-bento-tile__value">
+            {dayAd}
+          </div>
+          <div className="dashboard-bento-tile__sub">
+            {todayBs ? <span className="dashboard-bento-tile__sub-pill">BS {formatBs(todayBs)}</span> : null}
+            <span style={{ color: 'var(--text-muted, #71717a)', fontSize: 11 }}>
+              {isDispatchToday ? 'Today (Active Shift)' : 'Scheduled Shift'}
+            </span>
+          </div>
+        </div>
+
+        {/* Tile 2: Outgoing Pickups Readiness */}
+        <div className="dashboard-bento-tile">
+          <div className="dashboard-bento-tile__header">
+            <span className="dashboard-bento-tile__label">Pickups Today</span>
+            <Icon name="truck" size={15} style={{ color: 'var(--accent, #2563eb)' }} />
+          </div>
+          <div className="dashboard-bento-tile__value">
+            {pickups.loading ? '—' : (pickups.total ?? pickups.rows.length)}
+          </div>
+          <div className="dashboard-bento-tile__sub">
+            <span className="dashboard-bento-tile__sub-pill" style={{ background: 'var(--success-bg, rgba(16, 185, 129, 0.1))', color: 'var(--success-text, #059669)' }}>
+              {readyPickupsCount} Ready
+            </span>
+            <span className="dashboard-bento-tile__sub-pill" style={{ background: 'var(--warning-bg, rgba(245, 158, 11, 0.1))', color: 'var(--warning-text, #d97706)' }}>
+              {prepPickupsCount} In Prep
+            </span>
+          </div>
+        </div>
+
+        {/* Tile 3: Inbound Returns & Overdue */}
+        <div className="dashboard-bento-tile">
+          <div className="dashboard-bento-tile__header">
+            <span className="dashboard-bento-tile__label">Returns Due</span>
+            <Icon name="return_arrow" size={15} style={{ color: overdueCount > 0 ? 'var(--danger, #dc2626)' : 'var(--text-muted, #71717a)' }} />
+          </div>
+          <div className="dashboard-bento-tile__value">
+            {returns.loading ? '—' : (returns.total ?? returns.rows.length)}
+          </div>
+          <div className="dashboard-bento-tile__sub">
+            {overdueCount > 0 ? (
+              <span className="dashboard-bento-tile__sub-pill" style={{ background: 'var(--danger-bg, rgba(239, 68, 68, 0.12))', color: 'var(--danger-text, #dc2626)', fontWeight: 600 }}>
+                {overdueCount} Overdue
+              </span>
+            ) : (
+              <span className="dashboard-bento-tile__sub-pill" style={{ background: 'var(--success-bg, rgba(16, 185, 129, 0.1))', color: 'var(--success-text, #059669)' }}>
+                All On Track
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Tile 4: Quick Warehouse Floor Shortcuts */}
+        <div className="dashboard-bento-tile">
+          <div className="dashboard-bento-tile__header">
+            <span className="dashboard-bento-tile__label">Floor Shortcuts</span>
+            <Icon name="zap" size={15} style={{ color: 'var(--accent, #2563eb)' }} />
+          </div>
+          <div className="dashboard-bento-tile__sub" style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <Link
+              to="/rentals/new"
+              className="btn btn--sm btn--primary"
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', height: 30, fontSize: 12, fontWeight: 500 }}
+            >
+              <Icon name="plus" size={14} /> New Rental
+            </Link>
+            <button
+              type="button"
+              className="btn btn--sm btn--secondary"
+              style={{ height: 28, fontSize: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+              onClick={() => counterInputRef.current?.focus()}
+            >
+              <Icon name="barcode" size={13} /> Quick Barcode <kbd className="new-rental-kbd" style={{ fontSize: 9 }}>/</kbd>
+            </button>
+          </div>
+        </div>
+      </section>
+
       {/* Universal Express Counter Bar (Quick Search / Barcode Scanner) */}
       <div className="dashboard-counter-bar" role="search" aria-label="Express Counter Lookup">
         <div className="dashboard-counter-bar__search">
-          <Icon name="search" size={18} className="dashboard-counter-bar__icon" />
+          <Icon name="search" size={16} className="dashboard-counter-bar__icon" />
           <input
             ref={counterInputRef}
             type="search"
@@ -470,7 +575,9 @@ export default function Today() {
           )}
         </div>
         <div className="dashboard-counter-bar__hint" aria-hidden="true">
-          <span className="dashboard-counter-bar__kbd-hint">Press <kbd>/</kbd> to focus</span>
+          <span className="dashboard-counter-bar__kbd-hint">
+            <kbd className="new-rental-kbd">/</kbd> search <kbd className="new-rental-kbd">↵</kbd> select
+          </span>
         </div>
       </div>
 
@@ -480,6 +587,7 @@ export default function Today() {
           role="alert"
           className="dashboard-alert dashboard-alert--overdue"
         >
+          <span className="status-live-dot is-danger" style={{ marginRight: 8, flexShrink: 0 }} />
           <span className="dashboard-alert__icon" aria-hidden="true">
             <Icon name="alert_circle" size={18} />
           </span>
@@ -491,50 +599,6 @@ export default function Today() {
           </div>
         </div>
       )}
-
-      {/* Operational KPI Metric Strip with Strategic Colorized Icons */}
-      <div
-        className="dashboard-kpi-strip"
-        role="region"
-        aria-label="Movement KPI summary"
-      >
-        <div className="dashboard-kpi-card">
-          <div className="dashboard-kpi-card__header">
-            <span className="dashboard-kpi-card__label">Scheduled Pickups</span>
-            <span className="dashboard-kpi-card__icon dashboard-kpi-card__icon--pickup" aria-hidden="true">
-              <Icon name="truck" size={16} />
-            </span>
-          </div>
-          <span className="dashboard-kpi-card__val figure">{pickupCount ?? '—'}</span>
-        </div>
-        <div className="dashboard-kpi-card">
-          <div className="dashboard-kpi-card__header">
-            <span className="dashboard-kpi-card__label">Ready for Handover</span>
-            <span className="dashboard-kpi-card__icon dashboard-kpi-card__icon--ready" aria-hidden="true">
-              <Icon name="check" size={16} />
-            </span>
-          </div>
-          <span className="dashboard-kpi-card__val dashboard-kpi-card__val--success figure">{readyForHandoverCount}</span>
-        </div>
-        <div className="dashboard-kpi-card">
-          <div className="dashboard-kpi-card__header">
-            <span className="dashboard-kpi-card__label">Expected Returns</span>
-            <span className="dashboard-kpi-card__icon dashboard-kpi-card__icon--return" aria-hidden="true">
-              <Icon name="return_arrow" size={16} />
-            </span>
-          </div>
-          <span className="dashboard-kpi-card__val figure">{returnCount ?? '—'}</span>
-        </div>
-        <div className={`dashboard-kpi-card ${overdueCount > 0 ? 'dashboard-kpi-card--danger' : ''}`}>
-          <div className="dashboard-kpi-card__header">
-            <span className="dashboard-kpi-card__label">Overdue Returns</span>
-            <span className="dashboard-kpi-card__icon dashboard-kpi-card__icon--danger" aria-hidden="true">
-              <Icon name="alert_circle" size={16} />
-            </span>
-          </div>
-          <span className="dashboard-kpi-card__val dashboard-kpi-card__val--danger figure">{overdueCount}</span>
-        </div>
-      </div>
 
       {/* Spec §31: Mobile Segmented Control */}
       {isPhone && (

@@ -4,9 +4,10 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input, Select } from '../../components/ui'
+import { Input, Select, SearchInput } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Donut, Legend, HBars, GroupedBars } from '../../components/ui/Charts'
@@ -1246,17 +1247,21 @@ export default function Warehouses() {
                 <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Warehouse List</h2>
 
                 <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                  <Input
-                    icon={<Icon name="search" size={14} />}
-                    value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value)
-                      setPage(1)
-                    }}
-                    placeholder="Search warehouse, code, zone, shelf, asset, staff…"
-                    aria-label="Search warehouses"
-                    style={{ ...inputStyle, width: 258 }}
-                  />
+                  <div style={{ width: 258 }}>
+                    <SearchInput
+                      value={query}
+                      onChange={(val: string) => {
+                        setQuery(val)
+                        setPage(1)
+                      }}
+                      onClear={() => {
+                        setQuery('')
+                        setPage(1)
+                      }}
+                      placeholder="Search warehouse, code, zone, shelf, asset, staff…"
+                      aria-label="Search warehouses"
+                    />
+                  </div>
 
                   <Select
                     value={branch}
@@ -1371,7 +1376,7 @@ export default function Warehouses() {
                   ))}
                 </div>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
+                <DataTableShell ariaLabel="Warehouses list" data-table-scroll style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1010 }}>
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
@@ -1489,7 +1494,7 @@ export default function Warehouses() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               )}
 
               <div
@@ -1743,7 +1748,7 @@ export default function Warehouses() {
                           })}
                         </div>
 
-                        <div style={{ overflowX: 'auto' }}>
+                        <DataTableShell ariaLabel="Warehouse storage locations" data-table-scroll style={{ overflowX: 'auto' }}>
                           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 660 }}>
                             <thead>
                               <tr style={{ background: 'var(--th-bg)' }}>
@@ -1789,7 +1794,7 @@ export default function Warehouses() {
                               })}
                             </tbody>
                           </table>
-                        </div>
+                        </DataTableShell>
                       </>
                     )}
                   </div>
@@ -1887,7 +1892,7 @@ export default function Warehouses() {
                         <EmptyState title="No transfers touch this warehouse" description="Nothing has moved in or out of this facility on the seeded ledger." />
                       </div>
                     ) : (
-                      <div style={{ overflowX: 'auto' }}>
+                      <DataTableShell ariaLabel="Warehouse transfers" data-table-scroll style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
                           <thead>
                             <tr style={{ background: 'var(--th-bg)' }}>
@@ -1964,7 +1969,7 @@ export default function Warehouses() {
                             })}
                           </tbody>
                         </table>
-                      </div>
+                      </DataTableShell>
                     )}
                   </div>
                 )}

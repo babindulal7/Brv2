@@ -1,6 +1,7 @@
 import { createContext, useContext, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import '../settings.css'
 import Icon from '../../../components/ui/Icon'
 import type { IconName } from '../../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../../components/ui/Page'
@@ -564,6 +565,7 @@ export function FieldRow({ f }: { f: Field }) {
 
   return (
     <div
+      className="settings-field-row"
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -574,20 +576,20 @@ export function FieldRow({ f }: { f: Field }) {
       }}
     >
       <span style={{ flex: 1, minWidth: 200 }}>
-        <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{f.label}</span>
-        <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>{f.note}</span>
+        <span className="settings-field-label" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{f.label}</span>
+        <span className="settings-field-note" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 2 }}>{f.note}</span>
         {/* A product law is not "Not built" — that badge means unimplemented,
             and these are decided. The reason is shown outright rather than
             hidden behind a hover: it is the answer to the question the reader
             is about to ask, which is why there is no control. */}
         {f.readOnlyWhy && (
-          <span style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginTop: 4, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+          <span className="settings-law-badge" style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginTop: 4, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
             <Icon name="lock" size={11} style={{ flexShrink: 0, marginTop: 2 }} />
             {f.readOnlyWhy}
           </span>
         )}
         {f.readBy && (
-          <span style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginTop: 4, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+          <span className="settings-law-badge" style={{ display: 'flex', alignItems: 'flex-start', gap: 5, marginTop: 4, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
             <Icon name="arrow_right" size={11} style={{ flexShrink: 0, marginTop: 2 }} />
             Read live by {f.readBy}
           </span>
@@ -720,12 +722,13 @@ export function FieldRow({ f }: { f: Field }) {
         <SettingControl k={f.settingKey} edit={edit} />
       ) : (
         <span
+          className="settings-mono"
           style={{
             display: 'inline-flex',
             alignItems: 'center',
             gap: 7,
             minWidth: 190,
-            height: 32,
+            minHeight: 38,
             padding: '0 10px',
             borderRadius: 'var(--r-input)',
             border: '1px solid var(--input-border)',
@@ -762,8 +765,9 @@ function SettingControl({ k, edit }: { k: SettingKey; edit: UseEditModeResult })
 
   const box = {
     minWidth: 190,
-    height: 32,
-    padding: '0 10px',
+    minHeight: 44,
+    height: 44,
+    padding: '0 12px',
     borderRadius: 'var(--r-input)',
     border: `1px solid ${error ? 'var(--danger)' : 'var(--input-border)'}`,
     background: 'var(--input-bg)',
@@ -775,7 +779,7 @@ function SettingControl({ k, edit }: { k: SettingKey; edit: UseEditModeResult })
   return (
     <span style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0, alignItems: 'flex-end' }}>
       {spec.kind === 'select' ? (
-        <select id={`edit-${k}`} value={shown} onChange={(e) => edit.setValue(k, e.target.value)} style={box}>
+        <select id={`edit-${k}`} className="settings-input settings-mono" value={shown} onChange={(e) => edit.setValue(k, e.target.value)} style={box}>
           {spec.options?.map((o) => (
             <option key={o} value={o}>
               {o}
@@ -785,6 +789,7 @@ function SettingControl({ k, edit }: { k: SettingKey; edit: UseEditModeResult })
       ) : (
         <input
           id={`edit-${k}`}
+          className="settings-input settings-mono"
           type={spec.kind === 'number' ? 'number' : 'text'}
           value={shown}
           onChange={(e) =>

@@ -4,6 +4,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { PageHeader, Card, ReflowRail, FooterNote, Button, cardStyle, useRailGridColumns } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { LineChart, GroupedBars } from '../../components/ui/Charts'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
@@ -16,6 +17,7 @@ import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
+import './reports.css'
 import {
   PERIODS,
   DEFAULT_PERIOD,
@@ -251,7 +253,7 @@ interface CardModel {
 function KpiCard({ c }: { c: CardModel }) {
   return (
     <article
-      className="lift"
+      className="lift report-kpi-card"
       style={{
         ...cardStyle,
         padding: '13px 14px',
@@ -800,7 +802,7 @@ export default function Pulse() {
   const bodyCols = railGridColumns
 
   return (
-    <PageShell width="full">
+    <PageShell width="full" className="report-v2">
       {header}
       {assertions}
       {disclosure}
@@ -1023,8 +1025,8 @@ export default function Pulse() {
             }
             bodyStyle={{ padding: 0 }}
           >
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
+            <DataTableShell ariaLabel="Equipment utilization" data-table-scroll className="report-table-shell" style={{ overflowX: 'auto' }}>
+              <table className="report-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
                     <th style={th}>Equipment</th>
@@ -1064,7 +1066,7 @@ export default function Pulse() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
           </Card>
 
           {money && (
@@ -1077,8 +1079,8 @@ export default function Pulse() {
               }
               bodyStyle={{ padding: 0 }}
             >
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+              <DataTableShell ariaLabel="Upcoming payments and receivables" data-table-scroll className="report-table-shell" style={{ overflowX: 'auto' }}>
+                <table className="report-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       {['Type', 'Reference', 'Client / Vendor', 'Due date', 'Amount', 'Status'].map((h) => (
@@ -1139,7 +1141,7 @@ export default function Pulse() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
               <p style={{ margin: 0, padding: '10px 12px', borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                 Ageing is measured from {formatAd(figures.to)}, the period's last day — the one clock this page uses (§4.3).
               </p>

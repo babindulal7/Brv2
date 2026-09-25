@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../../components/ui/Page'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { ErrorBanner } from '../../../components/ui/StateViews'
 import { ServiceDueBadge } from '../../../components/ui/ServiceDueBadge'
 import { readUnitsDueForService } from '../../../lib/queries/serviceDue'
@@ -90,7 +91,7 @@ export function DueForService({ onCreateJob }: DueForServiceProps = {}) {
       {rows === null ? (
         <div style={{ padding: 'var(--sp-md)', color: 'var(--muted)', fontSize: 'var(--t-meta)' }}>Reading…</div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <DataTableShell ariaLabel="Units due for service">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
@@ -143,7 +144,7 @@ export function DueForService({ onCreateJob }: DueForServiceProps = {}) {
               })}
             </tbody>
           </table>
-        </div>
+        </DataTableShell>
       )}
     </Card>
   )

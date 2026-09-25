@@ -2,7 +2,8 @@ import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } fr
 import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { ConfirmDialog, Input, Select, Modal, Stepper } from '../../components/ui'
+import { ConfirmDialog, Input, Select, Modal, Stepper, PageActions } from '../../components/ui'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Card, PageHeader, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { PageShell } from '../../components/ui/PageShell'
@@ -18,6 +19,7 @@ import { STATUS } from '../../lib/status'
 import { statusToken } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
+import { NPT_OFFSET_STRING } from '../../lib/operationalDay'
 import { rentalDaysBetween } from '../../lib/rentalDays'
 import { validateDiscount } from '../../lib/discount'
 import { getSetting } from '../../lib/settingsStore'
@@ -136,7 +138,13 @@ function stableJson(value: unknown): string {
  * is a type-level one rather than a state this screen can reach.
  */
 export function bookingInstant(date: string, time: string): Date | null {
-  const d = new Date(`${date}T${time}`)
+  if (!date || !time) return null
+  let isoTime = time.trim()
+  if (!/[Z+-]/.test(isoTime)) {
+    if (isoTime.length === 5) isoTime = `${isoTime}:00`
+    isoTime = `${isoTime}${NPT_OFFSET_STRING}`
+  }
+  const d = new Date(`${date}T${isoTime}`)
   return Number.isNaN(d.getTime()) ? null : d
 }
 
@@ -191,7 +199,28 @@ function readVatRatePercent(): number {
  * gate; `validateDiscount()` still gates Confirm, but only on arithmetic
  * validity (negative, >100%), which no chip can produce.
  */
-const DISCOUNT_CHIPS = [0, 5, 10, 15, 20, 25] as const
+
+interface DiscountPresetMeta {
+  readonly pct: number
+  readonly label: string
+  readonly reason?: string
+}
+
+const DISCOUNT_PRESETS: readonly DiscountPresetMeta[] = [
+  { pct: 0, label: '0%' },
+  { pct: 5, label: '5% (Repeat)', reason: 'Repeat Client Loyalty' },
+  { pct: 10, label: '10% (Partner)', reason: 'Production Partner Discount' },
+  { pct: 15, label: '15% (Weekly)', reason: 'Long-term / Weekly Production' },
+  { pct: 20, label: '20% (Festival)', reason: 'Dashain / Festival Production Privilege' },
+  { pct: 25, label: '25% (Promo)', reason: 'Promotional / Sponsorship Booking' },
+] as const
+
+const SHOOT_PRESETS = [
+  { id: '1-day', label: '1-Day Shoot', icon: 'timer' as const, description: 'Single-day shoot (07:00 → 20:00, 1 rental day)' },
+  { id: 'weekend', label: 'Weekend (Fri–Mon)', icon: 'calendar_week' as const, description: 'Weekend shoot (Friday 14:00 → Monday 10:00, 3 rental days)' },
+  { id: '3-day', label: '3-Day Commercial', icon: 'video' as const, description: '3-day commercial shoot (08:00 → Day 3 20:00, 3 rental days)' },
+  { id: '1-week', label: '1-Week Production', icon: 'calendar_event' as const, description: '7-day production block (08:00 → Day 7 20:00, 7 rental days)' },
+] as const
 
 /*
  * `CatalogueItem` and `EQUIPMENT_CATALOGUE` lived here — the demo catalogue,
@@ -530,53 +559,31 @@ function TouchInset() {
  * `TouchInset` while staying visually compact for table density.
  */
 function NumberStepper({ value, min = 1, onChange, disabled, label }: { value: number; min?: number; onChange: (n: number) => void; disabled?: boolean; label: string }) {
-  /* ⚠ 20px of glyph. Law 14 is satisfied on Y and NOT on X — stated plainly,
-     because the comment that stood here claimed "the target measures 44 on both
-     axes" and an adversarial check proved that false.
-
-     What the old claim measured, correctly: the two glyphs INSIDE one stepper.
-     10 + 3 + 18 + 3 + 10 = 44, so those two abut exactly and neither steals the
-     other. What it stopped at: the stepper's own inline-flex box. The real
-     nearest interactive neighbour is in the ADJACENT CELL — the Qty stepper's
-     "+" and the Days stepper's "−" are separated only by `td` padding, 9px each
-     side = 18px. Two 44px targets across 18px overlap by 26px, and the later
-     one in the DOM wins, so a tap near that cell boundary changes the WRONG
-     number. `TouchInset` grows the width via `max(100%, var(--tap))`, which is
-     precisely what creates that overlap.
-
-     So the width is deliberately left at the glyph's own box. Y is the free
-     axis here and Y is what is taken; X needs the columns spaced or the
-     steppers redesigned, which is a table-layout decision and not a hit-area
-     one. The paint stays 20 because a 44px box per cell would turn the row grid
-     back into a form, which is the shape §7.4 moved away from.
-     `position: relative` is load-bearing rather than decorative — remove it and
-     the inset resolves against some ancestor and lands somewhere else entirely.
-     The two glyphs sit 24px apart edge to edge (3 + the 18px value + 3), which is
-     exactly what their two targets need to meet without overlapping; anything
-     tighter here would have them fighting over the same points. */
-  const btnStyle = (dis: boolean) => ({
-    position: 'relative' as const,
-    width: 20,
-    height: 20,
-    display: 'grid' as const,
-    placeItems: 'center' as const,
-    borderRadius: 'var(--r-xs)',
-    border: '1px solid var(--border)',
-    background: 'var(--card2)',
-    color: 'var(--text2)',
-    cursor: dis ? 'not-allowed' : 'pointer',
-    opacity: dis ? 0.5 : 1,
-  })
+  const isMin = value <= min
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-      <button type="button" className="press" aria-label={`Decrease ${label}`} disabled={disabled || value <= min} onClick={() => onChange(Math.max(min, value - 1))} style={btnStyle(Boolean(disabled) || value <= min)}>
+    <div className="new-rental-stepper-pill">
+      <button
+        type="button"
+        className="press new-rental-stepper-btn"
+        aria-label={`Decrease ${label}`}
+        disabled={disabled || isMin}
+        onClick={() => onChange(Math.max(min, value - 1))}
+      >
         <TouchInset />
-        <Icon name="minus" size={10} />
+        <Icon name="minus" size={11} />
       </button>
-      <span className="figure" style={{ minWidth: 18, textAlign: 'center', fontSize: 'var(--t-meta)', fontWeight: 600, color: disabled ? 'var(--muted)' : 'var(--text)' }}>{value}</span>
-      <button type="button" className="press" aria-label={`Increase ${label}`} disabled={disabled} onClick={() => onChange(value + 1)} style={btnStyle(Boolean(disabled))}>
+      <span className="figure new-rental-stepper-val" style={{ color: disabled ? 'var(--muted)' : 'var(--text)' }}>
+        {value}
+      </span>
+      <button
+        type="button"
+        className="press new-rental-stepper-btn"
+        aria-label={`Increase ${label}`}
+        disabled={disabled}
+        onClick={() => onChange(value + 1)}
+      >
         <TouchInset />
-        <Icon name="plus" size={10} />
+        <Icon name="plus" size={11} />
       </button>
     </div>
   )
@@ -663,7 +670,7 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section id={id} className="new-rental-section-card" style={{ ...cardStyle, minWidth: 0, padding: 0 }}>
+    <section id={id} className={`new-rental-section-card ${open ? 'is-active' : ''}`} style={{ ...cardStyle, minWidth: 0, padding: 0 }}>
       <div
         onClick={onToggle}
         style={{
@@ -672,10 +679,11 @@ function Section({
           gap: 10,
           padding: '12px 16px',
           borderBottom: open ? '1px solid var(--border)' : 'none',
-          background: open ? 'var(--card2)' : 'transparent',
+          background: open ? 'color-mix(in srgb, var(--brand, var(--primary)) 4%, var(--card2))' : 'transparent',
           cursor: 'pointer',
           userSelect: 'none',
           minHeight: 48,
+          transition: 'background var(--dur-fast) var(--ease)',
         }}
       >
         {stepNumber && (
@@ -687,13 +695,14 @@ function Section({
               width: 24,
               height: 24,
               borderRadius: 'var(--r-badge)',
-              background: open ? 'var(--accent-text, var(--text))' : 'var(--surface)',
-              color: open ? 'var(--card)' : 'var(--text2)',
+              background: open ? 'var(--brand, var(--accent-text, var(--text)))' : 'var(--surface)',
+              color: open ? '#fff' : 'var(--text2)',
               fontSize: 11,
               fontWeight: 700,
               fontVariantNumeric: 'tabular-nums',
               letterSpacing: '0.04em',
               flexShrink: 0,
+              boxShadow: open ? '0 1px 4px color-mix(in srgb, var(--brand, var(--primary)) 30%, transparent)' : 'none',
             }}
           >
             {stepNumber}
@@ -716,6 +725,7 @@ function Section({
               padding: '2px 8px',
               borderRadius: 'var(--r-xs)',
               marginLeft: 4,
+              border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)',
             }}
           >
             {summary}
@@ -986,10 +996,12 @@ function DiscountChips({
   percent,
   onPercent,
   amount,
+  onSelectPreset,
 }: {
   percent: number
   onPercent: (n: number) => void
   amount: string
+  onSelectPreset?: (pct: number, reason?: string) => void
 }) {
   return (
     <div style={{ position: 'relative', padding: '3px 0' }}>
@@ -1000,21 +1012,24 @@ function DiscountChips({
         </span>
       </div>
       <div role="group" aria-label="Discount percentage" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
-        {DISCOUNT_CHIPS.map((p) => {
-          const active = percent === p
+        {DISCOUNT_PRESETS.map((p) => {
+          const active = percent === p.pct
           return (
             <button
-              key={p}
+              key={p.pct}
               type="button"
               className="press"
               aria-pressed={active}
-              aria-label={`${p}% discount`}
-              onClick={() => onPercent(p)}
+              aria-label={`${p.pct}% discount`}
+              title={p.reason ? `${p.label} — ${p.reason}` : `${p.pct}% discount`}
+              onClick={() => {
+                onPercent(p.pct)
+                onSelectPreset?.(p.pct, p.reason)
+              }}
               style={{
                 position: 'relative',
                 minHeight: 24,
                 padding: '0 9px',
-                // §3.3 — a filter chip is a control, not a count badge.
                 borderRadius: 'var(--r-btn)',
                 border: `1px solid ${active ? 'var(--st-primary-fg)' : 'var(--border)'}`,
                 background: active ? 'var(--st-primary-bg)' : 'var(--card2)',
@@ -1026,7 +1041,7 @@ function DiscountChips({
               }}
             >
               <TouchInset />
-              {p}%
+              {p.label}
             </button>
           )
         })}
@@ -1612,14 +1627,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     }
   }, [currentStep, isPhone, viewMode])
 
-  const [isShortViewport, setIsShortViewport] = useState(() => typeof window !== 'undefined' && window.innerHeight < 900)
-  useEffect(() => {
-    const handleResize = () => {
-      setIsShortViewport(window.innerHeight < 900)
-    }
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
 
   // Return Pickup Logistics (§3.3)
   const [returnPickupType, setReturnPickupType] = useState<'Client Return' | 'Babin Pickup'>('Client Return')
@@ -2234,7 +2241,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       bundleSubtotalPaisa: bundlePaisa,
       servicesSubtotalPaisa: servicePaisa,
       crewSubtotalPaisa: crewChargesPaisa,
-      deliveryChargePaisa: clientPickup ? (0 as Paisa) : deliveryChargePaisa,
+      deliveryChargePaisa: ((clientPickup ? 0 : deliveryChargePaisa) + returnTransportPaisa) as Paisa,
       fuelChargePaisa: clientPickup ? (0 as Paisa) : fuelChargePaisa,
       discounts: {
         manualDiscountPercent: discountPct,
@@ -2260,6 +2267,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     clientPickup,
     deliveryChargePaisa,
     fuelChargePaisa,
+    returnTransportPaisa,
     discountPct,
     manualDiscountReason,
     manualDiscountAuthorizedBy,
@@ -2469,6 +2477,52 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     : undefined
 
   const pickupBs = toBs(new Date(pickup))
+  const retBs = useMemo(() => {
+    if (!ret) return null
+    const d = new Date(ret)
+    return Number.isNaN(d.getTime()) ? null : toBs(d)
+  }, [ret])
+
+  const [collapsedBundles, setCollapsedBundles] = useState<Record<string, boolean>>({})
+
+  const applyShootPreset = useCallback(
+    (presetId: (typeof SHOOT_PRESETS)[number]['id']) => {
+      const base = new Date(pickup ? `${pickup}T00:00:00` : getBusinessToday().toISOString().slice(0, 10))
+      if (Number.isNaN(base.getTime())) return
+
+      if (presetId === '1-day') {
+        const pStr = base.toISOString().slice(0, 10)
+        setPickup(pStr)
+        setPickupTime('07:00')
+        setRet(pStr)
+        setReturnTime('20:00')
+      } else if (presetId === 'weekend') {
+        const dayOfWeek = base.getDay()
+        const daysUntilFriday = (5 - dayOfWeek + 7) % 7
+        const fri = new Date(base.getTime() + daysUntilFriday * DAY)
+        const mon = new Date(fri.getTime() + 3 * DAY)
+        setPickup(fri.toISOString().slice(0, 10))
+        setPickupTime('14:00')
+        setRet(mon.toISOString().slice(0, 10))
+        setReturnTime('10:00')
+      } else if (presetId === '3-day') {
+        const pStr = base.toISOString().slice(0, 10)
+        const rDate = new Date(base.getTime() + 2 * DAY)
+        setPickup(pStr)
+        setPickupTime('08:00')
+        setRet(rDate.toISOString().slice(0, 10))
+        setReturnTime('20:00')
+      } else if (presetId === '1-week') {
+        const pStr = base.toISOString().slice(0, 10)
+        const rDate = new Date(base.getTime() + 6 * DAY)
+        setPickup(pStr)
+        setPickupTime('08:00')
+        setRet(rDate.toISOString().slice(0, 10))
+        setReturnTime('20:00')
+      }
+    },
+    [pickup, setPickup, setPickupTime, setRet, setReturnTime],
+  )
 
   /* ── §24 / §34 — the Add Item panel hands back ready lines; the page appends
    *    them and every existing pricing / availability path recomputes as it
@@ -2743,6 +2797,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       vehicle,
       numberPlate,
       driverContact,
+      returnPickupType,
+      returnPickupAddress,
+      returnPickupTime,
+      returnPickupChargePaisa: Number(returnPickupChargePaisa),
       discountPct,
       vatOn,
       vatRatePercent,
@@ -2752,7 +2810,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     [
       selectedClientId, client, draftClientDbId, project, kind, govId, pickup, pickupTime, ret, returnTime, deliveryType,
       pickupLocation, returnLocation, specialInstructions, lines, crew, deliveryChargePaisa, fuelChargePaisa,
-      vehicle, numberPlate, driverContact, discountPct, vatOn, vatRatePercent, advancePaisa, draftBookingNo,
+      vehicle, numberPlate, driverContact, returnPickupType, returnPickupAddress, returnPickupTime, returnPickupChargePaisa,
+      discountPct, vatOn, vatRatePercent, advancePaisa, draftBookingNo,
     ],
   )
   const draftFingerprint = useMemo(() => stableJson(draftData), [draftData])
@@ -2851,6 +2910,12 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         setVehicle(data.vehicle)
         setNumberPlate(data.numberPlate)
         setDriverContact(data.driverContact)
+        if (data.returnPickupType) setReturnPickupType(data.returnPickupType)
+        if (data.returnPickupAddress) setReturnPickupAddress(data.returnPickupAddress)
+        if (data.returnPickupTime) setReturnPickupTime(data.returnPickupTime)
+        if (typeof data.returnPickupChargePaisa === 'number') {
+          setReturnPickupChargePaisa(data.returnPickupChargePaisa)
+        }
         setDiscountPct(data.discountPct)
         setVatOn(data.vatOn)
         setVatRatePercent(data.vatRatePercent)
@@ -3126,25 +3191,34 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                   })),
                 }
               : {}),
-            /* §9.2 — Client Pickup carries no transport row; a delivery does,
-               even at zero charge, because the row is where the vehicle and
-               driver will be recorded. */
-            ...(clientPickup
+            /* §9.2 / §4.58 — Pure Client Pickup/Return carries no transport row.
+               If delivery is active OR return is 'Babin Pickup', a transport row is
+               persisted to record driver/vehicle and full transport fees (delivery + return pickup). */
+            ...(clientPickup && returnPickupType === 'Client Return'
               ? {}
               : {
                   pickupLocation: pickupLocation.trim() || null,
-                  returnLocation: returnLocation.trim() || null,
+                  returnLocation: returnLocation.trim() || (returnPickupAddress.trim() || null),
                   transport: {
                     clientUuid: transportKey.current ?? (transportKey.current = newClientUuid()),
-                    deliveryCharge: toRupees(deliveryChargePaisa),
-                    fuelCharge: toRupees(fuelChargePaisa),
+                    deliveryCharge: toRupees(((clientPickup ? 0 : deliveryChargePaisa) + returnTransportPaisa) as Paisa),
+                    fuelCharge: toRupees((clientPickup ? 0 : fuelChargePaisa) as Paisa),
                     /* Empty is NULL, not "". The columns are nullable and an
                        empty string would read back as a vehicle that was named
                        and is blank, rather than one nobody recorded. */
                     vehicle: vehicle.trim() === '' ? null : vehicle.trim(),
                     numberPlate: numberPlate.trim() === '' ? null : numberPlate.trim(),
                     driverContact: driverContact.trim() === '' ? null : driverContact.trim(),
-                    specialInstructions: specialInstructions.trim() === '' ? null : specialInstructions.trim(),
+                    specialInstructions: [
+                      specialInstructions.trim() || null,
+                      returnPickupType === 'Babin Pickup'
+                        ? `Return Pickup: Babin Pickup from "${returnPickupAddress.trim() || 'Client Location'}" at ${
+                            returnPickupTime || '18:00'
+                          }${returnPickupChargePaisa > 0 ? ` (Return Pickup Fee: Rs ${returnPickupChargePaisa / 100})` : ''}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' | ') || null,
                   },
                 }),
             lines: lines.map((l, i) => {
@@ -3255,6 +3329,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     clientPickup,
     deliveryChargePaisa,
     fuelChargePaisa,
+    returnPickupType,
+    returnPickupAddress,
+    returnPickupTime,
+    returnPickupChargePaisa,
+    returnTransportPaisa,
     /* Same reason as the discount above: the transport row reads these, and a
        stale closure would file a delivery with no vehicle on it. */
     vehicle,
@@ -3345,6 +3424,61 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   )
 
   const health = useMemo(() => (client ? clientHealth(client) : null), [client])
+
+  // Power-user keyboard shortcuts: ⌘S/Ctrl+S (Save Draft), ⌘B/Ctrl+B (Toggle Scanner), ⌘Enter/Ctrl+Enter (Confirm Booking), Alt+1..5 (Jump Workflow Steps)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ⌘S or Ctrl+S: Save Draft
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        void saveDraft()
+        return
+      }
+
+      // ⌘B or Ctrl+B: Toggle Scanner
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        setScannerOpen((open) => !open)
+        return
+      }
+
+      // ⌘Enter or Ctrl+Enter: Confirm Booking
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        if (!confirmBlocked && saveState !== 'saving') {
+          void confirmBooking()
+        }
+        return
+      }
+
+      // Alt+1 to Alt+5: Navigate Steps
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key >= '1' && e.key <= '5') {
+        e.preventDefault()
+        const stepNum = Number(e.key)
+        setCurrentStep(stepNum)
+        setOpen((prev) => {
+          const next = [...prev]
+          if (stepNum === 1) {
+            next[0] = true
+            next[1] = true
+          } else if (stepNum === 2) {
+            next[2] = true
+          } else if (stepNum === 3) {
+            next[3] = true
+            next[4] = true
+          } else if (stepNum === 4) {
+            next[5] = true
+          } else if (stepNum === 5) {
+            return next.map(() => true)
+          }
+          return next
+        })
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [confirmBlocked, saveState, saveDraft, confirmBooking, setCurrentStep, setOpen])
 
 
   const bundleCount = useMemo(() => new Set(lines.map((l) => l.bundleCode).filter(Boolean)).size, [lines])
@@ -3698,7 +3832,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    */
   /**
    * Part B — Right Rail Simplification
-   * One Single Consolidated Card: Booking Summary
+   * One Single Consolidated Card: Booking Summary (Bento 2.0 Architecture)
    */
   const bookingSummaryCard = (
     <Card id="rail-booking-summary" title="Booking Summary">
@@ -3710,13 +3844,27 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       </dl>
       {canBookingMoney ? (
         <>
-          <MoneyRow label="Equipment" value={formatMoney(pricing.equipmentSubtotalPaisa)} />
-          {pricing.bundleSubtotalPaisa > 0 && <MoneyRow label="Bundles" value={formatMoney(pricing.bundleSubtotalPaisa)} />}
-          {pricing.servicesSubtotalPaisa > 0 && <MoneyRow label="Services & custom lines" value={formatMoney(pricing.servicesSubtotalPaisa)} />}
-          {canCrewMoney && pricing.crewSubtotalPaisa > 0 && <MoneyRow label="Crew" value={formatMoney(pricing.crewSubtotalPaisa)} />}
-          <MoneyRow label="Delivery" value={formatMoney(pricing.deliverySubtotalPaisa)} />
+          <div className="new-rental-bento-hero-total">
+            <div className="new-rental-bento-hero-total-label">
+              <span>Estimated Rental Total</span>
+              <span style={{ fontSize: 10, color: 'var(--text2)', fontWeight: 600, textTransform: 'none' }}>
+                {days > 0 ? `${days} ${dayWord}` : 'Dates pending'}
+              </span>
+            </div>
+            <div className="new-rental-bento-hero-total-val">
+              {formatMoney(pricing.rentalTotalPaisa)}
+            </div>
+          </div>
 
-          <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <MoneyRow label="Equipment" value={formatMoney(pricing.equipmentSubtotalPaisa)} />
+            {pricing.bundleSubtotalPaisa > 0 && <MoneyRow label="Bundles" value={formatMoney(pricing.bundleSubtotalPaisa)} />}
+            {pricing.servicesSubtotalPaisa > 0 && <MoneyRow label="Services & custom lines" value={formatMoney(pricing.servicesSubtotalPaisa)} />}
+            {canCrewMoney && pricing.crewSubtotalPaisa > 0 && <MoneyRow label="Crew" value={formatMoney(pricing.crewSubtotalPaisa)} />}
+            <MoneyRow label="Delivery" value={formatMoney(pricing.deliverySubtotalPaisa)} />
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
             <MoneyRow label="Subtotal" value={formatMoney(pricing.grossSubtotalPaisa)} />
             <MoneyRow
               label={
@@ -3739,7 +3887,18 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           </div>
 
           {/* Security Deposit (separate liability guarantee) and Advance Required */}
-          <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+          <div
+            style={{
+              marginTop: 10,
+              padding: '8px 10px',
+              borderRadius: 'var(--r-btn)',
+              background: 'var(--card2)',
+              border: '1px solid color-mix(in srgb, var(--border) 70%, transparent)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
             <MoneyRow
               label="Security Deposit (Refundable)"
               value={formatMoney(pricing.securityDeposit.requiredPaisa)}
@@ -3768,14 +3927,16 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               display: 'flex',
               alignItems: 'center',
               gap: 8,
-              padding: '8px 10px',
+              padding: '10px 12px',
               borderRadius: 'var(--r-btn)',
               background: 'var(--st-success-bg, #ecfdf5)',
+              border: '1px solid color-mix(in srgb, var(--success, #10b981) 30%, transparent)',
               color: 'var(--st-success-fg, #065f46)',
               fontSize: 'var(--t-meta)',
               fontWeight: 600,
             }}
           >
+            <span className="status-live-dot" style={{ background: 'var(--success, #10b981)' }} />
             <Icon name="check" size={15} style={{ color: 'var(--st-success-fg, #065f46)', flexShrink: 0 }} />
             <span>Ready to confirm</span>
           </div>
@@ -3783,9 +3944,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           <div
             data-testid="booking-attention-status"
             style={{
-              padding: '8px 10px',
+              padding: '10px 12px',
               borderRadius: 'var(--r-btn)',
               background: 'var(--st-danger-bg)',
+              border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
               color: 'var(--st-danger-fg)',
             }}
           >
@@ -3808,7 +3970,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                         display: 'inline-block',
                         minHeight: 44,
                         marginLeft: 6,
-                        padding: '1px 6px',
+                        padding: '1px 8px',
                         borderRadius: 'var(--r-badge)',
                         border: '1px solid var(--st-danger-fg)',
                         background: 'transparent',
@@ -3829,14 +3991,14 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       </div>
 
       {/* Action */}
-      <div style={{ marginTop: 12 }}>
+      <div style={{ marginTop: 14 }}>
         <Button
           icon={saveState === 'saving' ? 'refresh' : 'check'}
           variant="primary"
           onClick={confirmBooking}
           disabled={confirmBlocked || saveState === 'saving'}
           title={blockReasonText}
-          style={{ width: '100%', minHeight: 44, justifyContent: 'center' }}
+          style={{ width: '100%', minHeight: 44, justifyContent: 'center', fontWeight: 700 }}
         >
           {saveState === 'saving' ? 'Confirming Booking…' : 'Confirm Booking'}
         </Button>
@@ -3905,33 +4067,28 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           }
           title={draftBookingNo ? `Draft #${draftBookingNo}` : 'New Rental'}
           actions={
-            <>
-              {embedded && (
-                <Button
-                  variant="ghost"
-                  icon="chevron_left"
-                  onClick={handleExit}
-                  aria-label="Back to Rentals List"
+            <PageActions
+              secondary={
+                embedded ? (
+                  <Button
+                    variant="ghost"
+                    icon="chevron_left"
+                    onClick={handleExit}
+                    aria-label="Back to Rentals List"
+                  >
+                    Back to Rentals
+                  </Button>
+                ) : undefined
+              }
+              overflow={
+                <span
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, padding: '0 10px', borderRadius: 'var(--r-badge)', background: STATUS[statusToken(status)].bg, color: STATUS[statusToken(status)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}
                 >
-                  Back to Rentals
-                </Button>
-              )}
-              <span
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, padding: '0 10px', borderRadius: 'var(--r-badge)', background: STATUS[statusToken(status)].bg, color: STATUS[statusToken(status)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}
-              >
-                <Icon name="file" size={13} />
-                {draftBookingNo ? `Draft #${draftBookingNo}` : `${status} · ${flag}`}
-              </span>
-              <Button variant="ghost" onClick={() => saveDraft()} disabled={saveState === 'saving'}>
-                {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
-              </Button>
-              {/* Two behaviours behind one label — see `discardDraft` /
-                  `cancelDraftBooking`. Which one runs depends on whether a draft
-                  row exists, never on which button was pressed. */}
-              <Button icon="close" onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}>
-                Cancel
-              </Button>
-            </>
+                  <Icon name="file" size={13} />
+                  {draftBookingNo ? `Draft #${draftBookingNo}` : `${status} · ${flag}`}
+                </span>
+              }
+            />
           }
         />
       }
@@ -3945,7 +4102,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       )}
 
       {/* Global Inventory Stock Contention Banner */}
-      {critical.length > 0 && (
+      {conflictLines.length > 0 && (
         <div
           role="alert"
           style={{
@@ -3965,10 +4122,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             <Icon name="alert_triangle" size={18} style={{ flexShrink: 0 }} />
             <div>
               <strong style={{ display: 'block', fontSize: 'var(--t-body)' }}>
-                Inventory Stock Contention ({critical.length} conflict{critical.length > 1 ? 's' : ''})
+                Inventory Stock Contention ({conflictLines.length} conflict{conflictLines.length > 1 ? 's' : ''})
               </strong>
               <span style={{ fontSize: 'var(--t-meta)', opacity: 0.9 }}>
-                {critical.map((c) => c.text).join(' · ')}
+                {conflictLines.map((c) => c.text).join(' · ')}
               </span>
             </div>
           </div>
@@ -4034,6 +4191,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             />
           </div>
           <div style={{ display: isPhone ? 'none' : 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+            <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span className="new-rental-kbd" title="Use Alt+1 to Alt+5 to jump directly between steps">Alt+1..5</span>
+              <span>Jump steps</span>
+            </span>
             <button
               type="button"
               className="press"
@@ -4290,6 +4451,24 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 : `${pickupBs ? formatBs(pickupBs) : formatAd(new Date(pickup))} → ${days} ${dayWord}`
             }
           >
+            <div className="new-rental-shoot-presets" role="group" aria-label="Production shoot presets">
+              <span style={{ fontSize: 'var(--t-meta, 11px)', fontWeight: 600, color: 'var(--muted)', marginRight: 2 }}>
+                Shoot Presets:
+              </span>
+              {SHOOT_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="new-rental-preset-chip"
+                  onClick={() => applyShootPreset(p.id)}
+                  title={p.description}
+                >
+                  <Icon name={p.icon} size={12} />
+                  <span>{p.label}</span>
+                </button>
+              ))}
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr)) auto', gap: 11, alignItems: 'start' }}>
               {/* `DateTimeField` renders its own label and its own BS line, so
                   it is not wrapped in `Field` (that would double the label).
@@ -4311,7 +4490,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               {/* §8.6 — an unset value is an em dash, never a zero. */}
               <div
                 style={{
-                  minWidth: 90,
+                  minWidth: 100,
                   padding: '10px 14px',
                   borderRadius: 'var(--r-card, 10px)',
                   background: 'var(--card2)',
@@ -4333,6 +4512,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 <span style={{ fontSize: '11px', color: 'var(--text2)', fontWeight: 600 }}>
                   {days === 1 ? 'Single day' : days > 1 ? `${days} billable days` : 'Select dates'}
                 </span>
+                {pickupBs && retBs && (
+                  <div style={{ marginTop: 6, paddingTop: 5, borderTop: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', fontSize: '10px', color: 'var(--muted)', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)', whiteSpace: 'nowrap' }}>
+                    {formatBs(pickupBs)} → {formatBs(retBs)}
+                  </div>
+                )}
               </div>
             </div>
           </Section>
@@ -4453,7 +4637,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 34, padding: '0 10px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer' }}
               >
                 <Icon name="barcode" size={15} />
-                Scan barcode or serial
+                <span>Scan barcode or serial</span>
+                <span className="new-rental-kbd">⌘B</span>
                 <Icon name={scannerOpen ? 'chevron_up' : 'chevron_down'} size={14} />
               </button>
               {scannerOpen && (
@@ -4602,7 +4787,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               </div>
             )}
 
-            <div style={{ overflowX: 'auto' }}>
+            <DataTableShell ariaLabel="Booking equipment and bundles">
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
@@ -4621,6 +4806,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                       that model's name. Only the rendering was flat. */}
                   {lineGroups.map((g) => {
                     const nested = isNested(g)
+                    const isCollapsed = Boolean(collapsedBundles[g.key])
                     const groupUnits = g.lines.reduce((s, l) => s + l.qty, 0)
                     const dayValues = Array.from(new Set(g.lines.map((l) => l.days)))
                     const minDays = Math.min(...dayValues)
@@ -4650,13 +4836,22 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                           <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
                             <td style={{ ...td, whiteSpace: 'normal', maxWidth: 260 }}>
                               <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <button
+                                  type="button"
+                                  className="new-rental-bundle-toggle"
+                                  onClick={() => setCollapsedBundles((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
+                                  aria-label={isCollapsed ? `Expand ${g.label}` : `Collapse ${g.label}`}
+                                  title={isCollapsed ? 'Expand components' : 'Collapse components'}
+                                >
+                                  <Icon name={isCollapsed ? 'chevron_right' : 'chevron_down'} size={12} />
+                                </button>
                                 <Icon name={g.kind === 'bundle' ? 'package' : 'box'} size={13} style={{ color: 'var(--text2)', flexShrink: 0 }} />
                                 <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', lineHeight: 1.25 }}>{g.label}</span>
                               </span>
-                              <span style={{ display: 'block', marginTop: 1, fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
+                              <span style={{ display: 'block', marginTop: 1, marginLeft: 28, fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
                                 {g.kind === 'bundle'
-                                  ? `Bundle · ${g.lines.length} component${g.lines.length === 1 ? '' : 's'}`
-                                  : `${g.lines.length} units`}
+                                  ? `Bundle · ${g.lines.length} component${g.lines.length === 1 ? '' : 's'}${isCollapsed ? ' (collapsed)' : ''}`
+                                  : `${g.lines.length} units${isCollapsed ? ' (collapsed)' : ''}`}
                               </span>
                             </td>
                             <td style={{ ...td, color: 'var(--text2)' }}>{g.lines[0]?.category ?? '—'}</td>
@@ -4697,7 +4892,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                             </td>
                           </tr>
                         ) : null}
-                        {g.lines.map((l) => equipmentRow(l, nested, g.label, nested ? undefined : menuItems))}
+                        {(!nested || !isCollapsed) && g.lines.map((l) => equipmentRow(l, nested, g.label, nested ? undefined : menuItems))}
                       </Fragment>
                     )
                   })}
@@ -4713,7 +4908,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                   )}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
 
             {/* §39 — items / bundles / rental days / line subtotal. Packed,
                 Missing, Cases and Weight are Packing's fields, not booking
@@ -4833,7 +5028,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 roster={liveCrew && liveCrew.length > 0 ? liveCrew : CREW_ROSTER}
               />
               <div style={{ minWidth: 0 }}>
-                <div style={{ overflowX: 'auto' }}>
+                <DataTableShell ariaLabel="Assigned crew">
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
@@ -4963,7 +5158,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                       )}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
                 {crew.length === 0 && (
                   <div style={{ marginTop: 10 }}>
                     <EmptyState title="No crew assigned" description="Add a crew member to staff this booking." />
@@ -5100,13 +5295,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                       />
                     </Field>
 
-                    {/* Return Pickup Logistics (§3.3)
-                        TODO(decision): returnPickupType/Address/Time/Charge have no
-                        persistence path — no booking_transport columns, not in
-                        createRental's transport contract, not in the draft schema.
-                        The fee shows in the on-page Transport Total but is not sent
-                        with the booking. Needs a ruling: add columns + payload half,
-                        or scope the block out of Quot/* creates. */}
+                    {/* Return Pickup Logistics (§3.3 / §4.58)
+                        Resolved: returnPickupChargePaisa is rolled into the pricing pipeline
+                        and the booking transport total (delivery_charge). Logistics instructions,
+                        pickup address, and timing are recorded in special_instructions and
+                        return_location, and persisted in draft schema. */}
                     <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
                       <Field label="Return Pickup Option">
                         <Select
@@ -5337,7 +5530,17 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                         />
                       </Field>
                       <div style={{ marginTop: 8 }}>
-                        <DiscountChips percent={discountPct} onPercent={setDiscountPct} amount={formatMoney(pricing.discounts.discountPaisa)} />
+                        <DiscountChips
+                          percent={discountPct}
+                          onPercent={setDiscountPct}
+                          amount={formatMoney(pricing.discounts.discountPaisa)}
+                          onSelectPreset={(pct, reason) => {
+                            setDiscountPct(pct)
+                            if (reason && (!manualDiscountReason || manualDiscountReason.trim() === '')) {
+                              setManualDiscountReason(reason)
+                            }
+                          }}
+                        />
                       </div>
 
                       {discountPct > 0 && (
@@ -5625,9 +5828,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
             <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, 1fr)', gap: 'var(--sp-md)', marginBottom: 'var(--sp-lg)' }}>
               {/* Client & Project */}
-              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 6, letterSpacing: '0.04em' }}>
-                  Client & Project
+              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.06em' }}>
+                  <Icon name="user" size={13} style={{ color: 'var(--brand)' }} />
+                  <span>Client & Project</span>
                 </div>
                 <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', marginBottom: 4 }}>
                   {client?.name || 'No client selected'}
@@ -5641,12 +5845,18 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               </div>
 
               {/* Schedule & Duration */}
-              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 6, letterSpacing: '0.04em' }}>
-                  Rental Schedule
+              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.06em' }}>
+                  <Icon name="calendar" size={13} style={{ color: 'var(--brand)' }} />
+                  <span>Rental Schedule</span>
                 </div>
-                <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', marginBottom: 4 }}>
-                  {days > 0 ? `${days} ${dayWord}` : 'Dates not set'}
+                <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>{days > 0 ? `${days} ${dayWord}` : 'Dates not set'}</span>
+                  {days > 0 && (
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--r-badge)', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                      Active Window
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', display: 'flex', flexDirection: 'column', gap: 2 }}>
                   <span>Pickup: {pickup} {pickupTime}</span>
@@ -5658,22 +5868,23 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
             {/* Equipment & Bundles Summary */}
             <div style={{ marginBottom: 'var(--sp-lg)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 6, letterSpacing: '0.04em' }}>
-                Equipment & Bundles ({lines.length} items)
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.06em' }}>
+                <Icon name="box" size={13} style={{ color: 'var(--brand)' }} />
+                <span>Equipment & Bundles ({lines.length} items)</span>
               </div>
               {lines.length === 0 ? (
                 <div style={{ padding: 'var(--sp-md)', textAlign: 'center', color: 'var(--text2)', background: 'var(--card2)', borderRadius: 'var(--r-card)', border: '1px solid var(--border)' }}>
                   No equipment added yet. <Button variant="outline" onClick={() => setCurrentStep(2)} style={{ marginLeft: 8 }}>Go to Step 2</Button>
                 </div>
               ) : (
-                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
+                <DataTableShell ariaLabel="Review equipment and bundles" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
                     <thead>
                       <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
-                        <th style={{ textAlign: 'left', padding: '8px 12px', fontWeight: 600 }}>Item</th>
-                        <th style={{ textAlign: 'center', padding: '8px 12px', fontWeight: 600 }}>Qty</th>
-                        {canBookingMoney && <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>Daily Rate</th>}
-                        {canBookingMoney && <th style={{ textAlign: 'right', padding: '8px 12px', fontWeight: 600 }}>Total</th>}
+                        <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600 }}>Item</th>
+                        <th style={{ textAlign: 'center', padding: '10px 12px', fontWeight: 600 }}>Qty</th>
+                        {canBookingMoney && <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 600 }}>Daily Rate</th>}
+                        {canBookingMoney && <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 600 }}>Total</th>}
                       </tr>
                     </thead>
                     <tbody>
@@ -5683,22 +5894,23 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                             <strong>{l.name}</strong>
                             {l.category && <span style={{ color: 'var(--text2)', marginLeft: 6 }}>({l.category})</span>}
                           </td>
-                          <td style={{ textAlign: 'center', padding: '8px 12px' }}>{l.qty}</td>
-                          {canBookingMoney && <td style={{ textAlign: 'right', padding: '8px 12px' }}>{formatMoney(l.ratePaisa)}</td>}
-                          {canBookingMoney && <td style={{ textAlign: 'right', padding: '8px 12px' }}>{formatMoney(lineAmountPaisa(l))}</td>}
+                          <td style={{ textAlign: 'center', padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>{l.qty}</td>
+                          {canBookingMoney && <td style={{ textAlign: 'right', padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(l.ratePaisa)}</td>}
+                          {canBookingMoney && <td style={{ textAlign: 'right', padding: '8px 12px', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatMoney(lineAmountPaisa(l))}</td>}
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               )}
             </div>
 
             {/* Crew & Delivery Summary */}
             <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, 1fr)', gap: 'var(--sp-md)', marginBottom: 'var(--sp-lg)' }}>
-              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 6, letterSpacing: '0.04em' }}>
-                  Crew Assignment ({crew.length})
+              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.06em' }}>
+                  <Icon name="users" size={13} style={{ color: 'var(--brand)' }} />
+                  <span>Crew Assignment ({crew.length})</span>
                 </div>
                 {crew.length === 0 ? (
                   <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>No crew assigned (Optional)</span>
@@ -5711,9 +5923,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 )}
               </div>
 
-              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 6, letterSpacing: '0.04em' }}>
-                  Logistics & Dispatch
+              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.06em' }}>
+                  <Icon name="truck" size={13} style={{ color: 'var(--brand)' }} />
+                  <span>Logistics & Dispatch</span>
                 </div>
                 <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div><strong>Outgoing:</strong> {deliveryType}</div>
@@ -5725,34 +5938,35 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
             {/* Financial Summary */}
             {canBookingMoney && (
-              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', marginBottom: 'var(--sp-lg)' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 6, letterSpacing: '0.04em' }}>
-                  Pricing Breakdown
+              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', marginBottom: 'var(--sp-lg)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 10, letterSpacing: '0.06em' }}>
+                  <Icon name="dollar" size={13} style={{ color: 'var(--brand)' }} />
+                  <span>Pricing Breakdown</span>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, 1fr)', gap: 12, fontSize: 'var(--t-meta)' }}>
-                  <div>
-                    <span style={{ color: 'var(--text2)' }}>Gross Subtotal:</span>{' '}
-                    <strong>{formatMoney(breakdown.subtotal)}</strong>
+                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, 1fr)', gap: 10, fontSize: 'var(--t-meta)' }}>
+                  <div style={{ padding: '8px 12px', borderRadius: 'var(--r-btn)', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <span style={{ color: 'var(--text2)', display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Gross Subtotal:</span>
+                    <strong style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>{formatMoney(breakdown.subtotal)}</strong>
                   </div>
                   {pricing.discounts.discountPaisa > 0 && (
-                    <div style={{ color: 'var(--brand)' }}>
-                      <span>Discount ({pricing.discounts.appliedPercent}%):</span>{' '}
-                      <strong>−{formatMoney(pricing.discounts.discountPaisa)}</strong>
+                    <div style={{ padding: '8px 12px', borderRadius: 'var(--r-btn)', background: 'color-mix(in srgb, var(--danger) 8%, var(--surface))', border: '1px solid color-mix(in srgb, var(--danger) 30%, var(--border))', color: 'var(--danger-text)' }}>
+                      <span style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Discount ({pricing.discounts.appliedPercent}%):</span>
+                      <strong style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>−{formatMoney(pricing.discounts.discountPaisa)}</strong>
                     </div>
                   )}
                   {vatOn && (
-                    <div>
-                      <span style={{ color: 'var(--text2)' }}>VAT ({vatRatePercent}%):</span>{' '}
-                      <strong>+{formatMoney(breakdown.vat)}</strong>
+                    <div style={{ padding: '8px 12px', borderRadius: 'var(--r-btn)', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                      <span style={{ color: 'var(--text2)', display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>VAT ({vatRatePercent}%):</span>
+                      <strong style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>+{formatMoney(breakdown.vat)}</strong>
                     </div>
                   )}
-                  <div style={{ fontSize: 16 }}>
-                    <span style={{ color: 'var(--text2)' }}>Total Rental:</span>{' '}
-                    <strong style={{ color: 'var(--brand)' }}>{formatMoney(breakdown.rentalTotal)}</strong>
+                  <div style={{ padding: '8px 12px', borderRadius: 'var(--r-btn)', background: 'color-mix(in srgb, var(--brand) 8%, var(--surface))', border: '1px solid color-mix(in srgb, var(--brand) 35%, var(--border))' }}>
+                    <span style={{ color: 'var(--brand)', display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>Total Rental:</span>
+                    <strong style={{ fontSize: 18, color: 'var(--brand)', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>{formatMoney(breakdown.rentalTotal)}</strong>
                   </div>
-                  <div>
-                    <span style={{ color: 'var(--text2)' }}>Deposit Required:</span>{' '}
-                    <strong>{formatMoney(depositRequiredPaisa)}</strong>
+                  <div style={{ padding: '8px 12px', borderRadius: 'var(--r-btn)', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <span style={{ color: 'var(--text2)', display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Deposit Required:</span>
+                    <strong style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>{formatMoney(depositRequiredPaisa)}</strong>
                   </div>
                 </div>
               </div>
@@ -5852,7 +6066,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           (which sits at left:-12) inside the sticky box instead of clipped.
         */}
         {isDesktop && (
-          <div style={{ position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100vh - 24px)', overflowY: 'auto', paddingLeft: 14, marginLeft: -14 }}>
+          <div style={{ position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100dvh - 24px)', overflowY: 'auto', paddingLeft: 14, marginLeft: -14 }}>
             <Rail width={300}>
               {bookingSummaryCard}
             </Rail>
@@ -5868,6 +6082,25 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
       {isPhone && (
         <nav className="new-rental-mobile-actions" style={{ bottom: BAR_BOX }} aria-label="Rental workflow actions">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 6, gap: 8 }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}
+              style={{ minHeight: 36, padding: '0 8px', fontSize: 'var(--t-meta)' }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => saveDraft()}
+              disabled={saveState === 'saving'}
+              style={{ minHeight: 36, padding: '0 8px', fontSize: 'var(--t-meta)' }}
+            >
+              {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
+            </Button>
+          </div>
           <button type="button" className="new-rental-compact-summary" onClick={() => setCurrentStep(5)} aria-label="Review rental summary">
             <span>{client?.name ?? 'No client selected'} · {totalUnits} items</span>
             {canBookingMoney && <strong>{formatMoney(pricing.rentalTotalPaisa)}</strong>}
@@ -5877,42 +6110,78 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             {currentStep < 5 ? (
               <Button variant="primary" onClick={() => setCurrentStep((step) => Math.min(5, step + 1))}>{currentStep === 4 ? 'Review rental' : 'Continue'}</Button>
             ) : (
-              <Button variant="primary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView?.({ block: 'start', behavior: 'auto' })}>Review confirmation</Button>
+              <Button
+                variant="primary"
+                onClick={confirmBooking}
+                disabled={confirmBlocked || saveState === 'saving'}
+                title={blockReasonText}
+              >
+                {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
+              </Button>
             )}
           </div>
         </nav>
       )}
 
-      {!isPhone && (isShortViewport || currentStep >= 4) && (
+      {!isPhone && (
         <aside
           aria-label="Rental confirmation bar"
           style={{
             position: 'sticky',
             bottom: 0,
             zIndex: 30,
-            background: 'var(--surface, var(--card))',
-            borderTop: '1px solid var(--border)',
+            background: 'color-mix(in srgb, var(--surface, var(--card)) 86%, transparent)',
+            borderTop: '1px solid color-mix(in srgb, var(--border) 75%, transparent)',
             padding: '12px 20px',
             margin: 'var(--sp-md) calc(-1 * var(--page-padding)) 0',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             gap: 'var(--sp-md)',
-            boxShadow: '0 -4px 14px rgba(0, 0, 0, 0.08)',
-            backdropFilter: 'blur(8px)',
+            boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -8px 24px rgba(0, 0, 0, 0.08)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
           }}
         >
+          {/* Left: Cancel & Save Draft */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Button
+              variant="outline"
+              onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}
+              style={{ minHeight: 44, padding: '0 16px' }}
+            >
+              Cancel
+            </Button>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Button
+                variant="outline"
+                onClick={() => saveDraft()}
+                disabled={saveState === 'saving'}
+                title="Save Draft (⌘S / Ctrl+S)"
+                style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}
+              >
+                {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
+              </Button>
+              <span className="new-rental-kbd" title="Keyboard shortcut: Ctrl+S or ⌘S">⌘S</span>
+            </div>
+          </div>
+
+          {/* Middle: Summary context */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
             <div>
-              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                {client?.name || 'No client selected'} · {totalUnits} {totalUnits === 1 ? 'item' : 'items'} · {days > 0 ? `${days} ${dayWord}` : 'Dates unset'}
+              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>{client?.name || 'No client selected'}</span>
+                <span>·</span>
+                <span>{totalUnits} {totalUnits === 1 ? 'item' : 'items'}</span>
+                <span>·</span>
+                <span style={{ fontWeight: 600 }}>{days > 0 ? `${days} ${dayWord}` : 'Dates unset'}</span>
               </div>
               {canBookingMoney && (
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-                  <span style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 2 }}>
+                  <span style={{ fontSize: 'var(--t-h3)', fontWeight: 800, color: 'var(--text)', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)', letterSpacing: '-0.02em' }}>
                     {formatMoney(pricing.rentalTotalPaisa)}
                   </span>
-                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' }}>
                     Deposit: {formatMoney(pricing.securityDeposit.requiredPaisa)}
                   </span>
                 </div>
@@ -5924,9 +6193,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  padding: '4px 10px',
+                  padding: '5px 12px',
                   borderRadius: 'var(--r-badge)',
                   background: 'var(--st-danger-bg)',
+                  border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
                   color: 'var(--st-danger-fg)',
                   fontSize: 'var(--t-meta)',
                   fontWeight: 600,
@@ -5937,24 +6207,40 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               </span>
             )}
           </div>
+
+          {/* Right: Back & Continue / Confirm Booking */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Button
-              variant="outline"
-              onClick={() => saveDraft()}
-              disabled={saveState === 'saving'}
-              style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}
-            >
-              {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={confirmBooking}
-              disabled={confirmBlocked || saveState === 'saving'}
-              title={blockReasonText}
-              style={{ minHeight: 44, padding: '0 20px', fontWeight: 600 }}
-            >
-              {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
-            </Button>
+            {currentStep > 1 && (
+              <Button
+                variant="outline"
+                onClick={() => setCurrentStep((step) => Math.max(1, step - 1))}
+                style={{ minHeight: 44, padding: '0 16px' }}
+              >
+                Back
+              </Button>
+            )}
+            {currentStep < 5 ? (
+              <Button
+                variant="primary"
+                onClick={() => setCurrentStep((step) => Math.min(5, step + 1))}
+                style={{ minHeight: 44, padding: '0 20px', fontWeight: 600 }}
+              >
+                {currentStep === 4 ? 'Review Rental' : 'Continue'}
+              </Button>
+            ) : (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Button
+                  variant="primary"
+                  onClick={confirmBooking}
+                  disabled={confirmBlocked || saveState === 'saving'}
+                  title={blockReasonText || 'Confirm Booking (⌘↵ / Ctrl+Enter)'}
+                  style={{ minHeight: 44, padding: '0 20px', fontWeight: 600 }}
+                >
+                  {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
+                </Button>
+                <span className="new-rental-kbd" title="Keyboard shortcut: Ctrl+Enter or ⌘Enter">⌘↵</span>
+              </div>
+            )}
           </div>
         </aside>
       )}

@@ -54,6 +54,22 @@ export function generateClientUuid(): string {
   })
 }
 
+/**
+ * Migration 0062 granted non-money column lists for the four locked tables.
+ * Defaulting to these columns when returningColumns is omitted prevents 42501
+ * errors on PostgREST read-back for floor/money-blind sessions.
+ */
+export const NON_MONEY_RETURNING_COLUMNS: Readonly<Record<string, string>> = {
+  bookings:
+    'id, client_uuid, booking_no, branch_id, client_id, contact_id, authorized_contact_id, project, pickup_at, return_at, actual_return_at, delivery_type, pickup_location, return_location, quote_expires_at, cancelled_at, cancelled_by, cancellation_reason, closed_at, locked_by, locked_at, version, created_at, created_by, updated_at, updated_by, stage',
+  booking_lines:
+    'id, client_uuid, booking_id, line_type, parent_line_id, product_id, bundle_id, description, qty, days, is_included, service_basis, supplier_id, line_note, sort_order, voided_at, voided_reason, created_at, created_by',
+  products:
+    'id, client_uuid, asset_code, name, short_name, category_id, brand, model, manufacturer, description, thumbnail_url, tracking_mode, status, total_quantity, reorder_level, quantity_unit, purchase_date, min_rental_days, rental_enabled, prep_time_minutes, cleaning_time_minutes, inspection_required, packing_required, is_subrental_only, weight_kg, case_capacity, supplier_id, notes_internal, notes_warehouse, notes_rental, is_active, created_at, created_by, updated_at, updated_by',
+  product_units:
+    'id, client_uuid, product_id, serial_no, asset_tag, barcode, qr_code, status, condition, branch_id, warehouse_id, storage_zone_id, rack, shelf, bin, container_id, purchase_date, warranty_expires_at, insurance_expires_at, running_hours, last_maintenance_at, next_maintenance_at, retired_at, retired_by, retirement_reason, created_at, created_by, updated_at, updated_by',
+}
+
 export interface InsertOptions {
   /**
    * Read the inserted row back and return it. Defaults to `true`.
@@ -77,14 +93,7 @@ export interface InsertOptions {
   returnRow?: boolean
   /**
    * Column list for the read-back (`RETURNING`), e.g. `'id, asset_code'`.
-   * Omitted = `*`, which is fine on most tables but a landmine on the four
-   * 0062 locks down (`bookings`, `booking_lines`, `products`, `product_units`):
-   * once table-level SELECT is revoked and only non-money columns are granted,
-   * a `RETURNING *` names ungranted money columns and the echo throws 42501
-   * AFTER the row commits — a phantom write dressed as a failure
-   * (`AUDIT_0062.md`). Every caller writing those four tables must pass an
-   * explicit granted list. The masking `_v` views stay definer-rights + row
-   * predicate (0048 pattern) — do not "fix" the linter warning on them.
+   * Omitted = defaults to NON_MONEY_RETURNING_COLUMNS for locked tables, or `*` on others.
    */
   returningColumns?: string
   /**
@@ -116,8 +125,10 @@ export interface InsertOptions {
 export interface UpdateOptions {
   /** `false` skips the echo entirely; `data` comes back `null`. Defaults to `true`. */
   returnRow?: boolean
-  /** Column list for the echo when `returnRow` is on. Omitted = `*` — see `InsertOptions.returningColumns`. */
+  /** Column list for the echo when `returnRow` is on. Omitted = NON_MONEY_RETURNING_COLUMNS or `*`. */
   returningColumns?: string
+  /** Custody/critical writes: when false, refuses to queue offline and fails closed. */
+  queueOnFailure?: boolean
 }
 
 /** Inserts a record with mandatory `client_uuid` injection for idempotency */
@@ -150,9 +161,12 @@ export async function idempotentInsert<
     return { data: finalPayload, error: null } // Optimistic response
   }
 
+  const defaultCols = NON_MONEY_RETURNING_COLUMNS[String(table)]
+  const returningColumns = options.returningColumns ?? defaultCols
+
   const insert = supabase.from(table as string).insert(finalPayload)
   const { data, error } = returnRow
-    ? await insert.select(options.returningColumns).single()
+    ? await insert.select(returningColumns).single()
     : await insert
 
   if (error) {
@@ -184,7 +198,7 @@ export async function idempotentInsert<
          turn a satisfied idempotency guarantee back into a swallowed error. */
       if (!returnRow) return { data: null, error: null }
       return await supabase.from(table as string)
-        .select(options.returningColumns)
+        .select(returningColumns)
         .eq('client_uuid', finalPayload.client_uuid)
         .single()
     }
@@ -245,21 +259,34 @@ export async function safeUpdate<
     captureError(new Error('safeUpdate without client_uuid'), { where: 'dataAccess.safeUpdate', table: String(table) })
   }
 
+  const defaultCols = NON_MONEY_RETURNING_COLUMNS[String(table)]
+  const returningColumns = options.returningColumns ?? defaultCols
+
   if (shouldQueueOffline()) {
+    if (options.queueOnFailure === false) {
+      throw new Error(
+        `[DataAccess] The device is offline and update to ${String(table)} is not queueable (custody write). NOTHING was written. Retry when the connection is back.`,
+      )
+    }
     console.warn(`[DataAccess] Device offline. Queuing update for ${String(table)} id=${id}.`)
-    await enqueueMutation(String(table), 'update', { ...payload, id }, actionUuid)
+    await enqueueMutation(String(table), 'update', { ...payload, id }, `${actionUuid}:${id}`)
     return { data: { ...payload, id }, error: null } // Optimistic response
   }
 
   const update = supabase.from(table as string).update(payload).eq('id', id)
   const { data, error } = returnRow
-    ? await update.select(options.returningColumns).single()
+    ? await update.select(returningColumns).single()
     : await update
 
   if (error) {
     if (error.message === 'Failed to fetch' || error.code === '408') {
+       if (options.queueOnFailure === false) {
+         throw new Error(
+           `[DataAccess] The ${String(table)} update could not be confirmed (${error.message}) and is not queueable. Treat it as NOT written.`,
+         )
+       }
        console.warn(`[DataAccess] Network failure during update. Queuing ${String(table)}.`)
-       await enqueueMutation(String(table), 'update', { ...payload, id }, actionUuid)
+       await enqueueMutation(String(table), 'update', { ...payload, id }, `${actionUuid}:${id}`)
        return { data: { ...payload, id }, error: null }
     }
     throw new Error(`[DataAccess] Update failed on ${String(table)}: ${error.message}`)

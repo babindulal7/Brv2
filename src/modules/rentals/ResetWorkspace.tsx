@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import './rentals.css'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FloorAside, floorPlacements } from '../operations/FloorAside'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
@@ -905,7 +907,7 @@ export default function ResetWorkspace({
 
   // Floor scale (DEVICES.md item 3) is applied automatically by route in App.tsx's Shell, not here.
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <div className="floor-workspace-container" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageBody
         loading={floorLoading}
         error={floorError}
@@ -949,7 +951,7 @@ export default function ResetWorkspace({
             {/* ── header — canonical stage badge + the job chip. Two axes, two
                  chips (Rulings §7); no `←`, the shell breadcrumb is the upward
                  affordance (Rulings §4). ── */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
               {!embedded && (
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
@@ -990,7 +992,7 @@ export default function ResetWorkspace({
 
               <div style={{ minWidth: 240, flex: 1 }}>
                 <div style={{ display: 'flex', gap: 10, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  <span>Reset Progress</span>
+                  <span style={{ fontWeight: 600 }}>Reset Progress</span>
                   <span className="figure" style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--text)' }}>
                     {readyUnits} / {totalUnits} Ready
                   </span>
@@ -1005,10 +1007,8 @@ export default function ResetWorkspace({
               </div>
             </div>
 
-            {/* §4 booking summary strip — every cell a real column off
-                `fetchFloorBooking`; the seed's Package / fixed-status cells are
-                gone rather than faked. BS above AD (Law 7). */}
-            <div style={{ ...cardStyle, display: 'flex', gap: 0, flexWrap: 'wrap', overflow: 'hidden' }}>
+            {/* §4 booking summary strip — Bento 2.0 bar with AD/BS duality */}
+            <div className="floor-summary-bar">
               {[
                 { l: 'Client', v: floor.clientName ?? '—', big: true },
                 { l: 'Due back', v: bsLabel(floor.returnAtAd), s: floor.returnAtAd ? formatAd(new Date(floor.returnAtAd)) : undefined },
@@ -1022,12 +1022,12 @@ export default function ResetWorkspace({
                 { l: 'Units', v: String(totalUnits) },
                 { l: 'Exceptions', v: String(exceptionRows.length), tone: exceptionRows.length ? 'var(--danger-text)' : undefined },
               ].map((f) => (
-                <div key={f.l} style={{ padding: '11px 14px', borderRight: '1px solid var(--border)', minWidth: 0, flex: '1 1 auto' }}>
-                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{f.l}</div>
-                  <div style={{ fontSize: f.big ? 'var(--t-h3)' : 'var(--t-body)', fontWeight: f.big ? 700 : 600, color: f.tone ?? 'var(--text)', marginTop: 3, whiteSpace: 'nowrap' }}>
+                <div key={f.l} className="floor-summary-cell">
+                  <div className="floor-summary-label">{f.l}</div>
+                  <div className="floor-summary-value" style={f.tone ? { color: f.tone } : undefined}>
                     {f.v}
                   </div>
-                  {f.s && <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{f.s}</div>}
+                  {f.s && <div className="floor-summary-sub figure">{f.s}</div>}
                 </div>
               ))}
             </div>
@@ -1040,27 +1040,95 @@ export default function ResetWorkspace({
                 { key: 'QC', label: 'QC', sub: 'Quality check', value: counts.QC, icon: 'eye' as const, tone: TONE.QC },
                 { key: 'Ready', label: 'READY', sub: 'Ready to rent', value: counts.Ready, icon: 'checklist' as const, tone: TONE.Ready },
               ]).map((t) => (
-                <div key={t.key} style={{ ...cardStyle, padding: '11px 13px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <Icon name={t.icon} size={14} style={{ color: STATUS[t.tone].fg }} />
-                    <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text2)' }}>{t.label}</span>
+                <div
+                  key={t.key}
+                  style={{
+                    ...cardStyle,
+                    padding: '12px 14px',
+                    border: `1px solid ${STATUS[t.tone].border || 'var(--border)'}`,
+                    transition: 'border-color var(--dur) ease, box-shadow var(--dur) ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text2)', letterSpacing: '0.04em' }}>{t.label}</span>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 26,
+                        height: 26,
+                        borderRadius: 'var(--r-xs)',
+                        background: STATUS[t.tone].bg,
+                        color: STATUS[t.tone].fg,
+                      }}
+                    >
+                      <Icon name={t.icon} size={14} />
+                    </span>
                   </div>
-                  <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--text)', marginTop: 4 }}>{t.value}</div>
-                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{t.sub}</div>
+                  <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--text)', marginTop: 6 }}>{t.value}</div>
+                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>{t.sub}</div>
                 </div>
               ))}
             </div>
 
-            {/* filters — the queue states, and nothing else. Priority stays
-                removed (PLAN.md §4.31(3)). */}
-            <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search equipment, serial…"
-                aria-label="Search the reset queue"
-                style={{ flex: 1, minWidth: 200, minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-              />
+            {/* filters — queue states and ambient search */}
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: 220, maxWidth: 440 }}>
+                <Icon
+                  name="search"
+                  size={15}
+                  style={{
+                    position: 'absolute',
+                    left: 12,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--text3)',
+                    pointerEvents: 'none',
+                  }}
+                />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search equipment, serial…"
+                  aria-label="Search the reset queue"
+                  style={{
+                    width: '100%',
+                    minHeight: 44,
+                    padding: '0 32px 0 36px',
+                    borderRadius: 'var(--r-input)',
+                    border: '1px solid var(--input-border)',
+                    background: 'var(--input-bg)',
+                    color: 'var(--text)',
+                    fontSize: 'var(--t-meta)',
+                    fontFamily: 'inherit',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery('')}
+                    aria-label="Clear search"
+                    style={{
+                      position: 'absolute',
+                      right: 8,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      border: 'none',
+                      background: 'transparent',
+                      color: 'var(--text3)',
+                      cursor: 'pointer',
+                      padding: 6,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Icon name="close" size={13} />
+                  </button>
+                )}
+              </div>
               <SegmentedControl
                 ariaLabel="Filter reset queue"
                 size="sm"
@@ -1087,16 +1155,63 @@ export default function ResetWorkspace({
               {/* ── left — groups, derived from the bundle tree ─────────────── */}
               <FloorAside collapsible={desktop} side="left" width={220} label="Groups" style={place.tree}>
                 <Card title="Groups">
-                  {groups.map((g) => {
-                    const ready = g.rows.filter((r) => recOf(r.key).queueState === 'Ready' && recOf(r.key).problem === 'No Problems').length
-                    return (
-                      <div key={g.name} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '6px 0' }}>
-                        <Icon name={ready === g.rows.length ? 'checklist' : 'box'} size={13} style={{ color: ready === g.rows.length ? 'var(--success-text)' : 'var(--muted)', flexShrink: 0 }} />
-                        <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</span>
-                        <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{ready}/{g.rows.length}</span>
-                      </div>
-                    )
-                  })}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {groups.map((g) => {
+                      const ready = g.rows.filter((r) => recOf(r.key).queueState === 'Ready' && recOf(r.key).problem === 'No Problems').length
+                      const allDone = ready === g.rows.length
+                      return (
+                        <div
+                          key={g.name}
+                          className="floor-group-item-btn"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 'var(--sp-sm)',
+                            padding: '8px 10px',
+                            borderRadius: 'var(--r-sm)',
+                            background: allDone ? 'var(--st-in-bg)' : 'transparent',
+                            color: allDone ? 'var(--st-in-fg)' : 'inherit',
+                          }}
+                        >
+                          <Icon
+                            name={allDone ? 'checklist' : 'box'}
+                            size={14}
+                            style={{
+                              color: allDone ? 'var(--success-text)' : 'var(--text3)',
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              fontSize: 'var(--t-meta)',
+                              fontWeight: allDone ? 600 : 500,
+                              color: 'var(--text)',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                            }}
+                          >
+                            {g.name}
+                          </span>
+                          <span
+                            className="figure"
+                            style={{
+                              fontSize: 'var(--t-meta)',
+                              fontWeight: 600,
+                              color: allDone ? 'var(--success-text)' : 'var(--muted)',
+                              background: 'var(--card2)',
+                              padding: '1px 6px',
+                              borderRadius: 'var(--r-badge)',
+                            }}
+                          >
+                            {ready}/{g.rows.length}
+                          </span>
+                        </div>
+                      )
+                    })}
+                  </div>
                   <p style={{ margin: '9px 0 0', paddingTop: 9, borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                     Group counts are derived from the booking&apos;s live lines and always sum to {rows.length}.
                   </p>
@@ -1120,7 +1235,7 @@ export default function ResetWorkspace({
                         const isException = rec.problem !== 'No Problems'
                         const tone = isException ? STATUS.danger : STATUS[TONE[rec.queueState]]
                         return (
-                          <article key={r.key} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+                          <article key={r.key} className="floor-card-item" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '11px 12px', display: 'flex', flexDirection: 'column', gap: 7 }}>
                             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 44 }}>
                               <input
                                 type="checkbox"
@@ -1144,7 +1259,7 @@ export default function ResetWorkspace({
                                   </span>
                                 </span>
                                 {r.serial && (
-                                  <Link to={`/inventory/${r.serial}`} className="identifier" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none', marginTop: 2 }}>
+                                  <Link to={`/inventory/${r.serial}`} className="floor-serial-badge identifier" style={{ display: 'inline-block', fontSize: 'var(--t-meta)', color: 'var(--text2)', textDecoration: 'none', marginTop: 4 }}>
                                     {r.serial}
                                   </Link>
                                 )}
@@ -1218,7 +1333,7 @@ export default function ResetWorkspace({
                       )}
                     </div>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
+                    <DataTableShell ariaLabel="Reset queue items">
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                         <thead>
                           <tr style={{ background: 'var(--th-bg)' }}>
@@ -1233,7 +1348,7 @@ export default function ResetWorkspace({
                             const isException = rec.problem !== 'No Problems'
                             const tone = isException ? STATUS.danger : STATUS[TONE[rec.queueState]]
                             return (
-                              <tr key={r.key} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <tr key={r.key} className="floor-table-row" style={{ borderBottom: '1px solid var(--border)' }}>
                                 <td style={{ ...td, width: 26 }}>
                                   <input
                                     type="checkbox"
@@ -1260,7 +1375,7 @@ export default function ResetWorkspace({
                                 </td>
                                 <td className="identifier" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                                   {r.serial ? (
-                                    <Link to={`/inventory/${r.serial}`} style={{ color: 'inherit', textDecoration: 'none' }}>{r.serial}</Link>
+                                    <Link to={`/inventory/${r.serial}`} className="floor-serial-badge identifier" style={{ color: 'inherit', textDecoration: 'none' }}>{r.serial}</Link>
                                   ) : (
                                     <span style={{ color: 'var(--muted)' }}>—</span>
                                   )}
@@ -1333,7 +1448,7 @@ export default function ResetWorkspace({
                           )}
                         </tbody>
                       </table>
-                    </div>
+                    </DataTableShell>
                   )}
                 </Card>
               </div>
@@ -1616,23 +1731,23 @@ export default function ResetWorkspace({
                     or fail, inline in the rail. A blocked gate is never a toast
                     (Law 12); the reason stays on screen while the block lasts. */}
                 <Card title="Blockers">
-                  <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  <div role="status" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {gates.map((g) => (
-                      <div key={g.label} style={{ display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)', lineHeight: 1.45 }}>
+                      <div key={g.label} className={`floor-gate-row ${g.pass ? 'is-pass' : 'is-pending'}`}>
                         <Icon
                           name={g.pass ? 'checklist' : 'alert_triangle'}
-                          size={13}
+                          size={14}
                           style={{ color: g.pass ? 'var(--success-text)' : 'var(--progress-text)', flexShrink: 0, marginTop: 1 }}
                         />
                         <span style={{ minWidth: 0 }}>
                           <span style={{ display: 'block', fontWeight: 600, color: g.pass ? 'var(--text2)' : 'var(--progress-text)' }}>
                             {g.label}
                           </span>
-                          {g.detail && <span style={{ display: 'block', color: 'var(--muted)' }}>{g.detail}</span>}
+                          {g.detail && <span style={{ display: 'block', color: 'var(--muted)', fontSize: '11px', marginTop: 1 }}>{g.detail}</span>}
                         </span>
                       </div>
                     ))}
-                    <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                    <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                       Exceptions do not block completion — a recorded problem routed the item out of this queue.
                       {hasSerializedUnits ? (
                         <>
@@ -1666,16 +1781,16 @@ export default function ResetWorkspace({
 
             {/* §13 — metrics, reconciled against the same population they describe. */}
             <Card title="This Session's Reset Summary">
-              <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 'var(--sp-md)' }}>
                 {[
-                  { l: 'Ready', v: counts.Ready, tone: 'var(--success-text)' },
-                  { l: 'Remaining', v: remainingCount, tone: 'var(--progress-text)' },
-                  { l: 'Pending QC', v: counts.QC, tone: 'var(--text)' },
-                  { l: 'Exceptions', v: exceptionRows.length, tone: exceptionRows.length ? 'var(--danger-text)' : 'var(--text)' },
+                  { l: 'Ready', v: counts.Ready, tone: 'var(--success-text)', bg: 'var(--st-in-bg)' },
+                  { l: 'Remaining', v: remainingCount, tone: 'var(--progress-text)', bg: 'var(--card2)' },
+                  { l: 'Pending QC', v: counts.QC, tone: 'var(--text)', bg: 'var(--card2)' },
+                  { l: 'Exceptions', v: exceptionRows.length, tone: exceptionRows.length ? 'var(--danger-text)' : 'var(--text)', bg: exceptionRows.length ? 'var(--st-danger-bg)' : 'var(--card2)' },
                 ].map((s) => (
-                  <div key={s.l}>
+                  <div key={s.l} style={{ padding: '10px 12px', borderRadius: 'var(--r-sm)', background: s.bg, border: '1px solid var(--border)' }}>
                     <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: s.tone }}>{s.v}</div>
-                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{s.l}</div>
+                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 500, color: 'var(--text2)', marginTop: 2 }}>{s.l}</div>
                   </div>
                 ))}
               </div>

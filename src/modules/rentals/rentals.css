@@ -3,26 +3,156 @@
    (canonical bands are 768 / 1280 — see styles/responsive.css). The old
    720px gap tweak collapsed into the default 768 phone band, which stacks
    the layout through the shared density rules instead. */
-.rentals-v2 [data-table-scroll] { border-radius: var(--r-card); }
-.rentals-v2 .operations-table > thead > tr > th { height: 50px; font-size: 12px; letter-spacing: 0; text-transform: none; }
-.rentals-v2 .operations-table > tbody > tr { transition: background-color var(--dur-fast) var(--ease); }
-.rentals-v2 .operations-table > tbody > tr:hover { background: color-mix(in srgb, var(--nav-active-bg) 36%, transparent); }
-.rentals-v2 .operations-table > thead > tr > th { position: sticky; top: 0; z-index: 2; }
+.rentals-v2 [data-table-scroll] {
+  border-radius: var(--r-card, 12px);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+.rentals-v2 .operations-table > thead > tr > th {
+  height: 48px;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text2);
+  background: var(--th-bg, var(--card2));
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.rentals-v2 .operations-table > tbody > tr {
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.rentals-v2 .operations-table > tbody > tr:hover {
+  background: color-mix(in srgb, var(--nav-active-bg) 36%, transparent);
+}
+.rentals-v2 .operations-table > tbody > tr.is-selected {
+  background: color-mix(in srgb, var(--nav-active-bg) 50%, transparent);
+}
 .rentals-v2 .page-toolbar { margin-top: 0; }
+
+/* Rentals Card View (Bento styling) */
+.rentals-card-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rentals-card-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card, 12px);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.rentals-card-item:hover {
+  border-color: var(--border2, var(--border));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.rentals-card-item.is-selected {
+  border-color: var(--nav-active-accent);
+  background: color-mix(in srgb, var(--nav-active-bg) 35%, var(--card));
+}
+.rentals-card-item.is-overdue {
+  border-left: 3px solid var(--danger, #dc2626);
+}
 
 /* ── New Rental Workspace Component Rules ── */
 .new-rental-summary-context {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  margin: 0 0 16px;
-  padding-bottom: 16px;
+  margin: 0 0 14px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
   font-size: var(--t-meta);
 }
-.new-rental-summary-context > div { display: grid; grid-template-columns: 5rem minmax(0, 1fr); gap: 8px; }
-.new-rental-summary-context dt { color: var(--text2); }
-.new-rental-summary-context dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
-.new-rental-summary-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--link); font-size: var(--t-meta); }
+.new-rental-summary-context > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: var(--r-btn, 8px);
+  background: var(--card2, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+.new-rental-summary-context > div:hover {
+  border-color: var(--border2);
+}
+.new-rental-summary-context dt {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text2);
+}
+.new-rental-summary-context dd {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.new-rental-summary-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--link);
+  font-size: var(--t-meta);
+  font-weight: 600;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.new-rental-summary-link:hover {
+  text-decoration: underline;
+}
+
+.new-rental-bento-hero-total {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--r-btn, 8px);
+  background: color-mix(in srgb, var(--brand, var(--primary)) 6%, var(--card2, var(--surface)));
+  border: 1px solid color-mix(in srgb, var(--brand, var(--primary)) 28%, var(--border));
+  margin: 10px 0 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.new-rental-bento-hero-total-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text2);
+}
+.new-rental-bento-hero-total-val {
+  font-size: 22px;
+  font-weight: 800;
+  font-family: var(--font-mono, JetBrains Mono, monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--brand, var(--text));
+  letter-spacing: -0.02em;
+}
+
+.new-rental-stepper-container {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--surface, var(--card)) 94%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.new-rental-stepper-container:focus-within {
+  border-color: color-mix(in srgb, var(--brand, var(--primary)) 35%, var(--border));
+}
 
 .new-rental-stepper-container .rental-stepper {
   background: transparent;
@@ -34,7 +164,24 @@
 }
 .new-rental-stepper-container .rental-stepper__list { min-width: max-content; }
 .new-rental-stepper-container .rental-stepper__desc { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; }
-/* Page width is owned by PageShell (`width="form"`); no local max-width here. */
+
+.new-rental-stepper-container .rental-stepper__item.is-current .rental-stepper__indicator {
+  background: var(--brand, var(--primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand, var(--primary)) 24%, transparent),
+              0 2px 8px color-mix(in srgb, var(--brand, var(--primary)) 28%, transparent);
+}
+.new-rental-stepper-container .rental-stepper__item.is-completed .rental-stepper__indicator {
+  background: var(--st-success-fg, #059669);
+  color: #fff;
+}
+.new-rental-stepper-container .rental-stepper__item.is-upcoming .rental-stepper__indicator {
+  background: var(--surface-2, var(--card2));
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.new-rental-stepper-container .rental-stepper__track.is-filled {
+  background: var(--brand, var(--primary));
+}
 
 .new-rental-stage-bar {
   display: flex;
@@ -66,11 +213,14 @@
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 .new-rental-stage-pill:hover {
   background: var(--nav-active-bg);
   border-color: var(--border2);
+}
+.new-rental-stage-pill:active {
+  transform: scale(0.98);
 }
 
 .new-rental-stage-num {
@@ -93,9 +243,6 @@
   background: var(--st-success-bg);
   color: var(--st-success-fg);
 }
-/* RULING 2026-09-19: was --st-warning-bg/--st-warning-fg — a token pair that
-   does not exist, so the badge rendered transparent with inherited text. The
-   canonical yellow pair is --st-progress-* ("in progress / needs attention"). */
 .new-rental-stage-badge.pending {
   background: var(--st-progress-bg);
   color: var(--st-progress-fg);
@@ -110,8 +257,397 @@
   border: 1px solid var(--border);
   background: var(--card);
   overflow: hidden;
-  transition: border-color var(--dur-fast) var(--ease);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 .new-rental-section-card:hover {
   border-color: var(--border2);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
 }
+.new-rental-section-card.is-active {
+  border-color: color-mix(in srgb, var(--brand, var(--primary)) 30%, var(--border));
+}
+
+/* ── Stepper Micro-Pill ── */
+.new-rental-stepper-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--r-btn);
+  background: var(--card2);
+  height: 26px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+.new-rental-stepper-pill:hover {
+  border-color: var(--border2);
+}
+.new-rental-stepper-btn {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.new-rental-stepper-btn:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+}
+.new-rental-stepper-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.new-rental-stepper-val {
+  min-width: 22px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-mono, JetBrains Mono, monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  padding: 0 4px;
+  user-select: none;
+}
+
+/* ── Shoot Presets ── */
+.new-rental-shoot-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.new-rental-preset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 2px 10px;
+  border-radius: var(--r-badge);
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: var(--card2);
+  color: var(--text2);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.new-rental-preset-chip:hover {
+  background: var(--surface);
+  border-color: var(--border2);
+  color: var(--text);
+}
+.new-rental-preset-chip:active {
+  transform: scale(0.97);
+}
+
+/* ── Micro-KBD indicator ── */
+.new-rental-kbd {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono, JetBrains Mono, monospace);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+/* ── Bundle Collapsible Toggle ── */
+.new-rental-bundle-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  background: var(--surface);
+  color: var(--text2);
+  cursor: pointer;
+  padding: 0;
+  margin-right: 6px;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.new-rental-bundle-toggle:hover {
+  background: var(--card);
+  color: var(--text);
+}
+
+/* ── Booking Detail Workspace Rules ── */
+.booking-detail-shell .new-rental-section-card {
+  border-radius: var(--r-card, 12px);
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.booking-detail-shell .new-rental-section-card:hover {
+  border-color: var(--border2, var(--border));
+}
+
+.booking-detail-attention-card {
+  border-left: 3px solid var(--danger, #dc2626) !important;
+  background: color-mix(in srgb, var(--danger, #dc2626) 3%, var(--card)) !important;
+}
+
+.booking-detail-financial-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: var(--r-btn, 8px);
+  background: var(--card2, var(--surface));
+  border: 1px solid var(--border);
+}
+
+/* ── Floor Operations Workspaces (Packing, Handover, Return, Reset) ── */
+.floor-workspace-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-md, 16px);
+}
+
+.floor-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  border-radius: var(--r-card, 12px);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  overflow: hidden;
+}
+
+.floor-summary-cell {
+  padding: 12px 16px;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+  flex: 1 1 auto;
+  transition: background-color var(--dur-fast, 120ms) var(--ease, ease);
+}
+
+.floor-summary-cell:last-child {
+  border-right: none;
+}
+
+.floor-summary-cell:hover {
+  background-color: var(--surface-hover, color-mix(in srgb, var(--card) 95%, var(--text) 5%));
+}
+
+.floor-summary-label {
+  font-size: var(--t-meta, 12px);
+  font-weight: 500;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+}
+
+.floor-summary-value {
+  font-size: var(--t-body, 14px);
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.floor-summary-value.is-primary {
+  font-size: var(--t-h3, 16px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.floor-summary-sub {
+  font-size: var(--t-meta, 12px);
+  color: var(--muted);
+  font-family: var(--font-mono, JetBrains Mono, monospace);
+  font-feature-settings: 'tnum' 1;
+  margin-top: 2px;
+}
+
+/* ── Floor Scanner HUD ── */
+.floor-scanner-hud {
+  padding: 12px 14px;
+  background: var(--card2, var(--surface));
+  border-bottom: 1px solid var(--border);
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+}
+
+.floor-scanner-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.floor-scanner-icon {
+  position: absolute;
+  left: 14px;
+  color: var(--primary);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.floor-scanner-input {
+  width: 100%;
+  min-height: 44px;
+  padding-left: 42px !important;
+  padding-right: 64px !important;
+  border-radius: var(--r-btn, 8px) !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  font-family: var(--font-mono, JetBrains Mono, monospace) !important;
+  font-size: var(--t-body, 14px) !important;
+  font-feature-settings: 'tnum' 1 !important;
+  color: var(--text) !important;
+  transition: border-color var(--dur-fast, 120ms) var(--ease, ease), box-shadow var(--dur-fast, 120ms) var(--ease, ease) !important;
+}
+
+.floor-scanner-input:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent) !important;
+  outline: none !important;
+}
+
+.floor-scanner-enter-hint {
+  position: absolute;
+  right: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--card) 80%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  pointer-events: none;
+}
+
+/* ── Floor Checklist Table & Cards ── */
+.floor-table-row {
+  border-bottom: 1px solid var(--border);
+  transition: background-color var(--dur-fast, 120ms) var(--ease, ease);
+}
+
+.floor-table-row:hover {
+  background-color: var(--surface-hover, color-mix(in srgb, var(--card) 96%, var(--text) 4%));
+}
+
+.floor-table-row.is-packed {
+  background-color: color-mix(in srgb, var(--st-in-bg) 6%, transparent);
+}
+
+.floor-table-row.is-missing {
+  background-color: color-mix(in srgb, var(--st-danger-bg) 8%, transparent);
+}
+
+.floor-serial-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--r-xs, 4px);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--font-mono, JetBrains Mono, monospace);
+  font-size: var(--t-meta, 12px);
+  font-weight: 600;
+  font-feature-settings: 'tnum' 1;
+  color: var(--text2);
+}
+
+.floor-card-item {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm, 8px);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--card);
+  transition: border-color var(--dur-fast, 120ms) var(--ease, ease), box-shadow var(--dur-fast, 120ms) var(--ease, ease);
+}
+
+.floor-card-item:hover {
+  border-color: var(--border2, var(--border));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.floor-card-item.is-packed {
+  border-color: color-mix(in srgb, var(--st-in-fg) 35%, transparent);
+  background: color-mix(in srgb, var(--st-in-bg) 8%, var(--card));
+}
+
+.floor-card-item.is-missing {
+  border-color: color-mix(in srgb, var(--st-danger-fg) 35%, transparent);
+  background: color-mix(in srgb, var(--st-danger-bg) 10%, var(--card));
+}
+
+/* ── Group Item in Floor Aside ── */
+.floor-group-item-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-sm, 8px);
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--r-btn, 8px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text2);
+  font-size: var(--t-meta, 12px);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: all var(--dur-fast, 120ms) var(--ease, ease);
+}
+
+.floor-group-item-btn:hover {
+  background: var(--surface-hover, color-mix(in srgb, var(--card) 94%, var(--text) 6%));
+  color: var(--text);
+}
+
+.floor-group-item-btn.is-active {
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.floor-group-item-btn .figure {
+  font-family: var(--font-mono, JetBrains Mono, monospace);
+  font-feature-settings: 'tnum' 1;
+}
+
+/* ── Gate Item Pill ── */
+.floor-gate-row {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: var(--r-xs, 4px);
+  font-size: var(--t-meta, 12px);
+  line-height: 1.45;
+  transition: background-color var(--dur-fast, 120ms) var(--ease, ease);
+}
+
+.floor-gate-row.is-pass {
+  background: color-mix(in srgb, var(--st-in-bg) 12%, transparent);
+}
+
+.floor-gate-row.is-pending {
+  background: color-mix(in srgb, var(--st-progress-bg) 14%, transparent);
+}
+
+
+

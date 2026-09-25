@@ -319,3 +319,12 @@ export function BooqableRentalFilterDrawer({
 
   return <FilterDrawer id={drawerId} open={open} onClose={onClose} side="left" desktopMode="rail" width={320} resultCount={resultCount} noun={resultCount === 1 ? 'rental' : 'rentals'} activeCount={activeCount} onClearAll={onClearAll} standardFooter onApply={onClose} applyLabel={resultCount !== null ? `Show ${resultCount} Results` : 'Apply'}>{content}</FilterDrawer>
 }
+
+/**
+ * Alias for BooqableRentalFilterDrawer.
+ * Wraps the design system's FilterDrawer primitive to provide domain-specific facets
+ * (status, presets, date range, sub-rentals) for Rentals.
+ */
+export const RentalFilterDrawer = BooqableRentalFilterDrawer
+export type RentalFilterDrawerProps = BooqableRentalFilterDrawerProps
+

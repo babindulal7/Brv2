@@ -764,7 +764,7 @@ export function AddClientModal({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 60,
+        zIndex: 'var(--z-modal)' as unknown as number,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

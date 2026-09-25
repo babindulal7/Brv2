@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon, { type IconName } from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
@@ -60,8 +60,6 @@ export default function DashboardMovementPanel({
   const count = list.loading || list.error ? '—' : String(list.total ?? list.rows.length)
   const noun = side === 'outgoing' ? 'pickups' : 'returns'
   const today = businessDayAd()
-  const [searchQuery, setSearchQuery] = useState('')
-
   // Visually place overdue returns before normal returns and apply instant search
   const rows = useMemo(() => {
     let baseRows = list.rows
@@ -75,7 +73,7 @@ export default function DashboardMovementPanel({
       baseRows = [...overdue, ...normal]
     }
 
-    const q = (searchQuery || globalQuery || '').trim().toLowerCase()
+    const q = (globalQuery || '').trim().toLowerCase()
     if (!q) return baseRows
 
     return baseRows.filter((r) => {
@@ -85,7 +83,7 @@ export default function DashboardMovementPanel({
       const deliveryMatch = (r.deliveryType ?? '').toLowerCase().includes(q)
       return clientMatch || bookingMatch || projectMatch || deliveryMatch
     })
-  }, [list.rows, side, searchQuery, globalQuery])
+  }, [list.rows, side, globalQuery])
 
   return (
     <section className="movement-panel" aria-labelledby={`${side}-panel-title`}>
@@ -101,36 +99,6 @@ export default function DashboardMovementPanel({
         </div>
         <div className="movement-panel__filter">{filterControl}</div>
       </header>
-
-      <div className="movement-panel__toolbar">
-        <div className="movement-panel__search-box">
-          <Icon name="search" size={15} className="movement-panel__search-icon" />
-          <input
-            type="search"
-            className="movement-panel__search-input"
-            placeholder={`Filter ${noun} by client, booking, project...`}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape' && searchQuery) {
-                e.stopPropagation()
-                setSearchQuery('')
-              }
-            }}
-            aria-label={`Search ${title} by client, booking number, or project`}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              className="movement-panel__search-clear"
-              onClick={() => setSearchQuery('')}
-              aria-label={`Clear ${title} search`}
-            >
-              <Icon name="close" size={14} />
-            </button>
-          )}
-        </div>
-      </div>
 
       <div className={`movement-panel__body movement-panel__body--${side}`}>
         <PageBody
@@ -158,10 +126,10 @@ export default function DashboardMovementPanel({
                 <Icon name="search" size={24} />
               </span>
               <p className="movement-panel__empty-title">
-                No {noun} match {searchQuery ? `"${searchQuery}"` : 'the active filter'}.
+                No {noun} match {globalQuery ? `"${globalQuery}"` : 'the active filter'}.
               </p>
               <p className="movement-panel__empty-desc">
-                {searchQuery
+                {globalQuery
                   ? 'Check for typos or try clearing the search input.'
                   : 'Try selecting a different date range or clearing filters.'}
               </p>
@@ -169,11 +137,10 @@ export default function DashboardMovementPanel({
                 type="button"
                 className="movement-panel__search-reset-btn"
                 onClick={() => {
-                  setSearchQuery('')
                   onClearFilters()
                 }}
               >
-                {searchQuery ? 'Clear search query' : 'Reset filters'}
+                Reset filters
               </button>
             </div>
           ) : (
@@ -229,19 +196,25 @@ export default function DashboardMovementPanel({
                           className="movement-card__booking-link"
                           to={`/rentals/${row.bookingNo}`}
                         >
+                          <span className="movement-card__avatar" aria-hidden="true">
+                            {row.monogram || (row.client ? row.client.slice(0, 2).toUpperCase() : 'BK')}
+                          </span>
                           <strong className="movement-card__client">{row.client}</strong>
                           <span className="movement-card__number identifier">#{row.bookingNo}</span>
                         </Link>
                       </div>
 
                       <div className="movement-card__items-row">
+                        {row.project && (
+                          <span className="movement-card__project-pill" title={`Project: ${row.project}`}>
+                            <Icon name="briefcase" size={12} />
+                            <span>{row.project}</span>
+                          </span>
+                        )}
                         <span className="movement-card__items figure">
+                          <Icon name="box" size={12} style={{ marginRight: 3, verticalAlign: -1 }} />
                           {side === 'outgoing' ? (
-                            row.project ? (
-                              `${row.project} · ${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`
-                            ) : (
-                              `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`
-                            )
+                            `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`
                           ) : (
                             `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'} booked`
                           )}
@@ -278,7 +251,7 @@ export default function DashboardMovementPanel({
                         }}
                         aria-label={`${actionLabel} for ${row.client}, booking ${row.bookingNo}`}
                       >
-                        <span>{actionLabel}</span><Icon name="arrow_right" size={16} />
+                        <span>{actionLabel}</span><Icon name="arrow_right" size={15} />
                       </button>
                     </div>
                 </article>

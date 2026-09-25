@@ -3,10 +3,11 @@ import type { ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Input, Select, EmptyState, TouchTarget, PageBody, CheckAvailabilityModal, Modal } from '../../components/ui'
+import { Select, SearchInput, EmptyState, TouchTarget, PageBody, CheckAvailabilityModal, Modal } from '../../components/ui'
 import { PageShell } from '../../components/ui/PageShell'
-import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
+import { Card, PageHeader, PageActions, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
 import { listInventory } from '../../lib/queries/inventory'
+import './calendar.css'
 import { BRAND } from '../../lib/status'
 import {
   getBusinessToday,
@@ -49,7 +50,6 @@ import {
   UPCOMING_PERIOD,
   railBookingCounts,
   railInvoiceCounts,
-  QUICK_ACTIONS,
   EVENT_MARKERS,
   SHORTCUTS,
   EVENT_DETAIL,
@@ -657,6 +657,7 @@ function BarView({
   return (
     <button
       type="button"
+      className={`calendar-timeline-bar-btn ${selected ? 'is-selected' : ''}`}
       onClick={() => onSelect(bar.id)}
       title={`${bar.kind} · ${bar.label}${bar.sub ? ` · ${bar.sub}` : ''}${when ? `\n${when}` : ''}`}
       style={{
@@ -780,12 +781,13 @@ function Timeline({
   const grid = `${LABEL_W}px repeat(${n}, minmax(0,1fr))`
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div className="calendar-timeline-shell" style={{ overflowX: 'auto' }}>
       <div style={{ minWidth: n > 10 ? 240 + n * 78 : 0 }}>
         {/* header */}
         <div style={{ display: 'grid', gridTemplateColumns: grid, background: 'var(--th-bg)', borderBottom: '1px solid var(--border)' }}>
           <button
             type="button"
+            className="calendar-timeline-header-sort"
             onClick={onToggleSort}
             title={SORT_HINT[sort]}
             style={{
@@ -810,7 +812,7 @@ function Timeline({
               {labelHeading}
               <Icon name={sort === 'desc' ? 'chevron_up' : sort === 'asc' ? 'chevron_down' : 'more_vert'} size={12} />
             </span>
-            <span className="figure" style={{ fontWeight: 400, color: 'var(--muted)' }}>{itemCount} items</span>
+            <span className="figure calendar-mono" style={{ fontWeight: 400, color: 'var(--muted)' }}>{itemCount} items</span>
           </button>
 
           {days.map((d, i) => {
@@ -823,6 +825,7 @@ function Timeline({
                 key={d.getTime()}
                 aria-current={today ? 'date' : undefined}
                 title={bs ? formatBs(bs) : undefined}
+                className={`calendar-timeline-col-header ${today ? 'is-today' : ''}`}
                 style={{
                   position: 'relative',
                   /* Room at the top for the Today pill, on every column so the
@@ -853,15 +856,15 @@ function Timeline({
                     Today
                   </span>
                 )}
-                <span className="figure" style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: ink, lineHeight: 1.15 }}>
+                <span className="figure calendar-mono" style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: ink, lineHeight: 1.15 }}>
                   {bs ? bs.day : d.getUTCDate()}
                 </span>
                 {!compact && (
-                  <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: today ? 'var(--text2)' : 'var(--muted)' }}>
+                  <span className="figure calendar-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: today ? 'var(--text2)' : 'var(--muted)' }}>
                     {bs ? `${BS_MONTHS[bs.month - 1]} ${bs.year} BS` : formatAdMonth(d)}
                   </span>
                 )}
-                <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: today ? 'var(--text2)' : 'var(--muted)' }}>
+                <span className="figure calendar-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: today ? 'var(--text2)' : 'var(--muted)' }}>
                   {adShort(d)}
                 </span>
                 <span style={{ display: 'block', fontSize: 'var(--t-th)', letterSpacing: '0.05em', color: today ? 'var(--text2)' : off ? 'var(--danger-text)' : 'var(--muted)' }}>
@@ -958,6 +961,7 @@ function DayDot({ job }: { job: DayJob }) {
   const s = BAR_STYLE[job.bar.kind]
   return (
     <span
+      className="calendar-dot"
       title={`${job.bar.kind} · ${job.bar.label}${job.bar.sub ? ` · ${job.bar.sub}` : ''}`}
       style={{
         width: 7,
@@ -1005,17 +1009,17 @@ function MonthGrid({
   const maxDots = desktop ? 0 : phone ? 4 : 6
 
   return (
-    <div style={{ padding: phone ? 'var(--sp-sm)' : 'var(--sp-md)' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: phone ? 3 : 6, marginBottom: 6 }}>
+    <div className="calendar-month-shell" style={{ padding: phone ? 'var(--sp-sm)' : 'var(--sp-md)' }}>
+      <div className="calendar-weekday-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: phone ? 3 : 6, marginBottom: 6 }}>
         {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map((w, i) => (
-          <div key={w} style={{ textAlign: 'center', fontSize: 'var(--t-th)', fontWeight: 600, color: i === 6 ? 'var(--danger-text)' : 'var(--muted)' }}>
+          <div key={w} className={`calendar-weekday-label ${i === 6 ? 'is-weekend' : ''}`} style={{ textAlign: 'center', fontSize: 'var(--t-th)', fontWeight: 600, color: i === 6 ? 'var(--danger-text)' : 'var(--muted)' }}>
             {phone ? w.slice(0, 1) : w}
           </div>
         ))}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: phone ? 3 : 6 }}>
+      <div className="calendar-month-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0,1fr))', gap: phone ? 3 : 6 }}>
         {Array.from({ length: lead }, (_, i) => (
-          <div key={`lead-${i}`} aria-hidden style={{ minHeight: cellMin, borderRadius: 'var(--r-sm)', background: 'var(--card2)', opacity: 0.4 }} />
+          <div key={`lead-${i}`} aria-hidden className="calendar-day-lead" style={{ minHeight: cellMin, borderRadius: 'var(--r-sm)', background: 'var(--card2)', opacity: 0.4 }} />
         ))}
         {days.map((d) => {
           const bs = toBs(d)
@@ -1033,6 +1037,7 @@ function MonthGrid({
               aria-pressed={picked}
               aria-label={`${dateName} — ${list.length === 0 ? 'no jobs' : `${list.length} job${list.length === 1 ? '' : 's'}: ${jobNames}`}`}
               title={`Open ${dateName}`}
+              className={`calendar-day-cell ${today ? 'is-today' : ''} ${picked ? 'is-picked' : ''}`}
               style={{
                 minHeight: cellMin,
                 display: 'flex',
@@ -1050,6 +1055,7 @@ function MonthGrid({
             >
               {/* §5.1 Notes — BS leads AD in every cell, at every width. */}
               <span
+                className="calendar-day-num-row"
                 style={{
                   display: 'flex',
                   flexDirection: phone ? 'column' : 'row',
@@ -1059,7 +1065,7 @@ function MonthGrid({
                 }}
               >
                 <span
-                  className="figure"
+                  className={`figure calendar-day-bs ${today ? 'is-today-accent' : isOffDay(d) ? 'is-offday-accent' : ''}`}
                   style={{
                     fontSize: 'var(--t-ui)',
                     fontWeight: 700,
@@ -1070,7 +1076,7 @@ function MonthGrid({
                   {bs ? bs.day : d.getUTCDate()}
                 </span>
                 <span
-                  className="figure"
+                  className="figure calendar-day-ad"
                   style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}
                 >
                   {adShort(d)}
@@ -1089,6 +1095,7 @@ function MonthGrid({
                     return (
                       <span
                         key={j.bar.id}
+                        className="calendar-chip"
                         style={{
                           display: 'block',
                           padding: '1px 5px',
@@ -1108,17 +1115,17 @@ function MonthGrid({
                     )
                   })}
                   {list.length > 2 && (
-                    <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>+{list.length - 2} more</span>
+                    <span className="figure calendar-more-badge" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>+{list.length - 2} more</span>
                   )}
                 </>
               ) : (
                 /* Tablet and phone: the chip truncates to a dot. */
-                <span aria-hidden style={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', marginTop: 'auto' }}>
+                <span aria-hidden className="calendar-dot-track" style={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', marginTop: 'auto' }}>
                   {list.slice(0, maxDots).map((j) => (
                     <DayDot key={j.bar.id} job={j} />
                   ))}
                   {list.length > maxDots && (
-                    <span className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>+{list.length - maxDots}</span>
+                    <span className="figure calendar-more-badge" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>+{list.length - maxDots}</span>
                   )}
                 </span>
               )}
@@ -1170,11 +1177,11 @@ function DayJobRow({ job, day, onOpen }: { job: DayJob; day: Date; onOpen: (book
       <span style={{ minWidth: 0, flex: 1, lineHeight: 1.35 }}>
         <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
           {/* A time only where the booking records one for this day. */}
-          <span className="figure" style={{ fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+          <span className="figure calendar-mono" style={{ fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
             {at ? `${at.time} ${at.what}` : `${bsShort(job.bar.from)} – ${bsShort(job.bar.to)}`}
           </span>
           <span
-            className={openable ? 'booking-id' : undefined}
+            className={openable ? 'booking-id calendar-mono' : undefined}
             style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}
           >
             {job.bar.label}
@@ -1209,9 +1216,9 @@ function DayJobRow({ job, day, onOpen }: { job: DayJob; day: Date; onOpen: (book
     fontFamily: 'inherit',
   }
 
-  if (!openable) return <div style={frame}>{body}</div>
+  if (!openable) return <div className="calendar-agenda-item" style={frame}>{body}</div>
   return (
-    <button type="button" onClick={() => onOpen(bookingNo)} title={`Open ${bookingNo}`} style={{ ...frame, cursor: 'pointer' }}>
+    <button type="button" className="calendar-agenda-item" onClick={() => onOpen(bookingNo)} title={`Open ${bookingNo}`} style={{ ...frame, cursor: 'pointer' }}>
       {body}
     </button>
   )
@@ -1342,7 +1349,7 @@ function DaySheet({ side, onClose, children }: { side: 'right' | 'bottom'; onClo
           position: 'relative',
           zIndex: 1,
           width: bottom ? '100%' : 'min(360px, 100vw)',
-          maxHeight: bottom ? '80vh' : '100vh',
+          maxHeight: bottom ? '80dvh' : '100dvh',
           display: 'flex',
           flexDirection: 'column',
           background: 'var(--card)',
@@ -1582,7 +1589,7 @@ function MiniMonth({
               onClick={() => onPickDay(d)}
               title={named}
               aria-label={named}
-              className="figure"
+              className={`figure calendar-mini-day ${today ? 'is-today' : ''} ${isWeekend(d) ? 'is-weekend' : ''}`}
               style={{
                 position: 'relative',
                 // Law 15 — the mini-calendar's day cells are buttons, and on the
@@ -1721,7 +1728,7 @@ function CountList({
               ) : (
                 r.icon && <Icon name={r.icon} size={14} style={{ color: r.tone, flexShrink: 0 }} />
               )}
-              <span className="figure" aria-label={spoken} style={{ fontWeight: 700, color: 'var(--text)', minWidth: 18 }}>
+              <span className="figure calendar-mono" aria-label={spoken} style={{ fontWeight: 700, color: 'var(--text)', minWidth: 18 }}>
                 {text}
               </span>
               <span style={{ color: 'var(--text2)', minWidth: 0 }}>{r.label}</span>
@@ -1742,8 +1749,8 @@ function DateBlock({ label, at, time, icon }: { label: string; at: Date; time: s
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{label}</div>
         {/* BS above AD, both from the engine — §4.2. */}
-        <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>{formatBsOrAd(at)}</div>
-        <div className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{formatAd(at)}, {time}</div>
+        <div className="figure calendar-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>{formatBsOrAd(at)}</div>
+        <div className="figure calendar-mono" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{formatAd(at)}, {time}</div>
       </div>
     </div>
   )
@@ -2520,6 +2527,7 @@ export default function Calendar() {
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
       <button
         type="button"
+        className="calendar-stepper-btn"
         onClick={() => stepMonth(-1)}
         disabled={monthPrev === null}
         aria-disabled={monthPrev === null}
@@ -2543,16 +2551,17 @@ export default function Calendar() {
         }}
       >
         <span style={{ textAlign: 'left' }}>
-          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+          <span className="figure calendar-mono" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
             {bsMonthLabel(monthDays)}
           </span>
-          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+          <span className="figure calendar-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
             {adMonthSpanLabel(monthDays)}
           </span>
         </span>
       </span>
       <button
         type="button"
+        className="calendar-stepper-btn"
         onClick={() => stepMonth(1)}
         disabled={monthNext === null}
         aria-disabled={monthNext === null}
@@ -2573,10 +2582,10 @@ export default function Calendar() {
       ) : (
         <>
           <span style={{ display: 'inline-flex', gap: 'var(--sp-xs)' }}>
-            <button type="button" onClick={() => shift(-1)} title="Previous range" aria-label="Previous range" style={iconBtn}>
+            <button type="button" className="calendar-stepper-btn" onClick={() => shift(-1)} title="Previous range" aria-label="Previous range" style={iconBtn}>
               <Icon name="chevron_left" size={15} />
             </button>
-            <button type="button" onClick={() => shift(1)} title="Next range" aria-label="Next range" style={iconBtn}>
+            <button type="button" className="calendar-stepper-btn" onClick={() => shift(1)} title="Next range" aria-label="Next range" style={iconBtn}>
               <Icon name="chevron_right" size={15} />
             </button>
           </span>
@@ -2601,7 +2610,7 @@ export default function Calendar() {
      is `id`d and controls its `tabpanel` (the `centre` block below) so the
      selected panel announces which tab produced it. */
   const viewTabs = allowedViews.length > 1 && (
-    <span role="tablist" aria-label="Calendar view" style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}>
+    <span role="tablist" aria-label="Calendar view" className="calendar-view-tabs" style={{ display: 'flex', gap: 3, padding: 3, borderRadius: 10, background: 'var(--card2)', border: '1px solid var(--border)' }}>
       {allowedViews.map((v) => {
         const on = view === v
         return (
@@ -2613,6 +2622,7 @@ export default function Calendar() {
             aria-controls={`calendar-view-panel-${urlSlug(v)}`}
             onClick={() => setViewChoice(v)}
             aria-selected={on}
+            className={`calendar-tab-btn ${on ? 'is-active' : ''}`}
             style={{
               // Law 15 — tabs touch the 44 floor like every other control.
               minHeight: 'var(--tap)',
@@ -2748,7 +2758,7 @@ export default function Calendar() {
    * than letting ten kinds vanish without explanation.
    */
   const kindChips = (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+    <div className="calendar-chip-track" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
       {CALENDAR_BAR_KINDS.map((k) => {
         const s = BAR_STYLE[k]
         const on = kinds.has(k)
@@ -2759,6 +2769,7 @@ export default function Calendar() {
             onClick={() => toggleKind(k)}
             aria-pressed={on}
             title={on ? `Stop filtering by ${k}` : `Show only ${k}`}
+            className={`calendar-kind-chip ${on ? 'is-active' : ''}`}
             style={{
               ...chipBase,
               border: `1px solid ${on ? s.line : 'var(--border)'}`,
@@ -2772,7 +2783,7 @@ export default function Calendar() {
         )
       })}
       {kinds.size > 0 && (
-        <button type="button" onClick={() => patch({ kind: null })} style={{ ...chipBase, border: '1px solid var(--border)', background: 'transparent', color: 'var(--link)' }}>
+        <button type="button" onClick={() => patch({ kind: null })} className="calendar-kind-chip" style={{ ...chipBase, border: '1px solid var(--border)', background: 'transparent', color: 'var(--link)' }}>
           Clear event types
         </button>
       )}
@@ -2817,16 +2828,16 @@ export default function Calendar() {
         </button>
       </div>
 
-      <label style={{ display: 'block' }}>
+      <div>
         <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)', marginBottom: 5 }}>Search</span>
-        <Input
-          icon={<Icon name="search" size={13} />}
+        <SearchInput
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
+          onClear={() => setQuery('')}
           placeholder="Booking, equipment, client, crew…"
-          style={{ ...selectStyle, width: '100%', cursor: 'text' }}
+          aria-label="Search bookings, equipment, client, crew"
         />
-      </label>
+      </div>
 
       <div>
         <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginBottom: 6 }}>Event Type</div>
@@ -3197,53 +3208,6 @@ export default function Calendar() {
         </div>
         <CountList rows={UPCOMING} money={money} dots={false} counts={counts} />
       </Card>
-      <Card bodyStyle={{ padding: 14 }}>
-        <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 10 }}>Quick Actions</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-sm)' }}>
-          {QUICK_ACTIONS.map((a) => {
-            if (a.kind === 'unavailable') return <Unavailable key={a.label} label={a.label} reason={a.unavailable} icon={a.icon} />
-            /*
-             * `QuickAction` is a union (`data/calendar.ts`): a tile without an
-             * `unavailable` reason HAS a `to`, so this branch cannot render a
-             * button that goes nowhere — which is what `runQuickAction`'s
-             * `if (a.to) navigate(a.to)` quietly did. Lifted to a const so the
-             * narrowing survives into the click handler's closure.
-             *
-             * The title used to fall back to 'Filter the timeline to conflicts',
-             * describing behaviour deleted with the conflict filter.
-             */
-            const to = a.to
-            return (
-              <button
-                key={a.label}
-                type="button"
-                onClick={() => navigate(to)}
-                title={`Go to ${to}`}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-start',
-                  gap: 6,
-                  minHeight: TOUCH,
-                  padding: '10px 9px',
-                  borderRadius: 'var(--r-btn)',
-                  border: '1px solid var(--border)',
-                  background: 'var(--card2)',
-                  color: 'var(--text)',
-                  fontSize: 'var(--t-th)',
-                  fontWeight: 600,
-                  fontFamily: 'inherit',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <Icon name={a.icon} size={16} style={{ color: 'var(--nav-active-accent)' }} />
-                {a.label}
-              </button>
-            )
-          })}
-        </div>
-      </Card>
     </>
   )
 
@@ -3315,18 +3279,19 @@ export default function Calendar() {
       <div
         role="dialog"
         aria-label="Calendar — full view"
+        className="calendar-v2"
         style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--app)', overflow: 'auto', padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
           <h1 style={{ margin: 0, fontSize: 'var(--t-h2)', fontWeight: 700 }}>Calendar</h1>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-sm)', marginLeft: 10 }}>{navButtons}</span>
-          <span style={{ marginLeft: 'auto' }}>
-            <Input
-              icon={<Icon name="search" size={14} />}
+          <span style={{ marginLeft: 'auto', width: 300 }}>
+            <SearchInput
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={setQuery}
+              onClear={() => setQuery('')}
               placeholder="Search booking, equipment, client, crew…"
-              style={{ ...selectStyle, height: 34, width: 300, cursor: 'text' }}
+              aria-label="Search bookings, equipment, client, crew"
             />
           </span>
           <Button icon="calendar_event" onClick={() => setShowCheckAvailability(true)}>Check availability</Button>
@@ -3463,20 +3428,32 @@ export default function Calendar() {
 
   return (
     <PageShell width="full">
-      <PageHeader
+      <div className="calendar-v2">
+        <PageHeader
         icon="calendar"
         title="Calendar"
         actions={
-          <>
-            {navButtons}
-            <Button icon="calendar_event" onClick={() => setShowCheckAvailability(true)}>Check availability</Button>
-            <Button icon="settings" onClick={() => setShowFilters((v) => !v)}>{showFilters ? 'Hide Filters' : 'Filters'}</Button>
-            {/* Full View drops the app chrome for a wall display — a desktop mode. */}
-            {desktop && <Button icon="eye" onClick={() => setFullChoice(true)}>Full View</Button>}
-            <Button icon="plus" variant="primary" onClick={() => navigate('/rentals/new')}>
-              New Rental
-            </Button>
-          </>
+          <PageActions
+            extra={navButtons}
+            primary={
+              <Button icon="calendar_event" variant="primary" onClick={() => setShowCheckAvailability(true)}>
+                Check availability
+              </Button>
+            }
+            secondary={[
+              <Button key="new" icon="plus" onClick={() => navigate('/rentals/new')}>
+                New Rental
+              </Button>,
+              <Button key="filters" icon="settings" onClick={() => setShowFilters((v) => !v)}>
+                {showFilters ? 'Hide Filters' : 'Filters'}
+              </Button>,
+              ...(desktop ? [
+                <Button key="full" icon="eye" onClick={() => setFullChoice(true)}>
+                  Full View
+                </Button>,
+              ] : []),
+            ]}
+          />
         }
       />
 
@@ -3578,6 +3555,7 @@ export default function Calendar() {
       {checkAvailabilityModal}
 
       {dayOverlay}
+      </div>
     </PageShell>
   )
 }

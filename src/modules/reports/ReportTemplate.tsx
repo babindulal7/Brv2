@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, Button, FooterNote } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { ReportToolbar, reportDateRange } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow, ReportCompare } from '../../components/ui/ReportToolbar'
 import { EmptyState } from '../../components/ui/StateViews'
@@ -10,6 +11,7 @@ import { formatMoney } from '../../lib/money'
 import { captureError } from '../../lib/monitoring'
 import { useViewport } from '../../lib/device'
 import { catColor } from '../../components/ui/Charts'
+import './reports.css'
 import {
   PERIODS,
   DEFAULT_PERIOD,
@@ -204,7 +206,7 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
   )
 
   return (
-    <PageShell width="full">
+    <PageShell width="full" className="report-v2">
       {crumbs}
 
       {report.unresolved && (
@@ -237,22 +239,12 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
         compare={compare}
         onCompareChange={setCompare}
       >
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
           Period
           <select
             value={periodKey}
             onChange={(e) => setPeriodKey(e.target.value)}
-            style={{
-              height: 34,
-              minHeight: 34,
-              padding: '0 8px',
-              borderRadius: 'var(--r-btn)',
-              border: '1px solid var(--border)',
-              background: 'var(--card)',
-              color: 'var(--text)',
-              fontSize: 'var(--t-meta)',
-              fontFamily: 'inherit',
-            }}
+            className="report-period-select"
           >
             {PERIODS.map((p) => (
               <option key={p.key} value={p.key} disabled={p.range === null} title={p.why ?? undefined}>
@@ -333,8 +325,8 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
             {viewport === 'phone' ? (
               <PhoneRows rows={rows} columns={projection.columns} />
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <DataTableShell ariaLabel={`${report.name} report`} data-table-scroll className="report-table-shell" style={{ overflowX: 'auto' }}>
+                <table className="report-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       {visibleColumns(projection.columns, viewport).map((c, i) => (
@@ -354,7 +346,7 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
                             the hover; the disclosure below is the reachable
                             equivalent for touch and for a screen reader. */}
                         {trimCells(r.cells, projection.columns, viewport).map((cell, i) => (
-                          <td key={i} className="figure" style={num} title={working}>
+                          <td key={i} className="figure report-table-num" style={num} title={working}>
                             {cell}
                           </td>
                         ))}
@@ -362,7 +354,7 @@ export function ReportTemplate({ report, onBackToCatalog }: ReportTemplateProps)
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </DataTableShell>
             )}
 
             <Working text={working} note={MODEL_DISCLOSURE} />

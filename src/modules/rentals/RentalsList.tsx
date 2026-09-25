@@ -1,8 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, FooterNote, PageHeader } from '../../components/ui/Page'
-import { Input } from '../../components/ui/Input'
+import { Card, FooterNote, PageHeader, PageActions } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { PageBody } from '../../components/ui/PageBody'
 import { PageShell } from '../../components/ui/PageShell'
@@ -15,6 +14,7 @@ import { SavedViewsMenu, type SavedListView } from '../../components/ui/SavedVie
 import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
 import { AppSidePanel } from '../../components/shell/AppSidePanel'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { FilterBar } from '../../components/ui/FilterBar'
 import { Pagination } from '../../components/ui/Pagination'
 import { Badge } from '../../components/ui/Badge'
 import { STATUS, BRAND } from '../../lib/status'
@@ -64,7 +64,7 @@ import { LoadingSkeleton } from '../../components/ui/StateViews'
 import { listActiveDrafts, type RentalDraftRecord } from '../../actions/rentals/saveDraft'
 const NewRental = lazy(() => import('./NewRental'))
 import { CancelRentalModal } from './modals/CancelRentalModal'
-import { QuickActionBar, FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
+import { FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
 import { BooqableRentalFilterDrawer } from '../../components/ui/BooqableRentalFilterDrawer'
 import { FastReturnModal } from './modals/FastReturnModal'
 import { BarcodeLookupModal } from './modals/BarcodeLookupModal'
@@ -248,12 +248,13 @@ function externalRowStyle(isExternal: boolean | null) {
  */
 function stageChipStyle(on: boolean) {
   return {
+    position: 'relative' as const,
     display: 'inline-flex' as const,
     alignItems: 'center' as const,
-    gap: 5,
+    gap: 6,
     height: 32,
     padding: '0 12px',
-    borderRadius: 'var(--r-sm)',
+    borderRadius: 'var(--r-btn, 8px)',
     border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
     background: on ? 'var(--nav-active-bg)' : 'var(--card)',
     color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
@@ -263,6 +264,8 @@ function stageChipStyle(on: boolean) {
     fontFamily: 'inherit',
     whiteSpace: 'nowrap' as const,
     flexShrink: 0,
+    transition: 'border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease)',
+    boxShadow: on ? '0 1px 3px rgba(0, 0, 0, 0.08)' : 'none',
   }
 }
 
@@ -1392,8 +1395,81 @@ export default function RentalsList() {
   }
 
   return (
-    <PageShell>
-      <PageHeader title="Rentals" description="Manage bookings, pickups, returns, and the next action." />
+    <PageShell className="rentals-v2">
+      <PageHeader
+        title="Rentals"
+        description="Manage bookings, pickups, returns, and the next action."
+        actions={
+          <PageActions
+            primary={
+              canWriteDesk ? (
+                <Button
+                  variant="primary"
+                  icon="plus"
+                  onClick={() => {
+                    setRawParams((prev) => {
+                      const next = new URLSearchParams(prev)
+                      next.set('action', 'new')
+                      return next
+                    })
+                  }}
+                >
+                  New Rental
+                </Button>
+              ) : undefined
+            }
+            secondary={
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                {canOperate && (
+                  <Button
+                    variant="secondary"
+                    icon="return_arrow"
+                    onClick={() => setFastReturnOpen(true)}
+                    title="Fast Return check-in"
+                  >
+                    Fast Return
+                  </Button>
+                )}
+                {canRecord && (
+                  <Button
+                    variant="secondary"
+                    icon="invoice"
+                    onClick={() => setPaymentModalOpen(true)}
+                    title="Record payment against invoice"
+                  >
+                    Record Payment
+                  </Button>
+                )}
+                <Button
+                  variant="secondary"
+                  icon="search"
+                  onClick={() => setBarcodeModalOpen(true)}
+                  title="Scan barcode or lookup serial"
+                >
+                  Scan Barcode
+                </Button>
+                <Button
+                  variant="secondary"
+                  icon="refresh"
+                  onClick={refreshAll}
+                  title="Refresh list"
+                >
+                  Refresh
+                </Button>
+                <Unavailable reason="Export is not built yet — nothing settles the file format, or which columns a role may export. A full-column export would also walk around Law 6's money masking, so it needs a role rule before it needs code.">
+                  <Button
+                    icon="download"
+                    variant="secondary"
+                    disabled
+                  >
+                    Export
+                  </Button>
+                </Unavailable>
+              </div>
+            }
+          />
+        }
+      />
       <WorkspaceLeftPanel>
         <AppSidePanel id="rentals-filters" side="left" title="Filters" isOpen={filtersOpen} onClose={() => setFiltersOpen(false)}>
           <BooqableRentalFilterDrawer
@@ -1416,74 +1492,6 @@ export default function RentalsList() {
         </AppSidePanel>
       </WorkspaceLeftPanel>
 
-      <div style={{ marginBottom: 'var(--sp-md)' }}>
-        <QuickActionBar
-          actions={[
-            ...(canWriteDesk
-              ? [
-                  {
-                    id: 'new-booking',
-                    label: 'New Rental',
-                    icon: 'plus' as const,
-                    variant: 'primary' as const,
-                    onClick: () => {
-                      setRawParams((prev) => {
-                        const next = new URLSearchParams(prev)
-                        next.set('action', 'new')
-                        return next
-                      })
-                    },
-                  },
-                ]
-              : []),
-            ...(canOperate
-              ? [
-                  {
-                    id: 'fast-return',
-                    label: '⚡ Fast Return',
-                    icon: 'return_arrow' as const,
-                    variant: 'accent' as const,
-                    onClick: () => setFastReturnOpen(true),
-                  },
-                ]
-              : []),
-            ...(canRecord
-              ? [
-                  {
-                    id: 'record-payment',
-                    label: 'Record Payment',
-                    icon: 'invoice' as const,
-                    onClick: () => setPaymentModalOpen(true),
-                  },
-                ]
-              : []),
-            {
-              id: 'quick-scan',
-              label: 'Scan Barcode',
-              icon: 'search' as const,
-              onClick: () => setBarcodeModalOpen(true),
-            },
-          ]}
-          extra={
-            <>
-                  <Button icon="refresh" onClick={refreshAll}>
-                    Refresh
-                  </Button>
-                  {/* Export stays honestly disabled with its reason per wireframe spec §4.1 and PLAN.md §4.22 */}
-                  <Unavailable reason="Export is not built yet — nothing settles the file format, or which columns a role may export. A full-column export would also walk around Law 6's money masking, so it needs a role rule before it needs code.">
-                    <Button
-                      icon="download"
-                      variant="secondary"
-                      disabled
-                    >
-                      Export
-                    </Button>
-                  </Unavailable>
-                </>
-              }
-        />
-      </div>
-
       {/*
         ## The chip row — §4.1's two lines
         ```
@@ -1502,18 +1510,32 @@ export default function RentalsList() {
         §4.1's tablet note is "filter chips in one scrolling row" and its
         phone note is "chips scroll".
       */}
-      <div
-        role="group"
-        aria-label="Filter by stage"
-        className={viewport !== 'desktop' ? 'rsp-chip-scroll' : undefined}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          ...(viewport === 'desktop'
-            ? { flexWrap: 'wrap' as const }
-            : { overflowX: 'auto' as const, paddingBottom: 2 }),
-        }}
+      <FilterBar
+        search={f.filters.search ?? ''}
+        onSearchChange={(val) => f.setSearch(val)}
+        searchPlaceholder="Search booking number or project"
+        searchAriaLabel="Search rentals"
+        onToggleDrawer={() => setFiltersOpen((open) => !open)}
+        isDrawerOpen={filtersOpen}
+        drawerControlsId="rentals-filters"
+        activeCount={f.activeCount}
+        onClearAll={clearFilters}
+        filterChips={<ActiveFilterChips filters={f.chips} {...(isFiltered ? { onClearAll: clearFilters } : {})} />}
+        groupAriaLabel="Filter by stage"
+        rightSlot={
+          tabular && (
+            <SegmentedControl
+              size="sm"
+              ariaLabel="List view"
+              options={[
+                { id: 'Table', label: 'Table', icon: 'checklist' },
+                { id: 'Cards', label: 'Cards', icon: 'queues' },
+              ]}
+              value={view === 'Cards' ? 'Cards' : 'Table'}
+              onChange={(next) => setView(next as 'Table' | 'Cards')}
+            />
+          )
+        }
       >
         <button
           type="button"
@@ -1523,6 +1545,7 @@ export default function RentalsList() {
           aria-pressed={statusFilter.size === 0}
           style={stageChipStyle(statusFilter.size === 0)}
         >
+          <TouchTarget axis="y" />
           All
         </button>
         {STATUS_ORDER.map((s) => {
@@ -1535,6 +1558,7 @@ export default function RentalsList() {
               aria-pressed={on}
               style={stageChipStyle(on)}
             >
+              <TouchTarget axis="y" />
               {/* Law 11 — the stage's own icon beside its own word. */}
               <Icon
                 name={STAGE_ICON[s]}
@@ -1551,6 +1575,7 @@ export default function RentalsList() {
           aria-pressed={isDraftSelected}
           style={stageChipStyle(isDraftSelected)}
         >
+          <TouchTarget axis="y" />
           <Icon
             name="file"
             size={13}
@@ -1566,6 +1591,7 @@ export default function RentalsList() {
             style={stageChipStyle(true)}
             title={`Quick filter: ${chip}`}
           >
+            <TouchTarget axis="y" />
             <Icon
               name={chip === 'Overdue' ? 'alert_triangle' : 'queues'}
               size={13}
@@ -1583,6 +1609,7 @@ export default function RentalsList() {
               title={SUB_RENTAL_UNANSWERED}
               style={{ ...stageChipStyle(false), opacity: 0.5, cursor: 'not-allowed' }}
             >
+              <TouchTarget axis="y" />
               <Icon
                 name="external_link"
                 size={13}
@@ -1619,6 +1646,7 @@ export default function RentalsList() {
             title={SUB_RENTAL_NOTE}
             style={stageChipStyle(subOn)}
           >
+            <TouchTarget axis="y" />
             <Icon
               name="external_link"
               size={13}
@@ -1627,49 +1655,11 @@ export default function RentalsList() {
             Sub-Rental
           </button>
         )}
-      </div>
+      </FilterBar>
 
-      <AppPageToolbar
-        bulkActions={
-          <>
-          <div style={{ flex: '1 1 220px', minWidth: 0, maxWidth: 360 }}>
-            <Input
-              type="search"
-              aria-label="Search rentals"
-              placeholder="Search booking number or project"
-              icon={<Icon name="search" size={16} />}
-              value={f.filters.search ?? ''}
-              onChange={(event) => f.setSearch(event.target.value)}
-              onClear={() => f.setSearch('')}
-            />
-          </div>
-          <Button
-            icon="filter"
-            aria-controls="rentals-filters"
-            aria-expanded={filtersOpen}
-            onClick={() => setFiltersOpen((open) => !open)}
-          >
-            Filters{f.activeCount > 0 ? ` ${f.activeCount}` : ''}
-          </Button>
-          </>
-        }
-        filterChips={<ActiveFilterChips filters={f.chips} {...(isFiltered ? { onClearAll: clearFilters } : {})} />}
-        rightSlot={
-          tabular && (
-            <SegmentedControl
-              size="sm"
-              ariaLabel="List view"
-              options={[
-                { id: 'Table', label: 'Table', icon: 'checklist' },
-                { id: 'Cards', label: 'Cards', icon: 'queues' },
-              ]}
-              value={view === 'Cards' ? 'Cards' : 'Table'}
-              onChange={(next) => setView(next as 'Table' | 'Cards')}
-            />
-          )
-        }
-        pagination={
-          total !== null && (
+      {total !== null && (
+        <AppPageToolbar
+          pagination={
             <Pagination
               page={page}
               total={total}
@@ -1678,9 +1668,9 @@ export default function RentalsList() {
               onPageChange={setPage}
               onPageSizeChange={setPerPage}
             />
-          )
-        }
-      />
+          }
+        />
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0, flex: 1 }}>
         <Card
@@ -1757,6 +1747,11 @@ export default function RentalsList() {
                   {rowsWithIntel.map(({ row: r, glance, detail }) => (
                     <div
                       key={r.id}
+                      className={
+                        view === 'Cards' && tabular
+                          ? `rentals-card-item ${selectedIds.has(r.id) ? 'is-selected' : ''} ${r.isOverdue ? 'is-overdue' : ''}`
+                          : undefined
+                      }
                       style={
                         view === 'Cards' && tabular
                           ? {
@@ -1884,15 +1879,17 @@ export default function RentalsList() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             gap: 6,
-                            height: 40,
+                            minHeight: 44,
+                            height: 44,
                             flex: 1,
-                            borderRadius: 'var(--r-btn)',
+                            borderRadius: 'var(--r-btn, 8px)',
                             border: '1px solid var(--border)',
                             background: 'var(--card2)',
                             color: 'var(--text)',
                             fontSize: 'var(--t-ui)',
                             fontWeight: 600,
                             textDecoration: 'none',
+                            transition: 'all var(--dur-fast) var(--ease)',
                           }}
                         >
                           <Icon name="external_link" size={14} />

@@ -5,6 +5,7 @@ import { Card, Button, FooterNote } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
 import { PageBody } from '../../components/ui/PageBody'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { Modal } from '../../components/ui/Modal'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -36,6 +37,7 @@ import type { ListFilters } from '../../lib/queries/listQuery'
 import { DateField } from '../../components/ui/DateField'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { Pagination } from '../../components/ui/Pagination'
+import './finance.css'
 
 type ExpenseStatusDb = Database['public']['Enums']['expense_status']
 
@@ -865,7 +867,7 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
   )
 
   return (
-    <PageShell width="full">
+    <PageShell width="full" className="finance-v2">
       {/* The action is omitted for a money-blind session, not disabled: it
           operates on records that session may not read at all. */}
       <ScreenHeader
@@ -896,10 +898,10 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
           <div
             role="group"
             aria-label="Filter by status"
-            className="rsp-chip-scroll"
+            className="finance-chip-track rsp-chip-scroll"
             style={{
               display: 'flex',
-              gap: 6,
+              gap: 8,
               flexWrap: phone ? 'nowrap' : 'wrap',
               overflowX: phone ? 'auto' : 'visible',
               alignItems: 'center',
@@ -917,6 +919,7 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
                     setStatus(s)
                     setPage(1)
                   }}
+                  className={`finance-filter-chip ${on ? 'is-active' : ''}`}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -1003,8 +1006,8 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
               {...restriction}
             >
               {tabular ? (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
+                <DataTableShell ariaLabel="Expenses" className="finance-table-shell" data-table-scroll style={{ overflowX: 'auto' }}>
+                  <table className="finance-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 880 }}>
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
                         {/* §9.4 — `exp# │ date │ category │ vendor │ amount │ VAT │ badge │ ⋮` */}
@@ -1027,23 +1030,23 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
                     </thead>
                     <tbody>
                       {list.rows.map((r) => (
-                        <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <tr key={r.id} className="finance-row" style={{ borderBottom: '1px solid var(--border)' }}>
                           <td style={td}>
-                            <div className="identifier" style={{ fontWeight: 700 }}>
+                            <div className="identifier finance-mono" style={{ fontWeight: 700 }}>
                               {r.expenseNo}
                             </div>
                             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{r.branchName}</div>
                           </td>
                           <td style={td}>
                             {/* Law 7 — BS above AD, both rendered from the stored AD day. */}
-                            <div className="figure" style={{ fontWeight: 600 }}>{bsLabel(r.expenseDateAd)}</div>
-                            <div className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                            <div className="figure finance-mono" style={{ fontWeight: 600 }}>{bsLabel(r.expenseDateAd)}</div>
+                            <div className="figure finance-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                               {formatAd(dayAsDate(r.expenseDateAd))}
                             </div>
                           </td>
                           <td style={{ ...td, color: 'var(--text2)' }}>
                             <div>{r.categoryName}</div>
-                            <div className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                            <div className="identifier finance-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                               {r.categoryCode}
                             </div>
                           </td>
@@ -1051,7 +1054,7 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
                             <div>{r.vendorName}</div>
                             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', maxWidth: 240 }}>{r.description}</div>
                           </td>
-                          <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                          <td className="figure finance-mono" style={{ ...td, textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>
                             {formatMoney(r.amount)}
                           </td>
                           <td style={td}>
@@ -1067,7 +1070,7 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </DataTableShell>
               ) : (
                 /* §9.4 shell note — "Tables become card rows below 768."
                    `useTabularLayout` is the same width reading `RentalsList`
@@ -1076,16 +1079,10 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
                   {list.rows.map((r) => (
                     <div
                       key={r.id}
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 'var(--sp-sm)',
-                        padding: '13px 14px',
-                        borderBottom: '1px solid var(--border)',
-                      }}
+                      className="finance-card-item"
                     >
                       <span style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                        <span className="identifier" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                        <span className="identifier finance-mono" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
                           {r.expenseNo}
                         </span>
                         <StatusBadge status={r.status} />
@@ -1096,10 +1093,10 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
                       </span>
 
                       <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                        <span className="figure" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                        <span className="figure finance-mono" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
                           {formatMoney(r.amount)}
                         </span>
-                        <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                        <span className="figure finance-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                           {bsLabel(r.expenseDateAd)} · {formatAd(dayAsDate(r.expenseDateAd))}
                         </span>
                       </span>

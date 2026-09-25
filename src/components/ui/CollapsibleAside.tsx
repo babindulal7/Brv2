@@ -186,7 +186,7 @@ export function CollapsibleAside({
           flexDirection: 'column',
           gap: 'var(--sp-md)',
           minWidth: 0,
-          maxHeight: 'calc(100vh - var(--header-h) - var(--sp-md) * 2)',
+          maxHeight: 'calc(100dvh - var(--header-h) - var(--sp-md) * 2)',
           overflowY: 'auto',
           overscrollBehavior: 'contain',
         }}

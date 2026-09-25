@@ -21,7 +21,8 @@ export type Paisa = number & { readonly __paisa: unique symbol }
 
 /** Rupees → paisa. The only sanctioned way to write a literal amount. */
 export function rupees(n: number): Paisa {
-  return Math.round(n * 100) as Paisa
+  if (!Number.isFinite(n)) return 0 as Paisa
+  return roundHalfUp(Number(n.toFixed(4)) * 100) as Paisa
 }
 
 /** Paisa → rupees, as a number. For arithmetic only; never for display. */
@@ -72,12 +73,28 @@ export function formatMoney(p: Paisa): string {
 export const formatPaisa = formatMoney
 
 
-/** Parses user input — "1,39,506", "Rs 1,39,506", "139506.50" — to paisa. */
+/** Parses user input — "1,39,506", "Rs 1,39,506", "139506.50" — to paisa without float drift. */
 export function parseMoney(input: string): Paisa | null {
   const cleaned = input.replace(/[^\d.-]/g, '')
-  if (!cleaned || !/^-?\d*\.?\d*$/.test(cleaned)) return null
-  const n = Number(cleaned)
-  return Number.isFinite(n) ? (roundHalfUp(n * 100) as Paisa) : null
+  if (!cleaned || !/^-?\d*(\.\d*)?$/.test(cleaned) || cleaned === '-' || cleaned === '.' || cleaned === '-.') return null
+  const isNegative = cleaned.startsWith('-')
+  const abs = isNegative ? cleaned.slice(1) : cleaned
+  const parts = abs.split('.')
+  const wholeStr = parts[0] || '0'
+  const whole = Number(wholeStr)
+  if (!Number.isSafeInteger(whole)) return null
+  let paisa = whole * 100
+  if (parts.length > 1 && parts[1]) {
+    const fraction = parts[1]
+    const centsStr = fraction.slice(0, 2).padEnd(2, '0')
+    let cents = parseInt(centsStr, 10)
+    if (fraction.length >= 3 && fraction[2] !== undefined) {
+      const thirdDigit = parseInt(fraction[2], 10)
+      if (thirdDigit >= 5) cents += 1
+    }
+    paisa += cents
+  }
+  return (isNegative ? -paisa : paisa) as Paisa
 }
 
 /* ── §2.1 · the calculation order ──────────────────────────────────────── */

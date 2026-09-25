@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, KpiStrip, ReflowRail, SummaryRows, FooterNote, cardStyle, useRailGridColumns } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { Donut, Legend, HBars, catColor } from '../../components/ui/Charts'
@@ -338,7 +339,7 @@ export default function ClientReports() {
           </div>
 
           <Card title="Client Performance Overview" bodyStyle={{ padding: 0 }}>
-            <div style={{ overflowX: 'auto' }}>
+            <DataTableShell ariaLabel="Client Performance Overview">
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
@@ -434,7 +435,7 @@ export default function ClientReports() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '10px 14px', flexWrap: 'wrap', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               {/*
                 BUG-003 — a nine-control pager (`« ‹ 1 2 3 4 … 209 ›`) stood here

@@ -89,7 +89,9 @@ const REL: Record<string, Rel> = {
   'inventory_reservations.bookings': { kind: 'one', table: 'bookings', fk: 'booking_id' },
   'product_units_v.products_v': { kind: 'one', table: 'products_v', fk: 'product_id' },
   'invoices.clients': { kind: 'one', table: 'clients', fk: 'client_id' },
+  'invoices.bookings': { kind: 'one', table: 'bookings', fk: 'booking_id' },
   'payments.clients': { kind: 'one', table: 'clients', fk: 'client_id' },
+  'payments.bookings': { kind: 'one', table: 'bookings', fk: 'booking_id' },
   'expenses.expense_categories': { kind: 'one', table: 'expense_categories', fk: 'category_id' },
   'expenses.branches': { kind: 'one', table: 'branches', fk: 'branch_id' },
 }

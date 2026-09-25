@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Icon from '../../../components/ui/Icon'
 import { Card } from '../../../components/ui/Page'
 import { Button } from '../../../components/ui/Page'
+import { SearchInput } from '../../../components/ui/SearchInput'
+import { DataTableShell } from '../../../components/ui/DataTable'
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog'
 import { ErrorBanner, EmptyState, LoadingSkeleton, RestrictedState } from '../../../components/ui/StateViews'
 import { Unavailable } from '../../../components/ui/Unavailable'
@@ -528,14 +530,15 @@ export function StaffDirectoryCard() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
           {/* Filters stay usable in the error state — the retry is not the only move. */}
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name, email or employee code"
-              aria-label="Search staff"
-              style={{ ...selectStyle, flex: 1, minWidth: 200 }}
-            />
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <SearchInput
+                value={search}
+                onChange={setSearch}
+                onClear={() => setSearch('')}
+                placeholder="Name, email or employee code"
+                aria-label="Search staff"
+              />
+            </div>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as SystemRole | 'All')}
@@ -602,7 +605,7 @@ export function StaffDirectoryCard() {
           )}
 
           {state === 'ok' && filtered.length > 0 && tabular && (
-            <div style={{ overflowX: 'auto' }}>
+            <DataTableShell ariaLabel="Staff directory" data-table-scroll style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                 <thead>
                   <tr>
@@ -639,7 +642,7 @@ export function StaffDirectoryCard() {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
           )}
 
           {state === 'ok' && filtered.length > 0 && !tabular && (

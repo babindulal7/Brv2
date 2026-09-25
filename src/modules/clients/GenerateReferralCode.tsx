@@ -2,7 +2,9 @@ import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Input, Select, InfoTooltip } from '../../components/ui'
-import { Card, PageHeader, Button } from '../../components/ui/Page'
+import { Card, Button } from '../../components/ui/Page'
+import { ScreenHeader } from '../../components/ui/ScreenHeader'
+import { PageActions } from '../../components/ui/PageActions'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -94,7 +96,12 @@ function Field({ label, children, hint }: { label: string; children: React.React
   )
 }
 
-export default function GenerateReferralCode() {
+export interface GenerateReferralCodeProps {
+  embedded?: boolean
+  onDone?: () => void
+}
+
+export default function GenerateReferralCode({ embedded = false, onDone }: GenerateReferralCodeProps = {}) {
   const navigate = useNavigate()
   const money = useCanViewMoney()
 
@@ -153,24 +160,29 @@ export default function GenerateReferralCode() {
     : `This code is not complete yet — a referrer and a valid code${money ? ' and a reward amount' : ''} are required. ` +
       'Issuing is not connected in this build either.'
 
-  const handleCancel = () => navigate('/clients?tab=referral')
+  const handleCancel = () => (onDone ? onDone() : navigate('/clients?tab=referral'))
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <PageHeader
+      <ScreenHeader
+        embedded={embedded}
         title="Generate Referral Code"
         description="Compose a referral code for an existing client. Issuing it is not connected yet — nothing here is stored."
         actions={
-          <>
-            <Button variant="ghost" onClick={handleCancel}>
-              Cancel
-            </Button>
-            <Unavailable reason={buttonReason}>
-              <Button variant="primary" disabled>
-                Create Referral Code
+          <PageActions
+            secondary={
+              <Button variant="ghost" onClick={handleCancel}>
+                Cancel
               </Button>
-            </Unavailable>
-          </>
+            }
+            primary={
+              <Unavailable reason={buttonReason}>
+                <Button variant="primary" disabled>
+                  Create Referral Code
+                </Button>
+              </Unavailable>
+            }
+          />
         }
       />
 

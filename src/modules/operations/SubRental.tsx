@@ -2,10 +2,11 @@ import { useState, useMemo, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { PageHeader } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { Button } from '../../components/ui/Button'
-import { Input } from '../../components/ui/Input'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { EmptyState } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import Icon from '../../components/ui/Icon'
@@ -27,7 +28,7 @@ import {
   type SubRentalRecord,
 } from '../../lib/queries/subrentals'
 import type { GateContext } from '../../lib/fieldGating'
-import { IconSearch, IconPlus, IconDownload, IconArrowUpRight, IconArrowDownLeft } from '@tabler/icons-react'
+import { IconPlus, IconDownload, IconArrowUpRight, IconArrowDownLeft } from '@tabler/icons-react'
 
 export type { SubRentalRecord }
 
@@ -224,11 +225,11 @@ function SupplierDirectoryTable({
           {rows.length} counterpart{rows.length === 1 ? 'y' : 'ies'} — every Sub Rental record grouped by who it&apos;s with
         </span>
         <div style={{ width: 240 }}>
-          <Input
+          <SearchInput
             placeholder="Search supplier name…"
             value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            icon={<IconSearch size={16} />}
+            onChange={onSearchChange}
+            onClear={() => onSearchChange('')}
           />
         </div>
       </div>
@@ -242,7 +243,7 @@ function SupplierDirectoryTable({
             onAction={() => onSearchChange('')}
           />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <DataTableShell ariaLabel="Sub-rental suppliers">
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
               <thead>
                 <tr
@@ -363,7 +364,7 @@ function SupplierDirectoryTable({
                 ))}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         )}
       </Card>
     </div>
@@ -531,50 +532,50 @@ export function SubRental() {
         <>
       {/* KPIs — Law 6 / §4.1: the three ₨ tiles are omitted entirely for a
           role without asset-finance visibility, not rendered then hidden. */}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${canSeeFinance ? 4 : 1}, 1fr)`, gap: 14 }}>
-        <Card padding="md">
-          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${canSeeFinance ? 4 : 1}, minmax(0, 1fr))`, gap: 'var(--sp-md)' }}>
+        <Card padding="md" style={{ border: '1px solid var(--border)', background: 'var(--card)' }}>
+          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             Records
           </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
+          <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
             {recordCount}
           </div>
-          <span className="figure" style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
-            Borrowing ({directionCount.Borrowing}) · Lending ({directionCount.Lending}) · every record in the table
+          <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4, display: 'block' }}>
+            Borrowing ({directionCount.Borrowing}) · Lending ({directionCount.Lending}) · every record in table
           </span>
         </Card>
         {canSeeFinance && (
           <>
-            <Card padding="md">
-              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+            <Card padding="md" style={{ border: '1px solid var(--border)', background: 'var(--card2)' }}>
+              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Total Revenue
               </span>
               <div style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
                 {NOT_TRACKED}
               </div>
-              <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4, display: 'block' }}>
                 {NOT_TRACKED_NOTE}
               </span>
             </Card>
-            <Card padding="md">
-              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+            <Card padding="md" style={{ border: '1px solid var(--border)', background: 'var(--card2)' }}>
+              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Total Cost
               </span>
               <div style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
                 {NOT_TRACKED}
               </div>
-              <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4, display: 'block' }}>
                 {NOT_TRACKED_NOTE}
               </span>
             </Card>
-            <Card padding="md">
-              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
+            <Card padding="md" style={{ border: '1px solid var(--border)', background: 'var(--card2)' }}>
+              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Blended Margin
               </span>
               <div style={{ fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--muted)', marginTop: 'var(--sp-xs)' }}>
                 {NOT_TRACKED}
               </div>
-              <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4, display: 'block' }}>
                 {NOT_TRACKED_NOTE}
               </span>
             </Card>
@@ -612,11 +613,11 @@ export function SubRental() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 240 }}>
-            <Input
+            <SearchInput
               placeholder="Search SR ID, equipment, partner…"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              icon={<IconSearch size={16} />}
+              onChange={setSearchQuery}
+              onClear={() => setSearchQuery('')}
             />
           </div>
           <Button
@@ -656,7 +657,7 @@ export function SubRental() {
             }}
           />
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <DataTableShell ariaLabel="Sub-rental records">
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -804,7 +805,7 @@ export function SubRental() {
                 })}
               </tbody>
             </table>
-          </div>
+          </DataTableShell>
         )}
       </Card>
         </>

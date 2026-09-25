@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import type { CSSProperties } from 'react'
 import Icon from '../../components/ui/Icon'
 import { PageHeader, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
+import { DataTableShell } from '../../components/ui/DataTable'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
 import { useViewport } from '../../lib/device'
@@ -21,6 +22,7 @@ import {
   type AuditEventListRow,
   type AuditPeriod,
 } from '../../lib/queries/audit'
+import '../settings/settings.css'
 
 /**
  * **Audit Log — `10_TOOLS.md` §10.4.**
@@ -160,7 +162,7 @@ export default function AuditLog() {
   }, [pageCount, page])
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
+    <div className="settings-v2" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
       <PageHeader
         icon="lock"
         title="Audit Log"
@@ -244,20 +246,20 @@ export default function AuditLog() {
             ))}
           </div>
         ) : (
-          <div style={{ ...cardStyle, overflow: 'hidden' }}>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
+          <div className="admin-table-shell" style={{ ...cardStyle, overflow: 'hidden' }}>
+            <DataTableShell ariaLabel="System audit log" data-table-scroll style={{ overflowX: 'auto' }}>
+              <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 940 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
-                    <th style={th}>When</th>
-                    <th style={th}>Who</th>
-                    <th style={th}>Action</th>
-                    <th style={th}>Entity</th>
-                    <th style={th}>Before → after</th>
-                    <th style={th}>Network</th>
+                    <th className="admin-th" style={th}>When</th>
+                    <th className="admin-th" style={th}>Who</th>
+                    <th className="admin-th" style={th}>Action</th>
+                    <th className="admin-th" style={th}>Entity</th>
+                    <th className="admin-th" style={th}>Before → after</th>
+                    <th className="admin-th" style={th}>Network</th>
                     {/* No global `.sr-only` exists in this build — off-screen
                         inline, the same pattern BookingDetail.tsx uses. */}
-                    <th style={{ ...th, width: 44 }}>
+                    <th className="admin-th" style={{ ...th, width: 44 }}>
                       <span style={srOnly}>Detail</span>
                     </th>
                   </tr>
@@ -269,34 +271,34 @@ export default function AuditLog() {
                     const first = changes[0]
                     return (
                       <Fragment key={r.id}>
-                        <tr style={{ borderTop: '1px solid var(--border)' }}>
-                          <td style={{ ...td, color: 'var(--text2)' }}>
+                        <tr className="admin-row" style={{ borderTop: '1px solid var(--border)' }}>
+                          <td className="admin-td" style={{ ...td, color: 'var(--text2)' }}>
                             <WhenCell iso={r.createdAtAd} />
                           </td>
-                          <td style={{ ...td, fontWeight: 600 }}>
+                          <td className="admin-td" style={{ ...td, fontWeight: 600 }}>
                             {r.actorRole ?? '—'}
                             <span
-                              className="identifier"
+                              className="identifier settings-mono"
                               title={r.actorId ?? undefined}
                               style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 500 }}
                             >
                               {shortId(r.actorId)}
                             </span>
                           </td>
-                          <td style={td}>
+                          <td className="admin-td" style={td}>
                             <ActionPill action={r.action} />
                           </td>
-                          <td style={td}>
-                            <span className="identifier">{r.tableName}</span>
+                          <td className="admin-td" style={td}>
+                            <span className="identifier settings-mono">{r.tableName}</span>
                             <span
-                              className="identifier"
+                              className="identifier settings-mono"
                               title={r.recordId}
                               style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)' }}
                             >
                               {shortId(r.recordId)}
                             </span>
                           </td>
-                          <td style={{ ...td, whiteSpace: 'normal' }}>
+                          <td className="admin-td" style={{ ...td, whiteSpace: 'normal' }}>
                             {first ? (
                               <Diff before={first.before} after={first.after} />
                             ) : (
@@ -308,10 +310,10 @@ export default function AuditLog() {
                               </span>
                             )}
                           </td>
-                          <td style={{ ...td, color: 'var(--muted)' }}>
-                            {r.ipAddress ? <span className="figure">{r.ipAddress}</span> : '—'}
+                          <td className="admin-td" style={{ ...td, color: 'var(--muted)' }}>
+                            {r.ipAddress ? <span className="figure settings-mono">{r.ipAddress}</span> : '—'}
                           </td>
-                          <td style={td}>
+                          <td className="admin-td" style={td}>
                             <DiscloseButton
                               open={open}
                               onToggle={() => setExpanded((cur) => (cur === r.id ? null : r.id))}
@@ -321,7 +323,7 @@ export default function AuditLog() {
                         </tr>
                         {open && (
                           <tr style={{ background: 'var(--card2)' }}>
-                            <td colSpan={7} style={{ ...td, whiteSpace: 'normal', padding: '12px 14px' }}>
+                            <td colSpan={7} className="admin-td" style={{ ...td, whiteSpace: 'normal', padding: '12px 14px' }}>
                               <ChangeDetail row={r} changes={changes} />
                             </td>
                           </tr>
@@ -331,7 +333,7 @@ export default function AuditLog() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </DataTableShell>
           </div>
         )}
 
@@ -600,10 +602,10 @@ function ChangeDetail({ row, changes }: { row: AuditEventListRow; changes: Audit
  */
 function Diff({ before, after }: { before: string; after: string }) {
   return (
-    <span style={{ fontSize: 'var(--t-meta)', lineHeight: 1.5 }}>
-      <span style={{ color: 'var(--text2)', textDecoration: 'line-through' }}>{before}</span>
-      <Icon name="arrow_right" size={12} style={{ margin: '0 6px', color: 'var(--muted)', verticalAlign: 'middle' }} />
-      <span style={{ color: 'var(--text)', fontWeight: 600 }}>{after}</span>
+    <span className="audit-diff-container" style={{ lineHeight: 1.5 }}>
+      <span className="audit-diff-del">{before}</span>
+      <Icon name="arrow_right" size={12} style={{ color: 'var(--muted)', verticalAlign: 'middle', flexShrink: 0 }} />
+      <span className="audit-diff-add">{after}</span>
     </span>
   )
 }
@@ -705,7 +707,7 @@ function Filter({
       >
         {label}
       </span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} style={selectStyle}>
+      <select className="settings-input settings-mono" value={value} onChange={(e) => onChange(e.target.value)} style={selectStyle}>
         {allLabel && <option value={ALL}>{allLabel}</option>}
         {options.map((o) => (
           <option key={o} value={o}>
