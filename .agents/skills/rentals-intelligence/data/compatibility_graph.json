@@ -1,0 +1,132 @@
+{
+  "graph_version": "2.0.0",
+  "generated_at": "2026-09-26T00:30:00Z",
+  "relationships": [
+    {
+      "source": "SONY_FX3A",
+      "target": "CFEXPRESS_TYPE_A",
+      "relation": "USES_MEDIA",
+      "properties": { "mandatory": true, "slots": 2, "recommended_speed": "V90 / 800MB/s" }
+    },
+    {
+      "source": "SONY_FX3A",
+      "target": "NP_FZ100",
+      "relation": "USES_BATTERY",
+      "properties": { "mandatory": true, "voltage": 7.2, "wh": 16.4 }
+    },
+    {
+      "source": "SONY_FX3A",
+      "target": "SONY_E_MOUNT",
+      "relation": "USES_MOUNT",
+      "properties": { "native": true }
+    },
+    {
+      "source": "SONY_FX3A",
+      "target": "PL_TO_E_ADAPTER",
+      "relation": "ADAPTS_TO",
+      "properties": { "target_mount": "ARRI_PL", "supports_lenses": ["BLAZAR_MANTIS", "NISI_ATHENA", "CHIOPT_XTREME"] }
+    },
+    {
+      "source": "SONY_FX3A",
+      "target": "DJI_RS_4_PRO",
+      "relation": "MOUNTS_ON",
+      "properties": { "status": "PASS", "tested_with": ["SIGMA_24_70", "SONY_GM", "NISI_ATHENA"] }
+    },
+    {
+      "source": "SONY_FX3A",
+      "target": "ATOMOS_NINJA_V_PLUS",
+      "relation": "OUTPUTS_TO",
+      "properties": { "interface": "HDMI_TYPE_A", "format": "16_BIT_RAW_4.2K", "max_fps": 60 }
+    },
+    {
+      "source": "RED_KOMODO_6K",
+      "target": "CFAST_2_0_RED",
+      "relation": "USES_MEDIA",
+      "properties": { "mandatory": true, "restriction": "RED_VERIFIED_ONLY", "max_capacity_gb": 512 }
+    },
+    {
+      "source": "RED_KOMODO_6K",
+      "target": "CANON_RF_MOUNT",
+      "relation": "USES_MOUNT",
+      "properties": { "mechanical": true }
+    },
+    {
+      "source": "RED_KOMODO_6K",
+      "target": "RF_TO_PL_ADAPTER",
+      "relation": "ADAPTS_TO",
+      "properties": { "supports_lenses": ["BLAZAR_MANTIS", "NISI_ATHENA", "CHIOPT_XTREME"] }
+    },
+    {
+      "source": "RED_KOMODO_6K",
+      "target": "12G_SDI",
+      "relation": "OUTPUTS_TO",
+      "properties": { "resolution": "4K_60P_422", "connector": "BNC_FEMALE" }
+    },
+    {
+      "source": "RED_KOMODO_6K",
+      "target": "HDMI_MONITOR_DIRECT",
+      "relation": "CONFLICTS_WITH",
+      "properties": { "reason": "Komodo 6K has NO HDMI output; requires SDI monitor or SDI-to-HDMI cross-converter" }
+    },
+    {
+      "source": "RED_KOMODO_X",
+      "target": "CFEXPRESS_TYPE_B_RED",
+      "relation": "USES_MEDIA",
+      "properties": { "mandatory": true, "restriction": "RED_PRO_CFEXPRESS_B_ONLY", "tested_capacities": ["1TB", "2TB"] }
+    },
+    {
+      "source": "RED_KOMODO_X",
+      "target": "MICRO_VMOUNT_BATTERY",
+      "relation": "USES_BATTERY",
+      "properties": { "native_mount": true, "nominal_voltage": 14.4 }
+    },
+    {
+      "source": "DJI_RONIN_4D_6K",
+      "target": "EXTERNAL_GIMBAL_RS3_RS4",
+      "relation": "CONFLICTS_WITH",
+      "properties": { "reason": "Ronin 4D integrates its own 4-axis motorized stabilization; external gimbal is physically impossible and forbidden" }
+    },
+    {
+      "source": "DJI_RONIN_4D_6K",
+      "target": "TB50_BATTERY",
+      "relation": "USES_BATTERY",
+      "properties": { "capacity_wh": 97.58, "average_runtime_hours": 2.0 }
+    },
+    {
+      "source": "CHIOPT_XTREME_SET",
+      "target": "15MM_STUDIO_RODS_AND_SUPPORT",
+      "relation": "REQUIRES",
+      "properties": { "severity": "CRITICAL_SAFETY", "reason": "Weight (2.8kg-3.1kg) causes structural mount detachment if unsuspended" }
+    },
+    {
+      "source": "BLAZAR_MANTIS_SET",
+      "target": "FOLLOW_FOCUS_SYSTEM",
+      "relation": "RECOMMENDED_WITH",
+      "properties": { "focus_throw_deg": 270, "gear_mod": 0.8, "models": ["DJI_FOCUS_PRO", "TILTA_NUCLEUS_M"] }
+    },
+    {
+      "source": "APUTURE_LS_600X_PRO",
+      "target": "BOWENS_MOUNT_MODIFIER",
+      "relation": "SUPPORTS",
+      "properties": { "standard": "BOWENS_S", "supports": ["LIGHT_DOME_150", "F10_FRESNEL", "LANTERN_90"] }
+    },
+    {
+      "source": "APUTURE_LS_600X_PRO",
+      "target": "HIGH_LOAD_CIRCUIT_15A",
+      "relation": "REQUIRES",
+      "properties": { "power_consumption_w": 720, "amperage_230v": 3.13, "domestic_5a_socket_safe": false }
+    },
+    {
+      "source": "ACCSOON_CINEVIEW_M7_PRO",
+      "target": "EXTERNAL_ANTENNAS_4X",
+      "relation": "REQUIRES",
+      "properties": { "antenna_count": 4, "type": "RP_SMA", "serialized_return_inspection": true }
+    },
+    {
+      "source": "TILTA_MIRAGE_MATTEBOX",
+      "target": "95MM_CIRCULAR_FILTERS",
+      "relation": "SUPPORTS",
+      "properties": { "filter_standard": "TILTA_95MM_STACKABLE", "includes_vnd": true }
+    }
+  ]
+}

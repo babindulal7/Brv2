@@ -1,0 +1,145 @@
+{
+  "version": "4.0.0",
+  "generated_at": "2026-07-06T00:00:00Z",
+  "data_basis": "Booqable 2026 transaction analysis, 324 clients, 44 bundles, 270 products",
+  "equipment_co_occurrences": {
+    "sony_fx3a": {
+      "sample_size": 48,
+      "strong_attachments": [
+        { "item_id": "sigma_24_70_art_ii", "co_occurrence_rate": 0.68, "workflow": "General video / gimbal" },
+        { "item_id": "vmount_battery_99wh", "co_occurrence_rate": 0.60, "workflow": "All-day handheld rig" },
+        { "item_id": "dji_rs3_pro", "co_occurrence_rate": 0.52, "workflow": "Stabilized movement" },
+        { "item_id": "accsoon_cineview_m7_pro", "co_occurrence_rate": 0.45, "workflow": "Wireless director monitoring" },
+        { "item_id": "tilta_mirage_mattebox", "co_occurrence_rate": 0.38, "workflow": "ND filtering in daylight" },
+        { "item_id": "sony_np_fz100", "co_occurrence_rate": 0.88, "workflow": "Fast swap backup batteries" },
+        { "item_id": "cfexpress_type_a_160gb", "co_occurrence_rate": 0.75, "workflow": "4K 120p / All-I capture" }
+      ]
+    },
+    "red_komodo_x": {
+      "sample_size": 16,
+      "strong_attachments": [
+        { "item_id": "cfexpress_type_b_1tb", "co_occurrence_rate": 1.00, "workflow": "REDCODE RAW capture" },
+        { "item_id": "vmount_battery_99wh", "co_occurrence_rate": 0.94, "workflow": "Core DC power" },
+        { "item_id": "pl_to_rf_adapter", "co_occurrence_rate": 0.88, "workflow": "Cine glass mounting" },
+        { "item_id": "nisi_athena_prime_set", "co_occurrence_rate": 0.62, "workflow": "Narrative cinema look" },
+        { "item_id": "accsoon_cineview_m7_pro", "co_occurrence_rate": 0.78, "workflow": "SDI director/focus monitor" },
+        { "item_id": "camera_caretaker", "co_occurrence_rate": 0.81, "workflow": "Mandatory high-risk field support" },
+        { "item_id": "studio_assist_heavy_tripod", "co_occurrence_rate": 0.75, "workflow": "Safe 15kg payload support" }
+      ]
+    },
+    "dji_ronin_4d_6k": {
+      "sample_size": 12,
+      "strong_attachments": [
+        { "item_id": "dji_prossd_1tb", "co_occurrence_rate": 0.92, "workflow": "ProRes RAW capture" },
+        { "item_id": "dji_high_bright_monitor", "co_occurrence_rate": 0.83, "workflow": "Remote wireless hand units" },
+        { "item_id": "camera_caretaker", "co_occurrence_rate": 0.92, "workflow": "Mandatory setup & balancing support" },
+        { "item_id": "studio_assist_heavy_tripod", "co_occurrence_rate": 0.67, "workflow": "Stationary 4-axis resting" }
+      ]
+    },
+    "chiopt_zoom_set": {
+      "sample_size": 4,
+      "strong_attachments": [
+        { "item_id": "15mm_rods_support_rig", "co_occurrence_rate": 1.00, "workflow": "Mandatory mount protection" },
+        { "item_id": "tilta_nucleus_m_ii", "co_occurrence_rate": 1.00, "workflow": "Parfocal manual focus pull" },
+        { "item_id": "accsoon_cineview_m7_pro", "co_occurrence_rate": 0.75, "workflow": "Focus checking" }
+      ]
+    },
+    "aputure_ls_600x_pro": {
+      "sample_size": 22,
+      "strong_attachments": [
+        { "item_id": "jumbo_heavy_duty_cstand", "co_occurrence_rate": 0.95, "workflow": "Overhead rigging" },
+        { "item_id": "sandbag_10kg", "co_occurrence_rate": 1.00, "workflow": "Tipping prevention" },
+        { "item_id": "aputure_f10_fresnel", "co_occurrence_rate": 0.55, "workflow": "Punchy long throw beam" },
+        { "item_id": "aputure_light_dome_150", "co_occurrence_rate": 0.64, "workflow": "Soft key daylight wrap" }
+      ]
+    }
+  },
+  "client_archetype_affinities": {
+    "production_house": {
+      "avg_spend_npr": 85000,
+      "typical_duration_days": 3.4,
+      "primary_platforms": ["red_komodo_x", "dji_ronin_4d_6k", "sony_fx3a"],
+      "preferred_glass": ["nisi_athena_prime_set", "blazar_mantis_anamorphic", "chiopt_zoom_set"],
+      "caretaker_acceptance_rate": 0.88,
+      "due_payment_risk": "MEDIUM",
+      "communication_style": "THE_SEASONED_PRO",
+      "key_priorities": ["Zero downtime", "SDI wireless links", "Multi-cam color consistency"]
+    },
+    "wedding_videographer": {
+      "avg_spend_npr": 32000,
+      "typical_duration_days": 2.2,
+      "primary_platforms": ["sony_fx3a", "sony_a7iv"],
+      "preferred_glass": ["sony_24_70_gm_ii", "sony_70_200_gm_ii", "sigma_24_70_art_ii"],
+      "caretaker_acceptance_rate": 0.22,
+      "due_payment_risk": "LOW",
+      "communication_style": "THE_SEASONED_PRO",
+      "key_priorities": ["Autofocus reliability", "Fast battery swapping", "Lightweight gimbals"]
+    },
+    "commercial_indie": {
+      "avg_spend_npr": 46000,
+      "typical_duration_days": 1.8,
+      "primary_platforms": ["sony_fx3a", "red_komodo"],
+      "preferred_glass": ["blazar_mantis_anamorphic", "thypoch_simera", "sigma_28_105_art"],
+      "caretaker_acceptance_rate": 0.50,
+      "due_payment_risk": "LOW",
+      "communication_style": "THE_SEASONED_PRO",
+      "key_priorities": ["Cinematic texture", "Anamorphic bokeh", "Compact wireless video"]
+    },
+    "student_beginner": {
+      "avg_spend_npr": 8500,
+      "typical_duration_days": 1.2,
+      "primary_platforms": ["sony_a7iv", "sony_a7iii"],
+      "preferred_glass": ["samyang_v_af_set", "sigma_24_70_art_ii"],
+      "caretaker_acceptance_rate": 0.05,
+      "due_payment_risk": "LOW",
+      "communication_style": "THE_CREATIVE_BEGINNER",
+      "key_priorities": ["Budget economy", "Easy operation", "Simple LED tubes"]
+    }
+  },
+  "seasonal_patterns": {
+    "wedding_peak_autumn": {
+      "months": [10, 11, 12],
+      "utilization_surge_equipment": ["sony_fx3a", "sony_a7iv", "dji_rs3_pro", "dji_mic_mini"],
+      "discount_posture": "STRICT_NO_DISCOUNT",
+      "advance_policy_enforcement": "100_PERCENT_BEFORE_RELEASE"
+    },
+    "wedding_peak_spring": {
+      "months": [2, 3, 4],
+      "utilization_surge_equipment": ["sony_fx3a", "sony_a7iv", "sony_24_70_gm_ii"],
+      "discount_posture": "STRICT_NO_DISCOUNT",
+      "advance_policy_enforcement": "100_PERCENT_BEFORE_RELEASE"
+    },
+    "monsoon_slump": {
+      "months": [6, 7, 8, 9],
+      "utilization_drop_outdoor": 0.40,
+      "utilization_surge_indoor": ["aputure_ls_600x_pro", "amaran_300c", "amaran_t4c_tubes"],
+      "active_protocols": ["RAIN_PROTECTION_MANDATORY", "DEHUMIDIFIER_HOLD_ON_RETURN", "FUNGUS_INSPECTION_WEEKLY"]
+    },
+    "mountain_expedition_window": {
+      "months": [9, 10, 11, 3, 4, 5],
+      "special_demands": ["EXTREME_COLD_BATTERY_DERATING_40_PCT", "DANA_DOLLY_COMPACT", "SEALED_PELICAN_ACCLIMATIZATION"]
+    }
+  },
+  "accessory_friction_frequencies": {
+    "accsoon_antenna": {
+      "loss_frequency_per_100_rentals": 12.5,
+      "cause": "Unscrewed and left in client bag / pocket",
+      "countermeasure": "Mandatory antenna count verification on handover and return checklist"
+    },
+    "15mm_carbon_rods": {
+      "loss_frequency_per_100_rentals": 8.0,
+      "cause": "Detached from baseplate and left on studio floor",
+      "countermeasure": "Hard-case cutouts with missing-slot visual cue"
+    },
+    "hdmi_thin_cables": {
+      "loss_frequency_per_100_rentals": 15.0,
+      "cause": "Port strain breakage or cable bend fatigue",
+      "countermeasure": "Include 1 spare HDMI cable in every monitor kit + cable clamp enforcement"
+    },
+    "dji_mic_magnets": {
+      "loss_frequency_per_100_rentals": 18.0,
+      "cause": "Detached from talent clothing and forgotten",
+      "countermeasure": "Count check: 2 transmitters, 2 clips, 2 magnets before return signoff"
+    }
+  }
+}

@@ -86,6 +86,7 @@ import { rentalDaysBetween, formatRentalDays } from '../../lib/rentalDays'
 import { LateFeePanel } from './LateFeePanel'
 import { lateFee } from '../../lib/lateFee'
 import type { LateFeeOutcome } from '../../lib/lateFee'
+import { ReturnSettlementModal, type ReturnSettlementDamageItem } from './modals/ReturnSettlementModal'
 
 /**
  * # Booking Detail — live, for ANY `:bookingNo`
@@ -1130,6 +1131,7 @@ export default function BookingDetail() {
   const money = (n: number) => formatMoney(n as Paisa)
 
   const [lateFeeOutcome, setLateFeeOutcome] = useState<LateFeeOutcome | null>(null)
+  const [settlementModalOpen, setSettlementModalOpen] = useState(false)
 
   const lateFeeData = useMemo(() => {
     if (!booking || !canBookingMoney || totals.total <= 0) return null
@@ -1491,6 +1493,26 @@ export default function BookingDetail() {
   const missingSerialsCount = lines
     .filter((l) => l.lineType === 'Equipment')
     .reduce((sum, l) => sum + Math.max(0, l.qty - l.units.length), 0)
+
+  const returnDamageItems = useMemo<ReturnSettlementDamageItem[]>(() => {
+    const list: ReturnSettlementDamageItem[] = []
+    const floorLines = floor?.lines ?? []
+    floorLines.forEach((l) => {
+      l.units.forEach((u) => {
+        if (u.damaged || u.unitState === 'Missing' || u.unitState === 'Damaged') {
+          list.push({
+            key: `${l.id}-${u.id || u.serial || Math.random().toString(36).slice(2)}`,
+            name: l.productName ?? 'Equipment Line',
+            serial: u.serial ?? null,
+            condition: u.damaged || u.unitState === 'Damaged' ? 'Damaged / Needs Repair' : 'Missing / Not Returned',
+            isMissing: u.unitState === 'Missing',
+            notes: undefined,
+          })
+        }
+      })
+    })
+    return list
+  }, [floor?.lines])
 
 
   if (!booking) {
@@ -1917,6 +1939,16 @@ export default function BookingDetail() {
                     Cleaning & Reset
                   </Button>
                 )
+              ),
+              canBookingMoney && (stage === 'Returned' || stage === 'Closed' || lateFeeData !== null) && (
+                <Button
+                  key="settle"
+                  icon="receipt"
+                  variant="secondary"
+                  onClick={() => setSettlementModalOpen(true)}
+                >
+                  Deposit Settlement
+                </Button>
               ),
               <BookingOperationsMenu
                 key="ops"
@@ -2560,6 +2592,19 @@ export default function BookingDetail() {
                         />
                       </div>
                     )}
+
+                    {canBookingMoney && (stage === 'Returned' || stage === 'Closed' || lateFeeData !== null) && (
+                      <div style={{ marginTop: 16 }}>
+                        <Button
+                          variant="secondary"
+                          icon="receipt"
+                          onClick={() => setSettlementModalOpen(true)}
+                          style={{ minHeight: 44, width: '100%', justifyContent: 'center', fontWeight: 600 }}
+                        >
+                          Deposit Reconciliation & Return Settlement
+                        </Button>
+                      </div>
+                    )}
                     {/* §2.2 — payments and deposit movements are immutable
                         (Law 4); the correction is a reversal row, never an
                         edit. The late-return panel that stood here ran on
@@ -3057,6 +3102,31 @@ export default function BookingDetail() {
           onSuccess={() => {
             setShowCreateDocument(false)
             documentsList.refetch()
+          }}
+        />
+      )}
+
+      {settlementModalOpen && booking && (
+        <ReturnSettlementModal
+          isOpen={settlementModalOpen}
+          onClose={() => setSettlementModalOpen(false)}
+          bookingNo={booking.bookingNo}
+          clientName={booking.clientName}
+          clientPhone={clientPhone}
+          depositHeldPaisa={canBookingMoney ? booking.depositRequired : null}
+          scheduledReturnIso={booking.returnAtAd}
+          actualReturnIso={booking.actualReturnAtAd ?? new Date().toISOString()}
+          dayRatePaisa={
+            totals.total > 0
+              ? (Math.max(1, Math.round(totals.total / (rentalDaysBetween(booking.pickupAtAd, booking.returnAtAd) ?? 1))) as Paisa)
+              : null
+          }
+          dayRateBasis={lateFeeData?.basis ?? 'Derived from rental total'}
+          totalItemCount={booking.itemCount}
+          itemsWithIssues={returnDamageItems}
+          onConfirmSettlement={() => {
+            setSettlementModalOpen(false)
+            refreshBookingData()
           }}
         />
       )}

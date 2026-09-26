@@ -1,0 +1,136 @@
+{
+  "version": "4.0.0",
+  "description": "Ledger of AI recommendations, staff decisions, and actual shoot/rental outcomes for continuous intelligence refinement.",
+  "records": [
+    {
+      "id": "REC-2026-001",
+      "timestamp": "2026-06-04T11:20:00Z",
+      "booking_id": "BK-2026-0412",
+      "client_name": "Pana Weddings",
+      "client_id": "CL-014",
+      "shoot_type": "Wedding / Multi-Cam",
+      "ai_recommendation": {
+        "pattern": "DUAL_FX3A_CREATOR_KIT",
+        "primary_gear": ["sony_fx3a", "sony_fx3a", "sony_24_70_gm_ii", "sony_70_200_gm_ii", "dji_rs3_pro"],
+        "auto_additions": ["6x np_fz100", "2x cfexpress_type_a_160gb", "dji_mic_mini"],
+        "reasoning": "Fast autofocus, matching S-Cinetone color profiles across both bodies, redundant wireless mic audio."
+      },
+      "human_decision": "ACCEPTED_UNMODIFIED",
+      "staff_member": "Babin",
+      "staff_notes": "Standard wedding package that works reliably every time.",
+      "actual_outcome": {
+        "status": "COMPLETED_PERFECT",
+        "returned_on_time": true,
+        "damage_detected": false,
+        "battery_shortage": false,
+        "client_satisfaction_score": 5,
+        "client_feedback": "Seamless shoot at Godavari Resort. Colors matched instantly in post."
+      },
+      "learning_reflection": "Validates Dual FX3A as gold standard for high-end wedding teams. No modification needed."
+    },
+    {
+      "id": "REC-2026-002",
+      "timestamp": "2026-06-15T09:40:00Z",
+      "booking_id": "BK-2026-0489",
+      "client_name": "Saphal Ganeju",
+      "client_id": "CL-008",
+      "shoot_type": "Commercial Ad / Studio",
+      "ai_recommendation": {
+        "pattern": "RED_KOMODO_X_NISI_CINEMA",
+        "primary_gear": ["red_komodo_x", "nisi_athena_prime_set", "tilta_mirage_mattebox", "accsoon_cineview_m7_pro"],
+        "auto_additions": ["camera_caretaker", "studio_assist_heavy_tripod", "4x vmount_battery_99wh"],
+        "reasoning": "High-end commercial color fidelity, zero global shutter distortion, dedicated SDI monitoring and safe caretaker handling."
+      },
+      "human_decision": "MODIFIED_BY_STAFF",
+      "staff_member": "Babin",
+      "staff_notes": "Client requested Blazar Mantis Anamorphic instead of NiSi Athena primes for wider cinematic flare.",
+      "actual_outcome": {
+        "status": "COMPLETED_WITH_LESSON",
+        "returned_on_time": true,
+        "damage_detected": false,
+        "battery_shortage": false,
+        "client_satisfaction_score": 5,
+        "client_feedback": "Loved the anamorphic look. Monitor needed 1.33x de-squeeze activated."
+      },
+      "learning_reflection": "When client requests anamorphic glass, auto-verify that the chosen monitor firmware supports the exact de-squeeze ratio (1.33x for Mantis, 1.8x for Great Joy)."
+    },
+    {
+      "id": "REC-2026-003",
+      "timestamp": "2026-06-22T14:10:00Z",
+      "booking_id": "BK-2026-0534",
+      "client_name": "Rupesh Karki",
+      "client_id": "CL-002",
+      "shoot_type": "Documentary / Mountain High-Altitude",
+      "ai_recommendation": {
+        "pattern": "FX3A_EXPEDITION_KIT",
+        "primary_gear": ["sony_fx3a", "sigma_24_70_art_ii", "k_and_f_tripod", "dji_mic_mini"],
+        "auto_additions": ["3x np_fz100", "2x cfexpress_type_a_160gb", "pelican_hardcase"],
+        "reasoning": "Lightweight for trekking in Manang."
+      },
+      "human_decision": "MODIFIED_UPGRADED_SAFETY",
+      "staff_member": "Babin",
+      "staff_notes": "Upgraded power: Manang winter/high-altitude cold drains batteries fast. Added 1x 99Wh V-Mount + D-Tap dummy battery + silica packs.",
+      "actual_outcome": {
+        "status": "COMPLETED_CRITICAL_SAVE",
+        "returned_on_time": true,
+        "damage_detected": false,
+        "battery_shortage": false,
+        "client_satisfaction_score": 5,
+        "client_feedback": "Temperatures hit -8C at night. Standard NP-FZ100s died in 35 mins; the V-Mount powered the time-lapse for 4 hours solid."
+      },
+      "learning_reflection": "RULE UPDATED: Whenever destination is Manang, Mustang, or >3000m altitude, AI MUST auto-include V-Mount cold-weather battery derating (40%) and sealed pelican thermal acclimatization SOP."
+    },
+    {
+      "id": "REC-2026-004",
+      "timestamp": "2026-06-28T16:00:00Z",
+      "booking_id": "BK-2026-0590",
+      "client_name": "Himalayan Cine Vision",
+      "client_id": "CL-045",
+      "shoot_type": "Feature Film / Outdoor",
+      "ai_recommendation": {
+        "pattern": "APUTURE_HIGH_POWER_PACKAGE",
+        "primary_gear": ["aputure_ls_600x_pro", "aputure_ls_600x_pro", "amaran_300c"],
+        "auto_additions": ["2x jumbo_cstand", "4x sandbag_10kg", "heavy_extension_board"],
+        "reasoning": "High daylight output punch for exterior shade matching."
+      },
+      "human_decision": "ACCEPTED_UNMODIFIED",
+      "staff_member": "Staff Tech",
+      "staff_notes": "Confirmed 15A generator availability on location.",
+      "actual_outcome": {
+        "status": "COMPLETED_INCIDENT_AVOIDED",
+        "returned_on_time": true,
+        "damage_detected": false,
+        "battery_shortage": false,
+        "client_satisfaction_score": 5,
+        "client_feedback": "Sandbags were critical—high wind gust on set on Day 2 did not topple the 600x."
+      },
+      "learning_reflection": "Sandbagging policy (2 bags per 600x on jumbo stand) proven 100% essential for exterior safety."
+    },
+    {
+      "id": "REC-2026-005",
+      "timestamp": "2026-07-01T10:30:00Z",
+      "booking_id": "BK-2026-0612",
+      "client_name": "Indie Music Video Crew",
+      "client_id": "CL-112",
+      "shoot_type": "Music Video / Creative",
+      "ai_recommendation": {
+        "pattern": "ANAMORPHIC_ACTIVATION_PROMO",
+        "primary_gear": ["sony_fx3a", "blazar_great_joy_1_8x_set", "tilta_mirage_mattebox"],
+        "auto_additions": ["pl_to_e_adapter", "tilta_nucleus_nano_ii", "accsoon_cineview_m7_pro"],
+        "reasoning": "Idle high-value lens set activation; client wanted 90s visual flare."
+      },
+      "human_decision": "ACCEPTED_UNMODIFIED",
+      "staff_member": "Babin",
+      "staff_notes": "Idle stock movement: Great Joy set booked for 2 days at Rs 12,000/day.",
+      "actual_outcome": {
+        "status": "COMPLETED_PERFECT",
+        "returned_on_time": true,
+        "damage_detected": false,
+        "battery_shortage": false,
+        "client_satisfaction_score": 5,
+        "client_feedback": "The streaks and oval bokeh were incredible. Will book again next month."
+      },
+      "learning_reflection": "Demonstrates successful dead-capital activation. Pairing idle anamorphic glass with FX3 and wireless monitor makes high-end cinema accessible to music video creators."
+    }
+  ]
+}

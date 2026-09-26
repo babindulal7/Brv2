@@ -1078,6 +1078,23 @@ export default function HandoverWorkspace({
     setActiveSigningRole(role)
   }
 
+  const quickCaptureSignature = (role: 'receiver' | 'warehouse') => {
+    const at = new Date().toISOString()
+    const name =
+      role === 'receiver'
+        ? (floor?.clientName ?? 'Receiver')
+        : (user?.name ?? 'Warehouse Staff')
+    setSignatures((p) => ({
+      ...p,
+      [role]: {
+        name,
+        role: role === 'receiver' ? 'Receiver' : 'Warehouse staff',
+        atIso: at,
+        mode: 'type',
+      },
+    }))
+  }
+
   const handleSignComplete = (sig: DigitalSignature) => {
     if (!activeSigningRole) return
     setSignatures((p) => ({
@@ -1889,6 +1906,7 @@ export default function HandoverWorkspace({
                       label="Receiver"
                       sig={signatures.receiver}
                       onCapture={() => captureSignature('receiver')}
+                      onQuickCapture={() => quickCaptureSignature('receiver')}
                       required
                       disabled={dispatching}
                       {...(floor.clientName === null
@@ -1899,6 +1917,7 @@ export default function HandoverWorkspace({
                       label="Warehouse Staff"
                       sig={signatures.warehouse}
                       onCapture={() => captureSignature('warehouse')}
+                      onQuickCapture={() => quickCaptureSignature('warehouse')}
                       required
                       disabled={dispatching}
                       {...(user === null
@@ -2241,6 +2260,7 @@ function SigRow({
   label,
   sig,
   onCapture,
+  onQuickCapture,
   required,
   disabled,
   unavailable,
@@ -2248,6 +2268,7 @@ function SigRow({
   label: string
   sig: Sig | undefined
   onCapture?: (() => void) | undefined
+  onQuickCapture?: (() => void) | undefined
   required: boolean
   disabled: boolean
   unavailable?: string | undefined
@@ -2348,19 +2369,36 @@ function SigRow({
             </button>
           </Unavailable>
         ) : (
-          <button
-            type="button"
-            onClick={onCapture}
-            disabled={disabled}
-            style={{
-              ...capture,
-              color: 'var(--primary, #38bdf8)',
-              borderColor: 'color-mix(in srgb, var(--primary, #2563eb) 40%, transparent)',
-              cursor: disabled ? 'not-allowed' : 'pointer',
-            }}
-          >
-            Sign on Glass
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              onClick={onQuickCapture ?? onCapture}
+              disabled={disabled}
+              style={{
+                ...capture,
+                minHeight: 36,
+                padding: '0 10px',
+                fontSize: 'var(--t-meta)',
+                color: 'var(--text2)',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Capture
+            </button>
+            <button
+              type="button"
+              onClick={onCapture}
+              disabled={disabled}
+              style={{
+                ...capture,
+                color: 'var(--primary, #38bdf8)',
+                borderColor: 'color-mix(in srgb, var(--primary, #2563eb) 40%, transparent)',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+              }}
+            >
+              Sign on Glass
+            </button>
+          </div>
         )
       )}
     </div>

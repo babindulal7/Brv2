@@ -1,0 +1,100 @@
+{
+  "provenance_registry": [
+    {
+      "field": "power_draw_nominal",
+      "device": "Sony FX3",
+      "value": 7.3,
+      "unit": "W",
+      "source_type": "manufacturer_manual",
+      "source_name": "Sony ILME-FX3 Help Guide / Specifications",
+      "source_url": "https://helpguide.sony.net/ilc/2035/v1/en/contents/TP1000284457.html",
+      "verified_at": "2026-09-26",
+      "confidence": "B",
+      "manufacturer_verified": true
+    },
+    {
+      "field": "power_draw_nominal",
+      "device": "RED Komodo-X 6K",
+      "value": 38.0,
+      "unit": "W",
+      "source_type": "manufacturer_manual",
+      "source_name": "RED DSMC3 Technical Manual",
+      "source_url": "https://docs.red.com/komodo-x",
+      "verified_at": "2026-09-26",
+      "confidence": "B",
+      "manufacturer_verified": true
+    },
+    {
+      "field": "tested_payload_max",
+      "device": "DJI RS 4 Pro",
+      "value": 4500,
+      "unit": "g",
+      "source_type": "manufacturer_specs",
+      "source_name": "DJI RS 4 Pro Technical Specifications",
+      "source_url": "https://www.dji.com/rs-4-pro/specs",
+      "verified_at": "2026-09-26",
+      "confidence": "B",
+      "manufacturer_verified": true
+    },
+    {
+      "field": "power_consumption_max",
+      "device": "Aputure LS 600x Pro",
+      "value": 720,
+      "unit": "W",
+      "source_type": "bh_and_manufacturer",
+      "source_name": "Aputure Technical Data Sheet & B&H Listing",
+      "source_url": "https://www.bhphotovideo.com/c/product/1663185-REG/aputure_ls_600x_pro_light_storm.html",
+      "verified_at": "2026-09-26",
+      "confidence": "B",
+      "manufacturer_verified": true
+    },
+    {
+      "field": "lens_weight",
+      "device": "CHIOPT 28-85mm T3.2 Zoom",
+      "value": 2800,
+      "unit": "g",
+      "source_type": "manufacturer_specs",
+      "source_name": "CHIOPT Xtreme Zoom User Manual",
+      "source_url": "https://www.bhphotovideo.com/c/product/1690022-REG/chiopt_cp_z2885_pl_xtreme_zoom_28_85mm_t3_2.html",
+      "verified_at": "2026-09-26",
+      "confidence": "B",
+      "manufacturer_verified": true
+    },
+    {
+      "field": "lens_weight",
+      "device": "Sigma 24-70mm f/2.8 DG DN II Art",
+      "value": 745,
+      "unit": "g",
+      "source_type": "manufacturer_specs",
+      "source_name": "Sigma Global Specifications",
+      "source_url": "https://www.sigmaphoto.com/24-70mm-f2-8-dg-dn-ii-a",
+      "verified_at": "2026-09-26",
+      "confidence": "B",
+      "manufacturer_verified": true
+    },
+    {
+      "field": "screen_brightness",
+      "device": "Accsoon CineView M7 Pro",
+      "value": 1200,
+      "unit": "nits",
+      "source_type": "bh_specs",
+      "source_name": "B&H Photo Video Technical Data",
+      "source_url": "https://www.bhphotovideo.com/c/product/1815121-REG/accsoon_cineview_m7_pro.html",
+      "verified_at": "2026-09-26",
+      "confidence": "C",
+      "manufacturer_verified": true
+    },
+    {
+      "field": "battery_capacity",
+      "device": "SmallRig VB99 Mini V-Mount",
+      "value": 99.0,
+      "unit": "Wh",
+      "source_type": "manufacturer_specs",
+      "source_name": "SmallRig Product Manual",
+      "source_url": "https://www.smallrig.com/SmallRig-VB99-mini-V-Mount-Battery-3580.html",
+      "verified_at": "2026-09-26",
+      "confidence": "B",
+      "manufacturer_verified": true
+    }
+  ]
+}

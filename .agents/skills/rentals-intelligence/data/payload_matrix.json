@@ -1,0 +1,176 @@
+{
+  "unit": "grams",
+  "component_weights": {
+    "bodies": {
+      "Sony FX3 (Body Only)": 640,
+      "Sony FX3 (Operational with Battery & Card)": 715,
+      "Sony FX3 Top Handle with XLR Unit": 300,
+      "Sony A7S III (Operational)": 699,
+      "Sony A7 IV (Operational)": 743,
+      "RED Komodo 6K (Brain Only)": 952,
+      "RED Komodo 6K (Operational with Outrigger & Battery)": 1850,
+      "RED Komodo-X (Brain Only)": 1190,
+      "RED Komodo-X (Operational with Top Handle & V-Mount)": 2200,
+      "DJI Ronin 4D 6K (Full Body with Gimbal & Battery)": 4670
+    },
+    "lenses": {
+      "Sony FE 24-70mm f/2.8 GM II": 695,
+      "Sony FE 70-200mm f/2.8 GM OSS II": 1045,
+      "Sony FE 50mm f/1.2 GM": 778,
+      "Sigma 24-70mm f/2.8 DG DN II Art": 745,
+      "Sigma 28-105mm f/2.8 DG DN Art": 995,
+      "Samyang V-AF 24mm / 35mm / 45mm / 75mm T1.9": 280,
+      "NiSi Athena 24mm / 35mm / 50mm / 85mm T1.9": 800,
+      "NiSi Athena 14mm T2.4": 890,
+      "Blazar Mantis 35mm / 50mm / 75mm": 800,
+      "Blazar Mantis 25mm / 100mm": 860,
+      "Blazar Great Joy 35mm / 50mm / 85mm T2.9": 1100,
+      "CHIOPT 28-85mm T3.2 Zoom": 2800,
+      "CHIOPT 75-250mm T3.2 Zoom": 3100,
+      "Thypoch Simera 28mm / 35mm f/1.4": 290
+    },
+    "rigging_and_accessories": {
+      "Full Camera Cage (Tilta / SmallRig)": 220,
+      "Top Handle (NATO)": 160,
+      "Side Wooden / NATO Handle": 180,
+      "15mm Baseplate with Rod Clamps": 240,
+      "15mm Carbon Fiber Rods 8-inch Pair": 75,
+      "Tilta Mirage Matte Box with VND": 380,
+      "SmallRig Mini Matte Box": 140,
+      "DJI Focus Pro Motor": 108,
+      "Tilta Nucleus Nano II Motor": 80,
+      "PL to E-mount Heavy-duty Adapter": 210,
+      "RF to PL Adapter": 230,
+      "SmallRig Compact V-Mount Battery Plate": 180
+    },
+    "monitoring_and_power": {
+      "Accsoon CineView M7 Pro 7-inch Monitor": 480,
+      "Atomos Ninja V+ Monitor": 360,
+      "Desview Blade 5 Pro 5.5-inch Monitor": 210,
+      "Accsoon CineView SDI 2 TX": 200,
+      "SmallRig 99Wh V-Mount Battery (VB99)": 540,
+      "Sony NP-FZ100 Battery": 85,
+      "NP-F970 Battery": 320
+    }
+  },
+  "support_payload_limits": {
+    "DJI_RS_3": {
+      "max_tested_payload_g": 3000,
+      "recommended_operational_payload_g": 2400,
+      "safety_headroom_pct": 20.0,
+      "max_lens_length_mm": 180
+    },
+    "DJI_RS_4_PRO": {
+      "max_tested_payload_g": 4500,
+      "recommended_operational_payload_g": 3800,
+      "safety_headroom_pct": 15.5,
+      "max_lens_length_mm": 250
+    },
+    "DJI_RS_5": {
+      "max_tested_payload_g": 4500,
+      "recommended_operational_payload_g": 3800,
+      "safety_headroom_pct": 15.5,
+      "max_lens_length_mm": 250
+    },
+    "KF_CONCEPT_VA3_TRIPOD": {
+      "max_tested_payload_g": 10000,
+      "recommended_operational_payload_g": 7000,
+      "safety_headroom_pct": 30.0
+    },
+    "STUDIO_ASSIST_HEAVY_TRIPOD": {
+      "max_tested_payload_g": 15000,
+      "recommended_operational_payload_g": 10500,
+      "safety_headroom_pct": 30.0
+    },
+    "DANA_DOLLY_NS_50": {
+      "max_tested_payload_g": 45000,
+      "recommended_operational_payload_g": 35000,
+      "safety_headroom_pct": 22.2
+    },
+    "X_JIB_SYSTEM": {
+      "max_tested_payload_g": 15000,
+      "recommended_operational_payload_g": 10500,
+      "safety_headroom_pct": 30.0
+    }
+  },
+  "standard_rig_calculations": [
+    {
+      "rig_name": "Solo Run-and-Gun FX3 Commercial Rig",
+      "components": [
+        "Sony FX3 (Operational with Battery & Card)",
+        "Sigma 24-70mm f/2.8 DG DN II Art",
+        "Tilta Mirage Matte Box with VND",
+        "DJI Focus Pro Motor"
+      ],
+      "total_rig_weight_g": 1948,
+      "support_evaluations": {
+        "DJI_RS_3": { "status": "SAFE", "utilization_pct": 64.9 },
+        "DJI_RS_4_PRO": { "status": "SAFE", "utilization_pct": 43.3 },
+        "KF_CONCEPT_VA3_TRIPOD": { "status": "SAFE", "utilization_pct": 19.5 }
+      }
+    },
+    {
+      "rig_name": "Studio Cinema FX3 V-Mount Client Rig",
+      "components": [
+        "Sony FX3 (Operational with Battery & Card)",
+        "Full Camera Cage (Tilta / SmallRig)",
+        "NiSi Athena 35mm T1.9",
+        "PL to E-mount Heavy-duty Adapter",
+        "SmallRig Compact V-Mount Battery Plate",
+        "SmallRig 99Wh V-Mount Battery (VB99)",
+        "Accsoon CineView M7 Pro 7-inch Monitor",
+        "Tilta Mirage Matte Box with VND",
+        "DJI Focus Pro Motor",
+        "15mm Baseplate with Rod Clamps",
+        "15mm Carbon Fiber Rods 8-inch Pair"
+      ],
+      "total_rig_weight_g": 3723,
+      "support_evaluations": {
+        "DJI_RS_3": { "status": "FAIL", "utilization_pct": 124.1, "reason": "Exceeds 3.0kg motor limit; will overload tilt/roll motors" },
+        "DJI_RS_4_PRO": { "status": "SAFE_BUT_NEAR_LIMIT", "utilization_pct": 82.7, "recommendation": "Use Ring Grip or Easyrig for extended takes" },
+        "KF_CONCEPT_VA3_TRIPOD": { "status": "SAFE", "utilization_pct": 37.2 },
+        "STUDIO_ASSIST_HEAVY_TRIPOD": { "status": "SAFE", "utilization_pct": 24.8 }
+      }
+    },
+    {
+      "rig_name": "RED Komodo-X Full Cinema Production Rig",
+      "components": [
+        "RED Komodo-X (Brain Only)",
+        "Full Camera Cage (Tilta / SmallRig)",
+        "RF to PL Adapter",
+        "Blazar Mantis 50mm T2.0",
+        "SmallRig 99Wh V-Mount Battery (VB99)",
+        "Accsoon CineView M7 Pro 7-inch Monitor",
+        "Tilta Mirage Matte Box with VND",
+        "DJI Focus Pro Motor",
+        "15mm Baseplate with Rod Clamps",
+        "15mm Carbon Fiber Rods 8-inch Pair"
+      ],
+      "total_rig_weight_g": 3983,
+      "support_evaluations": {
+        "DJI_RS_3": { "status": "FAIL", "utilization_pct": 132.8 },
+        "DJI_RS_4_PRO": { "status": "NOT_RECOMMENDED", "utilization_pct": 88.5, "reason": "Front-heavy PL anamorphic requires extended counterweighting; dynamic pan/tilt overshoot likely" },
+        "STUDIO_ASSIST_HEAVY_TRIPOD": { "status": "SAFE", "utilization_pct": 26.6 },
+        "DANA_DOLLY_NS_50": { "status": "SAFE", "utilization_pct": 8.9 }
+      }
+    },
+    {
+      "rig_name": "CHIOPT 28-85mm Heavy Studio Rig",
+      "components": [
+        "RED Komodo-X (Brain Only)",
+        "Full Camera Cage (Tilta / SmallRig)",
+        "RF to PL Adapter",
+        "CHIOPT 28-85mm T3.2 Zoom",
+        "SmallRig 99Wh V-Mount Battery (VB99)",
+        "15mm Baseplate with Rod Clamps",
+        "15mm Carbon Fiber Rods 8-inch Pair"
+      ],
+      "total_rig_weight_g": 5245,
+      "support_evaluations": {
+        "DJI_RS_4_PRO": { "status": "FAIL", "utilization_pct": 116.6, "reason": "5.2kg exceeds 4.5kg payload rating. Extreme front length makes pitch balance impossible" },
+        "KF_CONCEPT_VA3_TRIPOD": { "status": "WARNING", "utilization_pct": 52.5, "recommendation": "Risk of head tilt slip; upgrade to Studio Assist Heavy Tripod" },
+        "STUDIO_ASSIST_HEAVY_TRIPOD": { "status": "SAFE", "utilization_pct": 35.0 }
+      }
+    }
+  ]
+}

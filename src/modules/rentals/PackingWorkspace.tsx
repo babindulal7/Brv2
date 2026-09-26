@@ -37,6 +37,7 @@ import {
   playCaseComplete,
   unlockAudioContext,
 } from '../../lib/acousticFeedback'
+import { getCinemaKitDependencies, evaluateKitCompleteness } from '../../lib/kitBuildVerification'
 import './rentals.css'
 
 
@@ -536,6 +537,7 @@ export default function PackingWorkspace({
     scanLog: string[]
     sessionNotes: string
     photoCount: number
+    verifiedKitDependencies?: Record<string, string[]> | undefined
   }
 
   /* ── checklist state, keyed on the real rows ─────────────────────────────
@@ -543,6 +545,7 @@ export default function PackingWorkspace({
    * until Complete Packing dispatches — dispatch-then-commit, where "commit"
    * is the navigation away on the resolved promise. */
   const [marks, setMarks] = useState<Record<string, Mark>>({})
+  const [verifiedKitDeps, setVerifiedKitDeps] = useState<Record<string, string[]>>({})
   const [restoredFromStorage, setRestoredFromStorage] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All')
@@ -594,12 +597,14 @@ export default function PackingWorkspace({
         persisted &&
         (Object.keys(persisted.payload.marks || {}).length > 0 ||
           (persisted.payload.sessionNotes || '').trim() !== '' ||
-          (persisted.payload.photoCount || 0) > 0)
+          (persisted.payload.photoCount || 0) > 0 ||
+          Object.keys(persisted.payload.verifiedKitDependencies || {}).length > 0)
       ) {
         setMarks(persisted.payload.marks || {})
         setPhotoCount(persisted.payload.photoCount || 0)
         setScanLog(persisted.payload.scanLog || [])
         setSessionNotes(persisted.payload.sessionNotes || '')
+        setVerifiedKitDeps(persisted.payload.verifiedKitDependencies || {})
         setRestoredFromStorage(true)
         return
       }
@@ -610,24 +615,30 @@ export default function PackingWorkspace({
     setPhotoCount(0)
     setScanLog([])
     setSessionNotes('')
+    setVerifiedKitDeps({})
     setRestoredFromStorage(false)
   }, [floorId])
 
   // Auto-save active scanning state to local storage
   useEffect(() => {
     if (!floorId) return
-    const hasContent = Object.keys(marks).length > 0 || sessionNotes.trim().length > 0 || photoCount > 0
+    const hasContent =
+      Object.keys(marks).length > 0 ||
+      sessionNotes.trim().length > 0 ||
+      photoCount > 0 ||
+      Object.keys(verifiedKitDeps).length > 0
     if (hasContent) {
       saveFloorScan<PersistedPackScan>('pack', floorId, {
         marks,
         scanLog,
         sessionNotes,
         photoCount,
+        verifiedKitDependencies: verifiedKitDeps,
       })
     } else {
       clearFloorScan('pack', floorId)
     }
-  }, [floorId, marks, scanLog, sessionNotes, photoCount])
+  }, [floorId, marks, scanLog, sessionNotes, photoCount, verifiedKitDeps])
 
   const discardRestoredScan = () => {
     if (floorId) clearFloorScan('pack', floorId)
@@ -635,6 +646,7 @@ export default function PackingWorkspace({
     setPhotoCount(0)
     setScanLog([])
     setSessionNotes('')
+    setVerifiedKitDeps({})
     setRestoredFromStorage(false)
   }
 
@@ -698,6 +710,39 @@ export default function PackingWorkspace({
 
   const jobChip = packJobChip(jobState, missingRows.length)
 
+  const toggleKitDependency = (rowKey: string, depId: string) => {
+    setVerifiedKitDeps((prev) => {
+      const current = prev[rowKey] ?? []
+      const next = current.includes(depId)
+        ? current.filter((id) => id !== depId)
+        : [...current, depId]
+      return { ...prev, [rowKey]: next }
+    })
+  }
+
+  const activeRows = useMemo(() => rows.filter((r) => marks[r.key]?.state !== 'Missing'), [rows, marks])
+
+  const verifyAllKitDependencies = () => {
+    const next: Record<string, string[]> = { ...verifiedKitDeps }
+    for (const r of activeRows) {
+      const deps = getCinemaKitDependencies(r.name)
+      if (deps.length > 0) {
+        next[r.key] = deps.map((d) => d.id)
+      }
+    }
+    setVerifiedKitDeps(next)
+  }
+
+  const kitEvaluation = useMemo(() => {
+    return evaluateKitCompleteness(
+      activeRows.map((r) => ({
+        key: r.key,
+        name: r.name,
+        verifiedDependencyIds: verifiedKitDeps[r.key],
+      })),
+    )
+  }, [activeRows, verifiedKitDeps])
+
   /* ── the completion gate — a checklist, every condition named ────────────
    * The same conditions `runFloorVerb` and the 0003 close gates enforce,
    * evaluated here first so the refusal is readable before it is a rejection. */
@@ -740,6 +785,17 @@ export default function PackingWorkspace({
       detail: needsPhoto ? 'Ruled mandatory (§4.31): one photo per booking before completion' : null,
     },
   ]
+
+  if (kitEvaluation.hasCinemaGear) {
+    gates.push({
+      label: 'Cinema kit & dependencies verified',
+      pass: kitEvaluation.allCriticalPassed,
+      detail: kitEvaluation.allCriticalPassed
+        ? `${kitEvaluation.verifiedCount}/${kitEvaluation.totalDependencies} kit dependencies verified`
+        : `${kitEvaluation.unverifiedCriticalItems.length} critical dependency check(s) unverified (e.g. ${kitEvaluation.unverifiedCriticalItems[0]?.itemName}: ${kitEvaluation.unverifiedCriticalItems[0]?.dependencyLabel})`,
+    })
+  }
+
   const firstBlockedGate = gates.find((g) => !g.pass) ?? null
   // PK-01 — once a session is recorded but held, this screen writes nothing
   // more: re-sending the same marks resumes the In Progress session and
@@ -1014,7 +1070,16 @@ export default function PackingWorkspace({
               `${handMarkedRows.length} row(s) (${handMarkedUnits} unit(s)) were first ticked by hand. ` +
               'A later scan of an already-packed row is not recorded — see Mark.via.',
           ]
-    const notes = [sessionNotes.trim(), ...mixedNotes, ...verificationNotes].filter((n) => n !== '').join('\n')
+    const kitVerificationNotes =
+      kitEvaluation.hasCinemaGear
+        ? [
+            `Kit Verification: ${kitEvaluation.verifiedCount} of ${kitEvaluation.totalDependencies} dependencies verified.` +
+              (kitEvaluation.allCriticalPassed
+                ? ' All critical cinema dependencies passed.'
+                : ` Unverified critical: ${kitEvaluation.unverifiedCriticalItems.map((u) => `${u.itemName} (${u.dependencyLabel})`).join(', ')}.`),
+          ]
+        : []
+    const notes = [sessionNotes.trim(), ...mixedNotes, ...verificationNotes, ...kitVerificationNotes].filter((n) => n !== '').join('\n')
 
     /*
      * ⚠ `navigate` is INSIDE `.then`, and only when the STAGE MOVED. It used
@@ -1055,7 +1120,11 @@ export default function PackingWorkspace({
       })
   }
 
-  const isDirty = Object.keys(marks).length > 0 || sessionNotes.trim().length > 0 || photoCount > 0
+  const isDirty =
+    Object.keys(marks).length > 0 ||
+    sessionNotes.trim().length > 0 ||
+    photoCount > 0 ||
+    Object.keys(verifiedKitDeps).length > 0
   useEffect(() => {
     onRegisterActions?.({
       canComplete,
@@ -1572,6 +1641,58 @@ export default function PackingWorkspace({
                                   </div>
                                 )}
                                 <ServiceDueLine row={r.assetId === null ? undefined : serviceByUnit.get(r.assetId)} />
+                                {(() => {
+                                  const deps = getCinemaKitDependencies(r.name)
+                                  if (deps.length === 0 || s === 'Missing') return null
+                                  return (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                                      {deps.map((dep) => {
+                                        const verified = (verifiedKitDeps[r.key] ?? []).includes(dep.id)
+                                        return (
+                                          <button
+                                            key={dep.id}
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.preventDefault()
+                                              e.stopPropagation()
+                                              toggleKitDependency(r.key, dep.id)
+                                            }}
+                                            title={`${dep.label}: ${dep.description}`}
+                                            style={{
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: 4,
+                                              padding: '3px 7px',
+                                              borderRadius: 'var(--r-chip)',
+                                              fontSize: '11px',
+                                              fontWeight: 600,
+                                              cursor: 'pointer',
+                                              fontFamily: 'inherit',
+                                              border: verified
+                                                ? '1px solid var(--success)'
+                                                : dep.critical
+                                                  ? '1px dashed var(--danger)'
+                                                  : '1px solid var(--border)',
+                                              background: verified
+                                                ? 'color-mix(in srgb, var(--success) 12%, var(--card))'
+                                                : dep.critical
+                                                  ? 'color-mix(in srgb, var(--danger) 8%, var(--card))'
+                                                  : 'var(--card2)',
+                                              color: verified
+                                                ? 'var(--success-text)'
+                                                : dep.critical
+                                                  ? 'var(--danger-text)'
+                                                  : 'var(--muted)',
+                                            }}
+                                          >
+                                            <Icon name={verified ? 'checklist' : 'box'} size={11} />
+                                            <span>{dep.label}</span>
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  )
+                                })()}
                               </span>
                             </label>
 
@@ -1639,6 +1760,58 @@ export default function PackingWorkspace({
                                     )}
                                   </span>
                                   <ServiceDueLine row={r.assetId === null ? undefined : serviceByUnit.get(r.assetId)} />
+                                  {(() => {
+                                    const deps = getCinemaKitDependencies(r.name)
+                                    if (deps.length === 0 || s === 'Missing') return null
+                                    return (
+                                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                                        {deps.map((dep) => {
+                                          const verified = (verifiedKitDeps[r.key] ?? []).includes(dep.id)
+                                          return (
+                                            <button
+                                              key={dep.id}
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.preventDefault()
+                                                e.stopPropagation()
+                                                toggleKitDependency(r.key, dep.id)
+                                              }}
+                                              title={`${dep.label}: ${dep.description}`}
+                                              style={{
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 4,
+                                                padding: '2px 6px',
+                                                borderRadius: 'var(--r-chip)',
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                cursor: 'pointer',
+                                                fontFamily: 'inherit',
+                                                border: verified
+                                                  ? '1px solid var(--success)'
+                                                  : dep.critical
+                                                    ? '1px dashed var(--danger)'
+                                                    : '1px solid var(--border)',
+                                                background: verified
+                                                  ? 'color-mix(in srgb, var(--success) 12%, var(--card))'
+                                                  : dep.critical
+                                                    ? 'color-mix(in srgb, var(--danger) 8%, var(--card))'
+                                                    : 'var(--card2)',
+                                                color: verified
+                                                  ? 'var(--success-text)'
+                                                  : dep.critical
+                                                    ? 'var(--danger-text)'
+                                                    : 'var(--muted)',
+                                              }}
+                                            >
+                                              <Icon name={verified ? 'checklist' : 'box'} size={10} />
+                                              <span>{dep.label}</span>
+                                            </button>
+                                          )
+                                        })}
+                                      </div>
+                                    )
+                                  })()}
                                 </td>
                                 <td style={{ ...td, fontSize: 'var(--t-meta)' }}>
                                   {r.serial ? (
@@ -1731,6 +1904,40 @@ export default function PackingWorkspace({
                     </div>
                   </div>
                 </Card>
+
+                {kitEvaluation.hasCinemaGear && (
+                  <Card
+                    title="Cinema Kit Checklist"
+                    action={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={verifyAllKitDependencies}
+                        style={{ fontSize: 'var(--t-meta)', height: 26, minHeight: 26, padding: '0 8px' }}
+                      >
+                        Verify All
+                      </Button>
+                    }
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Icon
+                        name={kitEvaluation.allCriticalPassed ? 'checklist' : 'alert_triangle'}
+                        size={14}
+                        style={{
+                          color: kitEvaluation.allCriticalPassed ? 'var(--success-text)' : 'var(--danger-text)',
+                        }}
+                      />
+                      <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+                        {kitEvaluation.verifiedCount} / {kitEvaluation.totalDependencies} dependencies verified
+                      </div>
+                    </div>
+                    <p style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
+                      {kitEvaluation.allCriticalPassed
+                        ? 'All critical power, media, mount, and safety accessories are verified.'
+                        : `${kitEvaluation.unverifiedCriticalItems.length} critical accessory/power checks missing before dispatch.`}
+                    </p>
+                  </Card>
+                )}
 
                 {/*
                   The session gate checklist — every condition named, pass or

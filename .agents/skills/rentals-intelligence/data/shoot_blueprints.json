@@ -1,0 +1,241 @@
+{
+  "shoot_types": [
+    {
+      "id": "Wedding",
+      "icon": "💍",
+      "label": "Wedding Highlight",
+      "description": "Fast autofocus, superior low-light performance, long-run battery solutions, portable movement.",
+      "recommended_skill": "BEGINNER to INTERMEDIATE",
+      "tiers": {
+        "BUDGET": {
+          "items": ["FX3A Standard Body Kit", "Tamron 70-180", "DJI Mic Mini"],
+          "daily_rate_estimate_npr": 5500,
+          "notes": "Cost-effective dual-slot setup, autofocus dependent, fast zoom coverage for ceremony and reception."
+        },
+        "STANDARD": {
+          "items": ["FX3A With Nisi (Standard)", "DJI RS 4 Pro", "DJI Mic Mini", "Amaran 200d S"],
+          "daily_rate_estimate_npr": 9500,
+          "notes": "Cine-look with prime lens sharpness, motorized gimbal stabilization, clean 200W daylight key light."
+        },
+        "PREMIUM": {
+          "items": ["FX3A Premium Cine Kit (NiSi Optics)", "DJI RS 4 Pro", "DJI Focus Pro LiDAR", "Amaran 300c"],
+          "daily_rate_estimate_npr": 14500,
+          "notes": "Full cinema prime range, autonomous LiDAR focus tracking on gimbal, 300W full-color RGB ambient lighting."
+        }
+      }
+    },
+    {
+      "id": "MusicVideo",
+      "icon": "🎥",
+      "label": "Music Video",
+      "description": "High-end cinematic rendering, anamorphic streak options, heavy dynamic camera movement, high frame rates.",
+      "recommended_skill": "INTERMEDIATE to ADVANCED",
+      "tiers": {
+        "BUDGET": {
+          "items": ["FX3A With Samyang", "DJI RS 3", "Amaran 200d S"],
+          "daily_rate_estimate_npr": 6500,
+          "notes": "Fast prime aperture for shallow depth of field, lightweight gimbal movement, punchy key light."
+        },
+        "STANDARD": {
+          "items": ["Komodo x with Blazar Mantis 1.33x ( Standard)", "Amaran 300c", "DJI RS 4 Pro", "Accsoon M7"],
+          "daily_rate_estimate_npr": 18000,
+          "notes": "6K S35 global shutter, genuine 1.33x anamorphic oval bokeh & flares, director wireless monitoring. Enforce follow focus + 15mm rods."
+        },
+        "PREMIUM": {
+          "items": ["RED KOMODO-X Cinema Package", "DJI Ronin 4D", "Aputure 400x", "Amaran F22c"],
+          "daily_rate_estimate_npr": 32000,
+          "notes": "Dual A/B camera production package. CRITICAL SAFETY (§24): Ronin 4D has an integrated 4-axis motorized gimbal; do not add external RS gimbals to this package. 400W bi-color punch + flexible color mat."
+        }
+      }
+    },
+    {
+      "id": "Documentary",
+      "icon": "🏃‍♂️",
+      "label": "Documentary",
+      "description": "Run-and-gun agility, high reliability, long continuous power, versatile focal lengths, robust scratch/lav audio.",
+      "recommended_skill": "INTERMEDIATE",
+      "tiers": {
+        "BUDGET": {
+          "items": ["Sony A7S III", "Sigma 28-105", "Rode VideoMic", "Tripod"],
+          "daily_rate_estimate_npr": 5000,
+          "notes": "Extreme low light sensitivity, broad zoom range covering wide to telephoto without lens swaps, onboard shotgun mic."
+        },
+        "STANDARD": {
+          "items": ["FX3A Standard Body Kit", "Sony 70-200 GM", "DJI Mic Mini", "Studio Assist Tripod (Heavy)", "99Whr V-Mount Battery"],
+          "daily_rate_estimate_npr": 9000,
+          "notes": "Active cooling on FX3 prevents thermal throttling during multi-hour interview takes; heavy fluid head for smooth pans."
+        },
+        "PREMIUM": {
+          "items": ["FX3A WITH GM PRIMES", "DJI Mic Mini", "310Whr V-Mount Battery", "Desview S14-HDR"],
+          "daily_rate_estimate_npr": 16000,
+          "notes": "Sony G-Master optical perfection, all-day power on single high-capacity V-Mount brick, 14-inch HDR production monitor for field director review."
+        }
+      }
+    },
+    {
+      "id": "Film",
+      "icon": "🎬",
+      "label": "Film Production",
+      "description": "Full crew workflow, dedicated 1st AC puller, manual PL cine optics, matte box with ND filtration, DIT & client video village.",
+      "recommended_skill": "ADVANCED (Requires 1st AC / Caretaker)",
+      "tiers": {
+        "BUDGET": {
+          "items": ["FX3A With Nisi (Lite)", "Accsoon CineView Nano", "Tripod"],
+          "daily_rate_estimate_npr": 7500,
+          "notes": "Entry cine-prime coverage, wireless video feed to iPad/iPhone for director monitoring."
+        },
+        "STANDARD": {
+          "items": ["Komodo with Nisi (Lite)", "Accsoon M7", "DJI Focus Pro LiDAR", "Aputure 400x", "Studio Assist Tripod (Heavy)"],
+          "daily_rate_estimate_npr": 19500,
+          "notes": "REDCODE RAW capture, wireless transmitter-monitor, professional fluid head rated for 15kg payloads."
+        },
+        "PREMIUM": {
+          "items": ["RED KOMODO-X Cinema Package", "DJI Ronin 4D", "Desview S14-HDR", "Aputure 400x"],
+          "daily_rate_estimate_npr": 35000,
+          "notes": "Flagship multi-cam cinema package. Mandatory Babin Camera Caretaker service attached (NPR 2,000/day). Zero-compromise optical pipeline."
+        }
+      }
+    },
+    {
+      "id": "Corporate",
+      "icon": "🏢",
+      "label": "Corporate / Commercial",
+      "description": "Clean modern corporate look, razor-sharp edge-to-edge resolution, silent lighting, wireless client monitor.",
+      "recommended_skill": "INTERMEDIATE",
+      "tiers": {
+        "BUDGET": {
+          "items": ["Sony A7 IV", "Sigma 24-70 II", "Amaran 200d S", "Softbox"],
+          "daily_rate_estimate_npr": 5500,
+          "notes": "33MP sensor for sharp 4K downsampled footage, high CRI daylight illumination with soft diffused modifier."
+        },
+        "STANDARD": {
+          "items": ["FX3A Standard Body Kit", "Sigma 24-70 II", "Amaran 300c", "Accsoon CineView SDI 2", "Tripod"],
+          "daily_rate_estimate_npr": 9500,
+          "notes": "Active fan cooling for non-stop corporate speaking tracks, SDI client video feed, full color temperature matching."
+        },
+        "PREMIUM": {
+          "items": ["RED KOMODO-X Cinema Package", "Aputure 400x", "Amaran F22c", "Accsoon M7"],
+          "daily_rate_estimate_npr": 22000,
+          "notes": "Broadcast-grade commercial pipeline, wireless client monitor station, lightweight bi-color rollable mat light for hair/rim."
+        }
+      }
+    },
+    {
+      "id": "Event",
+      "icon": "🎉",
+      "label": "Event Coverage",
+      "description": "Continuous shooting, fast zoom versatility, fast wireless audio, rapid repositioning, high battery capacity.",
+      "recommended_skill": "BEGINNER to INTERMEDIATE",
+      "tiers": {
+        "BUDGET": {
+          "items": ["Sony A7 IV", "Tamron 70-180", "Rode VideoMic"],
+          "daily_rate_estimate_npr": 4800,
+          "notes": "Lightweight telephoto reach for stage and conference speeches, high reliability autofocus."
+        },
+        "STANDARD": {
+          "items": ["Sony A7S III", "Sigma 24-70 II", "DJI Mic Mini", "K&F Tripod (VA3)"],
+          "daily_rate_estimate_npr": 7500,
+          "notes": "Low-light hall coverage, dual wireless lavaliers with onboard backup recording."
+        },
+        "PREMIUM": {
+          "items": ["FX3A Standard Body Kit", "Sony 70-200 GM", "DJI RS 4 Pro", "DJI Mic Mini"],
+          "daily_rate_estimate_npr": 12500,
+          "notes": "Flagship telephoto optics, full gimbal stabilization for roaming dynamic crowd shots, zero thermal limits."
+        }
+      }
+    },
+    {
+      "id": "CarRig",
+      "icon": "🚗",
+      "label": "Car Rig / Action",
+      "description": "Vibration-damped mounting, extreme safety suction anchors, compact camera profile, wireless remote control & feed.",
+      "recommended_skill": "ADVANCED (Safety Critical)",
+      "tiers": {
+        "BUDGET": {
+          "items": ["Insta360 X5", "NSH Suction", "Safety Strap Kit"],
+          "daily_rate_estimate_npr": 3500,
+          "notes": "360-degree capture, minimal exterior wind drag, triple safety tethering mandatory."
+        },
+        "STANDARD": {
+          "items": ["FX3A Standard Body Kit", "Sigma 16-28", "CameTV Suction Mount", "Accsoon CineView SDI 2", "99Whr V-Mount Battery"],
+          "daily_rate_estimate_npr": 11000,
+          "notes": "Ultra-wide perspective inside or outside cockpit, professional suction plate with ratchet safety straps, wireless monitor in chase car."
+        },
+        "PREMIUM": {
+          "items": ["Red komodo x kit (lite)", "Tilta Hydra Alien Car Mount", "DJI Focus Pro LiDAR", "Accsoon M7"],
+          "daily_rate_estimate_npr": 24000,
+          "notes": "Professional shock-absorbing arm (Tilta Hydra), global shutter sensor (zero rolling shutter jello on road vibrations), remote focus and live chase monitoring."
+        }
+      }
+    },
+    {
+      "id": "Interview",
+      "icon": "🎙️",
+      "label": "Interview / Talking Head",
+      "description": "Flattering skin tones, quiet fan noise, dual-camera coverage, multi-point key/fill/hair lighting, redundant lav audio.",
+      "recommended_skill": "INTERMEDIATE",
+      "tiers": {
+        "BUDGET": {
+          "items": ["Sony A7 IV", "Samyang VAF 50", "Amaran 200d S", "Amaran T2C"],
+          "daily_rate_estimate_npr": 5800,
+          "notes": "Clean bokeh portrait prime, 200W key light with softbox, tube light for rim/background accent."
+        },
+        "STANDARD": {
+          "items": ["FX3A Standard Body Kit", "Sigma 24-70 II", "Amaran 200d S", "Amaran T2C", "DJI Mic Mini", "K&F Tripod (VA3)"],
+          "daily_rate_estimate_npr": 9000,
+          "notes": "Standard commercial interview standard: dual wireless lavs, fluid head framing, flattering lighting triangle."
+        },
+        "PREMIUM": {
+          "items": ["FX3A Standard Body Kit", "Sony 70-200 GM", "Amaran 300c", "Amaran T2C", "DJI Mic Mini"],
+          "daily_rate_estimate_npr": 13500,
+          "notes": "Deep telephoto compression on 70-200mm, full RGB color tuning for corporate brand matching, broadcast lav audio."
+        }
+      }
+    },
+    {
+      "id": "Social",
+      "icon": "📱",
+      "label": "Social Media / Content Creation",
+      "description": "Rapid turnaround, vertical format friendly, lightweight rigging, punchy color profiles, simple workflow.",
+      "recommended_skill": "BEGINNER",
+      "tiers": {
+        "BUDGET": {
+          "items": ["Sony A7V", "K&F Tripod (VA3)", "DJI Mic"],
+          "daily_rate_estimate_npr": 4200,
+          "notes": "High resolution, straightforward autofocus operation, fast wireless clip-on audio."
+        },
+        "STANDARD": {
+          "items": ["Sony A7S III", "Amaran T2C", "DJI Mic Mini"],
+          "daily_rate_estimate_npr": 6000,
+          "notes": "Unmatched low-light sensitivity for indoor cafes/studios, lightweight tube light for fast creative coloring."
+        },
+        "PREMIUM": {
+          "items": ["FX3A Standard Body Kit", "Sony GM 24-70", "DJI RS 4 Pro", "Aputure 400x"],
+          "daily_rate_estimate_npr": 14000,
+          "notes": "Top-tier commercial influencer / brand campaign production package. Cinema look with gimbal motion and high-output daylight."
+        }
+      }
+    }
+  ],
+  "rules": {
+    "camera_body_selection": {
+      "wedding_event_interview_social_corporate": ["Sony A7 IV", "Sony A7V", "Sony A7S III", "Sony FX3A"],
+      "documentary": ["Sony A7S III", "Sony FX3A"],
+      "music_video_film_premium": ["RED Komodo X", "DJI Ronin 4D"]
+    },
+    "critical_safety_constraints": [
+      {
+        "code": "C01_RONIN4D_GIMBAL",
+        "rule": "DJI Ronin 4D contains an integrated 4-axis motorized gimbal. Never add an external DJI RS3/RS4 gimbal to a Ronin 4D package."
+      },
+      {
+        "code": "C02_PL_MOUNT_STRESS",
+        "rule": "CHIOPT cine zooms (2.8kg) require 15mm baseplate rods and lens support bracket. Without rods, the lens weight damages the camera mount."
+      },
+      {
+        "code": "C03_CARETAKER_ATTACH",
+        "rule": "Packages exceeding NPR 50,000 replacement value or containing RED, Ronin 4D, Mantis, Great Joy, CHIOPT, or NiSi Athena lenses require the Babin Camera Caretaker service (NPR 2,000/day)."
+      }
+    ]
+  }
+}

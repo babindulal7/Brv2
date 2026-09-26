@@ -30,6 +30,7 @@ import {
   gearReady,
   overdue,
   pickupTomorrow,
+  returnReceipt,
   returnReminder,
   templatesForStage,
   type WaBusiness,
@@ -211,6 +212,20 @@ function compose(
           itemCount: f.itemCount,
           topItems: f.topLines,
           manifestUrl: null,
+        },
+        b,
+      )
+    }
+
+    case 'return_receipt': {
+      return returnReceipt(
+        {
+          ...base,
+          itemCount: f.itemCount,
+          hasDamagedOrLost: false,
+          depositRefundPaisa: f.deposit,
+          balanceDuePaisa: f.balance,
+          receiptUrl: null,
         },
         b,
       )

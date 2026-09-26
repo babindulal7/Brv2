@@ -19,6 +19,7 @@ import {
   overdue,
   paymentReceipt,
   pickupTomorrow,
+  returnReceipt,
   returnReminder,
   templateMeta,
   templatesForStage,
@@ -159,6 +160,10 @@ describe('§4 — stage-awareness', () => {
     expect(ids({ stage: 'Closed', role: owner })).not.toContain('return_reminder')
   })
 
+  it('offers return_receipt when gear is Returned', () => {
+    expect(ids({ stage: 'Returned', role: owner })).toContain('return_receipt')
+  })
+
   it('offers the balance reminder only when a balance is actually owed', () => {
     expect(ids({ stage: 'Closed', role: owner })).toEqual([])
     expect(ids({ stage: 'Closed', role: owner, hasBalance: true })).toEqual(['balance_due'])
@@ -278,6 +283,40 @@ describe('template bodies — the frame and the conditional lines', () => {
     expect(out.startsWith('Babin Rentals — ')).toBe(true)
     expect(out).not.toContain('Namaste')
     expect(out).toContain('Closing variance: balanced')
+  })
+
+  it('formats return receipt with full deposit refund when all items returned cleanly', () => {
+    const out = returnReceipt(
+      {
+        ...base,
+        itemCount: 4,
+        hasDamagedOrLost: false,
+        depositRefundPaisa: rs(15000),
+      },
+      BUSINESS,
+    )
+    expect(out).toContain('Namaste Ram,')
+    expect(out).toContain('All 4 items returned in good order.')
+    expect(out).toContain('Deposit release: Rs 15,000 refunded.')
+    expect(out).toContain('Dhanyabad,\nBabin Rentals')
+  })
+
+  it('formats return receipt with flagged items and balance due when damages exist', () => {
+    const out = returnReceipt(
+      {
+        ...base,
+        itemCount: 4,
+        hasDamagedOrLost: true,
+        damageCount: 1,
+        lostCount: 1,
+        depositRefundPaisa: rs(0),
+        balanceDuePaisa: rs(3500),
+      },
+      BUSINESS,
+    )
+    expect(out).toContain('Return logged with items flagged for review: 1 damaged, 1 missing.')
+    expect(out).toContain('Deposit held: fully reconciled against charges.')
+    expect(out).toContain('Outstanding balance: Rs 3,500.')
   })
 })
 

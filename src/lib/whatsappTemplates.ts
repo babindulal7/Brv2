@@ -54,6 +54,7 @@ export type WaTemplateId =
   | 'balance_due'
   | 'daily_digest'
   | 'dispatch_manifest'
+  | 'return_receipt'
 
 /* ────────────────────────────────────────────────────────────────────────────
    Formatting primitives
@@ -147,6 +148,16 @@ export interface WaDispatchManifest extends WaBookingBase {
   readonly itemCount: number
   readonly topItems?: string[]
   readonly manifestUrl?: string | null
+}
+
+export interface WaReturnReceipt extends WaBookingBase {
+  readonly itemCount: number
+  readonly hasDamagedOrLost: boolean
+  readonly damageCount?: number | undefined
+  readonly lostCount?: number | undefined
+  readonly depositRefundPaisa?: Paisa | null | undefined
+  readonly balanceDuePaisa?: Paisa | null | undefined
+  readonly receiptUrl?: string | null | undefined
 }
 
 export interface WaPaymentReceipt {
@@ -285,6 +296,46 @@ export function dispatchManifest(i: WaDispatchManifest, b: WaBusiness): string {
 }
 
 
+export function returnReceipt(i: WaReturnReceipt, b: WaBusiness): string {
+  const statusLine = i.hasDamagedOrLost
+    ? `⚠️ Return logged with items flagged for review: ${[
+        i.damageCount ? `${i.damageCount} damaged` : null,
+        i.lostCount ? `${i.lostCount} missing` : null,
+      ]
+        .filter(Boolean)
+        .join(', ')}.`
+    : `✅ All ${i.itemCount} items returned in good order.`
+
+  const depositLine =
+    i.depositRefundPaisa != null
+      ? i.depositRefundPaisa > 0
+        ? `Deposit release: ${money(i.depositRefundPaisa)} refunded.`
+        : 'Deposit held: fully reconciled against charges.'
+      : null
+
+  const balanceLine =
+    i.balanceDuePaisa != null && i.balanceDuePaisa > 0
+      ? `Outstanding balance: ${money(i.balanceDuePaisa)}.`
+      : null
+
+  const docLine = i.receiptUrl ? `📄 View return receipt:\n${i.receiptUrl}` : null
+
+  return [
+    open(i.clientName),
+    '',
+    `Your equipment return for Booking #${i.bookingNo} has been processed. 🎬`,
+    '',
+    statusLine,
+    depositLine,
+    balanceLine,
+    docLine,
+    '',
+    close(b),
+  ]
+    .filter((line): line is string => line !== null)
+    .join('\n')
+}
+
 export function paymentReceipt(i: WaPaymentReceipt, b: WaBusiness): string {
   const balanceLine =
     i.balance > 0 ? 'Remaining balance: ' + money(i.balance) : 'Status: fully paid ✅'
@@ -359,6 +410,7 @@ const REGISTRY: Readonly<Record<WaTemplateId, WaTemplateMeta>> = {
   balance_due: { id: 'balance_due', label: 'Send balance reminder', money: true },
   daily_digest: { id: 'daily_digest', label: 'Send daily digest', money: true },
   dispatch_manifest: { id: 'dispatch_manifest', label: 'Send dispatch manifest', money: false },
+  return_receipt: { id: 'return_receipt', label: 'Send return receipt', money: false },
 }
 
 export function templateMeta(id: WaTemplateId): WaTemplateMeta {
@@ -402,10 +454,11 @@ export function templatesForStage(args: {
       ids.push('return_reminder', 'dispatch_manifest')
       break
     case 'Returned':
+      ids.push('return_receipt')
+      break
     case 'Closed':
       break
   }
-
 
   /* Overdue is a flag, not a stage — it rides on top of On Rent and takes the
      first slot, because once a booking is late it is the only message anyone

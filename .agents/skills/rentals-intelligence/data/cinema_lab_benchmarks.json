@@ -1,0 +1,121 @@
+{
+  "source_attribution": {
+    "primary_labs": [
+      "CineD Lab Tests (cined.com)",
+      "Newsshooter Technical Reviews (newsshooter.com)",
+      "Y.M.Cinema Magazine Cinematography Analysis (ymcinema.com)",
+      "DPReview Technical Lab & Sensor Tests (dpreview.com)"
+    ],
+    "verification_date": "2026-09-26"
+  },
+  "camera_sensor_benchmarks": {
+    "RED Komodo-X": {
+      "sensor_type": "Super35 Global Shutter CMOS (19.9MP)",
+      "rolling_shutter_ms": 0.0,
+      "rolling_shutter_assessment": "Zero rolling shutter artifacts. Completely immune to jello on whip-pans, vibration, strobe lights, and fast-spinning objects.",
+      "dynamic_range_cined_stops": 13.0,
+      "usable_exposure_latitude": "9 to 10 stops above noise floor in REDCODE RAW (HQ/MQ/LQ)",
+      "dual_native_base_iso": {
+        "low_base": "ISO 250 - ISO 800 recommended baseline",
+        "high_base": "Single base architecture with dynamic dual-stage sensor readout"
+      },
+      "thermal_management": {
+        "cooling_type": "Active forced-air blower with integrated heatsink",
+        "fan_modes": ["Adaptive", "Adaptive Preview / Quiet Record", "Manual"],
+        "thermal_protocol": "Sensor calibration (black shading) check required if ambient operating temperature shifts by more than 15°C."
+      },
+      "best_suited_for": ["High-vibration Car Rigs (Tilta Hydra)", "Action / High-speed movement", "Strobe / Flash environments", "VFX tracking shots"]
+    },
+    "Sony FX3 / FX3A": {
+      "sensor_type": "Full-Frame Back-Illuminated Exmor R CMOS (12.1MP)",
+      "rolling_shutter_ms": {
+        "4k_24p_60p": 8.7,
+        "4k_120p": 7.3
+      },
+      "rolling_shutter_assessment": "Extremely fast readout speed for a full-frame sensor. Very low rolling shutter distortion.",
+      "dynamic_range_cined_stops": 12.5,
+      "usable_exposure_latitude": "12.4 to 12.5 stops at SNR=2 in S-Log3 / S-Gamut3.Cine",
+      "dual_native_base_iso": {
+        "cine_ei_mode": { "base_low": 800, "base_high": 12800 },
+        "flexible_iso_mode": { "base_low": 640, "base_high": 12800 },
+        "s_cinetone": { "base_low": 100, "base_high": 2000 }
+      },
+      "thermal_management": {
+        "cooling_type": "Active internal cooling fan with graphite heatsink & vapor chamber",
+        "fan_modes": ["Auto", "Minimum", "Off in Record", "Always On"],
+        "thermal_protocol": "Practically unlimited continuous 4K 60p recording without thermal shutdown even at 40°C ambient."
+      },
+      "best_suited_for": ["Low-light cinematography (ISO 12,800)", "Long-take interviews / documentary", "Handheld & gimbal work", "Autonomous autofocus tracking"]
+    },
+    "DJI Ronin 4D 6K": {
+      "sensor_type": "Full-Frame Zenmuse X9-6K Gimbal Camera",
+      "rolling_shutter_ms": {
+        "6k_full_frame": 15.5
+      },
+      "rolling_shutter_assessment": "Moderate rolling shutter readout, mitigated on set by the integrated 4-axis mechanical stabilization.",
+      "dynamic_range_cined_stops": 13.1,
+      "usable_exposure_latitude": "13.1 stops at SNR=2 in ProRes RAW / ProRes 422 HQ",
+      "dual_native_base_iso": {
+        "base_low": 800,
+        "base_high": 5000
+      },
+      "thermal_management": {
+        "cooling_type": "Active body fan with motor temperature sensors",
+        "thermal_protocol": "Preheat TB50 batteries below 15°C prior to gimbal balance auto-tune."
+      },
+      "best_suited_for": ["Steadicam / Jib replacement tracking shots", "One-man band cinematic operating", "LiDAR autonomous follow focus"]
+    },
+    "Sony A7 IV": {
+      "sensor_type": "Full-Frame Exmor R CMOS (33MP)",
+      "rolling_shutter_ms": {
+        "full_frame_4k": 26.8,
+        "super35_crop_4k": 13.0
+      },
+      "rolling_shutter_assessment": "High rolling shutter in 4K Full Frame mode (26.8ms). Fast whip-pans show pronounced jello distortion. Super35 crop cuts readout in half (13.0ms).",
+      "dynamic_range_cined_stops": 12.1,
+      "usable_exposure_latitude": "12.1 stops at SNR=2 in S-Log3",
+      "dual_native_base_iso": {
+        "s_log3": { "base_low": 800, "base_high": 3200 }
+      },
+      "thermal_management": {
+        "cooling_type": "Passive heatsink only (no internal fan)",
+        "thermal_protocol": "Set Auto Power OFF Temp to HIGH. Mandatory to keep LCD screen articulated away from body during continuous 4K 60p takes over 45 minutes."
+      },
+      "best_suited_for": ["Clean corporate video", "Static interviews on tripod", "Photography / hybrid production"]
+    }
+  },
+  "lens_optical_benchmarks": {
+    "Blazar Mantis 1.33x Anamorphic Primes": {
+      "focal_lengths": ["25mm", "35mm", "50mm", "75mm", "100mm", "135mm T3.2"],
+      "sensor_coverage": "Full Frame (FF)",
+      "squeeze_factor": "1.33x",
+      "aspect_ratio_pairing": "Native 16:9 sensor desqueezes perfectly to 2.39:1 cinematic widescreen with zero vertical crop and 100% sensor area utilization.",
+      "optical_character": "Subtle cylindrical distortion, controlled horizontal blue flares, oval bokeh highlights.",
+      "autofocus_compatibility": "Compatible with LiDAR wireless focus systems (DJI Focus Pro) due to linear 1.33x throw.",
+      "mount": "Interchangeable PL / EF / E"
+    },
+    "Great Joy 1.8x Anamorphic Primes": {
+      "focal_lengths": ["35mm T2.9", "50mm T2.9", "85mm T2.9"],
+      "sensor_coverage": "Full Frame (33x24mm image circle)",
+      "squeeze_factor": "1.8x",
+      "aspect_ratio_pairing": "Optimized for Open Gate 3:2 / 4:3 or RED Komodo 6:5 format. Yields 2.39:1 widescreen after 1.8x desqueeze.",
+      "optical_character": "Pronounced vintage oval bokeh, strong horizontal streak flares (amber/blue), noticeable cinematic breathing.",
+      "monitoring_requirement": "On-set monitor must support 1.8x de-squeeze preview (Accsoon M7 or Desview S14-HDR)."
+    },
+    "CHIOPT XTREME 28-85mm & 75-250mm T3.2 Zooms": {
+      "sensor_coverage": "Full Frame 46mm image circle",
+      "lens_weight_kg": 2.9,
+      "optical_design": "True Parfocal (maintains focus through entire focal length range)",
+      "focus_rotation_degrees": 288,
+      "front_outer_diameter_mm": 114,
+      "rigging_mandate": "MANDATORY 15mm baseplate rod support. Stiff focus throw requires high-torque wireless motors (Tilta Nucleus-M or DJI Focus Pro motor on High setting)."
+    },
+    "NiSi Athena Cine Primes": {
+      "sensor_coverage": "Full Frame 46mm image circle",
+      "aperture": "T1.9 across main set (14mm to 85mm), T2.4 on 135mm",
+      "front_outer_diameter_mm": 80,
+      "filter_thread_mm": 77,
+      "optical_design": "Micro-contrast optimized, matched gear positions across entire focal range, drop-in rear filter slot."
+    }
+  }
+}

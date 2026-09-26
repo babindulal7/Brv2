@@ -1,0 +1,151 @@
+{
+  "currency_base": "USD",
+  "currency_local": "NPR",
+  "fx_rate_usd_npr": 134.50,
+  "nepal_import_formula": "landed_npr = (bh_price_usd + shipping_usd) * fx_rate * (1 + customs_duty_pct + vat_13_pct + freight_handling_pct)",
+  "assumptions": {
+    "electronics_customs_duty_pct": 0.15,
+    "vat_pct": 0.13,
+    "freight_handling_pct": 0.05,
+    "combined_landed_multiplier": 1.35
+  },
+  "items": {
+    "Sony FX3 Camera Kit": {
+      "bh_price_usd": 3898.00,
+      "estimated_shipping_usd": 120.00,
+      "estimated_landed_npr": 728300,
+      "local_kathmandu_retail_npr": 765000,
+      "official_replacement_value_npr": 750000,
+      "deposit_high_risk_25_pct_npr": 187500,
+      "replacement_confidence": "HIGH",
+      "source": "B&H Listing + Authorized Sony Nepal Importer benchmark"
+    },
+    "RED Komodo 6K Camera": {
+      "bh_price_usd": 5995.00,
+      "estimated_shipping_usd": 150.00,
+      "estimated_landed_npr": 1114500,
+      "local_kathmandu_retail_npr": 1180000,
+      "official_replacement_value_npr": 1150000,
+      "deposit_high_risk_25_pct_npr": 287500,
+      "replacement_confidence": "HIGH",
+      "note": "Discontinued by manufacturer; replacement value reflects scarcity & secondhand import premium"
+    },
+    "RED Komodo-X Body": {
+      "bh_price_usd": 9995.00,
+      "estimated_shipping_usd": 180.00,
+      "estimated_landed_npr": 1845000,
+      "local_kathmandu_retail_npr": 1950000,
+      "official_replacement_value_npr": 1900000,
+      "deposit_high_risk_25_pct_npr": 475000,
+      "replacement_confidence": "HIGH"
+    },
+    "DJI Ronin 4D 6K Cinema Camera": {
+      "bh_price_usd": 6799.00,
+      "estimated_shipping_usd": 250.00,
+      "estimated_landed_npr": 1279000,
+      "local_kathmandu_retail_npr": 1350000,
+      "official_replacement_value_npr": 1300000,
+      "deposit_high_risk_25_pct_npr": 325000,
+      "replacement_confidence": "HIGH"
+    },
+    "Sony A7S III Body": {
+      "bh_price_usd": 3498.00,
+      "estimated_shipping_usd": 100.00,
+      "estimated_landed_npr": 653000,
+      "local_kathmandu_retail_npr": 680000,
+      "official_replacement_value_npr": 670000,
+      "deposit_high_risk_25_pct_npr": 167500,
+      "replacement_confidence": "HIGH"
+    },
+    "Sony Alpha 7 IV Body": {
+      "bh_price_usd": 2498.00,
+      "estimated_shipping_usd": 90.00,
+      "estimated_landed_npr": 469000,
+      "local_kathmandu_retail_npr": 490000,
+      "official_replacement_value_npr": 480000,
+      "deposit_high_risk_25_pct_npr": 120000,
+      "replacement_confidence": "HIGH"
+    },
+    "Blazar Mantis 1.33x Anamorphic 5-Lens Set (PL)": {
+      "bh_price_usd": 3999.00,
+      "estimated_shipping_usd": 220.00,
+      "estimated_landed_npr": 765000,
+      "local_kathmandu_retail_npr": 820000,
+      "official_replacement_value_npr": 800000,
+      "deposit_high_risk_25_pct_npr": 200000,
+      "replacement_confidence": "HIGH"
+    },
+    "Blazar Great Joy 1.8x T2.9 Anamorphic Lens Set (PL)": {
+      "bh_price_usd": 3500.00,
+      "estimated_shipping_usd": 180.00,
+      "estimated_landed_npr": 668000,
+      "local_kathmandu_retail_npr": 750000,
+      "official_replacement_value_npr": 750000,
+      "deposit_high_risk_25_pct_npr": 187500,
+      "replacement_confidence": "HIGH"
+    },
+    "CHIOPT 28-85mm + 75-250mm Zoom Lens Set (PL)": {
+      "bh_price_usd": 6198.00,
+      "estimated_shipping_usd": 350.00,
+      "estimated_landed_npr": 1187000,
+      "local_kathmandu_retail_npr": 1250000,
+      "official_replacement_value_npr": 1200000,
+      "deposit_high_risk_25_pct_npr": 300000,
+      "replacement_confidence": "HIGH"
+    },
+    "NiSi Athena Prime 5-Lens Set (PL)": {
+      "bh_price_usd": 5799.00,
+      "estimated_shipping_usd": 200.00,
+      "estimated_landed_npr": 1088000,
+      "local_kathmandu_retail_npr": 1150000,
+      "official_replacement_value_npr": 1100000,
+      "deposit_high_risk_25_pct_npr": 275000,
+      "replacement_confidence": "HIGH"
+    },
+    "Sigma 24-70mm f/2.8 DG DN II Art (Sony E)": {
+      "bh_price_usd": 1199.00,
+      "estimated_shipping_usd": 60.00,
+      "estimated_landed_npr": 228000,
+      "local_kathmandu_retail_npr": 240000,
+      "official_replacement_value_npr": 235000,
+      "deposit_high_risk_25_pct_npr": 58750,
+      "replacement_confidence": "HIGH"
+    },
+    "Aputure LS 600x Pro Light": {
+      "bh_price_usd": 1990.00,
+      "estimated_shipping_usd": 320.00,
+      "estimated_landed_npr": 419000,
+      "local_kathmandu_retail_npr": 450000,
+      "official_replacement_value_npr": 430000,
+      "deposit_high_risk_25_pct_npr": 107500,
+      "replacement_confidence": "HIGH"
+    },
+    "amaran 300c Light": {
+      "bh_price_usd": 569.00,
+      "estimated_shipping_usd": 80.00,
+      "estimated_landed_npr": 117000,
+      "local_kathmandu_retail_npr": 130000,
+      "official_replacement_value_npr": 125000,
+      "deposit_high_risk_25_pct_npr": 31250,
+      "replacement_confidence": "HIGH"
+    },
+    "DJI RS 4 Pro Gimbal": {
+      "bh_price_usd": 869.00,
+      "estimated_shipping_usd": 80.00,
+      "estimated_landed_npr": 172000,
+      "local_kathmandu_retail_npr": 185000,
+      "official_replacement_value_npr": 180000,
+      "deposit_high_risk_25_pct_npr": 45000,
+      "replacement_confidence": "HIGH"
+    },
+    "Accsoon CineView M7 Pro Monitor": {
+      "bh_price_usd": 499.00,
+      "estimated_shipping_usd": 50.00,
+      "estimated_landed_npr": 99600,
+      "local_kathmandu_retail_npr": 110000,
+      "official_replacement_value_npr": 105000,
+      "deposit_high_risk_25_pct_npr": 26250,
+      "replacement_confidence": "HIGH"
+    }
+  }
+}

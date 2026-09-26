@@ -1,0 +1,92 @@
+{
+  "updated_at": "2026-09-26T00:35:00Z",
+  "lifecycle_categories": {
+    "CURRENT": [
+      {
+        "model": "Sony FX3 (FX3A)",
+        "release_year": 2021,
+        "lifecycle_stage": "MATURE_PEAK",
+        "market_availability": "ACTIVE",
+        "firmware_status": "v5.00 active (DCI 4K 24.00p True 24p, anamorphic de-squeeze, breathing compensation)",
+        "successor": null,
+        "recommendation": "Maintain fleet. High utilization, strong rental yield, zero immediate replacement need."
+      },
+      {
+        "model": "RED Komodo-X 6K",
+        "release_year": 2023,
+        "lifecycle_stage": "CURRENT",
+        "market_availability": "ACTIVE",
+        "successor": null,
+        "recommendation": "Flagship cinema body. Keep in highest rental tier. Mandatory Camera Caretaker on rentals."
+      },
+      {
+        "model": "DJI Ronin 4D 6K",
+        "release_year": 2021,
+        "lifecycle_stage": "MATURE",
+        "market_availability": "ACTIVE",
+        "successor": "Ronin 4D-8K (Higher resolution sibling; 6K remains standard for commercial production)",
+        "recommendation": "Protect Z-axis motors with pre-flight balancing briefing. Excellent rental ROI."
+      },
+      {
+        "model": "DJI RS 4 Pro",
+        "release_year": 2024,
+        "lifecycle_stage": "CURRENT",
+        "market_availability": "ACTIVE",
+        "successor": "DJI RS 5",
+        "recommendation": "Primary heavy gimbal workhorse. High attach rate."
+      },
+      {
+        "model": "Aputure LS 600x Pro",
+        "release_year": 2021,
+        "lifecycle_stage": "CURRENT",
+        "market_availability": "ACTIVE",
+        "successor": "Aputure Electro Storm CS15 / XT26 (High-end commercial units; 600x remains indie gold standard)",
+        "recommendation": "Maintain weather seals. Mandatory sandbag policy on all hires."
+      },
+      {
+        "model": "Blazar Mantis Anamorphic Set",
+        "release_year": 2024,
+        "lifecycle_stage": "NEW_CURRENT",
+        "market_availability": "ACTIVE",
+        "successor": null,
+        "recommendation": "Underutilized fleet asset. Priority bundle promotion on commercial / music video quotes."
+      }
+    ],
+    "DISCONTINUED_OR_REPLACED": [
+      {
+        "model": "RED Komodo 6K (Original)",
+        "status": "DISCONTINUED_BY_MANUFACTURER",
+        "replacement_model": "RED Komodo-X 6K",
+        "differences": {
+          "sensor": "Original Komodo max 6K 40fps; Komodo-X reaches 6K 80fps, 4K 120fps",
+          "media": "Original uses CFast 2.0; Komodo-X uses CFexpress Type B",
+          "power": "Original uses dual BP-9XX; Komodo-X features native Micro V-Mount",
+          "audio": "Original has 3.5mm; Komodo-X features locking 5-pin LEMO with +48V phantom power"
+        },
+        "fleet_strategy": "KEEP AND OPERATE. Do not sell at loss. High customer brand recognition in Kathmandu. Maintain CFast 2.0 card stock and dual battery plates."
+      },
+      {
+        "model": "DJI RS 3 / RS 3 Pro",
+        "status": "REPLACED",
+        "replacement_model": "DJI RS 4 / RS 4 Pro",
+        "differences": {
+          "motor_torque": "RS 4 Pro has +20% motor torque",
+          "axis_locks": "Automated axis locks generation 2 (faster unlock)",
+          "vertical_mode": "Native 2nd-gen horizontal-to-vertical switch without extra cage"
+        },
+        "fleet_strategy": "Maintain RS3 for lightweight setups (Sony A7IV / mirrorless + primes). Route heavy rigs to RS4 Pro."
+      },
+      {
+        "model": "Sigma 24-70mm f/2.8 DG DN Art (Gen 1)",
+        "status": "REPLACED",
+        "replacement_model": "Sigma 24-70mm f/2.8 DG DN II Art",
+        "differences": {
+          "weight": "Gen 2 is 90g lighter (745g vs 835g)",
+          "autofocus": "Gen 2 has dual HLA motors (3x faster tracking)",
+          "optics": "Gen 2 has dedicated aperture ring with click/de-click switch"
+        },
+        "fleet_strategy": "Babin owns Gen II. Promoted as best-in-class zoom for FX3 gimbal shoots."
+      }
+    ]
+  }
+}

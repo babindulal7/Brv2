@@ -1,0 +1,120 @@
+{
+  "efficiency_factor_default": 0.85,
+  "formula": "runtime_hours = (battery_wh * efficiency_factor) / average_watts",
+  "devices": {
+    "Sony FX3 (Body Only)": {
+      "nominal_w": 7.3,
+      "peak_w": 11.5,
+      "voltage_range": "6.8V - 8.4V",
+      "native_battery": "NP-FZ100",
+      "dc_in": "USB-C PD 9V 3A (15W+) or Dummy Battery"
+    },
+    "Sony FX3 Rigged (Body + Monitor + Focus)": {
+      "nominal_w": 15.0,
+      "peak_w": 22.0,
+      "voltage_range": "11V - 16.8V (via V-Mount D-Tap)",
+      "native_battery": "SmallRig 99Wh V-Mount"
+    },
+    "RED Komodo 6K": {
+      "nominal_w": 37.0,
+      "peak_w": 45.0,
+      "voltage_range": "7.0V - 17.0V DC (2-pin LEMO 0B)",
+      "native_battery": "Dual Canon BP-9XX or V-Mount adapter"
+    },
+    "RED Komodo-X 6K": {
+      "nominal_w": 38.0,
+      "peak_w": 52.0,
+      "voltage_range": "11.0V - 17.0V DC (6-pin 1B LEMO or Micro V-Mount)",
+      "native_battery": "SmallRig 99Wh V-Mount"
+    },
+    "DJI Ronin 4D 6K": {
+      "nominal_w": 45.0,
+      "peak_w": 65.0,
+      "voltage_range": "12V - 30V DC",
+      "native_battery": "TB50 Intelligent Battery (97.58Wh)"
+    },
+    "Accsoon CineView M7 Pro Monitor": {
+      "nominal_w": 10.0,
+      "peak_w": 14.0,
+      "voltage_range": "7.4V - 16.8V DC (NP-F or D-Tap)",
+      "native_battery": "NP-F970 or V-Mount D-Tap"
+    },
+    "Atomos Ninja V+": {
+      "nominal_w": 10.0,
+      "peak_w": 22.0,
+      "voltage_range": "6.2V - 16.8V DC (NP-F or D-Tap)",
+      "native_battery": "NP-F970 or D-Tap"
+    },
+    "Accsoon CineView SDI 2 TX": {
+      "nominal_w": 4.5,
+      "peak_w": 6.0,
+      "voltage_range": "7.4V - 16.8V DC",
+      "native_battery": "NP-F750 / NP-F970 or USB-C"
+    },
+    "Accsoon CineView SDI 2 RX": {
+      "nominal_w": 3.5,
+      "peak_w": 5.0,
+      "voltage_range": "7.4V - 16.8V DC",
+      "native_battery": "NP-F750 / NP-F970 or USB-C"
+    },
+    "DJI Focus Pro Motor": {
+      "nominal_w": 2.5,
+      "peak_w": 6.0,
+      "voltage_range": "5V - 17V (USB-C from Gimbal / D-Tap)",
+      "native_battery": "Powered from RS4 Pro or D-Tap"
+    }
+  },
+  "batteries": {
+    "Sony NP-FZ100": {
+      "wh": 16.4,
+      "voltage": 7.2,
+      "mah": 2280,
+      "recharge_time_hours": 2.0,
+      "airline_safe": true
+    },
+    "Sony NP-F970 (Replacement)": {
+      "wh": 47.5,
+      "voltage": 7.4,
+      "mah": 6600,
+      "recharge_time_hours": 3.5,
+      "airline_safe": true
+    },
+    "SmallRig 99Wh V-Mount (VB99)": {
+      "wh": 99.0,
+      "voltage": 14.8,
+      "mah": 6700,
+      "recharge_time_hours": 2.5,
+      "max_discharge_amps": 14.0,
+      "airline_safe": true
+    },
+    "DJI TB50 Intelligent Battery": {
+      "wh": 97.58,
+      "voltage": 22.8,
+      "mah": 4280,
+      "recharge_time_hours": 1.5,
+      "airline_safe": true
+    }
+  },
+  "calculated_runtimes_hours": {
+    "Sony FX3 (Body Only) on 1x NP-FZ100": 1.91,
+    "Sony FX3 (Body Only) on 1x 99Wh V-Mount": 11.53,
+    "Sony FX3 Rigged (Body + M7 Pro + Focus) on 1x 99Wh V-Mount": 5.61,
+    "RED Komodo 6K on 1x 99Wh V-Mount": 2.27,
+    "RED Komodo-X on 1x 99Wh V-Mount": 2.22,
+    "RED Komodo-X Rigged (Camera + M7 Pro + Motor) on 1x 99Wh V-Mount": 1.67,
+    "DJI Ronin 4D 6K on 1x TB50": 1.84,
+    "Accsoon M7 Pro Monitor on 1x NP-F970": 4.04,
+    "Accsoon M7 Pro Monitor on 1x 99Wh V-Mount": 8.41
+  },
+  "day_planning_rules": {
+    "standard_shoot_hours": 10,
+    "heavy_shoot_hours": 12,
+    "remote_shoot_multiplier": 1.5,
+    "minimum_power_package": {
+      "Sony FX3 Standard Day": "3x NP-FZ100 batteries + dual charger",
+      "Sony FX3 Full Rig Day": "2x 99Wh V-Mount batteries + D-Tap charger + 1x NP-FZ100 internal backup",
+      "RED Komodo / Komodo-X Cinema Day": "4x 99Wh V-Mount batteries + dual V-Mount fast charger",
+      "DJI Ronin 4D Standard Day": "4x TB50 Intelligent batteries + TB50 quad charging hub"
+    }
+  }
+}
