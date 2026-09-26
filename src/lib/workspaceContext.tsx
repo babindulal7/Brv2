@@ -7,6 +7,8 @@ interface WorkspaceContextType {
   setRightPanelElement: (el: HTMLElement | null) => void
   headerActionsElement: HTMLElement | null
   setHeaderActionsElement: (el: HTMLElement | null) => void
+  statusElement: HTMLElement | null
+  setStatusElement: (el: HTMLElement | null) => void
   pageInfo: ReactNode | null
   setPageInfo: (info: ReactNode | null) => void
 }
@@ -17,6 +19,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [leftPanelElement, setLeftPanelElement] = useState<HTMLElement | null>(null)
   const [rightPanelElement, setRightPanelElement] = useState<HTMLElement | null>(null)
   const [headerActionsElement, setHeaderActionsElement] = useState<HTMLElement | null>(null)
+  const [statusElement, setStatusElement] = useState<HTMLElement | null>(null)
   const [pageInfo, setPageInfo] = useState<ReactNode | null>(null)
 
   return (
@@ -24,6 +27,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       leftPanelElement, setLeftPanelElement,
       rightPanelElement, setRightPanelElement,
       headerActionsElement, setHeaderActionsElement,
+      statusElement, setStatusElement,
       pageInfo, setPageInfo,
     }}>
       {children}

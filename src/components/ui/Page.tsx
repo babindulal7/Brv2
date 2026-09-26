@@ -1,4 +1,5 @@
-import { useEffect, type ReactNode, type CSSProperties } from 'react'
+import { useEffect, useState, type ReactNode, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from './Icon'
 import type { IconName } from './Icon'
 import { InfoTooltip } from './InfoTooltip'
@@ -81,6 +82,11 @@ export function PageHeader({
   status?: ReactNode
 }) {
   const ws = useOptionalWorkspace()
+  const [, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     if (ws && description) {
@@ -88,6 +94,21 @@ export function PageHeader({
       return () => ws.setPageInfo(null)
     }
   }, [ws, description])
+
+  // When inside the application workspace shell, page actions and status
+  // are projected directly into the persistent global header bar, and the
+  // redundant in-page header row is completely removed to maximize vertical workspace.
+  if (ws) {
+    const actionsTarget = ws.headerActionsElement || (typeof document !== 'undefined' ? document.getElementById('app-global-header-actions') : null)
+    const statusTarget = ws.statusElement || (typeof document !== 'undefined' ? document.getElementById('app-global-header-status') : null)
+
+    return (
+      <>
+        {actions && actionsTarget ? createPortal(actions, actionsTarget) : null}
+        {status && statusTarget ? createPortal(status, statusTarget) : null}
+      </>
+    )
+  }
 
   const resolvedEyebrow = eyebrow
 
