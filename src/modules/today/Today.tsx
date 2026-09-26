@@ -516,7 +516,7 @@ export default function Today() {
         <div className="dashboard-bento-tile">
           <div className="dashboard-bento-tile__header">
             <span className="dashboard-bento-tile__label">Returns Due</span>
-            <Icon name="return_arrow" size={15} style={{ color: overdueCount > 0 ? 'var(--st-danger-fg)' : 'var(--muted)' }} />
+            <Icon name="return_arrow" size={15} style={{ color: overdueCount > 0 ? 'var(--danger-text)' : 'var(--muted)' }} />
           </div>
           <div className="dashboard-bento-tile__value">
             {returns.loading ? '—' : (returns.total ?? returns.rows.length)}
