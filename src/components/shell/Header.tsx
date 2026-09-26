@@ -8,11 +8,31 @@ import HandoverSheet from '../../modules/auth/HandoverSheet'
 import { useSync } from '../../lib/syncContext'
 import { QuickCreateMenu } from './QuickCreateMenu'
 import { getBusinessToday, formatAd, toBs, formatBs } from '../../lib/bs'
+import { useOptionalWorkspace } from '../../lib/workspaceContext'
+import { InfoTooltip } from '../ui/InfoTooltip'
 import './shell.css'
 
 export interface Crumb {
   label: string
   to?: string
+}
+
+const DEFAULT_PAGE_INFO: Record<string, string> = {
+  Today: 'Prepare pickups, receive returns, and keep equipment moving.',
+  Dashboard: 'Prepare pickups, receive returns, and keep equipment moving.',
+  Rentals: 'Manage bookings, pickups, returns, and turnaround states.',
+  'New Rental': 'Create a new rental booking, select dates, and assign inventory.',
+  Calendar: 'Master operational schedule of deliveries, returns, and bookings.',
+  Operations: 'Daily turnaround workflows: packing, inspection, dispatch, and check-in.',
+  Inventory: 'Equipment catalog, serial tracking, availability, and condition.',
+  Clients: 'Client directory, contacts, rental history, and credit terms.',
+  Finance: 'Invoices, payments, daily closing, and financial ledgers.',
+  Documents: 'Rental agreements, delivery notes, and verified handovers.',
+  Analytics: 'Fleet utilization, revenue metrics, and operational performance.',
+  Reports: 'Fleet utilization, revenue metrics, and operational performance.',
+  'Crew Assist': 'Technician rosters, driver dispatch, and field assignments.',
+  Tools: 'Calculators, pricing sandbox, and technical utilities.',
+  Settings: 'System configuration, warehouse locations, and staff permissions.',
 }
 
 interface HeaderProps {
@@ -52,6 +72,20 @@ export default function Header({ crumbs, actions }: HeaderProps) {
   const [profileOpen, setProfileOpen] = useState(false)
   const [showHandover, setShowHandover] = useState(false)
   const [now, setNow] = useState(() => new Date())
+  const ws = useOptionalWorkspace()
+
+  const activeCrumb = crumbs[crumbs.length - 1]?.label || crumbs[0]?.label || ''
+
+  const effectiveInfo = useMemo(() => {
+    if (ws?.pageInfo) return ws.pageInfo
+    for (let i = crumbs.length - 1; i >= 0; i--) {
+      const label = crumbs[i]?.label
+      if (label && DEFAULT_PAGE_INFO[label]) {
+        return DEFAULT_PAGE_INFO[label]
+      }
+    }
+    return null
+  }, [ws?.pageInfo, crumbs])
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 10000)
@@ -129,42 +163,62 @@ export default function Header({ crumbs, actions }: HeaderProps) {
         zIndex: 20,
       }}
     >
-      <nav aria-label="Breadcrumb" style={{ flex: isPhone ? '1 1 auto' : '0 1 auto', minWidth: 0, maxWidth: isPhone ? undefined : '30%', overflow: 'hidden' }}>
-        <ol style={{ display: 'flex', alignItems: 'center', gap: 7, margin: 0, padding: 0, listStyle: 'none' }}>
-          {(isPhone && crumbs.length > 1 ? [crumbs[crumbs.length - 1]!] : crumbs).map((c, i, arr) => {
-            const last = i === arr.length - 1
-            const labelEl = (
-              <span
-                aria-current={last ? 'page' : undefined}
-                style={{
-                  fontSize: 'var(--t-ui)',
-                  fontWeight: i === 0 ? 600 : last ? 600 : 500,
-                  color: i === 0 ? 'var(--nav-active-accent)' : last ? 'var(--text)' : 'var(--text2)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  display: 'inline-block',
-                  maxWidth: isPhone ? '180px' : 'none',
-                }}
-              >
-                {c.label}
-              </span>
-            )
-            return (
-              <li key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                {i > 0 && <Icon name="chevron_right" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
-                {c.to && !last ? (
-                  <Link to={c.to} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', minWidth: 0 }}>
-                    {labelEl}
-                  </Link>
-                ) : (
-                  labelEl
-                )}
-              </li>
-            )
-          })}
-        </ol>
-      </nav>
+      <div
+        className="app-global-header__breadcrumbs"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          minWidth: 0,
+          flex: isPhone ? '1 1 auto' : '0 1 auto',
+          maxWidth: isPhone ? undefined : '32%',
+        }}
+      >
+        <nav aria-label="Breadcrumb" style={{ minWidth: 0, overflow: 'hidden' }}>
+          <ol style={{ display: 'flex', alignItems: 'center', gap: 7, margin: 0, padding: 0, listStyle: 'none' }}>
+            {(isPhone && crumbs.length > 1 ? [crumbs[crumbs.length - 1]!] : crumbs).map((c, i, arr) => {
+              const last = i === arr.length - 1
+              const labelEl = (
+                <span
+                  aria-current={last ? 'page' : undefined}
+                  style={{
+                    fontSize: 'var(--t-ui)',
+                    fontWeight: i === 0 ? 600 : last ? 600 : 500,
+                    color: i === 0 ? 'var(--nav-active-accent)' : last ? 'var(--text)' : 'var(--text2)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    display: 'inline-block',
+                    maxWidth: isPhone ? '180px' : 'none',
+                  }}
+                >
+                  {c.label}
+                </span>
+              )
+              return (
+                <li key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                  {i > 0 && <Icon name="chevron_right" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
+                  {c.to && !last ? (
+                    <Link to={c.to} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', minWidth: 0 }}>
+                      {labelEl}
+                    </Link>
+                  ) : (
+                    labelEl
+                  )}
+                </li>
+              )
+            })}
+          </ol>
+        </nav>
+        {effectiveInfo && (
+          <InfoTooltip
+            content={effectiveInfo}
+            size={14}
+            label={activeCrumb ? `${activeCrumb} info` : 'Page info'}
+            style={{ flexShrink: 0 }}
+          />
+        )}
+      </div>
 
       {/* On desktop and tablet, center search input + clock + sync status */}
       {!isPhone && (

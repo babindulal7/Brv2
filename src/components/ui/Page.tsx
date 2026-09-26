@@ -1,4 +1,4 @@
-import type { ReactNode, CSSProperties } from 'react'
+import { useEffect, type ReactNode, type CSSProperties } from 'react'
 import Icon from './Icon'
 import type { IconName } from './Icon'
 import { InfoTooltip } from './InfoTooltip'
@@ -9,6 +9,7 @@ import { CollapsibleAside } from './CollapsibleAside'
 import { useViewport } from '../../lib/device'
 import { Button as SharedButton, type ButtonProps } from './Button'
 import { Card as SharedCard } from './Card'
+import { useOptionalWorkspace } from '../../lib/workspaceContext'
 
 /**
  * Page furniture shared by every Generation C screen.
@@ -79,6 +80,15 @@ export function PageHeader({
   breadcrumb?: ReactNode
   status?: ReactNode
 }) {
+  const ws = useOptionalWorkspace()
+
+  useEffect(() => {
+    if (ws && description) {
+      ws.setPageInfo(description)
+      return () => ws.setPageInfo(null)
+    }
+  }, [ws, description])
+
   const resolvedEyebrow = eyebrow
 
   return (
@@ -122,7 +132,7 @@ export function PageHeader({
           >
             {title}
           </h1>
-          {description && <InfoTooltip content={description} size={16} />}
+          {!ws && description && <InfoTooltip content={description} size={16} />}
           {status}
         </div>
       </div>
