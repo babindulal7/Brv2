@@ -478,7 +478,7 @@ export default function Today() {
             <span className="dashboard-bento-tile__label">Operational Day</span>
             <span className="status-live-dot" title="Live movement sync" />
           </div>
-          <div className="dashboard-bento-tile__value" style={{ fontSize: '1.25rem' }}>
+          <div className="dashboard-bento-tile__value" style={{ fontSize: 'var(--t-h3)' }}>
             {compactDate(dayAd)}
           </div>
           <div className="dashboard-bento-tile__sub">
@@ -487,7 +487,7 @@ export default function Today() {
                 BS {formatBs(todayBs)}
               </span>
             ) : null}
-            <span style={{ color: 'var(--text-muted, #71717a)', fontSize: 11 }}>
+            <span style={{ color: 'var(--muted)', fontSize: 'var(--t-th)' }}>
               {isDispatchToday ? 'Today (Active Shift)' : 'Scheduled Shift'}
             </span>
           </div>
@@ -544,17 +544,17 @@ export default function Today() {
             <Link
               to="/rentals/new"
               className="btn btn--sm btn--primary"
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', minHeight: 38, fontSize: 13, fontWeight: 600, borderRadius: 'var(--r-btn, 8px)' }}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', minHeight: 38, fontSize: 'var(--t-meta)', fontWeight: 600, borderRadius: 'var(--r-btn, 8px)' }}
             >
               <Icon name="plus" size={15} /> New Rental Quote
             </Link>
             <button
               type="button"
               className="btn btn--sm btn--secondary"
-              style={{ minHeight: 36, fontSize: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 'var(--r-btn, 8px)' }}
+              style={{ minHeight: 36, fontSize: 'var(--t-meta)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 'var(--r-btn, 8px)' }}
               onClick={() => counterInputRef.current?.focus()}
             >
-              <Icon name="barcode" size={14} /> Quick Barcode <kbd className="new-rental-kbd" style={{ fontSize: 10, padding: '1px 5px' }}>/</kbd>
+              <Icon name="barcode" size={14} /> Quick Barcode <kbd className="new-rental-kbd" style={{ fontSize: 'var(--t-th)', padding: '1px 5px' }}>/</kbd>
             </button>
           </div>
         </div>

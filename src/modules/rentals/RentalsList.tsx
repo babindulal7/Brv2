@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, FooterNote, PageHeader, PageActions } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
@@ -424,6 +424,108 @@ const menuItemStyle = {
  *  took the 44px `--tap` floor: Open Booking + 4 `OPERATIONS` = 5 × 44, plus 13 divider and 12 padding. */
 const OPS_MENU_H = 245
 
+interface PrimaryActionConfig {
+  label: string
+  icon: IconName
+  bg: string
+  fg: string
+  border?: string
+  onClick: (e: React.MouseEvent) => void
+  disabled?: boolean
+  tooltip?: string
+}
+
+function getPrimaryAction(
+  row: RentalListRow,
+  openOperations: (bookingNo: string, status: BookingStatus, job: 'Pack' | 'Handover' | 'Return' | 'Reset') => void,
+  navigate: (path: string) => void
+): PrimaryActionConfig | null {
+  if (row.isCancelled) {
+    return null
+  }
+
+  const statusStr = String(row.status)
+
+  if (statusStr === 'Draft') {
+    return {
+      label: 'Edit Draft',
+      icon: 'edit',
+      bg: 'var(--card)',
+      fg: 'var(--text)',
+      border: '1px solid var(--border)',
+      onClick: () => navigate(`/rentals?action=new&draft=${row.id}`),
+    }
+  }
+
+  if (statusStr === 'Quote') {
+    return {
+      label: 'Open Quote',
+      icon: 'file',
+      bg: 'var(--card)',
+      fg: 'var(--text)',
+      border: '1px solid var(--border)',
+      onClick: () => navigate(`/rentals/${row.bookingNo}`),
+    }
+  }
+
+  if (statusStr === 'Booked') {
+    return {
+      label: 'Pack Kit',
+      icon: 'box',
+      bg: '#f59e0b',
+      fg: '#0f172a',
+      border: '1px solid #d97706',
+      onClick: () => openOperations(row.bookingNo, row.status, 'Pack'),
+    }
+  }
+
+  if (statusStr === 'Packed') {
+    return {
+      label: 'Handover',
+      icon: 'truck',
+      bg: '#2563eb',
+      fg: '#ffffff',
+      border: '1px solid #1d4ed8',
+      onClick: () => openOperations(row.bookingNo, row.status, 'Handover'),
+    }
+  }
+
+  if (statusStr === 'On Rent') {
+    return {
+      label: 'Check-In',
+      icon: 'return_arrow',
+      bg: '#16a34a',
+      fg: '#ffffff',
+      border: '1px solid #15803d',
+      onClick: () => openOperations(row.bookingNo, row.status, 'Return'),
+    }
+  }
+
+  if (statusStr === 'Returned') {
+    return {
+      label: 'Reset & QC',
+      icon: 'check',
+      bg: '#7c3aed',
+      fg: '#ffffff',
+      border: '1px solid #6d28d9',
+      onClick: () => openOperations(row.bookingNo, row.status, 'Reset'),
+    }
+  }
+
+  if (statusStr === 'Closed') {
+    return {
+      label: 'Dossier',
+      icon: 'external_link',
+      bg: 'transparent',
+      fg: 'var(--muted)',
+      border: '1px solid var(--border)',
+      onClick: () => navigate(`/rentals/${row.bookingNo}`),
+    }
+  }
+
+  return null
+}
+
 function RowOperations({
   row,
   onCancel,
@@ -433,10 +535,12 @@ function RowOperations({
   onCancel?: ((row: RentalListRow) => void) | undefined
   onInspect?: ((row: RentalListRow) => void) | undefined
 }) {
+  const navigate = useNavigate()
   const { openOperations } = useOperationsWorkspace()
   const [open, setOpen] = useState(false)
   const [up, setUp] = useState(false)
   const ref = useDismiss(open, () => setOpen(false))
+  const primary = getPrimaryAction(row, openOperations, navigate)
 
   /**
    * The table scrolls horizontally, and CSS resolves the *other* axis to `auto`
@@ -454,131 +558,81 @@ function RowOperations({
   }
 
   return (
-    <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
-      <button
-        type="button"
-        aria-label={`Operations for ${row.bookingNo}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={toggle}
-        style={{
-          border: 'none',
-          background: open ? 'var(--hover-card)' : 'transparent',
-          color: 'var(--muted)',
-          cursor: 'pointer',
-          position: 'relative',
-          width: 26,
-          height: 26,
-          borderRadius: 'var(--r-xs)',
-          display: 'grid',
-          placeItems: 'center',
-        }}
-      >
-        <TouchTarget />
-        <Icon name="more_vert" size={15} />
-      </button>
+    <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+      {primary && (
+        <button
+          type="button"
+          onClick={primary.onClick}
+          disabled={primary.disabled}
+          title={primary.tooltip || primary.label}
+          style={{
+            position: 'relative',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '3px 9px',
+            height: 28,
+            minHeight: 28,
+            fontSize: 'var(--t-meta, 12px)',
+            fontWeight: 700,
+            borderRadius: 'var(--r-xs, 4px)',
+            background: primary.bg,
+            color: primary.fg,
+            border: primary.border || 'none',
+            cursor: primary.disabled ? 'not-allowed' : 'pointer',
+            whiteSpace: 'nowrap',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+            transition: 'all 0.15s ease',
+          }}
+          onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.98)')}
+          onMouseUp={(e) => (e.currentTarget.style.transform = 'none')}
+        >
+          <TouchTarget />
+          <Icon name={primary.icon} size={12} style={{ color: primary.fg }} />
+          <span>{primary.label}</span>
+        </button>
+      )}
 
-      {open && (
-        <div role="menu" style={up ? { ...menuStyle, top: 'auto', bottom: 30 } : menuStyle}>
-          {onInspect && (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false)
-                onInspect(row)
-              }}
-              style={{
-                ...menuItemStyle,
-                width: '100%',
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--text)',
-                cursor: 'pointer',
-                textAlign: 'left',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-            >
-              <Icon name="eye" size={15} style={{ color: 'var(--text2)' }} />
-              <span style={{ flex: 1 }}>Quick view</span>
-            </button>
-          )}
-          <Link
-            to={(row.status as string) === 'Draft' ? `/rentals?action=new&draft=${row.id}` : `/rentals/${row.bookingNo}`}
-            role="menuitem"
-            style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer' }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-          >
-            <Icon name={(row.status as string) === 'Draft' ? 'edit' : 'external_link'} size={15} style={{ color: 'var(--text2)' }} />
-            <span style={{ flex: 1 }}>{(row.status as string) === 'Draft' ? 'Edit Draft' : 'Open Booking'}</span>
-          </Link>
+      <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
+        <button
+          type="button"
+          aria-label={`Operations for ${row.bookingNo}`}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={toggle}
+          style={{
+            border: 'none',
+            background: open ? 'var(--hover-card)' : 'transparent',
+            color: 'var(--muted)',
+            cursor: 'pointer',
+            position: 'relative',
+            width: 26,
+            height: 26,
+            borderRadius: 'var(--r-xs)',
+            display: 'grid',
+            placeItems: 'center',
+          }}
+        >
+          <TouchTarget />
+          <Icon name="more_vert" size={15} />
+        </button>
 
-          <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
-
-          {OPERATIONS.map((o) => {
-            // Law 3 — cancellation is `cancelled_at`, and a cancelled booking
-            // runs no operation.
-            const enabled = !row.isCancelled && o.enabledAt.includes(row.status)
-            const why = row.isCancelled
-              ? `${row.bookingNo} is cancelled — no operation runs on it`
-              : `Available at ${o.enabledAt.join(' or ')} — this booking is ${row.status}`
-            const body = (
-              <>
-                <Icon name={o.icon} size={15} style={{ color: enabled ? 'var(--text2)' : 'var(--disabled)' }} />
-                <span style={{ flex: 1 }}>{o.label}</span>
-                {!enabled && <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />}
-              </>
-            )
-            const style = {
-              ...menuItemStyle,
-              color: enabled ? 'var(--text)' : 'var(--muted)',
-              cursor: enabled ? 'pointer' : 'not-allowed',
-            }
-            return enabled ? (
-              <Link
-                key={o.label}
-                to={`/rentals/${row.bookingNo}/${o.path}`}
-                role="menuitem"
-                onClick={(event) => {
-                  event.preventDefault()
-                  setOpen(false)
-                  const job = o.path === 'packing' ? 'Pack' : o.path === 'handover' ? 'Handover' : o.path === 'return' ? 'Return' : 'Reset'
-                  openOperations(row.bookingNo, row.status, job)
-                }}
-                style={style}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              >
-                {body}
-              </Link>
-            ) : (
-              <span key={o.label} role="menuitem" aria-disabled title={why} tabIndex={0} style={style}>
-                {body}
-              </span>
-            )
-          })}
-
-          {!row.isCancelled && ['Quote', 'Booked', 'Packed'].includes(row.status) && onCancel && (
-            <>
-              <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
+        {open && (
+          <div role="menu" style={up ? { ...menuStyle, top: 'auto', bottom: 30 } : menuStyle}>
+            {onInspect && (
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => {
                   setOpen(false)
-                  onCancel(row)
+                  onInspect(row)
                 }}
                 style={{
                   ...menuItemStyle,
                   width: '100%',
                   border: 'none',
                   background: 'transparent',
-                  color: 'var(--danger)',
+                  color: 'var(--text)',
                   cursor: 'pointer',
                   textAlign: 'left',
                   display: 'flex',
@@ -588,14 +642,100 @@ function RowOperations({
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
-                <Icon name="close" size={15} style={{ color: 'var(--danger)' }} />
-                <span style={{ flex: 1 }}>Cancel Booking</span>
+                <Icon name="eye" size={15} style={{ color: 'var(--text2)' }} />
+                <span style={{ flex: 1 }}>Quick view</span>
               </button>
-            </>
-          )}
-        </div>
-      )}
-    </span>
+            )}
+            <Link
+              to={(row.status as string) === 'Draft' ? `/rentals?action=new&draft=${row.id}` : `/rentals/${row.bookingNo}`}
+              role="menuitem"
+              style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            >
+              <Icon name={(row.status as string) === 'Draft' ? 'edit' : 'external_link'} size={15} style={{ color: 'var(--text2)' }} />
+              <span style={{ flex: 1 }}>{(row.status as string) === 'Draft' ? 'Edit Draft' : 'Open Booking'}</span>
+            </Link>
+
+            <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
+
+            {OPERATIONS.map((o) => {
+              // Law 3 — cancellation is `cancelled_at`, and a cancelled booking
+              // runs no operation.
+              const enabled = !row.isCancelled && o.enabledAt.includes(row.status)
+              const why = row.isCancelled
+                ? `${row.bookingNo} is cancelled — no operation runs on it`
+                : `Available at ${o.enabledAt.join(' or ')} — this booking is ${row.status}`
+              const body = (
+                <>
+                  <Icon name={o.icon} size={15} style={{ color: enabled ? 'var(--text2)' : 'var(--disabled)' }} />
+                  <span style={{ flex: 1 }}>{o.label}</span>
+                  {!enabled && <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />}
+                </>
+              )
+              const style = {
+                ...menuItemStyle,
+                color: enabled ? 'var(--text)' : 'var(--muted)',
+                cursor: enabled ? 'pointer' : 'not-allowed',
+              }
+              return enabled ? (
+                <Link
+                  key={o.label}
+                  to={`/rentals/${row.bookingNo}/${o.path}`}
+                  role="menuitem"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    setOpen(false)
+                    const job = o.path === 'packing' ? 'Pack' : o.path === 'handover' ? 'Handover' : o.path === 'return' ? 'Return' : 'Reset'
+                    openOperations(row.bookingNo, row.status, job)
+                  }}
+                  style={style}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  {body}
+                </Link>
+              ) : (
+                <span key={o.label} role="menuitem" aria-disabled title={why} tabIndex={0} style={style}>
+                  {body}
+                </span>
+              )
+            })}
+
+            {!row.isCancelled && ['Quote', 'Booked', 'Packed'].includes(row.status) && onCancel && (
+              <>
+                <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false)
+                    onCancel(row)
+                  }}
+                  style={{
+                    ...menuItemStyle,
+                    width: '100%',
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--danger)',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <Icon name="close" size={15} style={{ color: 'var(--danger)' }} />
+                  <span style={{ flex: 1 }}>Cancel Booking</span>
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </span>
+    </div>
   )
 }
 
@@ -2443,6 +2583,8 @@ const td = {
  */
 const stickyTh = {
   ...th,
+  width: 170,
+  minWidth: 170,
   textAlign: 'right' as const,
   position: 'sticky' as const,
   right: 0,
@@ -2453,7 +2595,8 @@ const stickyTh = {
 
 const stickyTd = {
   ...td,
-  width: 34,
+  width: 170,
+  minWidth: 170,
   textAlign: 'right' as const,
   position: 'sticky' as const,
   right: 0,

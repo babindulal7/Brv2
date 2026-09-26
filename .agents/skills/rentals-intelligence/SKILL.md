@@ -239,6 +239,23 @@ Required Action: [Specific approval gate, booking status change, or deposit hold
   6. VAT calculation discrepancies.
 - Full operational guide in `references/profit_leakage_playbook.md`.
 
+## 3.10 Preparation Time & Transport Logistics Engine (`calculate_prep_logistics.py`)
+- **Staging & QC Time Benchmarks:**
+  - *Small Package (Mirrorless + 1 Lens):* 15–30 mins.
+  - *Camera Kit (FX3A + Gimbal + Mic):* 30–45 mins.
+  - *Cinema Package (RED / Ronin 4D / PL):* 1–2 hours.
+  - *Lighting Package (600x / 300c / C-Stands):* 1–3 hours.
+  - *Car Rig / Movement Systems:* 2–4 hours.
+  - *Full Multi-Cam Feature Film:* Half Day (4–6 hours).
+- **Logistical Delivery Load (Kathmandu):**
+  - *Small:* Bike/Backpack (1 staff).
+  - *Medium:* Taxi/Bike Pannier (1 staff).
+  - *Heavy:* Car/Van mandatory (1 staff).
+  - *Vehicle Required:* Large SUV/Pickup (2 staff).
+  - *Two Staff Required:* Dedicated Commercial Van (2 staff mandatory).
+- **Staff Mistake Prevention:** Pre-flight validation flags gimbal baseplates, card readers, wireless antennas, correct HDMI/SDI cable types, and C-stand sandbags.
+- **Client Skill Gate:** Blocks beginners from cinema bodies / car rigs without Caretaker (Rs 2,000/day) or 15-min in-person briefing.
+
 ---
 
 # LAYER 4 — LEARNING LAYER & RENTAL PATTERN MEMORY
@@ -250,6 +267,17 @@ $$\text{Situation} \longrightarrow \text{AI Recommendation} \longrightarrow \tex
 - When staff modifies an AI recommendation, the reason is logged to calibrate future kit suggestions.
 
 ## 4.2 Rental Pattern Memory (`data/rental_patterns.json`)
+- **Empirical Mined Transaction Pairs (from `order_lines.csv`):**
+  - 99Wh V-Mount + SmallRig Compact V-Mount Plate: **39 rentals** (#1 fleet combo)
+  - 99Wh V-Mount + Tilta Mirage Matte Box (+ VND): **35 rentals**
+  - SmallRig V-Mount Plate + Tilta Mirage Matte Box: **31 rentals**
+  - Camera Caretaker + 99Wh V-Mount Battery: **25 rentals**
+  - Camera Caretaker + Tilta Mirage Matte Box: **24 rentals**
+  - 99Wh V-Mount + Accsoon CineView SDI 2: **24 rentals**
+  - Tilta Mirage Matte Box + Tilta Nucleus Nano II: **23 rentals**
+  - NiSi PL to E Adapter + Tilta Nucleus Nano II: **21 rentals**
+  - K&F Concept VA3 Tripod + Tilta Mirage Matte Box: **22 rentals**
+- **Top Velocity Attachment Items:** Tilta Mirage Matte Box (51), 99Wh V-Mount (49), Accsoon CineView SDI 2 (45), SmallRig Plate (44), K&F VA3 Tripod (38), Tilta Nucleus Nano II (37), Accsoon M7 Pro (33), Camera Caretaker (33).
 - **Equipment Co-Occurrences:**
   - Sony FX3A $\rightarrow$ Sigma 24-70 II (68%), 99Wh V-Mount (60%), DJI RS3 Pro (52%), Accsoon M7 Pro (45%).
   - RED Komodo-X $\rightarrow$ CFexpress B 1TB (100%), V-Mount 99Wh (94%), PL Adapter (88%), Accsoon M7 Pro (78%), Caretaker (81%).
@@ -321,7 +349,7 @@ Before presenting any kit, quote, or advice, verify:
 8. **Client Persona:** Addressed as Sir/Ma'am with no use of the word "customer".
 
 ## 6.6 Deterministic Evaluation Suite (`scripts/run_eval_suite.py`)
-A permanent 55-scenario automated test suite runs in seconds to verify:
+A permanent 70-scenario automated test suite runs in seconds to verify:
 - Integer Paisa math and half-up rounding (5 tests).
 - Foundation §2.8 reference case assertion `BK-2026-0715` (1 test).
 - Law 10 discount gates and stacking caps (6 tests).
@@ -335,11 +363,49 @@ A permanent 55-scenario automated test suite runs in seconds to verify:
 - Electrical circuit limits and battery runtimes (4 tests).
 - Profit leakage detection (3 tests).
 - Scenario simulation engines (2 tests).
+- Preparation time, delivery logistics & client skill gates (5 tests).
+- Enterprise procurement landed cost, fleet ROI, repair thresholds & IATA battery flight compliance (10 tests).
+- External product intelligence, care profiles, Level A/B/C diagnostics & substitution contracts (10 tests).
 
 Run anytime via terminal:
 ```powershell
 python scripts/run_eval_suite.py
 ```
+
+---
+
+## 6.7 Enterprise Procurement & Nepal Customs Engine (`scripts/calculate_landed_and_fleet_roi.py`)
+- **Nepal Customs 2026-27 Tariffs (`data/nepal_market_registry.json`):**
+  - Digital cinema cameras: HS `8525.89.00` (15% duty, 13% VAT, eff multiplier $\approx 1.41\times$).
+  - Optical lenses: HS `9002.11.00` (10% duty, 13% VAT, eff multiplier $\approx 1.25\times$).
+  - Full formula: `FOB * (1 + 1.5% FX Buffer) + Freight + Insurance + Duty + 13% VAT + Clearing (NPR 8,500) + 5% Warranty Risk Reserve`.
+- **Fleet Investment Payback:** Targets $\approx 4\%/\text{month}$, $40\%$ recovery in 10 months.
+- **Buy / Hold / Sell Criteria:**
+  - `BUY_SECOND_UNIT`: Lost inquiries $\ge 5$ in 90 days, fleet utilization $\ge 68\%$, failure rate $< 10\%$.
+  - `SELL_OR_REPOSITION`: Chronic low utilization $< 20\%$, zero lost inquiries, trapped capital.
+- **Repair vs Replace Thresholds:**
+  - Cables & plates: $\le 10\%$ replacement value $\rightarrow$ Replace in-house (Tier A).
+  - Minor connectors & covers: $\le 20\%$ $\rightarrow$ Local repair (Tier B).
+  - Camera I/O boards: $\le 40\%$ $\rightarrow$ Service board swap; $> 40\%$ $\rightarrow$ Write off / replace.
+  - Swollen Li-ion battery: Immediate permanent retirement / safe disposal. NEVER repair or re-rent!
+- **IATA 2026/2027 Lithium Flight Compliance:**
+  - $\le 100\text{ Wh}$ (e.g. 99Wh V-Mount): Permitted in passenger carry-on (max 20 units). Checked baggage FORBIDDEN.
+  - $101 - 160\text{ Wh}$: Permitted in carry-on with airline prior operator approval (max 2 units). Checked FORBIDDEN.
+  - $> 160\text{ Wh}$: Prohibited on passenger aircraft. Cargo Aircraft Only (UN3480 Class 9).
+
+---
+
+## 6.8 Product Intelligence, Care Profiles & 3-Level Diagnostics (`scripts/product_intelligence_engine.py`)
+- **Canonical Product ID Standard:** `BRPI-{BRAND}-{MODEL}-{VARIANT}` (e.g. `BRPI-SONY-SONY-FX3A`, `BRPI-DJI-DJI-RS-4-PRO`).
+- **4-Tier Provenance Hierarchy:** Tier 1 (OEM, 1.00) > Tier 2 (Babin Ground Truth, 0.95) > Tier 3 (Dealer/B&H, 0.90) > Tier 4 (Community Advisory, 0.65).
+- **18 Typed Knowledge Graph Edges:** `REQUIRES`, `COMPATIBLE_WITH`, `INCOMPATIBLE_WITH`, `POWERED_BY`, `MOUNTS_TO`, `ADAPTS_TO`, `RECORDS_TO`, `OUTPUTS_TO`, `INPUTS_FROM`, `SUPPORTED_BY`, `PROTECTED_BY`, `PACKED_WITH`, `REPLACED_BY`, `SUBSTITUTE_FOR`, `UPGRADE_FROM`, `UPGRADE_TO`, `BUNDLED_WITH`, `FREQUENTLY_RENTED_WITH`.
+- **Category Care Profiles (`data/equipment_care_profiles.json`):**
+  - Camera, Lens, Gimbal, Lighting, Battery, Wireless Video, Grip.
+  - Explicit Dispatch Checks vs. Return Checks and Storage Rules (40-45% RH dry cabinets).
+- **3-Level Diagnostic Triage Ladder:**
+  - **LEVEL A (Staff Safe):** Cable/battery/card swap, camera reboot, factory reset, antenna inspection.
+  - **LEVEL B (Trained Tech / HOLD):** Flange focal distance collimation, sensor OLPF swab, IMU 6-axis calibration.
+  - **LEVEL C (STOP USE / Factory Service):** Liquid intrusion, burning odor/smoke, swollen battery, blown SDI IC.
 
 ---
 
@@ -364,10 +430,11 @@ CRITICAL OPERATIONAL RULES:
 4. SAFETY & KIT INTEGRITY:
    - Ronin 4D rejects external gimbals.
    - CHIOPT cine zooms MANDATE 15mm rods and lens support (mount damage risk).
-   - RED cameras MANDATE RED-approved CFexpress Type B media and V-Mount power.
+   - RED cameras MANDATE RED-approved CFexpress Type B media and V-Mount power. Connect shielded SDI BEFORE powering monitors.
    - Glimmer filters MANDATE Tilta Mirage matte boxes.
    - Tripod payload requires >= 30% headroom. 230V lighting loads must stay <= 2,760W per 15A socket.
    - Auto-attach Camera Caretaker (Rs 2,000/day) on kits >= NPR 50,000 or cinema gear.
+   - Lithium batteries on flights: carry-on only, <=100Wh freely permitted, >160Wh strictly cargo only.
 
 5. COMMUNICATION FORMAT:
    - Use the client's persona (Seasoned Pro, Creative Beginner, Corporate).
@@ -391,13 +458,18 @@ validate_advance(rental_total_paisa, advance_paid_paisa) -> Dict
 check_booking_conflict(start_date, end_date, existing_bookings) -> Dict
 complete_kit_check(items) -> Dict
 
-# Layer 3 & 5 Operational CLI Engines
+# Layer 3, 5 & Enterprise Procurement CLI Engines
 python scripts/validate_booking.py --items "Sony FX3A" "Tamron 70-180" --days 3
 python scripts/detect_profit_leakage.py
 python scripts/recommend_asset_action.py --action BUY
 python scripts/simulate_scenario.py --scenario rate_change
 python scripts/calculate_power_media.py --camera "RED Komodo-X" --hours 6 --cold-weather
+python scripts/calculate_prep_logistics.py --items "Sony FX3A" "DJI RS 4 Pro" --skill BEGINNER
+python scripts/calculate_landed_and_fleet_roi.py
+python scripts/product_intelligence_engine.py
 python scripts/run_eval_suite.py
 ```
 
-*Rental Intelligence System Brain v4.0 · Babin Rentals Pvt Ltd · Boudha, Kathmandu*
+*Rental Intelligence System Brain v5.0 Enterprise · Babin Rentals Pvt Ltd · Boudha, Kathmandu*
+
+

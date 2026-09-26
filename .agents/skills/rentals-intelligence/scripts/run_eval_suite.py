@@ -296,6 +296,155 @@ def main():
     run_test("Simulate add asset evaluates 10-month recovery percentage against 40% benchmark",
              sim_asset["ten_month_recovery_pct"] > 40.0 and sim_asset["recommendation"] == "HIGHLY RECOMMENDED")
 
+    # ── SUITE 14: Preparation Time, Logistics & Skill Gates (5 tests) ────────
+    print("\n--- SUITE 14: PREPARATION TIME, LOGISTICS & SKILL GATES ---")
+    from calculate_prep_logistics import (
+        estimate_prep_time, estimate_delivery_load,
+        predict_staff_mistakes, validate_client_skill_gate
+    )
+    
+    prep_eval = estimate_prep_time(["Sony FX3A", "Sigma 24-70", "DJI RS 4 Pro"])
+    run_test("Camera kit preparation time is estimated between 30 and 45 minutes",
+             prep_eval["prep_minutes_min"] >= 30 and prep_eval["prep_minutes_max"] <= 45)
+
+    deliv_eval = estimate_delivery_load(["RED Komodo-X", "NiSi Athena", "Studio Assist Tripod", "Aputure 600x"])
+    run_test("Multi-case cinema and lighting package triggers VEHICLE_REQUIRED tier",
+             deliv_eval["delivery_tier"] in ["VEHICLE_REQUIRED", "TWO_STAFF_REQUIRED"])
+
+    mistakes_gimbal = predict_staff_mistakes(["DJI RS 4 Pro"])
+    run_test("Gimbal selection triggers baseplate verification warning",
+             any("baseplate" in m["omission_risk"].lower() for m in mistakes_gimbal))
+
+    mistakes_wireless = predict_staff_mistakes(["Accsoon CineView M7 Pro"])
+    run_test("Wireless monitor triggers antenna count check warning",
+             any("antenna" in m["omission_risk"].lower() for m in mistakes_wireless))
+
+    skill_guard = validate_client_skill_gate(["RED Komodo-X", "CHIOPT Zoom"], skill_level="BEGINNER")
+    run_test("Beginner requesting cinema body triggers GUARDRAIL_BLOCKED status",
+             not skill_guard["allowed"] and skill_guard["status"] == "GUARDRAIL_BLOCKED")
+
+    # ── SUITE 15: Enterprise Procurement, Landed Cost, Repair Ratios & IATA Compliance (10 tests) ──
+    print("\n--- SUITE 15: ENTERPRISE PROCUREMENT, LANDED COST, REPAIR RATIOS & IATA ---")
+    from calculate_landed_and_fleet_roi import (
+        calculate_landed_cost, calculate_fleet_roi,
+        evaluate_procurement_action, evaluate_repair_action,
+        check_iata_battery_compliance
+    )
+
+    # 1. Landed cost calculation
+    cost_calc = calculate_landed_cost(3899.0, "USD", "camera_body_digital")
+    run_test("FX3 Landed Cost calculates duties, 13% VAT, freight, insurance and risk reserve (multiplier 1.35 - 1.45)",
+             1.35 <= cost_calc["effective_multiplier"] <= 1.45 and cost_calc["total_landed_npr"] > 700000)
+
+    # 2. Fleet ROI 10-month benchmark
+    roi_calc = calculate_fleet_roi(cost_calc["total_landed_npr"], 4500.0, 14.0)
+    run_test("Healthy FX3 utilization exceeds Babin 40% 10-month recovery benchmark",
+             roi_calc["meets_babin_target"] and roi_calc["recovery_10m_pct"] >= 40.0)
+
+    # 3. Buy second unit evaluation
+    proc_buy = evaluate_procurement_action(
+        "DJI RS4 Pro", lost_demand_count_90d=6, current_utilization_pct=74.0,
+        current_failure_rate_pct=1.5, landed_cost_npr=165000, daily_rate_npr=2500
+    )
+    run_test("Bottleneck asset with 6 lost inquiries triggers BUY_SECOND_UNIT recommendation",
+             proc_buy["recommendation"] == "BUY_SECOND_UNIT" and proc_buy["confidence"] == "HIGH")
+
+    # 4. Sell / Reposition evaluation
+    proc_sell = evaluate_procurement_action(
+        "Idle Anamorphic Lens", lost_demand_count_90d=0, current_utilization_pct=14.0,
+        current_failure_rate_pct=0.0, landed_cost_npr=450000, daily_rate_npr=6000
+    )
+    run_test("Chronic low utilization (14%) triggers SELL_OR_REPOSITION recommendation",
+             proc_sell["recommendation"] == "SELL_OR_REPOSITION")
+
+    # 5. Repair evaluation - in house
+    rep_cable = evaluate_repair_action("cables_and_plates", 1200.0, 25000.0)
+    run_test("Minor cable damage (4.8% replacement ratio) triggers REPLACE_IN_HOUSE",
+             rep_cable["approved"] and rep_cable["recommended_action"] == "REPLACE_IN_HOUSE")
+
+    # 6. Repair evaluation - write off / excessive
+    rep_sensor = evaluate_repair_action("camera_io_boards", 220000.0, 350000.0)
+    run_test("Excessive repair quote (62.9% ratio on I/O board) triggers WRITE_OFF_OR_NEGOTIATE",
+             not rep_sensor["approved"] and rep_sensor["recommended_action"] == "WRITE_OFF_OR_NEGOTIATE")
+
+    # 7. Swollen battery - mandatory immediate retirement
+    rep_batt = evaluate_repair_action("swollen_battery", 0.0, 18000.0)
+    run_test("Swollen battery triggers non-negotiable IMMEDIATE_DESTRUCTION_RETIRE",
+             not rep_batt["approved"] and rep_batt["recommended_action"] == "IMMEDIATE_DESTRUCTION_RETIRE")
+
+    # 8. IATA battery carry-on compliance (<=100Wh)
+    iata_ok = check_iata_battery_compliance(99.0, 4, is_carry_on=True)
+    run_test("4x 99Wh V-Mount packs in carry-on pass IATA compliance without airline approval",
+             iata_ok["compliant"] and iata_ok["tier"] == "Category 1 (<=100Wh)")
+
+    # 9. IATA battery checked baggage violation
+    iata_checked = check_iata_battery_compliance(99.0, 1, is_carry_on=False)
+    run_test("Lithium battery in checked luggage triggers hard IATA prohibition",
+             not iata_checked["compliant"] and "checked baggage" in iata_checked["error"].lower())
+
+    # 10. IATA >160Wh passenger flight ban
+    iata_large = check_iata_battery_compliance(290.0, 1, is_carry_on=True)
+    run_test("290Wh cinema battery on passenger flight is prohibited (Cargo Aircraft Only)",
+             not iata_large["compliant"] and "cargo" in iata_large["error"].lower())
+
+    # ── SUITE 16: External Product Intelligence & Diagnostic Contracts (10 tests) ──
+    print("\n--- SUITE 16: PRODUCT INTELLIGENCE & DIAGNOSTIC CONTRACTS ---")
+    from product_intelligence_engine import (
+        get_product_intelligence, get_compatibility,
+        get_product_care_profile, diagnose_issue,
+        get_substitutes, calculate_attach_rate
+    )
+
+    # 1. Canonical product ID format
+    fx3_intel = get_product_intelligence("Sony FX3A")
+    run_test("Canonical Product ID conforms to BRPI-{BRAND}-{MODEL} format",
+             fx3_intel["found"] and fx3_intel["canonical_id"].startswith("BRPI-SONY"))
+
+    # 2. Product intelligence specs
+    run_test("Product specs include approved media and power draw for FX3",
+             len(fx3_intel["media"]) > 0 and fx3_intel["power"].get("rigged_average_w") == 15.0)
+
+    # 3. Mount adaptation check
+    adapt_test = get_compatibility("CHIOPT Xtreme", "Sony FX3A")
+    run_test("PL cinema zoom on Sony E-mount body requires PL_TO_E_ADAPTER",
+             adapt_test["status"] == "ADAPTER_REQUIRED" and "PL" in adapt_test["required_adapter"])
+
+    # 4. Hard conflict check
+    ronin_conflict = get_compatibility("DJI Ronin 4D 6K", "DJI RS 4 Pro")
+    run_test("Ronin 4D + external gimbal triggers HARD_CONFLICT_REJECT",
+             ronin_conflict["status"] == "HARD_CONFLICT_REJECT" and not ronin_conflict["compatible"])
+
+    # 5. Care profile return checks
+    cam_care = get_product_care_profile("camera")
+    run_test("Camera care profile contains at least 8 mandatory return inspection checks",
+             cam_care["found"] and len(cam_care["profile"]["return_checks"]) >= 8)
+
+    # 6. Care profile hard HOLD triggers
+    lens_care = get_product_care_profile("lens")
+    run_test("Lens care profile contains optical fungus/haze and mount looseness as hard HOLD triggers",
+             any("fungal" in t.lower() or "haze" in t.lower() for t in lens_care["profile"]["hard_hold_triggers"]))
+
+
+    # 7. Diagnostic Level C: Stop use
+    diag_c = diagnose_issue(["burnt electrical odor", "smoke from HDMI port"])
+    run_test("Burnt odor / smoke triggers LEVEL_C (HOLD_FACTORY_SERVICE_REQUIRED)",
+             diag_c["diagnostic_level"] == "LEVEL_C" and diag_c["quarantine_required"])
+
+    # 8. Diagnostic Level B: Tech inspection
+    diag_b = diagnose_issue(["dust spots on sensor", "loose mount play"])
+    run_test("Dust spots / mount play triggers LEVEL_B (HOLD_FOR_TECH_INSPECTION)",
+             diag_b["diagnostic_level"] == "LEVEL_B" and diag_b["quarantine_required"])
+
+    # 9. Diagnostic Level A: Staff safe
+    diag_a = diagnose_issue(["video flickering slightly on field monitor"])
+    run_test("Minor video flicker triggers LEVEL_A (STAFF_SAFE_CHECKS) without quarantine",
+             diag_a["diagnostic_level"] == "LEVEL_A" and not diag_a["quarantine_required"])
+
+    # 10. Substitution engine
+    sigma_subs = get_substitutes("Sigma 24-70")
+    run_test("Substitution engine provides Tamron 28-75 G2 and Sony 24-105 G for Sigma 24-70",
+             len(sigma_subs) >= 2 and any("Tamron" in s["name"] for s in sigma_subs))
+
     # ── FINAL REPORT ────────────────────────────────────────────────────────
     total_tests = PASSED + FAILED
     print("\n" + "=" * 75)
@@ -313,3 +462,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

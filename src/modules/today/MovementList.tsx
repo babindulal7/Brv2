@@ -818,7 +818,7 @@ export default function MovementList({
                         >
                           <Icon name="timer" size={12} style={{ color: 'var(--amber-text, #b45309)' }} />
                           <span>{clock[0]}</span>
-                          <span style={{ fontSize: 10, opacity: 0.85 }}>{clock[1]}</span>
+                          <span style={{ fontSize: 'var(--t-th)', opacity: 0.85 }}>{clock[1]}</span>
                         </span>
                       ) : (
                         <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
@@ -860,7 +860,7 @@ export default function MovementList({
                       >
                         <Icon name="timer" size={12} style={{ color: 'var(--amber-text, #b45309)' }} />
                         <span>{clock[0]}</span>
-                        <span style={{ fontSize: 10, opacity: 0.85 }}>{clock[1]}</span>
+                        <span style={{ fontSize: 'var(--t-th)', opacity: 0.85 }}>{clock[1]}</span>
                       </div>
                     ) : (
                       <div
@@ -868,7 +868,7 @@ export default function MovementList({
                         style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', paddingTop: 2 }}
                       >
                         <span>{clock[0]}</span>
-                        <span style={{ fontSize: 11, color: 'var(--muted)', marginTop: -2 }}>{clock[1]}</span>
+                        <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: -2 }}>{clock[1]}</span>
                       </div>
                     )}
 

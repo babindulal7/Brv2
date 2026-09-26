@@ -135,3 +135,55 @@ Before ANY recommendation, quote, or booking confirmation is displayed to staff 
 | **6** | **Law 5 Deposit** | Is the deposit strictly separated as a liability? | Deposit does NOT reduce Rental Total or Outstanding |
 | **7** | **Law 10 Discount** | Is discount $\le 10\%$, or backed by $\ge 10$-char reason + approver? | Never exceeds 25% hard cap under any circumstance |
 | **8** | **Language & Tone** | Is the client addressed as Sir/Ma'am with no mention of "customer"? | Law 17 compliant |
+
+---
+
+## 4. PREPARATION TIME STANDARDS (Warehouse Staging)
+
+To prevent rushed dispatches and skipped bench checks, every booking carries an estimated staging time:
+
+| Package Category | Prep Duration | Mandatory QC Tasks Before Release |
+|---|---|---|
+| **Small Package** (Mirrorless + 1 Lens) | **15–30 mins** | Battery voltage test, sensor blower sweep, optics front/rear check |
+| **Camera Kit** (FX3A + Gimbal + Mic) | **30–45 mins** | 45-degree gimbal motor balance, wireless mic channel sync, card format test |
+| **Cinema Package** (RED / Ronin 4D / PL) | **1–2 hours** | 12G-SDI ground loop protocol, flange depth Siemens star check, D-Tap rail voltage |
+| **Lighting Package** (600x / 300c / C-Stands) | **1–3 hours** | 10-minute continuous burn-in, Bowens locking pin test, 10kg sandbag counts |
+| **Car Rig / Movement System** | **2–4 hours** | Suction cup vacuum retention test, dual-tether tensile inspection, dry run video |
+| **Full Film Multi-Cam Package** | **Half Day (4–6 hrs)** | Multi-camera timecode sync, S-Log/REDCODE color match, complete crew handover |
+
+---
+
+## 5. KATHMANDU DELIVERY LOAD & LOGISTICS
+
+Classify transport mode and staff allocation prior to dispatch confirmation:
+
+1. **Small (Bike / Backpack):** Up to 1 body, 1 zoom lens, 3 batteries, 1 mic. (1 staff).
+2. **Medium (Taxi / Bike with Pannier):** 1 Pelican hardcase, 1 lightweight tripod bag, small LED tubes. (1 staff).
+3. **Heavy (Car / Van Mandatory):** Multiple Pelican cases, 2+ C-Stands, 300c/600x COBs. (1 staff).
+4. **Vehicle Required (Large SUV / Pickup):** Full cinema package, Studio Assist heavy tripods, generator. (2 staff).
+5. **Two Staff Required (Commercial Van):** Car rig, 10x10 skimmer frame, Dana Dolly track, generator. (2 staff mandatory).
+
+---
+
+## 6. STAFF MISTAKE PREVENTION CHECKLIST
+
+Prevent the most frequent warehouse omissions that disrupt productions on set:
+
+- [ ] **Gimbal Quick-Release Plate:** RS3/RS4 baseplate checked and fitted to camera cage.
+- [ ] **Card Readers:** High-speed USB-C reader matching CFexpress Type A or B media packed.
+- [ ] **Wireless Video Antennas:** TX and RX antenna counts verified (count: Accsoon 4x, Hollyland 2x).
+- [ ] **Video Cable Matching:** Correct HDMI/SDI length and micro/full connector type verified.
+- [ ] **C-Stand Sandbags:** Minimum 1x 10kg sandbag per C-Stand; 2x per Jumbo Stand / 600x.
+- [ ] **Battery Chargers:** Multi-bay dedicated charger (ZG charger for NP-FZ100, D-Tap for V-Mount) included.
+
+---
+
+## 7. CLIENT SKILL GATE & OPERATOR GUARDRAILS
+
+To prevent catastrophic gear destruction, map client skill level against equipment limits:
+
+* **Beginner:** Allowed: Sony A7 IV, Samyang V-AF, DJI Mic Mini, Amaran tubes. **HARD BLOCKED:** RED cinema bodies, Ronin 4D, CHIOPT zooms, Anamorphic lenses, Car rigs. *Override requires Camera Caretaker (Rs 2,000/day) or mandatory 15-minute operational briefing.*
+* **Intermediate:** Allowed: Sony FX3A, A7S III, Sigma 24-70 II, DJI RS gimbals, Amaran 300c. *Review wireless link setup and gimbal balance.*
+* **Professional:** Full catalog access. *Verify deposit authorization.*
+* **Expert Crew Required:** Ronin 4D, CHIOPT cine zooms, Car rigs, Tilta Float, Aputure 600x. *Requires named DoP or AC on booking contract.*
+

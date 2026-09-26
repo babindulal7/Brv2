@@ -39,7 +39,7 @@
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text2);
-  font-size: var(--t-meta, 13px);
+  font-size: var(--t-meta);
   font-weight: 500;
   cursor: pointer;
   font-family: inherit;
@@ -74,7 +74,7 @@
   border: 1px dashed var(--border);
   background: var(--card);
   color: var(--text2);
-  font-size: var(--t-meta, 13px);
+  font-size: var(--t-meta);
   font-weight: 500;
   cursor: pointer;
   font-family: inherit;
@@ -111,7 +111,7 @@
   place-items: center;
   background: var(--card2);
   color: var(--text);
-  font-size: var(--t-meta, 12px);
+  font-size: var(--t-th);
   font-weight: 700;
   font-family: var(--font-mono, monospace);
   font-feature-settings: "tnum" 1;
@@ -163,7 +163,7 @@
   border-radius: 10px;
   display: grid;
   place-items: center;
-  font-size: 14px;
+  font-size: var(--t-ui);
   font-weight: 700;
   font-family: var(--font-mono, monospace);
   flex-shrink: 0;
@@ -179,7 +179,7 @@
 }
 
 .client-card-name {
-  font-size: var(--t-ui, 14px);
+  font-size: var(--t-ui);
   font-weight: 700;
   color: var(--text);
   overflow: hidden;
@@ -188,7 +188,7 @@
 }
 
 .client-card-sub {
-  font-size: var(--t-meta, 12px);
+  font-size: var(--t-meta);
   color: var(--muted);
   font-family: var(--font-mono, monospace);
 }
@@ -205,7 +205,7 @@
   background: var(--card2);
   border-radius: var(--r-sm, 6px);
   border: 1px solid var(--border);
-  font-size: var(--t-meta, 12px);
+  font-size: var(--t-meta);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -218,7 +218,7 @@
   gap: 12px;
   padding-top: 6px;
   border-top: 1px dashed var(--border);
-  font-size: var(--t-meta, 12px);
+  font-size: var(--t-meta);
 }
 
 .client-stat-badge {
@@ -252,7 +252,7 @@
 .client-table thead tr th {
   height: 44px;
   padding: 8px 12px;
-  font-size: 11px;
+  font-size: var(--t-th);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -283,7 +283,7 @@
 .client-row td {
   height: var(--row-min-h, 56px);
   padding: 10px 12px;
-  font-size: var(--t-meta, 13px);
+  font-size: var(--t-meta);
   color: var(--text);
   vertical-align: middle;
 }
@@ -302,7 +302,7 @@
   border-radius: 4px;
   background: var(--card2);
   border: 1px solid var(--border);
-  font-size: 11px;
+  font-size: var(--t-th);
   font-weight: 600;
   font-family: var(--font-mono, monospace);
   color: var(--text2);
@@ -360,7 +360,7 @@
 }
 
 .membership-price-amount {
-  font-size: 20px;
+  font-size: var(--t-h3);
   font-weight: 700;
   color: var(--text);
   font-family: var(--font-mono, monospace);
@@ -381,7 +381,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--t-meta, 12px);
+  font-size: var(--t-meta);
   color: var(--text2);
 }
 

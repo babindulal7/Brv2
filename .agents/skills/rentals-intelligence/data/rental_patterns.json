@@ -6,51 +6,151 @@
     "sony_fx3a": {
       "sample_size": 48,
       "strong_attachments": [
-        { "item_id": "sigma_24_70_art_ii", "co_occurrence_rate": 0.68, "workflow": "General video / gimbal" },
-        { "item_id": "vmount_battery_99wh", "co_occurrence_rate": 0.60, "workflow": "All-day handheld rig" },
-        { "item_id": "dji_rs3_pro", "co_occurrence_rate": 0.52, "workflow": "Stabilized movement" },
-        { "item_id": "accsoon_cineview_m7_pro", "co_occurrence_rate": 0.45, "workflow": "Wireless director monitoring" },
-        { "item_id": "tilta_mirage_mattebox", "co_occurrence_rate": 0.38, "workflow": "ND filtering in daylight" },
-        { "item_id": "sony_np_fz100", "co_occurrence_rate": 0.88, "workflow": "Fast swap backup batteries" },
-        { "item_id": "cfexpress_type_a_160gb", "co_occurrence_rate": 0.75, "workflow": "4K 120p / All-I capture" }
+        {
+          "item_id": "sigma_24_70_art_ii",
+          "co_occurrence_rate": 0.68,
+          "workflow": "General video / gimbal"
+        },
+        {
+          "item_id": "vmount_battery_99wh",
+          "co_occurrence_rate": 0.6,
+          "workflow": "All-day handheld rig"
+        },
+        {
+          "item_id": "dji_rs3_pro",
+          "co_occurrence_rate": 0.52,
+          "workflow": "Stabilized movement"
+        },
+        {
+          "item_id": "accsoon_cineview_m7_pro",
+          "co_occurrence_rate": 0.45,
+          "workflow": "Wireless director monitoring"
+        },
+        {
+          "item_id": "tilta_mirage_mattebox",
+          "co_occurrence_rate": 0.38,
+          "workflow": "ND filtering in daylight"
+        },
+        {
+          "item_id": "sony_np_fz100",
+          "co_occurrence_rate": 0.88,
+          "workflow": "Fast swap backup batteries"
+        },
+        {
+          "item_id": "cfexpress_type_a_160gb",
+          "co_occurrence_rate": 0.75,
+          "workflow": "4K 120p / All-I capture"
+        }
       ]
     },
     "red_komodo_x": {
       "sample_size": 16,
       "strong_attachments": [
-        { "item_id": "cfexpress_type_b_1tb", "co_occurrence_rate": 1.00, "workflow": "REDCODE RAW capture" },
-        { "item_id": "vmount_battery_99wh", "co_occurrence_rate": 0.94, "workflow": "Core DC power" },
-        { "item_id": "pl_to_rf_adapter", "co_occurrence_rate": 0.88, "workflow": "Cine glass mounting" },
-        { "item_id": "nisi_athena_prime_set", "co_occurrence_rate": 0.62, "workflow": "Narrative cinema look" },
-        { "item_id": "accsoon_cineview_m7_pro", "co_occurrence_rate": 0.78, "workflow": "SDI director/focus monitor" },
-        { "item_id": "camera_caretaker", "co_occurrence_rate": 0.81, "workflow": "Mandatory high-risk field support" },
-        { "item_id": "studio_assist_heavy_tripod", "co_occurrence_rate": 0.75, "workflow": "Safe 15kg payload support" }
+        {
+          "item_id": "cfexpress_type_b_1tb",
+          "co_occurrence_rate": 1.0,
+          "workflow": "REDCODE RAW capture"
+        },
+        {
+          "item_id": "vmount_battery_99wh",
+          "co_occurrence_rate": 0.94,
+          "workflow": "Core DC power"
+        },
+        {
+          "item_id": "pl_to_rf_adapter",
+          "co_occurrence_rate": 0.88,
+          "workflow": "Cine glass mounting"
+        },
+        {
+          "item_id": "nisi_athena_prime_set",
+          "co_occurrence_rate": 0.62,
+          "workflow": "Narrative cinema look"
+        },
+        {
+          "item_id": "accsoon_cineview_m7_pro",
+          "co_occurrence_rate": 0.78,
+          "workflow": "SDI director/focus monitor"
+        },
+        {
+          "item_id": "camera_caretaker",
+          "co_occurrence_rate": 0.81,
+          "workflow": "Mandatory high-risk field support"
+        },
+        {
+          "item_id": "studio_assist_heavy_tripod",
+          "co_occurrence_rate": 0.75,
+          "workflow": "Safe 15kg payload support"
+        }
       ]
     },
     "dji_ronin_4d_6k": {
       "sample_size": 12,
       "strong_attachments": [
-        { "item_id": "dji_prossd_1tb", "co_occurrence_rate": 0.92, "workflow": "ProRes RAW capture" },
-        { "item_id": "dji_high_bright_monitor", "co_occurrence_rate": 0.83, "workflow": "Remote wireless hand units" },
-        { "item_id": "camera_caretaker", "co_occurrence_rate": 0.92, "workflow": "Mandatory setup & balancing support" },
-        { "item_id": "studio_assist_heavy_tripod", "co_occurrence_rate": 0.67, "workflow": "Stationary 4-axis resting" }
+        {
+          "item_id": "dji_prossd_1tb",
+          "co_occurrence_rate": 0.92,
+          "workflow": "ProRes RAW capture"
+        },
+        {
+          "item_id": "dji_high_bright_monitor",
+          "co_occurrence_rate": 0.83,
+          "workflow": "Remote wireless hand units"
+        },
+        {
+          "item_id": "camera_caretaker",
+          "co_occurrence_rate": 0.92,
+          "workflow": "Mandatory setup & balancing support"
+        },
+        {
+          "item_id": "studio_assist_heavy_tripod",
+          "co_occurrence_rate": 0.67,
+          "workflow": "Stationary 4-axis resting"
+        }
       ]
     },
     "chiopt_zoom_set": {
       "sample_size": 4,
       "strong_attachments": [
-        { "item_id": "15mm_rods_support_rig", "co_occurrence_rate": 1.00, "workflow": "Mandatory mount protection" },
-        { "item_id": "tilta_nucleus_m_ii", "co_occurrence_rate": 1.00, "workflow": "Parfocal manual focus pull" },
-        { "item_id": "accsoon_cineview_m7_pro", "co_occurrence_rate": 0.75, "workflow": "Focus checking" }
+        {
+          "item_id": "15mm_rods_support_rig",
+          "co_occurrence_rate": 1.0,
+          "workflow": "Mandatory mount protection"
+        },
+        {
+          "item_id": "tilta_nucleus_m_ii",
+          "co_occurrence_rate": 1.0,
+          "workflow": "Parfocal manual focus pull"
+        },
+        {
+          "item_id": "accsoon_cineview_m7_pro",
+          "co_occurrence_rate": 0.75,
+          "workflow": "Focus checking"
+        }
       ]
     },
     "aputure_ls_600x_pro": {
       "sample_size": 22,
       "strong_attachments": [
-        { "item_id": "jumbo_heavy_duty_cstand", "co_occurrence_rate": 0.95, "workflow": "Overhead rigging" },
-        { "item_id": "sandbag_10kg", "co_occurrence_rate": 1.00, "workflow": "Tipping prevention" },
-        { "item_id": "aputure_f10_fresnel", "co_occurrence_rate": 0.55, "workflow": "Punchy long throw beam" },
-        { "item_id": "aputure_light_dome_150", "co_occurrence_rate": 0.64, "workflow": "Soft key daylight wrap" }
+        {
+          "item_id": "jumbo_heavy_duty_cstand",
+          "co_occurrence_rate": 0.95,
+          "workflow": "Overhead rigging"
+        },
+        {
+          "item_id": "sandbag_10kg",
+          "co_occurrence_rate": 1.0,
+          "workflow": "Tipping prevention"
+        },
+        {
+          "item_id": "aputure_f10_fresnel",
+          "co_occurrence_rate": 0.55,
+          "workflow": "Punchy long throw beam"
+        },
+        {
+          "item_id": "aputure_light_dome_150",
+          "co_occurrence_rate": 0.64,
+          "workflow": "Soft key daylight wrap"
+        }
       ]
     }
   },
@@ -58,66 +158,151 @@
     "production_house": {
       "avg_spend_npr": 85000,
       "typical_duration_days": 3.4,
-      "primary_platforms": ["red_komodo_x", "dji_ronin_4d_6k", "sony_fx3a"],
-      "preferred_glass": ["nisi_athena_prime_set", "blazar_mantis_anamorphic", "chiopt_zoom_set"],
+      "primary_platforms": [
+        "red_komodo_x",
+        "dji_ronin_4d_6k",
+        "sony_fx3a"
+      ],
+      "preferred_glass": [
+        "nisi_athena_prime_set",
+        "blazar_mantis_anamorphic",
+        "chiopt_zoom_set"
+      ],
       "caretaker_acceptance_rate": 0.88,
       "due_payment_risk": "MEDIUM",
       "communication_style": "THE_SEASONED_PRO",
-      "key_priorities": ["Zero downtime", "SDI wireless links", "Multi-cam color consistency"]
+      "key_priorities": [
+        "Zero downtime",
+        "SDI wireless links",
+        "Multi-cam color consistency"
+      ]
     },
     "wedding_videographer": {
       "avg_spend_npr": 32000,
       "typical_duration_days": 2.2,
-      "primary_platforms": ["sony_fx3a", "sony_a7iv"],
-      "preferred_glass": ["sony_24_70_gm_ii", "sony_70_200_gm_ii", "sigma_24_70_art_ii"],
+      "primary_platforms": [
+        "sony_fx3a",
+        "sony_a7iv"
+      ],
+      "preferred_glass": [
+        "sony_24_70_gm_ii",
+        "sony_70_200_gm_ii",
+        "sigma_24_70_art_ii"
+      ],
       "caretaker_acceptance_rate": 0.22,
       "due_payment_risk": "LOW",
       "communication_style": "THE_SEASONED_PRO",
-      "key_priorities": ["Autofocus reliability", "Fast battery swapping", "Lightweight gimbals"]
+      "key_priorities": [
+        "Autofocus reliability",
+        "Fast battery swapping",
+        "Lightweight gimbals"
+      ]
     },
     "commercial_indie": {
       "avg_spend_npr": 46000,
       "typical_duration_days": 1.8,
-      "primary_platforms": ["sony_fx3a", "red_komodo"],
-      "preferred_glass": ["blazar_mantis_anamorphic", "thypoch_simera", "sigma_28_105_art"],
-      "caretaker_acceptance_rate": 0.50,
+      "primary_platforms": [
+        "sony_fx3a",
+        "red_komodo"
+      ],
+      "preferred_glass": [
+        "blazar_mantis_anamorphic",
+        "thypoch_simera",
+        "sigma_28_105_art"
+      ],
+      "caretaker_acceptance_rate": 0.5,
       "due_payment_risk": "LOW",
       "communication_style": "THE_SEASONED_PRO",
-      "key_priorities": ["Cinematic texture", "Anamorphic bokeh", "Compact wireless video"]
+      "key_priorities": [
+        "Cinematic texture",
+        "Anamorphic bokeh",
+        "Compact wireless video"
+      ]
     },
     "student_beginner": {
       "avg_spend_npr": 8500,
       "typical_duration_days": 1.2,
-      "primary_platforms": ["sony_a7iv", "sony_a7iii"],
-      "preferred_glass": ["samyang_v_af_set", "sigma_24_70_art_ii"],
+      "primary_platforms": [
+        "sony_a7iv",
+        "sony_a7iii"
+      ],
+      "preferred_glass": [
+        "samyang_v_af_set",
+        "sigma_24_70_art_ii"
+      ],
       "caretaker_acceptance_rate": 0.05,
       "due_payment_risk": "LOW",
       "communication_style": "THE_CREATIVE_BEGINNER",
-      "key_priorities": ["Budget economy", "Easy operation", "Simple LED tubes"]
+      "key_priorities": [
+        "Budget economy",
+        "Easy operation",
+        "Simple LED tubes"
+      ]
     }
   },
   "seasonal_patterns": {
     "wedding_peak_autumn": {
-      "months": [10, 11, 12],
-      "utilization_surge_equipment": ["sony_fx3a", "sony_a7iv", "dji_rs3_pro", "dji_mic_mini"],
+      "months": [
+        10,
+        11,
+        12
+      ],
+      "utilization_surge_equipment": [
+        "sony_fx3a",
+        "sony_a7iv",
+        "dji_rs3_pro",
+        "dji_mic_mini"
+      ],
       "discount_posture": "STRICT_NO_DISCOUNT",
       "advance_policy_enforcement": "100_PERCENT_BEFORE_RELEASE"
     },
     "wedding_peak_spring": {
-      "months": [2, 3, 4],
-      "utilization_surge_equipment": ["sony_fx3a", "sony_a7iv", "sony_24_70_gm_ii"],
+      "months": [
+        2,
+        3,
+        4
+      ],
+      "utilization_surge_equipment": [
+        "sony_fx3a",
+        "sony_a7iv",
+        "sony_24_70_gm_ii"
+      ],
       "discount_posture": "STRICT_NO_DISCOUNT",
       "advance_policy_enforcement": "100_PERCENT_BEFORE_RELEASE"
     },
     "monsoon_slump": {
-      "months": [6, 7, 8, 9],
-      "utilization_drop_outdoor": 0.40,
-      "utilization_surge_indoor": ["aputure_ls_600x_pro", "amaran_300c", "amaran_t4c_tubes"],
-      "active_protocols": ["RAIN_PROTECTION_MANDATORY", "DEHUMIDIFIER_HOLD_ON_RETURN", "FUNGUS_INSPECTION_WEEKLY"]
+      "months": [
+        6,
+        7,
+        8,
+        9
+      ],
+      "utilization_drop_outdoor": 0.4,
+      "utilization_surge_indoor": [
+        "aputure_ls_600x_pro",
+        "amaran_300c",
+        "amaran_t4c_tubes"
+      ],
+      "active_protocols": [
+        "RAIN_PROTECTION_MANDATORY",
+        "DEHUMIDIFIER_HOLD_ON_RETURN",
+        "FUNGUS_INSPECTION_WEEKLY"
+      ]
     },
     "mountain_expedition_window": {
-      "months": [9, 10, 11, 3, 4, 5],
-      "special_demands": ["EXTREME_COLD_BATTERY_DERATING_40_PCT", "DANA_DOLLY_COMPACT", "SEALED_PELICAN_ACCLIMATIZATION"]
+      "months": [
+        9,
+        10,
+        11,
+        3,
+        4,
+        5
+      ],
+      "special_demands": [
+        "EXTREME_COLD_BATTERY_DERATING_40_PCT",
+        "DANA_DOLLY_COMPACT",
+        "SEALED_PELICAN_ACCLIMATIZATION"
+      ]
     }
   },
   "accessory_friction_frequencies": {
@@ -141,5 +326,453 @@
       "cause": "Detached from talent clothing and forgotten",
       "countermeasure": "Count check: 2 transmitters, 2 clips, 2 magnets before return signoff"
     }
+  },
+  "empirical_transaction_pairs": [
+    {
+      "item1": "99Whr Vmount battery",
+      "item2": "Smallrig Compact v mount Battery Plate",
+      "frequency": 39
+    },
+    {
+      "item1": "99Whr Vmount battery",
+      "item2": "Tilta Mirage Matte Box Basic Kit + VND",
+      "frequency": 35
+    },
+    {
+      "item1": "Smallrig Compact v mount Battery Plate",
+      "item2": "Tilta Mirage Matte Box Basic Kit + VND",
+      "frequency": 31
+    },
+    {
+      "item1": "99Whr Vmount battery",
+      "item2": "Camera Caretaker ",
+      "frequency": 25
+    },
+    {
+      "item1": "Camera Caretaker ",
+      "item2": "Tilta Mirage Matte Box Basic Kit + VND",
+      "frequency": 24
+    },
+    {
+      "item1": "Camera Caretaker ",
+      "item2": "Smallrig Compact v mount Battery Plate",
+      "frequency": 24
+    },
+    {
+      "item1": "99Whr Vmount battery",
+      "item2": "Accsoon cineview Sdi 2",
+      "frequency": 24
+    },
+    {
+      "item1": "Accsoon cineview Sdi 2",
+      "item2": "Tilta Mirage Matte Box Basic Kit + VND",
+      "frequency": 23
+    },
+    {
+      "item1": "Tilta Mirage Matte Box Basic Kit + VND",
+      "item2": "Tilta Nucleus Nano II Wireless Lens Control System",
+      "frequency": 23
+    },
+    {
+      "item1": "Accsoon cineview Sdi 2",
+      "item2": "Tilta Nucleus Nano II Wireless Lens Control System",
+      "frequency": 22
+    },
+    {
+      "item1": "K&F Concept VA3 Heavy-Duty Aluminum Tripod with BV20 Fluid Head",
+      "item2": "Tilta Mirage Matte Box Basic Kit + VND",
+      "frequency": 22
+    },
+    {
+      "item1": "99Whr Vmount battery",
+      "item2": "K&F Concept VA3 Heavy-Duty Aluminum Tripod with BV20 Fluid Head",
+      "frequency": 22
+    },
+    {
+      "item1": "Accsoon cineview Sdi 2",
+      "item2": "Smallrig Compact v mount Battery Plate",
+      "frequency": 22
+    },
+    {
+      "item1": "NiSi PL to E-Mount Adapter",
+      "item2": "Tilta Nucleus Nano II Wireless Lens Control System",
+      "frequency": 21
+    },
+    {
+      "item1": "K&F Concept VA3 Heavy-Duty Aluminum Tripod with BV20 Fluid Head",
+      "item2": "Smallrig Compact v mount Battery Plate",
+      "frequency": 20
+    },
+    {
+      "item1": "Camera Caretaker ",
+      "item2": "Tilta Nucleus Nano II Wireless Lens Control System",
+      "frequency": 20
+    },
+    {
+      "item1": "PortKeys 8\u2033 Monitor with Wireless Video Transmitter",
+      "item2": "Smallrig Compact v mount Battery Plate",
+      "frequency": 19
+    },
+    {
+      "item1": "99Whr Vmount battery",
+      "item2": "PortKeys 8\u2033 Monitor with Wireless Video Transmitter",
+      "frequency": 19
+    },
+    {
+      "item1": "NiSi PL to E-Mount Adapter",
+      "item2": "Tilta Mirage Matte Box Basic Kit + VND",
+      "frequency": 19
+    },
+    {
+      "item1": "99Whr Vmount battery",
+      "item2": "Tilta Nucleus Nano II Wireless Lens Control System",
+      "frequency": 19
+    },
+    {
+      "item1": "Accsoon cineview Sdi 2",
+      "item2": "Camera Caretaker ",
+      "frequency": 19
+    },
+    {
+      "item1": "PortKeys 8\u2033 Monitor with Wireless Video Transmitter",
+      "item2": "Tilta Mirage Matte Box Basic Kit + VND",
+      "frequency": 18
+    },
+    {
+      "item1": "Smallrig Compact v mount Battery Plate",
+      "item2": "Tilta Nucleus Nano II Wireless Lens Control System",
+      "frequency": 18
+    },
+    {
+      "item1": "Accsoon CineView M7 Pro 7 4K Recording Monitor with Wireless Transmitter/Receiver",
+      "item2": "Accsoon cineview Sdi 2",
+      "frequency": 18
+    },
+    {
+      "item1": "NiSi ATHENA PRIME Cinema Lens Series",
+      "item2": "Tilta Nucleus Nano II Wireless Lens Control System",
+      "frequency": 16
+    }
+  ],
+  "empirical_top_velocity_items": [
+    {
+      "name": "Tilta Mirage Matte Box Basic Kit + VND",
+      "frequency": 51
+    },
+    {
+      "name": "99Whr Vmount battery",
+      "frequency": 49
+    },
+    {
+      "name": "Accsoon cineview Sdi 2",
+      "frequency": 45
+    },
+    {
+      "name": "Smallrig Compact v mount Battery Plate",
+      "frequency": 44
+    },
+    {
+      "name": "K&F Concept VA3 Heavy-Duty Aluminum Tripod with BV20 Fluid Head",
+      "frequency": 38
+    },
+    {
+      "name": "Tilta Nucleus Nano II Wireless Lens Control System",
+      "frequency": 37
+    },
+    {
+      "name": "Accsoon CineView M7 Pro 7 4K Recording Monitor with Wireless Transmitter/Receiver",
+      "frequency": 33
+    },
+    {
+      "name": "Camera Caretaker ",
+      "frequency": 33
+    },
+    {
+      "name": "NiSi ATHENA PRIME Cinema Lens Series",
+      "frequency": 26
+    },
+    {
+      "name": "NiSi PL to E-Mount Adapter",
+      "frequency": 26
+    },
+    {
+      "name": "Sony GM 24-70mm GM II 2.8",
+      "frequency": 24
+    },
+    {
+      "name": "Sony FX3A Camera Kit",
+      "frequency": 24
+    },
+    {
+      "name": "Dji RS4 pro",
+      "frequency": 20
+    },
+    {
+      "name": "PortKeys 8\u2033 Monitor with Wireless Video Transmitter",
+      "frequency": 19
+    },
+    {
+      "name": "Amaran 300c ",
+      "frequency": 18
+    },
+    {
+      "name": "Sigma 24-70/F2.8 DG DN II",
+      "frequency": 17
+    },
+    {
+      "name": "Viltrox DC-550 PRO 5.5 Touchscreen HD Monitor",
+      "frequency": 17
+    },
+    {
+      "name": "Sony 70-200 GM II 2.8",
+      "frequency": 16
+    },
+    {
+      "name": "Sony FE 85mm F1.4 GM II | E Mount",
+      "frequency": 16
+    },
+    {
+      "name": "Sony Alpha 7 IV/ A7IV",
+      "frequency": 15
+    },
+    {
+      "name": "E image 3 gear tripod",
+      "frequency": 15
+    },
+    {
+      "name": "Sony GM 35mm F1.4",
+      "frequency": 14
+    },
+    {
+      "name": "Desview S14-HDR 14\u2033 Director Monitor Kit (Wireless Video + V-Mount Battery)",
+      "frequency": 14
+    },
+    {
+      "name": "Tilta-M II wireless lens control system",
+      "frequency": 14
+    },
+    {
+      "name": "Amaran T2C RGBWW LED Tube Light 25W (2ft)",
+      "frequency": 13
+    }
+  ],
+  "preparation_time_benchmarks": {
+    "small_package": {
+      "minutes_min": 15,
+      "minutes_max": 30,
+      "description": "Solo mirrorless body + 1 lens + 2 batteries",
+      "qc_tasks": [
+        "Battery charge verification",
+        "Sensor blower sweep",
+        "Lens front/rear inspection"
+      ]
+    },
+    "camera_kit": {
+      "minutes_min": 30,
+      "minutes_max": 45,
+      "description": "FX3A / A7IV + Gimbal + Wireless Mic + Card Reader",
+      "qc_tasks": [
+        "Gimbal 45-degree balance test",
+        "Wireless mic channel pairing",
+        "Media format test",
+        "Custom case cutout check"
+      ]
+    },
+    "cinema_package": {
+      "minutes_min": 60,
+      "minutes_max": 120,
+      "description": "RED Komodo-X / Ronin 4D + PL Cine Glass + V-Mount Grid + M7 Pro Monitor",
+      "qc_tasks": [
+        "12G-SDI ground loop sequence verification",
+        "Flange depth Siemens star check",
+        "V-Mount D-Tap voltage check",
+        "Antenna count verification"
+      ]
+    },
+    "lighting_package": {
+      "minutes_min": 60,
+      "minutes_max": 180,
+      "description": "Aputure 600x + Amaran 300c + C-Stands + Modifiers",
+      "qc_tasks": [
+        "COB 10-minute continuous burn test",
+        "Bowens speedring locking check",
+        "10kg sandbag counts",
+        "230V cable insulation inspection"
+      ]
+    },
+    "movement_car_rig": {
+      "minutes_min": 120,
+      "minutes_max": 240,
+      "description": "Tilta Car Rig / Float / X-Jib",
+      "qc_tasks": [
+        "Vacuum suction cup seal retention test",
+        "Dual safety tether tensile check",
+        "Low-speed test video rehearsal"
+      ]
+    },
+    "full_film_multicam": {
+      "minutes_min": 240,
+      "minutes_max": 360,
+      "description": "Multi-camera cinema setup with director village, coms, and full grip",
+      "qc_tasks": [
+        "Timecode synchronization across bodies",
+        "Color profile matching",
+        "Full crew handover rehearsal"
+      ]
+    }
+  },
+  "delivery_load_matrix": {
+    "SMALL": {
+      "transport_mode": "BIKE_OR_BACKPACK",
+      "staff_required": 1,
+      "criteria": "Up to 1 body, 1 zoom lens, 3 batteries, 1 mic",
+      "case_limit": "1 backpack / soft bag"
+    },
+    "MEDIUM": {
+      "transport_mode": "TAXI_OR_BIKE_PANNIER",
+      "staff_required": 1,
+      "criteria": "1 camera hardcase, 1 lightweight tripod bag, small LED tubes",
+      "case_limit": "1 Pelican hardcase + 1 tripod bag"
+    },
+    "HEAVY": {
+      "transport_mode": "CAR_OR_VAN_MANDATORY",
+      "staff_required": 1,
+      "criteria": "Multiple Pelican cases, 2+ C-Stands, 300c/600x COB lights",
+      "case_limit": "2-4 hard cases + 2 C-stands"
+    },
+    "VEHICLE_REQUIRED": {
+      "transport_mode": "LARGE_SUV_OR_PICKUP",
+      "staff_required": 2,
+      "criteria": "Full cinema package, heavy Studio Assist tripods, multi-light grid, generator",
+      "case_limit": "5+ hard cases + jumbo stands"
+    },
+    "TWO_STAFF_REQUIRED": {
+      "transport_mode": "DEDICATED_COMMERCIAL_VAN",
+      "staff_required": 2,
+      "criteria": "Car rigs, 10x10 skimmer frame, Dana Dolly track, generator, multiple heavy COBs",
+      "case_limit": "Full production fleet"
+    }
+  },
+  "staff_mistake_triggers": [
+    {
+      "trigger_gear": [
+        "rs_3",
+        "rs_4",
+        "rs_5",
+        "rs3",
+        "rs4",
+        "rs5",
+        "gimbal"
+      ],
+      "critical_omission": "Gimbal Quick-Release Baseplate",
+      "warning_message": "Check RS gimbal baseplate and camera mount plate before packing case."
+    },
+    {
+      "trigger_gear": [
+        "cfexpress",
+        "cfast",
+        "sd_card"
+      ],
+      "critical_omission": "High-Speed Card Reader",
+      "warning_message": "Verify USB-C card reader matching the media format is included."
+    },
+    {
+      "trigger_gear": [
+        "accsoon",
+        "m7_pro",
+        "hollyland",
+        "wireless_video"
+      ],
+      "critical_omission": "Transmitter / Receiver Antennas",
+      "warning_message": "Count antennas on both TX and RX. Missing antennas cause return disputes."
+    },
+    {
+      "trigger_gear": [
+        "monitor",
+        "desview",
+        "portkeys",
+        "smallhd",
+        "viltrox"
+      ],
+      "critical_omission": "Video Cable Mismatch (Micro-HDMI vs Full HDMI vs 12G-SDI)",
+      "warning_message": "Confirm camera video output matches monitor input port and cable length."
+    },
+    {
+      "trigger_gear": [
+        "c_stand",
+        "jumbo_stand",
+        "600x"
+      ],
+      "critical_omission": "10kg Sandbags",
+      "warning_message": "Never dispatch heavy light stands without 10kg sandbags per stand."
+    },
+    {
+      "trigger_gear": [
+        "np_fz100",
+        "np_f",
+        "vmount"
+      ],
+      "critical_omission": "Multi-Bay Dedicated Battery Charger",
+      "warning_message": "Confirm client has matching charger or include ZG/D-Tap charging system."
+    }
+  ],
+  "client_skill_gate_rules": {
+    "BEGINNER": {
+      "allowed_gear": [
+        "sony_a7iv",
+        "sony_a7iii",
+        "samyang_v_af",
+        "dji_mic_mini",
+        "amaran_tubes",
+        "k_and_f_tripod"
+      ],
+      "blocked_gear": [
+        "red_komodo",
+        "red_komodo_x",
+        "dji_ronin_4d",
+        "chiopt_zoom_set",
+        "blazar_mantis",
+        "tilta_float",
+        "car_rig"
+      ],
+      "guardrail": "Hard block on cinema bodies and heavy cine glass. If requested, mandate Camera Caretaker (Rs 2,000/day) or 15-min in-person briefing."
+    },
+    "INTERMEDIATE": {
+      "allowed_gear": [
+        "sony_fx3a",
+        "sony_a7siii",
+        "sigma_24_70_art_ii",
+        "dji_rs3_pro",
+        "dji_rs4_pro",
+        "amaran_300c",
+        "accsoon_m7_pro"
+      ],
+      "blocked_gear": [
+        "car_rig",
+        "tilta_float"
+      ],
+      "guardrail": "Operational review of wireless links and gimbal payload headroom."
+    },
+    "PROFESSIONAL": {
+      "allowed_gear": [
+        "ALL_EXCEPT_EXPERT_RIGS"
+      ],
+      "guardrail": "Verify DoP experience and deposit authorization."
+    },
+    "EXPERT_CREW_REQUIRED": {
+      "gear": [
+        "dji_ronin_4d_6k",
+        "chiopt_zoom_set",
+        "tilta_car_rig",
+        "nsh_car_rig",
+        "tilta_float",
+        "aputure_ls_600x_pro"
+      ],
+      "guardrail": "Requires named AC or DoP on contract; Camera Caretaker strongly enforced."
+    }
+  },
+  "repair_vs_replace_policy": {
+    "threshold_pct": 50.0,
+    "rule": "If estimated repair cost >= 50% of asset landed replacement value, flag for RETIRE / SELL FOR PARTS instead of repair."
   }
 }

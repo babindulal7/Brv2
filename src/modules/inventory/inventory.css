@@ -33,7 +33,7 @@
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text2);
-  font-size: var(--t-meta, 13px);
+  font-size: var(--t-meta);
   font-weight: 500;
   cursor: pointer;
   font-family: inherit;
@@ -74,7 +74,7 @@
 .inventory-table thead tr th {
   height: 44px;
   padding: 8px 12px;
-  font-size: 11px;
+  font-size: var(--t-th);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -240,7 +240,7 @@
 
 .inventory-asset-code {
   font-family: var(--font-mono, monospace);
-  font-size: 11px;
+  font-size: var(--t-th);
   font-weight: 600;
   letter-spacing: 0.04em;
   padding: 1px 6px;
@@ -315,7 +315,7 @@
   background: transparent;
   color: var(--text2);
   font-weight: 500;
-  font-size: var(--t-meta, 13px);
+  font-size: var(--t-meta);
   cursor: pointer;
   font-family: inherit;
   transition: all var(--dur-fast, 150ms) var(--ease);
@@ -359,7 +359,7 @@
   border-radius: var(--r-btn, 8px);
   background: var(--card2);
   border: 1px solid var(--border);
-  font-size: var(--t-th, 11px);
+  font-size: var(--t-th);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -415,7 +415,7 @@
   border-radius: var(--r-btn, 8px);
   border: 1px solid var(--border);
   background: var(--card2);
-  font-size: var(--t-th, 11px);
+  font-size: var(--t-th);
   font-family: inherit;
   font-weight: 500;
   color: var(--text);
@@ -439,7 +439,7 @@
   border-radius: var(--r-btn, 6px);
   background: var(--st-in-bg);
   color: var(--st-in-fg);
-  font-size: var(--t-th, 11px);
+  font-size: var(--t-th);
   font-weight: 700;
   letter-spacing: 0.02em;
 }

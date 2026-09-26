@@ -61,4 +61,7 @@ review-receipts/
 .tmp-ui-*/
 tsc_check.txt
 /babin-rentals-os md.rar
+.backups/
+__pycache__/
+*.pyc
 

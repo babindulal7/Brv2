@@ -1,0 +1,111 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BabinRentalsRentalEvent",
+  "description": "Canonical append-only operational event schema for Babin Rentals OS physical asset tracking and business intelligence.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "timestamp",
+    "event_type",
+    "from_status",
+    "to_status",
+    "product_id",
+    "staff_id",
+    "location"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "pattern": "^EVT-[0-9]{4}-[A-Z0-9]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "booking_id": {
+      "type": ["string", "null"]
+    },
+    "quote_id": {
+      "type": ["string", "null"]
+    },
+    "client_id": {
+      "type": ["string", "null"]
+    },
+    "product_id": {
+      "type": "string"
+    },
+    "asset_serial_id": {
+      "type": ["string", "null"]
+    },
+    "staff_id": {
+      "type": "string"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "QUOTE_CREATED",
+        "QUOTE_SENT",
+        "QUOTE_VIEWED",
+        "QUOTE_CHANGED",
+        "QUOTE_ACCEPTED",
+        "QUOTE_LOST",
+        "DISCOUNT_OVERRIDDEN",
+        "RESERVED",
+        "PACKED",
+        "CHECKED",
+        "RELEASED",
+        "RETURNED_PHYSICAL",
+        "INSPECTION_STARTED",
+        "INSPECTION_FAILED",
+        "CLEANING_COMPLETED",
+        "READY",
+        "FAULT_REPORTED",
+        "REPAIR_STARTED",
+        "REPAIR_COMPLETED",
+        "PART_REPLACED",
+        "WRITTEN_OFF"
+      ]
+    },
+    "from_status": {
+      "type": "string"
+    },
+    "to_status": {
+      "type": "string"
+    },
+    "quantity": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1
+    },
+    "rate_npr": {
+      "type": "number",
+      "minimum": 0
+    },
+    "discount_npr": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0
+    },
+    "revenue_npr": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0
+    },
+    "cost_npr": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0
+    },
+    "location": {
+      "type": "string",
+      "default": "Boudha Hub"
+    },
+    "source": {
+      "type": "string",
+      "default": "Babin Rentals OS"
+    },
+    "metadata_json": {
+      "type": "object"
+    }
+  }
+}

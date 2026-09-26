@@ -1,0 +1,248 @@
+{
+  "_metadata": {
+    "version": "1.0.0",
+    "updated_at": "2026-09-26",
+    "description": "Equipment care profiles, dispatch/return QC checks, storage rules, hard HOLD triggers, and 3-level diagnostic trees per category."
+  },
+  "categories": {
+    "camera": {
+      "dispatch_checks": [
+        "Visual sensor inspection (no dust, spots, OLPF scratches)",
+        "Lens mount inspection (zero mechanical play, contact pins clean)",
+        "Record test to approved media at maximum bitrate (4K 120p or RAW)",
+        "Media slot test (smooth card insertion, dual slot lock verification)",
+        "HDMI / SDI output feed verification on reference monitor",
+        "Audio XLR / 3.5mm input and headphone jack monitoring test",
+        "LCD touch screen, EVF, and physical dial/button response",
+        "Internal fan operation and zero thermal warning alerts",
+        "Firmware version verified against approved studio standard",
+        "Battery bay contacts clean and tension springs intact"
+      ],
+      "return_checks": [
+        "Chassis impact, dent, or exterior casing damage inspection",
+        "Mount tightness and screw retention check",
+        "Port inspection (HDMI port loose/cracked pins, SDI BNC wiggle)",
+        "Moisture or rain ingress detection on seams and ports",
+        "Media card removed and returned to client / formatted",
+        "Dead pixel / sensor spot test at f/16 against clean white field",
+        "Button and dial mechanical tactility test",
+        "Controlled 5-minute recording stress test"
+      ],
+      "storage_rules": [
+        "Store in electronic dry cabinet at 40-45% relative humidity",
+        "Body cap permanently installed whenever lens is detached",
+        "Battery removed for storage exceeding 48 hours",
+        "Rubber port covers securely seated"
+      ],
+      "hard_hold_triggers": [
+        "Sensor glass / OLPF scratch or persistent contamination",
+        "Lens mount play or visible deformation",
+        "Intermittent HDMI / SDI video signal drop",
+        "Overheating or recurring thermal shutdown error",
+        "Physical liquid ingress or internal corrosion"
+      ]
+    },
+    "lens": {
+      "dispatch_checks": [
+        "Front and rear glass inspection under high-intensity inspection light",
+        "Focus ring rotation (smooth torque across entire throw, zero gritty spots)",
+        "Aperture / iris ring rotation and clickless de-clicked movement",
+        "Zoom ring travel (consistent resistance, zero focal creep)",
+        "Lens mount flange inspection (zero burrs, tight lock on body)",
+        "Front filter thread roundness and thread condition",
+        "0.8M cine gear teeth inspection for wear or damage",
+        "Internal element inspection for fungus, haze, or oil on blades",
+        "Verify 15mm rod support requirement for heavy cine zooms"
+      ],
+      "return_checks": [
+        "Front glass scratch or coating abrasion check",
+        "Rear glass impact or mount wear check",
+        "Gear ring tooth damage or slipping under follow-focus pressure",
+        "Filter thread impact or cross-thread dents",
+        "Post-shoot humidity and fungus inspection"
+      ],
+      "storage_rules": [
+        "Store vertically in dry cabinet with front and rear caps sealed",
+        "Aperture ring set wide open to prevent spring tension fatigue",
+        "Silica gel desiccants maintained in hard cases"
+      ],
+      "hard_hold_triggers": [
+        "Element scratch in optical path, coating peel, or chipped glass",
+        "Internal haze, fogging, or fungal spores",
+        "Mount looseness or flange focal distance misalignment",
+        "Mechanical binding or frozen focus/zoom ring",
+        "Drop impact causing optical decentering"
+      ]
+    },
+    "gimbal": {
+      "dispatch_checks": [
+        "Three-axis automated motor unlock and smooth manual free movement",
+        "Motor strength and zero-vibration test under target camera load",
+        "Quick release baseplate, riser, and camera screws counted",
+        "Focus motor, rod mount, and control cables verified",
+        "Gimbal battery grip charge level (>= 90%) and latch lock check",
+        "Automated balance test and motor stiffness auto-tune",
+        "Joystick, touchscreen, and follow-mode profiles tested"
+      ],
+      "return_checks": [
+        "Gimbal arm inspection for drop scars or bent aluminum arms",
+        "Motor resistance or gritty feel when unpowered",
+        "Baseplate and locking lever wear check",
+        "Cable connector pins and port inspection"
+      ],
+      "storage_rules": [
+        "Stored in dedicated foam hard case with all 3 axis locks engaged",
+        "Battery grip detached if stored longer than 7 days"
+      ],
+      "hard_hold_triggers": [
+        "Persistent motor overload, jitter, or high-frequency oscillation",
+        "Bent or cracked carbon/aluminum arm assembly",
+        "Axis lock slipping or broken latching mechanism",
+        "Impact or water damage to main controller board"
+      ]
+    },
+    "lighting": {
+      "dispatch_checks": [
+        "COB LED emitter surface visual inspection (zero cracks or burns)",
+        "Cooling fan boot test and acoustic noise check",
+        "Full dimming range check (0.1% to 100% flicker-free test)",
+        "Bowens / reflector mount latching and umbrella lock check",
+        "Mains power cord, ballast header cable, and plug integrity check",
+        "Yoke locking brake tension and 5/8\" baby pin receiver check",
+        "Bluetooth Sidus Link / app connectivity check"
+      ],
+      "return_checks": [
+        "Ventilation intake and exhaust louvers checked for lint/dust",
+        "Ballast casing checked for heat discoloration or burnt smell",
+        "Power cable sheath checked for kinks, cuts, or exposed copper",
+        "Moisture inspection on fixture and control box"
+      ],
+      "storage_rules": [
+        "Protective COB cover must be clipped on before packing into case",
+        "Cables coiled in natural over-under loop without tight radius"
+      ],
+      "hard_hold_triggers": [
+        "Thermal shutdown trip or cooling fan failure",
+        "Damaged power cable or cracked ballast plug",
+        "Uneven LED phosphor discoloration or dead COB diodes",
+        "Any water immersion or burning odor"
+      ]
+    },
+    "battery": {
+      "dispatch_checks": [
+        "Visual casing inspection for physical impact, dents, or swelling",
+        "Terminal pins clean, uncorroded, and gold plating intact",
+        "OLED / LED fuel gauge test showing 100% full charge",
+        "D-Tap and USB-C PD port power output verified",
+        "V-mount / Gold mount wedge lock fit securely verified"
+      ],
+      "return_checks": [
+        "Swelling test: battery must sit completely flat on level surface",
+        "Post-use temperature check (abnormal heat dissipation)",
+        "Terminal damage or carbon arching marks",
+        "Voltage check with battery tester"
+      ],
+      "storage_rules": [
+        "Store at 40-50% nominal charge (approx 14.8V for V-mount) for idle periods",
+        "Keep away from metal surfaces and direct heat sources",
+        "Terminal protective caps attached"
+      ],
+      "hard_hold_triggers": [
+        "ANY swelling, bulging, or case separation (Immediate destruction / retire)",
+        "Physical casing crack, puncture, or liquid exposure",
+        "Abnormal heat during charging or discharge",
+        "Unstable output voltage or terminal burn marks"
+      ]
+    },
+    "wireless_video": {
+      "dispatch_checks": [
+        "TX and RX paired and transmitting clean video over HDMI and SDI",
+        "Serialized antennas counted and verified (correct band/polarity)",
+        "Channel selection switch and OLED frequency display verified",
+        "NP-F battery plate and DC barrel power input tested",
+        "1/4\"-20 cold shoe mounting threads verified"
+      ],
+      "return_checks": [
+        "All antennas accounted for (zero missing antennas accepted)",
+        "Antenna connector threads checked for stripping or bending",
+        "HDMI / SDI port retention and video stability under vibration"
+      ],
+      "storage_rules": [
+        "Antennas unscrewed and stored in designated cutout slots",
+        "Protective screen covers installed"
+      ],
+      "hard_hold_triggers": [
+        "Antenna port RP-SMA connector snapped or stripped",
+        "Intermittent video frame drop on verified clean RF channel",
+        "Cracked OLED display or unresponsive channel pairing"
+      ]
+    },
+    "grip": {
+      "dispatch_checks": [
+        "C-stand and tripod leg locking collars tested under hand torque",
+        "Grip head T-handle and aluminum brake disc tension tested",
+        "Sandbag zipper, inner liner, and strap tested for zero leaks",
+        "Safety steel cables with locking carabiners counted with lights",
+        "Fluid head pan and tilt drag friction and counterbalance tested"
+      ],
+      "return_checks": [
+        "Bent aluminum riser tubes or tripod legs",
+        "Stripped locking knobs or cracked die-cast castings",
+        "Fluid head hydraulic fluid leaks or sticky pan travel",
+        "Sandbag weight and tear verification"
+      ],
+      "storage_rules": [
+        "Stands stored collapsed with locks loosened half a turn to prevent binding",
+        "Tripod heads locked in horizontal neutral position"
+      ],
+      "hard_hold_triggers": [
+        "Bent or buckled load-bearing tube",
+        "Cracked grip head casting or slipping locking brake",
+        "Leaking hydraulic fluid head",
+        "Frayed or damaged steel rigging safety cable"
+      ]
+    }
+  },
+  "diagnostic_levels": {
+    "level_a_staff_safe": {
+      "scope": "Safe external checks performable by warehouse prep technicians",
+      "actions": [
+        "Inspect and swap field cable with known-good studio reference cable",
+        "Swap camera battery / V-mount pack with fully charged known-good unit",
+        "Swap media card with certified known-good card and test recording",
+        "Perform camera / fixture reboot and factory profile reset",
+        "Inspect physical connector seating and cable strain relief",
+        "Check external antenna count, tightness, and orientation",
+        "Verify power socket voltage with multimeter before lighting burn test"
+      ],
+      "quarantine_required": false
+    },
+    "level_b_technician_service": {
+      "scope": "Authorized internal technician evaluation with specialized tools",
+      "actions": [
+        "Measure lens mount flange focal distance with collimator",
+        "Check connector pin retention force and ground continuity",
+        "Clean camera sensor OLPF with certified sensor swab and optical fluid",
+        "Replace worn quick-release plate levers or tripod rubber feet",
+        "Gimbal advanced IMU six-sided calibration and motor tuning",
+        "Clean internal fixture cooling fans with soft anti-static brush"
+      ],
+      "quarantine_required": true,
+      "status": "HOLD_FOR_TECH_INSPECTION"
+    },
+    "level_c_stop_use_escalate": {
+      "scope": "Mandatory STOP USE, immediate quarantine, and factory service escalation",
+      "actions": [
+        "Liquid intrusion, water immersion, or active condensation inside optics",
+        "Burnt electrical odor, smoke, or blown semiconductor component",
+        "Lithium-ion battery swelling, bulging, leaking, or shell puncture",
+        "Intermittent power short circuit or ground loop fault",
+        "Severe physical crack in structural cast alloy, carbon fiber, or lens mount",
+        "RED camera SDI driver IC failure",
+        "Cracked or scratched image sensor OLPF glass"
+      ],
+      "quarantine_required": true,
+      "status": "HOLD_FACTORY_SERVICE_REQUIRED"
+    }
+  }
+}
