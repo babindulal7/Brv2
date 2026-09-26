@@ -29,7 +29,15 @@ import { deliveryTypeLabel } from '../../lib/format'
 import { formatGateError } from '../../lib/gates'
 import { DriverHandoverModal } from '../operations/DriverHandoverModal'
 import { useFloorPresence } from '../../lib/floorPresence'
+import { SignOnGlassModal, type DigitalSignature } from './modals/SignOnGlassModal'
+import {
+  playScanSuccess,
+  playScanError,
+  playCaseComplete,
+  unlockAudioContext,
+} from '../../lib/acousticFeedback'
 import './rentals.css'
+
 
 /**
  * **Handover Workspace** — `Handover Workflow.md` v1.1 (Build Locked), wired
@@ -230,22 +238,10 @@ interface Sig {
   /**
    * HO-14 / Law 7 — the capture INSTANT (ISO-8601, UTC), never the string a
    * screen happened to print.
-   *
-   * This held `formatAdDateTime(...)`'s output — `'16 Jul 2026, 02:25 PM'`,
-   * a `toLocaleString` rendering in Asia/Kathmandu. It is not as lossy as an
-   * unqualified clock time (the date is in there) but it is still a label, not
-   * a moment: no zone is marked, the seconds are gone, two of them cannot be
-   * compared or ordered, and neither can be re-rendered in another format. A
-   * signature's timestamp is the evidence half of the signature, so it is kept
-   * as the thing that can be compared and re-rendered.
-   *
-   * Nothing outside this screen is affected by the change: the `signatures`
-   * table has no writer in this build and the dispatch payload
-   * (`buildHandoverLines` → `handoverRental`) carries no signature field, so
-   * `signatures` is read only by gate 5 and by `SigRow`, which now formats the
-   * instant at render.
    */
   atIso: string
+  dataUrl?: string | undefined
+  mode?: ('draw' | 'type') | undefined
 }
 
 interface GateRow {
@@ -531,6 +527,7 @@ export default function HandoverWorkspace({
   const [depositReceived, setDepositReceived] = useState(false)
   /** §9.2 — captured at session close. Names come off real records only. */
   const [signatures, setSignatures] = useState<{ receiver?: Sig; warehouse?: Sig }>({})
+  const [activeSigningRole, setActiveSigningRole] = useState<'receiver' | 'warehouse' | null>(null)
   /**
    * **R-06's named reason for handing over with money outstanding.** Not a
    * §11.4 session-gate override — see `OVERRIDE_UNAVAILABLE` for that one,
@@ -856,9 +853,39 @@ export default function HandoverWorkspace({
    * unit beeped success and read "marked" in the modal while the rail behind it
    * said "already marked Picked Up" — one scan, two verdicts.
    */
+  const [scanPulse, setScanPulse] = useState<'success' | 'error' | null>(null)
+
+  const triggerScanPulse = (verdict: 'success' | 'error') => {
+    setScanPulse(verdict)
+    setTimeout(() => {
+      setScanPulse((cur) => (cur === verdict ? null : cur))
+    }, 600)
+  }
+
+  /**
+   * One scan / tick = one LOCAL mark. The write is Complete Session, once —
+   * the seed build dispatched `handoverRental` per unit (and its scanner's
+   * modal asserted "handed over" before that dispatch had settled; the scan
+   * log here says what is true instead: marked, recorded at session close).
+   *
+   * It returns the verdict rather than swallowing it. `BarcodeScannerModal`
+   * takes a `ScanOutcome` from its consumer and shows exactly those words in
+   * the banner, the log and the beep; a consumer that returns nothing gets the
+   * modal's default, which claims a fresh mark. Two of its three outcomes make
+   * NO mark, so returning nothing meant a second scan of an already-ticked
+   * unit beeped success and read "marked" in the modal while the rail behind it
+   * said "already marked Picked Up" — one scan, two verdicts.
+   */
   const pick = (key: string, via: 'scan' | 'manual'): ScanOutcome => {
+    unlockAudioContext()
     const row = rowByKey.get(key)
-    if (!row) return { ok: false, message: 'is not on this booking' }
+    if (!row) {
+      if (via === 'scan') {
+        triggerScanPulse('error')
+        playScanError()
+      }
+      return { ok: false, message: 'is not on this booking' }
+    }
     if (row.prior !== null) {
       /* Defensive, and today unreachable by design rather than by accident: both
          checkboxes render `disabled` for a prior row and `scannableUnits` keeps
@@ -866,16 +893,33 @@ export default function HandoverWorkspace({
          stays because it guards the data, not the wording — if a prior row ever
          becomes tappable, this refuses it rather than re-dispatching a unit an
          earlier session already took out. */
+      if (via === 'scan') {
+        triggerScanPulse('error')
+        playScanError()
+      }
       const message = `was recorded ${row.prior} in an earlier session — nothing changed`
       setScanLog((p) => [`• ${row.name} ${message}`, ...p].slice(0, 5))
       return { ok: false, message }
     }
     if (stateOf(key) === 'Picked Up') {
+      if (via === 'scan') {
+        triggerScanPulse('error')
+        playScanError()
+      }
       const message = 'was already marked Picked Up — nothing changed'
       setScanLog((p) => [`• ${row.name} ${message}`, ...p].slice(0, 5))
       return { ok: false, message }
     }
     markPicked(key, via)
+    if (via === 'scan') {
+      triggerScanPulse('success')
+      const remaining = rows.filter((r) => r.key !== key && r.prior === null && marks[r.key]?.state !== 'Picked Up')
+      if (remaining.length === 0) {
+        playCaseComplete()
+      } else {
+        playScanSuccess()
+      }
+    }
     const message =
       via === 'scan'
         ? 'marked Picked Up by scan — recorded at session close'
@@ -912,8 +956,11 @@ export default function HandoverWorkspace({
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault()
+      unlockAudioContext()
       const code = query.trim().toLowerCase()
       if (!code) return
+
+      // 1. Direct individual item match
       const match = rows.find(
         (r) =>
           (r.serial && r.serial.toLowerCase() === code) ||
@@ -924,11 +971,46 @@ export default function HandoverWorkspace({
       if (match) {
         pick(match.key, 'scan')
         setQuery('')
-      } else {
-        setScanLog((p) => [`✕ No matching item on this booking for "${query.trim()}"`, ...p].slice(0, 5))
+        return
       }
+
+      // 2. Flight Case Master Tag match
+      const isFlightCaseScan =
+        code.startsWith('pel-') ||
+        code.startsWith('case-') ||
+        rows.some((r) => r.group.toLowerCase().replace(/[^a-z0-9]/g, '').includes(code.replace(/[^a-z0-9]/g, '')))
+
+      if (isFlightCaseScan) {
+        const caseRows = rows.filter(
+          (r) =>
+            r.group.toLowerCase().replace(/[^a-z0-9]/g, '').includes(code.replace(/[^a-z0-9]/g, '')) ||
+            code.replace(/[^a-z0-9]/g, '').includes(r.group.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 6)),
+        )
+        if (caseRows.length > 0) {
+          const pendingInCase = caseRows.filter((r) => r.prior === null && marks[r.key]?.state !== 'Picked Up')
+          if (pendingInCase.length === 0) {
+            triggerScanPulse('error')
+            playScanError()
+            setScanLog((p) => [`• Flight Case "${caseRows[0]?.group}" is already fully handed over`, ...p].slice(0, 5))
+          } else {
+            triggerScanPulse('success')
+            playScanSuccess()
+            setScanLog((p) => [
+              `📦 Flight Case "${caseRows[0]?.group}" ready (${pendingInCase.length}/${caseRows.length} units to release). Scan items to confirm.`,
+              ...p,
+            ].slice(0, 5))
+          }
+          setQuery('')
+          return
+        }
+      }
+
+      triggerScanPulse('error')
+      playScanError()
+      setScanLog((p) => [`✕ No matching item on this booking for "${query.trim()}"`, ...p].slice(0, 5))
     }
   }
+
 
   const eligibleVisible = useMemo(() => visible.filter((r) => r.prior === null), [visible])
   const allEligiblePicked = eligibleVisible.length > 0 && eligibleVisible.every((r) => stateOf(r.key) === 'Picked Up')
@@ -993,10 +1075,31 @@ export default function HandoverWorkspace({
    * is ruled.
    */
   const captureSignature = (role: 'receiver' | 'warehouse') => {
-    const name = role === 'receiver' ? floor?.clientName : user?.name
-    if (!name) return
-    const roleLabel = role === 'receiver' ? 'Receiver' : 'Warehouse'
-    setSignatures((p) => ({ ...p, [role]: { name, role: roleLabel, atIso: new Date().toISOString() } }))
+    setActiveSigningRole(role)
+  }
+
+  const handleSignComplete = (sig: DigitalSignature) => {
+    if (!activeSigningRole) return
+    setSignatures((p) => ({
+      ...p,
+      [activeSigningRole]: {
+        name: sig.name,
+        role: sig.role,
+        atIso: sig.atIso,
+        dataUrl: sig.dataUrl,
+        mode: sig.mode,
+      },
+    }))
+    if (activeSigningRole === 'receiver') {
+      if (sig.verifiedGovId) {
+        setGovIdVerified(true)
+        setBookingAuthVerified(true)
+      }
+      if (sig.depositAcknowledged) {
+        setDepositReceived(true)
+      }
+    }
+    setActiveSigningRole(null)
   }
 
   /* ── the dispatch — real line ids, once, dispatch-then-commit ──────────── */
@@ -1365,7 +1468,25 @@ export default function HandoverWorkspace({
                   }
                 >
                   <div style={{ display: 'flex', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center', background: 'var(--card2)' }}>
-                    <div className="floor-scanner-input-wrap">
+                    <div
+                      className="floor-scanner-input-wrap"
+                      style={{
+                        outline:
+                          scanPulse === 'success'
+                            ? '2px solid var(--success, #22c55e)'
+                            : scanPulse === 'error'
+                            ? '2px solid var(--danger, #ef4444)'
+                            : 'none',
+                        boxShadow:
+                          scanPulse === 'success'
+                            ? '0 0 12px color-mix(in srgb, var(--success, #22c55e) 40%, transparent)'
+                            : scanPulse === 'error'
+                            ? '0 0 12px color-mix(in srgb, var(--danger, #ef4444) 40%, transparent)'
+                            : 'none',
+                        transition: 'outline 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
+                      }}
+                    >
+
                       <span className="floor-scanner-icon">
                         <Icon name="barcode" size={18} />
                       </span>
@@ -2067,6 +2188,24 @@ export default function HandoverWorkspace({
           </div>
         )}
       </PageBody>
+
+      {activeSigningRole && (
+        <SignOnGlassModal
+          isOpen={Boolean(activeSigningRole)}
+          onClose={() => setActiveSigningRole(null)}
+          role={activeSigningRole}
+          defaultName={
+            activeSigningRole === 'receiver'
+              ? (floor?.clientName ?? '')
+              : (user?.name ?? 'Warehouse Staff')
+          }
+          bookingNo={floor?.bookingNo ?? id}
+          clientName={floor?.clientName}
+          deliveryType={floor?.deliveryType}
+          isDepositPending={!depositReceived}
+          onSignComplete={handleSignComplete}
+        />
+      )}
     </div>
   )
 }
@@ -2098,29 +2237,114 @@ function CheckLine({ label, checked, onToggle, disabled }: { label: string; chec
  * hover device via `title` AND a warehouse tablet via long-press, instead of
  * the row signing a placeholder.
  */
-function SigRow({ label, sig, onCapture, required, disabled, unavailable }: { label: string; sig: Sig | undefined; onCapture?: () => void; required: boolean; disabled: boolean; unavailable?: string }) {
-  const capture = { minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', background: 'var(--card2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', whiteSpace: 'nowrap' } as const
+function SigRow({
+  label,
+  sig,
+  onCapture,
+  required,
+  disabled,
+  unavailable,
+}: {
+  label: string
+  sig: Sig | undefined
+  onCapture?: (() => void) | undefined
+  required: boolean
+  disabled: boolean
+  unavailable?: string | undefined
+}) {
+  const capture = {
+    minHeight: 44,
+    padding: '0 12px',
+    borderRadius: 'var(--r-xs, 6px)',
+    border: '1px solid var(--border)',
+    background: 'var(--card2)',
+    fontSize: 'var(--t-meta)',
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap' as const,
+  }
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{label}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{label}</span>
+          {sig && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '1px 6px',
+                borderRadius: 'var(--r-chip, 4px)',
+                background: 'color-mix(in srgb, var(--success, #22c55e) 15%, transparent)',
+                color: 'var(--success-text, #22c55e)',
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}
+            >
+              <Icon name="check" size={10} />
+              Sign-on-Glass
+            </span>
+          )}
+        </div>
         {sig ? (
-          // HO-03 — a gate mark, not a stored signature; the line says exactly that.
-          <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)' }}>
-            Signed for this session&apos;s gate only · {sig.name} · {formatAdDateTime(sig.atIso)} — not stored
+          <div style={{ marginTop: 4 }}>
+            {sig.dataUrl ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                <div
+                  style={{
+                    height: 38,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: 'var(--input-bg, #090d16)',
+                    border: '1px solid var(--border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  <img src={sig.dataUrl} alt={`Signature for ${sig.name}`} style={{ height: 32, maxWidth: 140, objectFit: 'contain' }} />
+                </div>
+                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text)' }}>{sig.name}</div>
+                  <div style={{ fontSize: 11 }}>{formatAdDateTime(sig.atIso)}</div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)', marginTop: 2 }}>
+                Signed · {sig.name} · {formatAdDateTime(sig.atIso)}
+              </div>
+            )}
           </div>
         ) : (
-          // §9.2 — an uncapturable row renders as "Optional"/absent, never as "Pending".
-          <div style={{ fontSize: 'var(--t-meta)', color: required ? 'var(--progress-text)' : 'var(--muted)' }}>
-            {required ? 'Required' : `Optional — no ${label.toLowerCase()} recorded`}
+          <div style={{ fontSize: 'var(--t-meta)', color: required ? 'var(--progress-text)' : 'var(--muted)', marginTop: 2 }}>
+            {required ? 'Required before dispatch' : `Optional — no ${label.toLowerCase()} recorded`}
           </div>
         )}
       </div>
-      {!sig &&
-        (unavailable ? (
+      {sig ? (
+        <button
+          type="button"
+          onClick={onCapture}
+          disabled={disabled}
+          title="Re-sign"
+          style={{
+            ...capture,
+            minHeight: 36,
+            padding: '0 10px',
+            fontSize: 'var(--t-meta)',
+            color: 'var(--text2)',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Re-sign
+        </button>
+      ) : (
+        unavailable ? (
           <Unavailable reason={unavailable}>
             <button type="button" disabled style={{ ...capture, color: 'var(--muted)', cursor: 'not-allowed' }}>
-              Capture
+              Sign on Glass
             </button>
           </Unavailable>
         ) : (
@@ -2128,11 +2352,17 @@ function SigRow({ label, sig, onCapture, required, disabled, unavailable }: { la
             type="button"
             onClick={onCapture}
             disabled={disabled}
-            style={{ ...capture, color: 'var(--text2)', cursor: disabled ? 'not-allowed' : 'pointer' }}
+            style={{
+              ...capture,
+              color: 'var(--primary, #38bdf8)',
+              borderColor: 'color-mix(in srgb, var(--primary, #2563eb) 40%, transparent)',
+              cursor: disabled ? 'not-allowed' : 'pointer',
+            }}
           >
-            Capture
+            Sign on Glass
           </button>
-        ))}
+        )
+      )}
     </div>
   )
 }

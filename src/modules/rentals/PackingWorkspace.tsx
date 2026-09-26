@@ -31,7 +31,14 @@ import { formatGateError } from '../../lib/gates'
 import { clearFloorScan, loadFloorScan, saveFloorScan } from '../../lib/floorScanStorage'
 import { rentalDaysBetween } from '../../lib/rentalDays'
 import { useFloorPresence } from '../../lib/floorPresence'
+import {
+  playScanSuccess,
+  playScanError,
+  playCaseComplete,
+  unlockAudioContext,
+} from '../../lib/acousticFeedback'
 import './rentals.css'
+
 
 /**
  * **Packing Workspace** — `Packing Workflow.md` v2.1 (Build Locked), wired live.
@@ -827,10 +834,22 @@ export default function PackingWorkspace({
   }
 
   const [ambientBarcode, setAmbientBarcode] = useState('')
+  const [scanPulse, setScanPulse] = useState<'success' | 'error' | null>(null)
+
+  const triggerScanPulse = (verdict: 'success' | 'error') => {
+    setScanPulse(verdict)
+    setTimeout(() => {
+      setScanPulse((cur) => (cur === verdict ? null : cur))
+    }, 600)
+  }
+
   const handleAmbientBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    unlockAudioContext()
     const code = ambientBarcode.trim().toLowerCase()
     if (!code) return
+
+    // 1. Direct individual equipment scan
     const match = rows.find(
       (r) =>
         (r.serial && r.serial.toLowerCase() === code) ||
@@ -838,14 +857,62 @@ export default function PackingWorkspace({
         (r.name && r.name.toLowerCase() === code) ||
         (r.assetId && r.assetId.toLowerCase() === code)
     )
+
     if (match) {
-      pack(match.key, 'scan')
+      const outcome = pack(match.key, 'scan')
+      if (outcome.ok) {
+        triggerScanPulse('success')
+        const remainingPending = rows.filter((r) => r.key !== match.key && marks[r.key] === undefined)
+        if (remainingPending.length === 0) {
+          playCaseComplete()
+        } else {
+          playScanSuccess()
+        }
+      } else {
+        triggerScanPulse('error')
+        playScanError()
+      }
       setAmbientBarcode('')
-    } else {
-      setScanLog((p) => [`✕ No equipment matching "${ambientBarcode.trim()}" in this booking`, ...p].slice(0, 5))
-      setAmbientBarcode('')
+      return
     }
+
+    // 2. Flight Case Master Tag match (Booqable audit §11 & Gemma Option C: Scan-to-Verify)
+    const isFlightCaseScan =
+      code.startsWith('pel-') ||
+      code.startsWith('case-') ||
+      rows.some((r) => r.group.toLowerCase().replace(/[^a-z0-9]/g, '').includes(code.replace(/[^a-z0-9]/g, '')))
+
+    if (isFlightCaseScan) {
+      const caseRows = rows.filter(
+        (r) =>
+          r.group.toLowerCase().replace(/[^a-z0-9]/g, '').includes(code.replace(/[^a-z0-9]/g, '')) ||
+          code.replace(/[^a-z0-9]/g, '').includes(r.group.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 6))
+      )
+      if (caseRows.length > 0) {
+        const pendingInCase = caseRows.filter((r) => marks[r.key] === undefined)
+        if (pendingInCase.length === 0) {
+          triggerScanPulse('error')
+          playScanError()
+          setScanLog((p) => [`• Flight Case "${caseRows[0]?.group}" is already fully verified`, ...p].slice(0, 5))
+        } else {
+          triggerScanPulse('success')
+          playScanSuccess()
+          setScanLog((p) => [
+            `📦 Flight Case "${caseRows[0]?.group}" ready (${pendingInCase.length}/${caseRows.length} units pending). Scan items to verify.`,
+            ...p,
+          ].slice(0, 5))
+        }
+        setAmbientBarcode('')
+        return
+      }
+    }
+
+    triggerScanPulse('error')
+    playScanError()
+    setScanLog((p) => [`✕ No equipment matching "${ambientBarcode.trim()}" in this booking`, ...p].slice(0, 5))
+    setAmbientBarcode('')
   }
+
 
   /**
    * PK-07 — this is what the button labelled **"Bulk Scan"** did: mark every
@@ -1384,7 +1451,25 @@ export default function PackingWorkspace({
                       onSubmit={handleAmbientBarcodeSubmit}
                       style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', width: '100%' }}
                     >
-                      <div className="floor-scanner-input-wrap">
+                      <div
+                        className="floor-scanner-input-wrap"
+                        style={{
+                          outline:
+                            scanPulse === 'success'
+                              ? '2px solid var(--success, #22c55e)'
+                              : scanPulse === 'error'
+                              ? '2px solid var(--danger, #ef4444)'
+                              : 'none',
+                          boxShadow:
+                            scanPulse === 'success'
+                              ? '0 0 12px color-mix(in srgb, var(--success, #22c55e) 40%, transparent)'
+                              : scanPulse === 'error'
+                              ? '0 0 12px color-mix(in srgb, var(--danger, #ef4444) 40%, transparent)'
+                              : 'none',
+                          transition: 'outline 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
+                        }}
+                      >
+
                         <span className="floor-scanner-icon">
                           <Icon name="barcode" size={18} />
                         </span>
