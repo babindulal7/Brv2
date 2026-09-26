@@ -105,8 +105,9 @@ export function RentalQuickActionDrawer({
     if (!ctx) return
 
     const rect = canvas.getBoundingClientRect()
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    const touch = 'touches' in e && e.touches.length > 0 ? e.touches[0] : null
+    const clientX = touch ? touch.clientX : ('clientX' in e ? e.clientX : 0)
+    const clientY = touch ? touch.clientY : ('clientY' in e ? e.clientY : 0)
 
     ctx.beginPath()
     ctx.moveTo(clientX - rect.left, clientY - rect.top)
@@ -122,8 +123,9 @@ export function RentalQuickActionDrawer({
     if (!ctx) return
 
     const rect = canvas.getBoundingClientRect()
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    const touch = 'touches' in e && e.touches.length > 0 ? e.touches[0] : null
+    const clientX = touch ? touch.clientX : ('clientX' in e ? e.clientX : 0)
+    const clientY = touch ? touch.clientY : ('clientY' in e ? e.clientY : 0)
 
     ctx.lineTo(clientX - rect.left, clientY - rect.top)
     ctx.stroke()

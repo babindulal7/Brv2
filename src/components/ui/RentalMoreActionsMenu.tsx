@@ -169,6 +169,7 @@ export function RentalMoreActionsMenu({
   return (
     <div
       ref={menuRef}
+      data-order-id={orderId}
       className={`rental-more-actions ${className}`}
       style={{ position: 'relative', display: 'inline-block' }}
     >

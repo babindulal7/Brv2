@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { FilterSection } from './FilterDrawer'
-import { ActiveFilterChip } from './ActiveFilterChip'
 
 export type CanonicalStage = 'quote' | 'booked' | 'packed' | 'on_rent' | 'returned' | 'closed'
 export type PaymentFilter = 'unpaid' | 'advance_paid' | 'paid' | 'overpaid' | 'deposit_held'
