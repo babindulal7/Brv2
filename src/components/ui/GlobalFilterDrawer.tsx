@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { FilterSection } from './FilterDrawer'
+import { canViewMoney, type Role as SystemRole } from '../../lib/rbac'
 
 export type CanonicalStage = 'quote' | 'booked' | 'packed' | 'on_rent' | 'returned' | 'closed'
 export type PaymentFilter = 'unpaid' | 'advance_paid' | 'paid' | 'overpaid' | 'deposit_held'
@@ -31,7 +32,7 @@ export interface GlobalFilterDrawerProps {
   onClearAll: () => void
   totalMatches: number
   stageCounts?: StageCountMap
-  userRole?: 'owner' | 'manager' | 'rental_agent' | 'warehouse' | 'crew'
+  userRole?: SystemRole | 'owner' | 'manager' | 'rental_agent' | 'warehouse' | 'crew'
   isDesktop?: boolean
   className?: string
 }
@@ -49,12 +50,15 @@ export function GlobalFilterDrawer({
   onClearAll,
   totalMatches,
   stageCounts = {},
-  userRole = 'rental_agent',
+  userRole = 'Coordinator',
   isDesktop = true,
   className = '',
 }: GlobalFilterDrawerProps) {
-  // Law 6: Warehouse and crew roles are barred from viewing financial facets
-  const canViewFinancials = userRole !== 'warehouse' && userRole !== 'crew'
+  // Law 6: Warehouse and money-blind roles are barred from viewing financial facets
+  const canViewFinancials =
+    userRole === 'warehouse' || userRole === 'crew'
+      ? false
+      : canViewMoney(userRole as SystemRole)
 
   // Calculate total active filters
   const activeCount =

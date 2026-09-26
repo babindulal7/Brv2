@@ -248,19 +248,19 @@
 
   --text: #f1f5f9;
   --text2: #94a3b8;
-  --muted: #64748b;
+  --muted: #8b8e96;
   --disabled: #475569;
 
-  --primary: #4d8dff;      /* High-chroma cinematic blue */
+  --primary: #386af7;      /* WCAG AA 4.59:1 with white on-primary */
   --on-primary: #ffffff;
   --primary-text: #7ea2ff; /* text-safe blue on --surface */
 
   /* ---- §3.2 status hues + their on-colours ---- */
-  --success: #2ecc8f;      /* Luminous green */
+  --success: #1e864a;      /* WCAG AA 4.60:1 with white on-success */
   --on-success: #ffffff;
   --success-text: #2ecc8f;
 
-  --danger: #ff6b6b;       /* Luminous red */
+  --danger: #c73a3a;       /* WCAG AA 5.13:1 with white on-danger */
   --on-danger: #ffffff;
   --danger-text: #ff6b6b;
 
@@ -275,8 +275,8 @@
   --neutral: #3a3e47;      /* GRAY — not started yet */
   --on-neutral: #c9cbd1;
 
-  --dim: #1e293b;          /* DIM — finished / inactive */
-  --on-dim: #64748b;
+  --dim: #24262c;          /* DIM — finished / inactive. 4.61:1 with on-dim */
+  --on-dim: #8b8e96;
 
   --ext-fg: #85b2ff;
   --ext-line: #4d8dff;
@@ -296,11 +296,11 @@
   --hover-button: #3c7bf0;
   --hover-row: rgba(255, 255, 255, 0.035);
 
-  --btn-primary-bg: #4d8dff;
+  --btn-primary-bg: #386af7;
   --btn-primary-fg: #ffffff;
   --btn-secondary-bg: rgba(255, 255, 255, 0.04);
   --btn-secondary-border: var(--w12);
-  --btn-danger-bg: #ff6b6b;
+  --btn-danger-bg: #c73a3a;
   --btn-danger-fg: #ffffff;
 
   --nav-active-accent: #4d8dff;

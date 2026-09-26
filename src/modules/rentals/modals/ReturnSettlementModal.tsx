@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Button'
 import Icon from '../../../components/ui/Icon'
-import { formatMoney, rupees, toRupees, type Paisa } from '../../../lib/money'
+import { formatMoney, rupees, type Paisa } from '../../../lib/money'
 import {
   lateFee,
   formatOverage,
@@ -124,27 +124,27 @@ export function ReturnSettlementModal({
     return lateDecision === 'Apply' ? lateResult.feePaisa : rupees(0)
   }, [lateResult, lateDecision])
 
-  // Total Penalties (Late fee + Damages)
+  // Total Penalties (Late fee + Damages) — Pure integer Paisa arithmetic (Foundation §2.3)
   const totalPenaltiesPaisa = useMemo<Paisa>(() => {
-    return rupees(toRupees(lateFeeChargedPaisa) + toRupees(totalDamagePaisa))
+    return ((lateFeeChargedPaisa || 0) + (totalDamagePaisa || 0)) as Paisa
   }, [lateFeeChargedPaisa, totalDamagePaisa])
 
   // Security Deposit Reconciliation (Law 5)
-  const depositHeld = depositHeldPaisa ?? rupees(0)
+  const depositHeld = depositHeldPaisa ?? (0 as Paisa)
 
   const { depositRefundPaisa, balanceDuePaisa } = useMemo(() => {
-    const held = toRupees(depositHeld)
-    const penalties = toRupees(totalPenaltiesPaisa)
+    const held = depositHeld
+    const penalties = totalPenaltiesPaisa
 
     if (held >= penalties) {
       return {
-        depositRefundPaisa: rupees(held - penalties),
-        balanceDuePaisa: rupees(0),
+        depositRefundPaisa: (held - penalties) as Paisa,
+        balanceDuePaisa: 0 as Paisa,
       }
     } else {
       return {
-        depositRefundPaisa: rupees(0),
-        balanceDuePaisa: rupees(penalties - held),
+        depositRefundPaisa: 0 as Paisa,
+        balanceDuePaisa: (penalties - held) as Paisa,
       }
     }
   }, [depositHeld, totalPenaltiesPaisa])

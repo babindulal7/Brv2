@@ -57,6 +57,9 @@ export interface WaBookingFacts {
   advance: Paisa | null
   deposit: Paisa | null
   balance: Paisa | null
+  hasDamagedOrLost?: boolean
+  damageCount?: number
+  lostCount?: number
 }
 
 /** The owner-set strings. Blank is legal and means "not set" (§6.1). */
@@ -222,7 +225,9 @@ function compose(
         {
           ...base,
           itemCount: f.itemCount,
-          hasDamagedOrLost: false,
+          hasDamagedOrLost: f.hasDamagedOrLost ?? false,
+          damageCount: f.damageCount,
+          lostCount: f.lostCount,
           depositRefundPaisa: f.deposit,
           balanceDuePaisa: f.balance,
           receiptUrl: null,
