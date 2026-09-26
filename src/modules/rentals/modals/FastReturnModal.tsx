@@ -9,6 +9,12 @@ import type { ItemCondition, NotReturnedDecision } from '../../../types/database
 import { useAuth } from '../../../lib/auth'
 import { canPerformOperations } from '../../../lib/rbac'
 import { newClientUuid, supabase } from '../../../lib/supabase'
+import {
+  playScanSuccess,
+  playScanError,
+  playCaseComplete,
+  playDamageAlert,
+} from '../../../lib/acousticFeedback'
 
 interface FastReturnModalProps {
   isOpen: boolean
@@ -228,12 +234,24 @@ export function FastReturnModal({
   }
 
   const toggleItemSelection = (key: string) => {
-    setItems((prev) =>
-      prev.map((item) => (item.key === key ? { ...item, selected: !item.selected } : item))
-    )
+    setItems((prev) => {
+      const target = prev.find((item) => item.key === key)
+      const nextSelected = target ? !target.selected : false
+      if (nextSelected) {
+        playScanSuccess()
+      } else {
+        playDamageAlert()
+      }
+      return prev.map((item) => (item.key === key ? { ...item, selected: nextSelected } : item))
+    })
   }
 
   const updateItemCondition = (key: string, condition: ItemCondition) => {
+    if (condition === 'Damaged' || condition === 'Lost') {
+      playDamageAlert()
+    } else {
+      playScanSuccess()
+    }
     setItems((prev) =>
       prev.map((item) => (item.key === key ? { ...item, condition } : item))
     )
@@ -359,9 +377,11 @@ export function FastReturnModal({
         user ? { userId: user.id, role: user.role } : undefined
       )
 
+      playCaseComplete()
       onSuccess(loadedBooking.id)
       onClose()
     } catch (err: unknown) {
+      playScanError()
       const message = err instanceof Error ? err.message : 'Failed to complete return.'
       setError(message)
     } finally {

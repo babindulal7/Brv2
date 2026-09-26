@@ -34,7 +34,16 @@ import { deliveryTypeLabel } from '../../lib/format'
 import { formatGateError } from '../../lib/gates'
 import { clearFloorScan, loadFloorScan, saveFloorScan } from '../../lib/floorScanStorage'
 import { rentalDaysBetween } from '../../lib/rentalDays'
+import {
+  playScanSuccess,
+  playScanError,
+  playCaseComplete,
+  playDamageAlert,
+  unlockAudioContext,
+} from '../../lib/acousticFeedback'
+import { SignOnGlassModal, type DigitalSignature } from './modals/SignOnGlassModal'
 import './rentals.css'
+
 
 /**
  * **Return & Inspection Workspace** — the floor-loop model
@@ -208,6 +217,8 @@ interface ReturnRow {
   /** Units this row stands for: 1 per physical unit, `booking_lines.qty` for a quantity row. */
   qty: number
   location: string | null
+  /** Bundle / flight-case parent grouping tag. */
+  group: string
   /**
    * `booking_line_units.unit_state === 'Returned'` — this unit came back in an
    * EARLIER session. Rendered as Returned, offered no controls, and excluded
@@ -234,6 +245,13 @@ interface Mark {
  * left rail; the list is the whole triage surface).
  */
 function buildRows(floor: FloorBooking): ReturnRow[] {
+  const lineById = new Map(floor.lines.map((l) => [l.id, l]))
+  const groupOf = (line: FloorLine): string => {
+    const parent = line.parentLineId !== null ? lineById.get(line.parentLineId) : undefined
+    const src = parent ?? line
+    return src.productName ?? src.description ?? `${src.lineType} bundle`
+  }
+
   const rows: ReturnRow[] = []
   for (const line of floor.lines) {
     const name = line.productName ?? line.description ?? `${line.lineType} line`
@@ -247,6 +265,7 @@ function buildRows(floor: FloorBooking): ReturnRow[] {
           name: line.units.length > 1 ? `${name} · unit ${i + 1}` : name,
           qty: 1,
           location: u.location,
+          group: groupOf(line),
           alreadyReturned: u.unitState === 'Returned',
         })
       })
@@ -263,6 +282,7 @@ function buildRows(floor: FloorBooking): ReturnRow[] {
         name,
         qty: line.qty,
         location: null,
+        group: groupOf(line),
         alreadyReturned: false,
       })
     }
@@ -434,7 +454,11 @@ function bsLabel(iso: string | null): string {
 interface Sig {
   name: string
   atIso: string
+  role?: string | undefined
+  dataUrl?: string | undefined
+  mode?: string | undefined
 }
+
 
 /*
  * ⭐ RULED 12 Aug 2026 (Rulings §3): operations are ROUTES.
@@ -457,7 +481,26 @@ export interface ReturnWorkspaceProps {
   }) => void
 }
 
+/** Determines cinema-specific optical or sensor inspection requirements */
+export function getCinemaQcItem(name: string): { label: string; passedLabel: string; failedLabel: string; type: 'sensor' | 'optics' | 'motor' | 'rf' } | null {
+  const lower = name.toLowerCase()
+  if (lower.includes('fx3') || lower.includes('camera') || lower.includes('body') || lower.includes('sensor') || lower.includes('red') || lower.includes('arri') || lower.includes('komodo')) {
+    return { label: 'Sensor QC', passedLabel: 'Sensor Clean ✓', failedLabel: 'Sensor Dust / Scratch ✕', type: 'sensor' }
+  }
+  if (lower.includes('lens') || lower.includes('zoom') || lower.includes('prime') || lower.includes('anamorphic') || lower.includes('optics') || lower.includes('collimator')) {
+    return { label: 'Optics QC', passedLabel: 'Optics Clear ✓', failedLabel: 'Glass Scratched / Hazy ✕', type: 'optics' }
+  }
+  if (lower.includes('ronin') || lower.includes('gimbal') || lower.includes('stabilizer')) {
+    return { label: 'Motor QC', passedLabel: 'Motor Balanced ✓', failedLabel: 'Motor Stalled / Loose ✕', type: 'motor' }
+  }
+  if (lower.includes('monitor') || lower.includes('wireless') || lower.includes('teradek') || lower.includes('transmitter')) {
+    return { label: 'RF QC', passedLabel: 'RF Linked ✓', failedLabel: 'No Link / Broken Antenna ✕', type: 'rf' }
+  }
+  return null
+}
+
 export default function ReturnWorkspace({
+
   bookingNo: bookingNoProp,
   embedded = false,
   onConfirmSuccess,
@@ -789,10 +832,69 @@ export default function ReturnWorkspace({
     })
 
   const [ambientBarcode, setAmbientBarcode] = useState('')
+  const [activeSigningRole, setActiveSigningRole] = useState<'returning' | 'warehouse' | null>(null)
+  const [scanPulse, setScanPulse] = useState<'success' | 'error' | null>(null)
+  const [qcStatusMap, setQcStatusMap] = useState<Record<string, boolean>>({})
+
+  const triggerScanPulse = (verdict: 'success' | 'error') => {
+    setScanPulse(verdict)
+    setTimeout(() => {
+      setScanPulse((cur) => (cur === verdict ? null : cur))
+    }, 600)
+  }
+
+  const handleSignComplete = (sig: DigitalSignature) => {
+    if (!activeSigningRole) return
+    const newSig: Sig = {
+      name: sig.name,
+      atIso: sig.atIso,
+      role: sig.role,
+      dataUrl: sig.dataUrl,
+      mode: sig.mode,
+    }
+    if (activeSigningRole === 'returning') {
+      setSigReturning(newSig)
+      setReturningName(sig.name)
+    } else {
+      setSigWarehouse(newSig)
+    }
+    setActiveSigningRole(null)
+  }
+
+  const toggleQcStatus = (key: string, name: string, passed: boolean) => {
+    setQcStatusMap((p) => ({ ...p, [key]: passed }))
+    if (passed) {
+      triggerScanPulse('success')
+      playScanSuccess()
+      patchMark(key, { condition: 'Good' })
+    } else {
+      triggerScanPulse('error')
+      playDamageAlert()
+      patchMark(key, {
+        condition: 'Damaged',
+        damageDescription: (marks[key]?.damageDescription || `Optical inspection failure on ${name}. Front/rear element or sensor flagged.`).trim(),
+      })
+    }
+  }
+
+  const handleConditionChange = (key: string, condition: ItemCondition) => {
+    if (condition === 'Damaged' || condition === 'Lost') {
+      triggerScanPulse('error')
+      playDamageAlert()
+    } else {
+      triggerScanPulse('success')
+      playScanSuccess()
+    }
+    patchMark(key, { condition })
+  }
+
   const handleAmbientBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    unlockAudioContext()
     const code = ambientBarcode.trim().toLowerCase()
     if (!code) return
+
+    // 1. Direct equipment item match
     const match = rows.find(
       (r) =>
         (r.serial && r.serial.toLowerCase() === code) ||
@@ -800,29 +902,86 @@ export default function ReturnWorkspace({
         (r.name && r.name.toLowerCase() === code) ||
         (r.assetId && r.assetId.toLowerCase() === code)
     )
+
     if (match) {
-      receive(match.key)
+      receive(match.key, 'scan')
       setAmbientBarcode('')
-    } else {
-      setScanLog((p) => [`✕ No equipment matching "${ambientBarcode.trim()}" in this booking`, ...p].slice(0, 5))
-      setAmbientBarcode('')
+      return
     }
+
+    // 2. Flight Case Master Tag match (Booqable audit §11 & Gemma Option C: Scan-to-Verify)
+    const isFlightCaseScan =
+      code.startsWith('pel-') ||
+      code.startsWith('case-') ||
+      rows.some((r) => r.group.toLowerCase().replace(/[^a-z0-9]/g, '').includes(code.replace(/[^a-z0-9]/g, '')))
+
+    if (isFlightCaseScan) {
+      const caseRows = rows.filter(
+        (r) =>
+          r.group.toLowerCase().replace(/[^a-z0-9]/g, '').includes(code.replace(/[^a-z0-9]/g, '')) ||
+          code.replace(/[^a-z0-9]/g, '').includes(r.group.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 6))
+      )
+      if (caseRows.length > 0) {
+        const pendingInCase = caseRows.filter((r) => !r.alreadyReturned && marks[r.key]?.state !== 'Returned')
+        if (pendingInCase.length === 0) {
+          triggerScanPulse('error')
+          playScanError()
+          setScanLog((p) => [`• Flight Case "${caseRows[0]?.group}" is already fully returned`, ...p].slice(0, 5))
+        } else {
+          triggerScanPulse('success')
+          playScanSuccess()
+          setScanLog((p) => [
+            `📦 Flight Case "${caseRows[0]?.group}" identified (${pendingInCase.length}/${caseRows.length} items to receive). Scan items to inspect.`,
+            ...p,
+          ].slice(0, 5))
+        }
+        setAmbientBarcode('')
+        return
+      }
+    }
+
+    triggerScanPulse('error')
+    playScanError()
+    setScanLog((p) => [`✕ No equipment matching "${ambientBarcode.trim()}" in this booking`, ...p].slice(0, 5))
+    setAmbientBarcode('')
   }
 
-  const receive = (key: string) => {
+  const receive = (key: string, via: 'scan' | 'manual' = 'manual') => {
+    unlockAudioContext()
     const row = rows.find((r) => r.key === key)
-    if (!row) return
+    if (!row) {
+      if (via === 'scan') {
+        triggerScanPulse('error')
+        playScanError()
+      }
+      return
+    }
     if (row.alreadyReturned) {
+      if (via === 'scan') {
+        triggerScanPulse('error')
+        playScanError()
+      }
       setScanLog((p) => [`• ${row.name} was returned in an earlier session — nothing to record`, ...p].slice(0, 5))
       return
     }
     if (marks[key]?.state === 'Returned') {
+      if (via === 'scan') {
+        triggerScanPulse('error')
+        playScanError()
+      }
       setScanLog((p) => [`• ${row.name} already received in this session`, ...p].slice(0, 5))
       return
     }
     markReturned(key)
-    /* Honest wording: received is a LOCAL mark until the session completes.
-       Nothing here claims a write that has not landed. */
+    if (via === 'scan') {
+      triggerScanPulse('success')
+      const remaining = actionable.filter((r) => r.key !== key && marks[r.key]?.state !== 'Returned')
+      if (remaining.length === 0) {
+        playCaseComplete()
+      } else {
+        playScanSuccess()
+      }
+    }
     setScanLog((p) =>
       [`✓ ${row.name}${row.serial ? ` (${row.serial})` : ''} received — recorded when the session completes`, ...p].slice(0, 5),
     )
@@ -831,18 +990,19 @@ export default function ReturnWorkspace({
   const declareNotReturned = (key: string) => {
     const row = rows.find((r) => r.key === key)
     if (!row || row.alreadyReturned) return
+    triggerScanPulse('error')
+    playDamageAlert()
     markNotReturned(key)
     setScanLog((p) => [`✕ ${row.name} declared Not Returned — reason and decision required`, ...p].slice(0, 5))
   }
 
   const captureReturning = () => {
-    const name = returningName.trim()
-    if (name === '') return
-    setSigReturning({ name, atIso: new Date().toISOString() })
+    setActiveSigningRole('returning')
   }
+
   const captureWarehouse = () => {
     if (!user || user.name.trim() === '') return
-    setSigWarehouse({ name: user.name.trim(), atIso: new Date().toISOString() })
+    setActiveSigningRole('warehouse')
   }
 
   const scannableUnits = rows.map((r) => ({
@@ -1252,7 +1412,25 @@ export default function ReturnWorkspace({
                       onSubmit={handleAmbientBarcodeSubmit}
                       style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', width: '100%' }}
                     >
-                      <div className="floor-scanner-input-wrap">
+                      <div
+                        className="floor-scanner-input-wrap"
+                        style={{
+                          outline:
+                            scanPulse === 'success'
+                              ? '2px solid var(--success, #22c55e)'
+                              : scanPulse === 'error'
+                              ? '2px solid var(--danger, #ef4444)'
+                              : 'none',
+                          boxShadow:
+                            scanPulse === 'success'
+                              ? '0 0 12px color-mix(in srgb, var(--success, #22c55e) 40%, transparent)'
+                              : scanPulse === 'error'
+                              ? '0 0 12px color-mix(in srgb, var(--danger, #ef4444) 40%, transparent)'
+                              : 'none',
+                          transition: 'outline 0.15s ease-in-out, box-shadow 0.15s ease-in-out',
+                        }}
+                      >
+
                         <span className="floor-scanner-icon">
                           <Icon name="barcode" size={18} />
                         </span>
@@ -1369,11 +1547,42 @@ export default function ReturnWorkspace({
                             )}
 
                             {mark?.state === 'Returned' && (
-                              <ConditionPicker
-                                value={mark.condition}
-                                onChange={(c) => patchMark(r.key, { condition: c })}
-                                name={r.name}
-                              />
+                              <>
+                                {getCinemaQcItem(r.name) && (
+                                  <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleQcStatus(r.key, r.name, qcStatusMap[r.key] !== true)}
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: 5,
+                                        minHeight: 30,
+                                        padding: '0 8px',
+                                        borderRadius: 6,
+                                        border: `1px solid ${qcStatusMap[r.key] === true ? 'var(--success, #22c55e)' : qcStatusMap[r.key] === false ? 'var(--danger, #ef4444)' : 'var(--border)'}`,
+                                        background: qcStatusMap[r.key] === true ? 'color-mix(in srgb, var(--success, #22c55e) 15%, transparent)' : qcStatusMap[r.key] === false ? 'color-mix(in srgb, var(--danger, #ef4444) 15%, transparent)' : 'var(--card2)',
+                                        color: qcStatusMap[r.key] === true ? 'var(--success-text, #22c55e)' : qcStatusMap[r.key] === false ? 'var(--danger-text, #ef4444)' : 'var(--text2)',
+                                        fontSize: 11,
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                      }}
+                                    >
+                                      <Icon name={qcStatusMap[r.key] === true ? 'check' : qcStatusMap[r.key] === false ? 'x' : 'camera'} size={12} />
+                                      {qcStatusMap[r.key] === true
+                                        ? getCinemaQcItem(r.name)!.passedLabel
+                                        : qcStatusMap[r.key] === false
+                                        ? getCinemaQcItem(r.name)!.failedLabel
+                                        : `${getCinemaQcItem(r.name)!.label} (Tap to verify)`}
+                                    </button>
+                                  </div>
+                                )}
+                                <ConditionPicker
+                                  value={mark.condition}
+                                  onChange={(c) => handleConditionChange(r.key, c)}
+                                  name={r.name}
+                                />
+                              </>
                             )}
                             {mark?.state === 'Returned' && (mark.condition === 'Damaged' || mark.condition === 'Lost') && (
                               <DamagePanel
@@ -1424,6 +1633,40 @@ export default function ReturnWorkspace({
                                   <td className="figure" style={{ ...td, width: 26, color: 'var(--muted)' }}>{i + 1}</td>
                                   <td style={td}>
                                     <span style={{ fontWeight: 600 }}>{r.name}</span>
+                                    {getCinemaQcItem(r.name) && mark?.state === 'Returned' && (
+                                      <div style={{ marginTop: 4 }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleQcStatus(r.key, r.name, qcStatusMap[r.key] !== true)}
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4,
+                                            minHeight: 24,
+                                            padding: '1px 6px',
+                                            borderRadius: 4,
+                                            border: `1px solid ${qcStatusMap[r.key] === true ? 'var(--success, #22c55e)' : qcStatusMap[r.key] === false ? 'var(--danger, #ef4444)' : 'var(--border)'}`,
+                                            background: qcStatusMap[r.key] === true ? 'color-mix(in srgb, var(--success, #22c55e) 15%, transparent)' : qcStatusMap[r.key] === false ? 'color-mix(in srgb, var(--danger, #ef4444) 15%, transparent)' : 'var(--card2)',
+                                            color: qcStatusMap[r.key] === true ? 'var(--success-text, #22c55e)' : qcStatusMap[r.key] === false ? 'var(--danger-text, #ef4444)' : 'var(--text2)',
+                                            fontSize: 10,
+                                            fontWeight: 700,
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.04em',
+                                            cursor: 'pointer',
+                                          }}
+                                          title="Toggle Optical / Sensor QC pass or flag damage"
+                                        >
+                                          <Icon name={qcStatusMap[r.key] === true ? 'check' : qcStatusMap[r.key] === false ? 'x' : 'camera'} size={10} />
+                                          <span>
+                                            {qcStatusMap[r.key] === true
+                                              ? getCinemaQcItem(r.name)!.passedLabel
+                                              : qcStatusMap[r.key] === false
+                                              ? getCinemaQcItem(r.name)!.failedLabel
+                                              : getCinemaQcItem(r.name)!.label}
+                                          </span>
+                                        </button>
+                                      </div>
+                                    )}
                                   </td>
                                   <td style={{ ...td, fontSize: 'var(--t-meta)' }}>
                                     {r.serial ? (
@@ -1454,7 +1697,7 @@ export default function ReturnWorkspace({
                                     {mark?.state === 'Returned' ? (
                                       <ConditionPicker
                                         value={mark.condition}
-                                        onChange={(c) => patchMark(r.key, { condition: c })}
+                                        onChange={(c) => handleConditionChange(r.key, c)}
                                         name={r.name}
                                         compact
                                       />
@@ -1462,6 +1705,7 @@ export default function ReturnWorkspace({
                                       <span style={{ color: 'var(--muted)' }}>—</span>
                                     )}
                                   </td>
+
                                   <td className="figure" style={{ ...td, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{r.location ?? '—'}</td>
                                   <td style={{ ...td, width: 186 }}>
                                     {/*
@@ -1686,59 +1930,12 @@ export default function ReturnWorkspace({
                 <Card title="Signatures">
                   {/* §9 — captured before completion (gate 6); written into the
                       session notes with the dispatch. */}
-                  <div style={{ paddingBottom: 7, borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Returning person</div>
-                    {sigReturning ? (
-                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)' }}>
-                        Signed · {sigReturning.name} · {formatAdDateTime(sigReturning.atIso)}
-                      </div>
-                    ) : (
-                      <div style={{ marginTop: 5 }}>
-                        <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
-                          <input
-                            value={returningName}
-                            onChange={(e) => setReturningName(e.target.value)}
-                            placeholder="Who is returning the gear?"
-                            aria-label="Returning person's name"
-                            style={{ flex: 1, minWidth: 0, minHeight: 44, padding: '0 8px', borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
-                          />
-                          <button
-                            type="button"
-                            onClick={captureReturning}
-                            disabled={returningName.trim() === ''}
-                            style={{ minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', color: returningName.trim() === '' ? 'var(--muted)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', cursor: returningName.trim() === '' ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}
-                          >
-                            Capture
-                          </button>
-                        </div>
-                        {floor && floor.clientName && floor.clientName.trim() !== '' && (
-                          <div style={{ marginTop: 6 }}>
-                            <button
-                              type="button"
-                              onClick={() => setReturningName(floor.clientName!)}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 5,
-                                minHeight: 28,
-                                padding: '0 8px',
-                                borderRadius: 'var(--r-btn)',
-                                border: '1px dashed var(--border)',
-                                background: 'transparent',
-                                color: 'var(--text2)',
-                                 fontSize: 'var(--t-th)', // RULING 2026-09-23: --t-micro never existed; --t-th is the floor, nothing renders below it
-                                cursor: 'pointer',
-                                fontFamily: 'inherit',
-                              }}
-                            >
-                              <Icon name="check" size={12} />
-                              Use client: <strong style={{ color: 'var(--text)' }}>{floor.clientName}</strong>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  <SigRow
+                    label="Returning person (Client / Courier)"
+                    sig={sigReturning}
+                    required
+                    onCapture={captureReturning}
+                  />
 
                   <SigRow
                     label="Warehouse staff"
@@ -1756,8 +1953,7 @@ export default function ReturnWorkspace({
 
                   <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
                     Signatures are written into <span className="identifier">operation_sessions.notes</span> with the
-                    dispatch — no dedicated signature record exists on this write path yet, and nothing is saved
-                    until the session completes.
+                    dispatch — digitally attested on glass before return completion.
                   </p>
                 </Card>
 
@@ -1843,9 +2039,26 @@ export default function ReturnWorkspace({
               bookingId={id}
               items={scannableUnits}
               onItemScanned={(item) => {
-                receive(item.id)
+                receive(item.id, 'scan')
               }}
             />
+
+            {activeSigningRole && (
+              <SignOnGlassModal
+                isOpen={Boolean(activeSigningRole)}
+                onClose={() => setActiveSigningRole(null)}
+                role={activeSigningRole}
+                defaultName={
+                  activeSigningRole === 'returning'
+                    ? (returningName || floor?.clientName || '')
+                    : (user?.name ?? 'Warehouse Staff')
+                }
+                bookingNo={floor?.bookingNo ?? id}
+                clientName={floor?.clientName}
+                deliveryType={floor?.deliveryType}
+                onSignComplete={handleSignComplete}
+              />
+            )}
 
             {phone && !embedded && (
               <StickyFloorBar
@@ -1977,45 +2190,129 @@ function SigRow({
   sig,
   onCapture,
   required,
+  disabled,
   unavailable,
 }: {
   label: string
   sig: Sig | null
-  onCapture?: () => void
+  onCapture?: (() => void) | undefined
   required: boolean
-  unavailable?: string
+  disabled?: boolean | undefined
+  unavailable?: string | undefined
 }) {
-  const capture = { minHeight: 44, padding: '0 10px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', fontSize: 'var(--t-meta)', fontWeight: 600, fontFamily: 'inherit', whiteSpace: 'nowrap' } as const
+  const capture = {
+    minHeight: 44,
+    padding: '0 12px',
+    borderRadius: 'var(--r-xs, 6px)',
+    border: '1px solid var(--border)',
+    background: 'var(--card2)',
+    fontSize: 'var(--t-meta)',
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap' as const,
+  }
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', padding: '10px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{label}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>{label}</span>
+          {sig && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '1px 6px',
+                borderRadius: 'var(--r-chip, 4px)',
+                background: 'color-mix(in srgb, var(--success, #22c55e) 15%, transparent)',
+                color: 'var(--success-text, #22c55e)',
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+              }}
+            >
+              <Icon name="check" size={10} />
+              Sign-on-Glass
+            </span>
+          )}
+        </div>
         {sig ? (
-          <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)' }}>
-            Signed · {sig.name} · {formatAdDateTime(sig.atIso)}
+          <div style={{ marginTop: 4 }}>
+            {sig.dataUrl ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                <div
+                  style={{
+                    height: 38,
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: 'var(--input-bg, #090d16)',
+                    border: '1px solid var(--border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  <img src={sig.dataUrl} alt={`Signature for ${sig.name}`} style={{ height: 32, maxWidth: 140, objectFit: 'contain' }} />
+                </div>
+                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text)' }}>{sig.name}</div>
+                  <div style={{ fontSize: 11 }}>{formatAdDateTime(sig.atIso)}</div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--success-text)', marginTop: 2 }}>
+                Signed · {sig.name} · {formatAdDateTime(sig.atIso)}
+              </div>
+            )}
           </div>
         ) : (
-          // §9 — witness renders as "Optional", never as "Pending".
-          <div style={{ fontSize: 'var(--t-meta)', color: required ? 'var(--progress-text)' : 'var(--muted)' }}>
-            {required ? 'Required' : unavailable ? 'Optional — no witness recorded' : 'Optional'}
+          <div style={{ fontSize: 'var(--t-meta)', color: required ? 'var(--progress-text)' : 'var(--muted)', marginTop: 2 }}>
+            {required ? 'Required before completion' : unavailable ? 'Optional — no witness recorded' : 'Optional'}
           </div>
         )}
       </div>
-      {!sig &&
-        (unavailable ? (
-          <Unavailable reason={unavailable}>
-            <button type="button" disabled style={{ ...capture, color: 'var(--muted)', cursor: 'not-allowed' }}>
-              Capture
-            </button>
-          </Unavailable>
-        ) : (
-          <button type="button" onClick={onCapture} style={{ ...capture, color: 'var(--text2)', cursor: 'pointer' }}>
-            Capture
+      {sig ? (
+        <button
+          type="button"
+          onClick={onCapture}
+          disabled={disabled}
+          title="Re-sign"
+          style={{
+            ...capture,
+            minHeight: 36,
+            padding: '0 10px',
+            fontSize: 'var(--t-meta)',
+            color: 'var(--text2)',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Re-sign
+        </button>
+      ) : unavailable ? (
+        <Unavailable reason={unavailable}>
+          <button type="button" disabled style={{ ...capture, color: 'var(--muted)', cursor: 'not-allowed' }}>
+            Sign on Glass
           </button>
-        ))}
+        </Unavailable>
+      ) : (
+        <button
+          type="button"
+          onClick={onCapture}
+          disabled={disabled}
+          style={{
+            ...capture,
+            color: 'var(--primary, #38bdf8)',
+            borderColor: 'color-mix(in srgb, var(--primary, #2563eb) 40%, transparent)',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Sign on Glass
+        </button>
+      )}
     </div>
   )
 }
+
 
 /**
  * The floor workspaces' compact row action.

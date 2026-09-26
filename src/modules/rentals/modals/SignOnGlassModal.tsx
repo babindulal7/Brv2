@@ -18,7 +18,7 @@ export interface DigitalSignature {
 export interface SignOnGlassModalProps {
   isOpen: boolean
   onClose: () => void
-  role: 'receiver' | 'warehouse'
+  role: 'receiver' | 'warehouse' | 'returning'
   defaultName: string
   bookingNo: string
   clientName?: string | null | undefined
@@ -27,6 +27,7 @@ export interface SignOnGlassModalProps {
   depositAmount?: number | null | undefined
   onSignComplete: (sig: DigitalSignature) => void
 }
+
 
 export function SignOnGlassModal({
   isOpen,
@@ -55,7 +56,7 @@ export function SignOnGlassModal({
   // Reset state when opened or target changes
   useEffect(() => {
     if (isOpen) {
-      setSignerName(defaultName || (role === 'receiver' ? (clientName ?? '') : 'Warehouse Staff'))
+      setSignerName(defaultName || (role === 'receiver' || role === 'returning' ? (clientName ?? '') : 'Warehouse Staff'))
       setHasDrawn(false)
       setCanvasError(null)
       setAgreedToTerms(true)
@@ -224,7 +225,7 @@ export function SignOnGlassModal({
 
     onSignComplete({
       name: trimmedName,
-      role: role === 'receiver' ? 'Receiver' : 'Warehouse staff',
+      role: role === 'receiver' ? 'Receiver' : role === 'returning' ? 'Returning person' : 'Warehouse staff',
       atIso: nowIso,
       dataUrl,
       mode,
@@ -235,7 +236,12 @@ export function SignOnGlassModal({
     onClose()
   }
 
-  const roleLabel = role === 'receiver' ? 'Receiver (Client / Crew Rep)' : 'Warehouse Staff (Dispatcher)'
+  const roleLabel =
+    role === 'receiver'
+      ? 'Receiver (Client / Crew Rep)'
+      : role === 'returning'
+      ? 'Returning Client / Courier'
+      : 'Warehouse Staff (Inspector / Dispatcher)'
 
   return (
     <Modal
@@ -243,7 +249,11 @@ export function SignOnGlassModal({
       onClose={onClose}
       size="lg"
       title={`Digital Sign-on-Glass · ${roleLabel}`}
-      subtitle={`Equipment Handover Agreement for Booking ${bookingNo}${deliveryType ? ` (${deliveryType})` : ''}`}
+      subtitle={
+        role === 'returning'
+          ? `Equipment Return & Condition Sign-off for Booking ${bookingNo}`
+          : `Equipment Handover Agreement for Booking ${bookingNo}${deliveryType ? ` (${deliveryType})` : ''}`
+      }
       footer={
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 }}>
           <Button variant="secondary" onClick={onClose}>
@@ -256,7 +266,7 @@ export function SignOnGlassModal({
               </Button>
             )}
             <Button icon="checklist" variant="primary" onClick={handleAcceptSignature}>
-              Accept & Sign Handover
+              {role === 'returning' ? 'Accept & Sign Return' : 'Accept & Sign Handover'}
             </Button>
           </div>
         </div>
@@ -277,14 +287,17 @@ export function SignOnGlassModal({
         >
           <Icon name="file" size={18} style={{ color: 'var(--primary, #38bdf8)', marginTop: 2, flexShrink: 0 }} />
           <div style={{ fontSize: 'var(--t-meta, 12px)', color: 'var(--text2)', lineHeight: 1.5 }}>
-            <strong style={{ color: 'var(--text)' }}>Legal Custody & Receipt Attestation:</strong>
+            <strong style={{ color: 'var(--text)' }}>Legal Custody & Condition Attestation:</strong>
             <p style={{ margin: '4px 0 0', color: 'var(--text)' }}>
               {role === 'receiver'
                 ? `I hereby confirm receipt of the listed camera packages, flight cases, and optical gear for booking ${bookingNo} in verified operating condition with clean optical elements and intact seals. I accept legal custody and operational responsibility under Babin Rentals terms until verified return.`
-                : `I certify that all packed equipment items and flight cases have been inspected, serial numbers verified against booking ${bookingNo}, and custody transferred to the authorized receiver.`}
+                : role === 'returning'
+                ? `I hereby confirm return of the listed equipment for booking ${bookingNo}. I acknowledge the condition assessed at the counter and any recorded damage, optical discrepancies, or missing items under Babin Rentals return policies.`
+                : `I certify that all packed equipment items and flight cases have been inspected, serial numbers verified against booking ${bookingNo}, and custody transferred or returned according to protocol.`}
             </p>
           </div>
         </div>
+
 
         {/* Deposit Hold Warning Gate if Deposit is Pending */}
         {isDepositPending && (

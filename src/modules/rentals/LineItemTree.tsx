@@ -85,17 +85,8 @@ export function LineItemTree({
       const isPackage =
         parentIds.has(line.id) ||
         line.lineType === 'Bundle' ||
-        name.includes('kit') ||
-        name.includes('package') ||
-        name.includes('set') ||
-        name.includes('pelican') ||
-        name.includes('case') ||
-        name.includes('komodo') ||
-        name.includes('camera') ||
-        name.includes('fx3') ||
-        name.includes('red') ||
-        name.includes('arri') ||
-        name.includes('lighting')
+        line.lineType === 'Package' ||
+        ((name.includes('kit') || name.includes('package') || name.includes('pelican') || name.includes('case')) && lines.length > 1)
 
       if (isPackage && !line.parentLineId) {
         packageParents.push(line)
@@ -105,39 +96,32 @@ export function LineItemTree({
       }
     })
 
-    // If no explicit parent lines were identified, treat the first equipment item as the primary flight case package
-    if (packageParents.length === 0 && lines.length > 0 && lines[0]) {
-      const rootLine = lines[0]
-      packageParents.push(rootLine)
-      childrenByParentId[rootLine.id] = lines.slice(1)
-    } else {
-      // Map children to identified parents
-      lines.forEach((line) => {
-        if (packageParents.some((p) => p.id === line.id)) {
-          return // is parent itself
-        }
-        if (line.parentLineId && childrenByParentId[line.parentLineId]) {
-          childrenByParentId[line.parentLineId]?.push(line)
-        } else {
-          // Check if it belongs to any package heuristically
-          const assignedParent = packageParents.find((p) => {
-            const pName = (p.productName || '').toLowerCase()
-            const lName = (line.productName || '').toLowerCase()
-            return (
-              (pName.includes('fx3') && (lName.includes('fx3') || lName.includes('v-mount') || lName.includes('handle') || lName.includes('cfexpress') || lName.includes('lens') || lName.includes('battery'))) ||
-              ((pName.includes('komodo') || pName.includes('camera') || pName.includes('red') || pName.includes('arri')) && (lName.includes('lens') || lName.includes('vespid') || lName.includes('cfexpress') || lName.includes('battery') || lName.includes('monitor') || lName.includes('mount') || lName.includes('c-stand'))) ||
-              (pName.includes('lighting') && (lName.includes('amaran') || lName.includes('softbox') || lName.includes('stand') || lName.includes('cable')))
-            )
-          })
+    // Map children to identified parents
+    lines.forEach((line) => {
+      if (packageParents.some((p) => p.id === line.id)) {
+        return // is parent itself
+      }
+      if (line.parentLineId && childrenByParentId[line.parentLineId]) {
+        childrenByParentId[line.parentLineId]?.push(line)
+      } else {
+        // Check if it belongs to any package heuristically
+        const assignedParent = packageParents.find((p) => {
+          const pName = (p.productName || '').toLowerCase()
+          const lName = (line.productName || '').toLowerCase()
+          return (
+            (pName.includes('fx3') && (lName.includes('v-mount') || lName.includes('handle') || lName.includes('cfexpress') || lName.includes('battery'))) ||
+            ((pName.includes('komodo') || pName.includes('camera') || pName.includes('red') || pName.includes('arri')) && (lName.includes('vespid') || lName.includes('cfexpress') || lName.includes('battery') || lName.includes('monitor') || lName.includes('mount') || lName.includes('c-stand'))) ||
+            (pName.includes('lighting') && (lName.includes('amaran') || lName.includes('softbox') || lName.includes('stand') || lName.includes('cable')))
+          )
+        })
 
-          if (assignedParent) {
-            childrenByParentId[assignedParent.id]?.push(line)
-          } else {
-            loose.push(line)
-          }
+        if (assignedParent) {
+          childrenByParentId[assignedParent.id]?.push(line)
+        } else {
+          loose.push(line)
         }
-      })
-    }
+      }
+    })
 
     return {
       cases: packageParents.map((parent, idx) => ({
