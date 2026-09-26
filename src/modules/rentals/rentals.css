@@ -6,7 +6,8 @@
 .rentals-v2 [data-table-scroll] {
   border-radius: var(--r-card, 12px);
   border: 1px solid var(--border);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  background: var(--card);
 }
 .rentals-v2 .operations-table > thead > tr > th {
   height: 48px;
@@ -23,12 +24,13 @@
 }
 .rentals-v2 .operations-table > tbody > tr {
   transition: background-color var(--dur-fast) var(--ease);
+  border-bottom: 1px solid var(--w05, rgba(255, 255, 255, 0.05));
 }
 .rentals-v2 .operations-table > tbody > tr:hover {
-  background: color-mix(in srgb, var(--nav-active-bg) 36%, transparent);
+  background: var(--hover-row, rgba(255, 255, 255, 0.035));
 }
 .rentals-v2 .operations-table > tbody > tr.is-selected {
-  background: color-mix(in srgb, var(--nav-active-bg) 50%, transparent);
+  background: var(--nav-active-bg);
 }
 .rentals-v2 .page-toolbar { margin-top: 0; }
 
@@ -36,29 +38,30 @@
 .rentals-card-grid {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 .rentals-card-item {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
-  background: var(--card);
+  gap: 10px;
+  padding: 16px 18px;
+  background: var(--surface-card, var(--card));
   border: 1px solid var(--border);
-  border-radius: var(--r-card, 12px);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  border-radius: var(--r-card, 14px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 .rentals-card-item:hover {
   border-color: var(--border2, var(--border));
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  transform: translateY(-1px);
 }
 .rentals-card-item.is-selected {
   border-color: var(--nav-active-accent);
-  background: color-mix(in srgb, var(--nav-active-bg) 35%, var(--card));
+  background: var(--nav-active-bg);
 }
 .rentals-card-item.is-overdue {
-  border-left: 3px solid var(--danger, #dc2626);
+  border-left: 3px solid var(--danger, #ff6b6b);
 }
 
 /* ── New Rental Workspace Component Rules ── */

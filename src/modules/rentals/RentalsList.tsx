@@ -255,7 +255,7 @@ function stageChipStyle(on: boolean) {
     height: 32,
     padding: '0 12px',
     borderRadius: 'var(--r-btn, 8px)',
-    border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+    border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--w12, var(--border))'}`,
     background: on ? 'var(--nav-active-bg)' : 'var(--card)',
     color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
     fontSize: 'var(--t-meta)',
@@ -265,7 +265,7 @@ function stageChipStyle(on: boolean) {
     whiteSpace: 'nowrap' as const,
     flexShrink: 0,
     transition: 'border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease)',
-    boxShadow: on ? '0 1px 3px rgba(0, 0, 0, 0.08)' : 'none',
+    boxShadow: on ? '0 0 12px rgba(77, 141, 255, 0.25)' : 'none',
   }
 }
 
@@ -2433,7 +2433,7 @@ export default function RentalsList() {
             </section>
             {money && (
               <section aria-labelledby="rental-quick-view-finance">
-                <h3 id="rental-quick-view-finance" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Deposit</h3>
+                <h3 id="rental-quick-view-finance" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--gold, #d9a83c)', fontWeight: 600 }}>Deposit (Liability)</h3>
                 <p className="figure" style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 700 }}>{inspectingRental.deposit === null ? '—' : formatMoney(inspectingRental.deposit)}</p>
               </section>
             )}
