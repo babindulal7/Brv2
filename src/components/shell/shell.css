@@ -11,6 +11,9 @@
   .header-branch, .header-clock { display: none !important; }
   .app-global-header .header-sync-control { min-height: 44px; }
 }
+@media (max-width: 1179px) {
+  .app-global-header .header-operational-context { display: none !important; }
+}
 @media (max-width: 767px) {
   .workspace-page-actions { margin-bottom: 12px; }
   .workspace-page-actions button { min-height: 44px; }

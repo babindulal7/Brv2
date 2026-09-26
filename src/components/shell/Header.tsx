@@ -1,5 +1,5 @@
 import Icon from '../ui/Icon'
-import { useState } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../lib/auth'
 import { useViewport } from '../../lib/device'
@@ -7,6 +7,7 @@ import { openCommandPalette } from './CommandPalette'
 import HandoverSheet from '../../modules/auth/HandoverSheet'
 import { useSync } from '../../lib/syncContext'
 import { QuickCreateMenu } from './QuickCreateMenu'
+import { getBusinessToday, formatAd, toBs, formatBs } from '../../lib/bs'
 import './shell.css'
 
 export interface Crumb {
@@ -50,7 +51,25 @@ export default function Header({ crumbs, actions }: HeaderProps) {
   const isPhone = vp === 'phone'
   const [profileOpen, setProfileOpen] = useState(false)
   const [showHandover, setShowHandover] = useState(false)
+  const [now, setNow] = useState(() => new Date())
 
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 10000)
+    return () => clearInterval(t)
+  }, [])
+
+  const businessToday = useMemo(() => getBusinessToday(now), [now])
+  const adDateLabel = useMemo(() => formatAd(businessToday), [businessToday])
+  const bsDate = useMemo(() => toBs(businessToday), [businessToday])
+  const bsDateLabel = useMemo(() => (bsDate ? formatBs(bsDate, { suffix: true }) : null), [bsDate])
+  const liveTimeLabel = useMemo(() => {
+    return now.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: 'Asia/Kathmandu',
+    })
+  }, [now])
 
   const handleLogoutRequest = () => {
     if (!user) return
@@ -213,6 +232,89 @@ export default function Header({ crumbs, actions }: HeaderProps) {
               </kbd>
             )}
           </button>
+
+          {/* Operational Date & Bikram Sambat Context + Live Clock */}
+          <div
+            className="header-operational-context"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              flexShrink: 0,
+            }}
+          >
+            {/* Live Clock with Kathmandu Pulse */}
+            <div
+              className="header-clock"
+              title="Kathmandu Local Time"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '4px 10px',
+                borderRadius: 'var(--r-xs, 6px)',
+                background: 'var(--card2)',
+                border: '1px solid var(--w10, var(--border))',
+                boxShadow: 'var(--shadow-sm)',
+                fontSize: '12px',
+                fontWeight: 700,
+                color: 'var(--text)',
+                fontVariantNumeric: 'tabular-nums',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--st-ready-fg, #22c55e)',
+                  boxShadow: '0 0 6px var(--st-ready-fg, #22c55e)',
+                  display: 'inline-block',
+                }}
+              />
+              <span>{liveTimeLabel}</span>
+            </div>
+
+            {/* Operational Date & BS Calendar Pill */}
+            <div
+              className="header-date-badge"
+              title={`Operational Day: ${adDateLabel}${bsDateLabel ? ` · ${bsDateLabel}` : ''}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '4px 10px',
+                borderRadius: 'var(--r-xs, 6px)',
+                background: 'var(--card2)',
+                border: '1px solid var(--w10, var(--border))',
+                boxShadow: 'var(--shadow-sm)',
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--text)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span className="header-date-ad">{adDateLabel}</span>
+              {bsDateLabel && (
+                <span
+                  className="header-date-bs"
+                  style={{
+                    background: 'rgba(245, 166, 35, 0.12)',
+                    color: 'var(--gold, var(--st-warn-fg))',
+                    border: '1px solid var(--st-warn-border, rgba(245, 166, 35, 0.28))',
+                    padding: '1px 7px',
+                    borderRadius: '999px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    letterSpacing: '0.01em',
+                  }}
+                >
+                  {bsDateLabel}
+                </span>
+              )}
+            </div>
+          </div>
 
           {/* Sync Status Badge — shown only during sync operations, pending changes, or issues (§4) */}
           {(syncStatus !== 'synced' || pendingCount > 0) && (
