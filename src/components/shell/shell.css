@@ -2,35 +2,6 @@
 .workspace-page-actions { min-width: 0; margin-bottom: 16px; }
 .workspace-page-actions > * { max-width: 100%; }
 .workspace-page-actions, .workspace-page-actions > div { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-
-/* When mounted in the persistent top global header */
-.app-global-header .workspace-page-actions {
-  margin-bottom: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-xs, 6px);
-  flex-wrap: nowrap;
-}
-.app-global-header .workspace-page-actions .page-actions {
-  gap: var(--sp-xs, 6px);
-  flex-wrap: nowrap;
-}
-.app-global-header .workspace-page-actions button {
-  min-height: 36px;
-  height: 36px;
-  padding: 0 11px;
-  font-size: 13px;
-  white-space: nowrap;
-}
-.app-global-header .workspace-page-actions .dashboard-header-controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.app-global-header .workspace-page-actions .dashboard-header-controls__label {
-  display: none;
-}
-
 .app-global-header .header-sync-control { min-height: 40px; }
 .app-navigation { min-height: 0; }
 .app-side-panel { width: var(--app-panel-width, 320px); }

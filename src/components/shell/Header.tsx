@@ -218,12 +218,6 @@ export default function Header({ crumbs, actions }: HeaderProps) {
             style={{ flexShrink: 0 }}
           />
         )}
-        <div
-          id="app-global-header-status"
-          ref={ws?.setStatusElement}
-          className="app-global-header__status"
-          style={{ display: 'inline-flex', alignItems: 'center' }}
-        />
       </div>
 
       {/* On desktop and tablet, center search input + clock + sync status */}
@@ -238,7 +232,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
               alignItems: 'center',
               gap: 'var(--sp-sm)',
               width: '100%',
-              maxWidth: ws?.headerActionsElement ? 320 : 440,
+              maxWidth: 440,
               minWidth: 0,
               minHeight: 44,
               padding: '0 14px',
@@ -471,16 +465,9 @@ export default function Header({ crumbs, actions }: HeaderProps) {
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 'var(--sp-sm)', flexShrink: 0, marginLeft: isPhone ? 'auto' : 0 }}>
-        {/* Dynamic page actions portal container */}
-        <div
-          id="app-global-header-actions"
-          ref={ws?.setHeaderActionsElement}
-          className="workspace-page-actions app-global-header__page-actions"
-        />
-
         {actions}
 
-        <QuickCreateMenu role={user?.role} compact={vp !== 'desktop' || Boolean(ws?.headerActionsElement)} />
+        <QuickCreateMenu role={user?.role} compact={vp !== 'desktop'} />
 
         {isPhone && (
           <button

@@ -1082,7 +1082,7 @@ function WorkspaceContent({
   isFloor,
   children
 }: WorkspaceContentProps) {
-  const { setLeftPanelElement, setRightPanelElement } = useWorkspace()
+  const { setLeftPanelElement, setRightPanelElement, setHeaderActionsElement } = useWorkspace()
 
   return (
     <div className="workspace-content" style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
@@ -1106,6 +1106,7 @@ function WorkspaceContent({
           overflowX: 'hidden'
         }}
       >
+        <div className="workspace-page-actions" ref={setHeaderActionsElement} />
         {isForbidden ? (
           <div style={{ maxWidth: 420, margin: '10vh auto 0' }}>
             <RestrictedState reason={`Your role (${user?.role ?? 'unknown'}) does not have access to this module.`} />
