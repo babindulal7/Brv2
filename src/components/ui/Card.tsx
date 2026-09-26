@@ -23,6 +23,7 @@ export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   as?: 'div' | 'section'
   headingLevel?: 'h2' | 'h3'
   bodyStyle?: CSSProperties
+  statusColor?: string
 }
 
 const PADDING: Record<NonNullable<CardProps['padding']>, number | string> = {
@@ -41,14 +42,16 @@ export function Card({
   as: Element = 'div',
   headingLevel: Heading = 'h3',
   bodyStyle,
+  statusColor,
   children,
   style,
   className,
   ...props
 }: CardProps) {
   const rootStyle: CSSProperties = {
-    background: 'var(--card)',
+    background: 'var(--surface-card, var(--card))',
     border: '1px solid var(--border)',
+    ...(statusColor ? { borderLeft: `3px solid ${statusColor}` } : {}),
     borderRadius: 'var(--r-card)',
     boxShadow: 'var(--shadow-card), var(--specular-rim)',
     color: 'var(--text)',

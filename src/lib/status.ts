@@ -64,13 +64,13 @@ export interface StatusTokens {
 }
 
 export const STATUS: Record<StatusKey, StatusTokens> = {
-  neutral: { bg: 'var(--st-neutral-bg)', fg: 'var(--st-neutral-fg)' },
-  primary: { bg: 'var(--st-primary-bg)', fg: 'var(--st-primary-fg)' },
-  progress: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)' },
-  out: { bg: 'var(--st-out-bg)', fg: 'var(--st-out-fg)' },
-  in: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)' },
-  danger: { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)' },
-  dim: { bg: 'var(--st-dim-bg)', fg: 'var(--st-dim-fg)' },
+  neutral: { bg: 'var(--st-neutral-bg)', fg: 'var(--st-neutral-fg)', border: 'var(--st-neutral-border)' },
+  primary: { bg: 'var(--st-primary-bg)', fg: 'var(--st-primary-fg)', border: 'var(--st-primary-border)' },
+  progress: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', border: 'var(--st-progress-border)' },
+  out: { bg: 'var(--st-out-bg)', fg: 'var(--st-out-fg)', border: 'var(--st-out-border)' },
+  in: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)', border: 'var(--st-in-border)' },
+  danger: { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)', border: 'var(--st-danger-border)' },
+  dim: { bg: 'var(--st-dim-bg)', fg: 'var(--st-dim-fg)', border: 'var(--st-dim-border)' },
   ext: { bg: 'var(--ext-bg)', fg: 'var(--ext-fg)', border: 'var(--ext-line)' },
 }
 
