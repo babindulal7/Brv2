@@ -483,7 +483,7 @@ export default function Today() {
           </div>
           <div className="dashboard-bento-tile__sub">
             {todayBs ? (
-              <span className="dashboard-bento-tile__sub-pill" style={{ background: 'rgba(245, 158, 11, 0.12)', color: 'var(--warning-text, #d97706)', fontWeight: 700 }}>
+              <span className="dashboard-bento-tile__sub-pill is-bs">
                 BS {formatBs(todayBs)}
               </span>
             ) : null}
@@ -497,16 +497,16 @@ export default function Today() {
         <div className="dashboard-bento-tile">
           <div className="dashboard-bento-tile__header">
             <span className="dashboard-bento-tile__label">Pickups Today</span>
-            <Icon name="truck" size={15} style={{ color: 'var(--accent, #2563eb)' }} />
+            <Icon name="truck" size={15} style={{ color: 'var(--accent, var(--primary))' }} />
           </div>
           <div className="dashboard-bento-tile__value">
             {pickups.loading ? '—' : (pickups.total ?? pickups.rows.length)}
           </div>
           <div className="dashboard-bento-tile__sub">
-            <span className="dashboard-bento-tile__sub-pill" style={{ background: 'var(--success-bg, rgba(16, 185, 129, 0.1))', color: 'var(--success-text, #059669)' }}>
+            <span className="dashboard-bento-tile__sub-pill is-ready">
               {readyPickupsCount} Ready
             </span>
-            <span className="dashboard-bento-tile__sub-pill" style={{ background: 'var(--warning-bg, rgba(245, 158, 11, 0.1))', color: 'var(--warning-text, #d97706)' }}>
+            <span className="dashboard-bento-tile__sub-pill is-prep">
               {prepPickupsCount} In Prep
             </span>
           </div>
@@ -516,18 +516,18 @@ export default function Today() {
         <div className="dashboard-bento-tile">
           <div className="dashboard-bento-tile__header">
             <span className="dashboard-bento-tile__label">Returns Due</span>
-            <Icon name="return_arrow" size={15} style={{ color: overdueCount > 0 ? 'var(--danger, #dc2626)' : 'var(--text-muted, #71717a)' }} />
+            <Icon name="return_arrow" size={15} style={{ color: overdueCount > 0 ? 'var(--st-danger-fg)' : 'var(--muted)' }} />
           </div>
           <div className="dashboard-bento-tile__value">
             {returns.loading ? '—' : (returns.total ?? returns.rows.length)}
           </div>
           <div className="dashboard-bento-tile__sub">
             {overdueCount > 0 ? (
-              <span className="dashboard-bento-tile__sub-pill" style={{ background: 'var(--danger-bg, rgba(239, 68, 68, 0.12))', color: 'var(--danger-text, #dc2626)', fontWeight: 600 }}>
+              <span className="dashboard-bento-tile__sub-pill is-overdue">
                 {overdueCount} Overdue
               </span>
             ) : (
-              <span className="dashboard-bento-tile__sub-pill" style={{ background: 'var(--success-bg, rgba(16, 185, 129, 0.1))', color: 'var(--success-text, #059669)' }}>
+              <span className="dashboard-bento-tile__sub-pill is-clean">
                 All On Track
               </span>
             )}
@@ -538,20 +538,18 @@ export default function Today() {
         <div className="dashboard-bento-tile">
           <div className="dashboard-bento-tile__header">
             <span className="dashboard-bento-tile__label">Floor Shortcuts</span>
-            <Icon name="zap" size={15} style={{ color: 'var(--accent, #2563eb)' }} />
+            <Icon name="zap" size={15} style={{ color: 'var(--accent, var(--primary))' }} />
           </div>
           <div className="dashboard-bento-tile__sub" style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Link
               to="/rentals/new"
-              className="btn btn--sm btn--primary"
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none', minHeight: 38, fontSize: 'var(--t-meta)', fontWeight: 600, borderRadius: 'var(--r-btn, 8px)' }}
+              className="dashboard-bento-btn dashboard-bento-btn--primary"
             >
               <Icon name="plus" size={15} /> New Rental Quote
             </Link>
             <button
               type="button"
-              className="btn btn--sm btn--secondary"
-              style={{ minHeight: 36, fontSize: 'var(--t-meta)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 'var(--r-btn, 8px)' }}
+              className="dashboard-bento-btn dashboard-bento-btn--secondary"
               onClick={() => counterInputRef.current?.focus()}
             >
               <Icon name="barcode" size={14} /> Quick Barcode <kbd className="new-rental-kbd" style={{ fontSize: 'var(--t-th)', padding: '1px 5px' }}>/</kbd>

@@ -271,7 +271,7 @@ export default function DashboardMovementPanel({
                             fontSize: '0.825rem',
                             fontWeight: 500,
                             borderRadius: 'var(--r-btn, 8px)',
-                            border: '1px solid var(--border)',
+                            border: '1px solid var(--w12, var(--border))',
                             color: 'var(--text)',
                             background: 'var(--card2)',
                             textDecoration: 'none',
@@ -297,13 +297,13 @@ export default function DashboardMovementPanel({
                           fontSize: '0.825rem',
                           fontWeight: 500,
                           borderRadius: 'var(--r-btn, 8px)',
-                          border: '1px solid var(--border)',
+                          border: '1px solid var(--w12, var(--border))',
                           color: 'var(--text2)',
                           background: 'var(--card2)',
                           textDecoration: 'none',
                         }}
                       >
-                        <Icon name="package" size={14} style={{ color: 'var(--accent, #2563eb)' }} />
+                        <Icon name="package" size={14} style={{ color: 'var(--accent, var(--primary))' }} />
                         <span>Cases & Gear</span>
                       </Link>
                       <button
