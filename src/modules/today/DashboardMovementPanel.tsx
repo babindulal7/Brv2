@@ -16,7 +16,7 @@ interface DashboardMovementPanelProps {
   list: ListResult<MovementRow>
   periodLabel: string
   onClearFilters: () => void
-  filterControl: ReactNode
+  filterControl?: ReactNode
   isToday?: boolean
   onLoadMore?: () => void
   hasMore?: boolean
@@ -97,7 +97,7 @@ export default function DashboardMovementPanel({
           </h2>
           <p title={subtitle}>{subtitle}</p>
         </div>
-        <div className="movement-panel__filter">{filterControl}</div>
+        {filterControl && <div className="movement-panel__filter">{filterControl}</div>}
       </header>
 
       <div className={`movement-panel__body movement-panel__body--${side}`}>
@@ -145,6 +145,14 @@ export default function DashboardMovementPanel({
             </div>
           ) : (
             <div className="movement-cards-list">
+              <div className="movement-cards-list__head" aria-hidden="true">
+                <span>Booking ID</span>
+                <span>Client / project</span>
+                <span>Pickup</span>
+                <span>Return</span>
+                <span>Status</span>
+                <span>Actions</span>
+              </div>
               {rows.map((row) => {
                 const action = dashboardAction(row, side)
                 const isOverdue = has(row, 'Overdue')
@@ -158,6 +166,12 @@ export default function DashboardMovementPanel({
                 const displayTime = side === 'outgoing'
                   ? `${row.atDayAd !== today ? `${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${row.atDayAd}T00:00:00Z`))} · ` : ''}${timeOf(row)}`
                   : row.due.replace(/^Due\s+/i, '')
+                const pickupMoment = side === 'outgoing'
+                  ? displayTime
+                  : (row.duration.split(' → ')[0] ?? '—')
+                const returnMoment = side === 'incoming'
+                  ? displayTime
+                  : row.due.replace(/^Due\s+/i, '')
 
                 return (
                   <article
@@ -167,155 +181,54 @@ export default function DashboardMovementPanel({
                     }`}
                     aria-label={`${row.bookingNo}, ${row.client}, ${displayTime}`}
                   >
-                    <div className="movement-card__top">
-                      <span className="movement-card__time figure">{displayTime}</span>
+                    <Link className="movement-card__client-link" to={`/rentals/${row.bookingNo}`}>
+                      <span className="movement-card__avatar" aria-hidden="true">
+                        {row.monogram || (row.client ? row.client.slice(0, 2).toUpperCase() : 'BK')}
+                      </span>
+                      <span className="movement-card__client-copy">
+                        <strong className="movement-card__client">{row.client}</strong>
+                        <span className="movement-card__project" title={row.project || 'No project specified'}>{row.project || 'No project specified'}</span>
+                        <span className="movement-card__items-count">
+                          {row.itemCount} {row.itemCount === 1 ? 'item' : 'items'}{side === 'incoming' ? ' booked' : ''}
+                        </span>
+                      </span>
+                    </Link>
+
+                    <Link className="movement-card__booking-link" to={`/rentals/${row.bookingNo}`}>
+                      <span className="movement-card__record-label">Booking</span>
+                      <strong className="movement-card__number identifier">{row.bookingNo}</strong>
+                    </Link>
+
+                    <div className="movement-card__schedule movement-card__schedule--pickup">
+                      <span>Pickup</span>
+                      <strong className="movement-card__time figure">{pickupMoment}</strong>
+                    </div>
+                    <div className="movement-card__schedule movement-card__schedule--return">
+                      <span>Return</span>
+                      <strong className="figure">{returnMoment}</strong>
+                    </div>
+
+                    <div className="movement-card__status-action">
                       <div className="movement-card__badge-wrap">
                         {side === 'outgoing' ? (
                           isReady ? (
-                            <Badge tone="in" label="Ready for pickup" icon={<Icon name="check" size={14} />} />
+                            <Badge tone="in" label="Ready" icon={<Icon name="check" size={14} />} />
                           ) : (
-                            <Badge tone="warning" label="Preparation needed" icon={<Icon name="checklist" size={14} />} />
+                            <Badge tone="warning" label="In prep" icon={<Icon name="checklist" size={14} />} />
                           )
                         ) : isOverdue ? (
-                          <Badge
-                            tone="danger"
-                            label={row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'}
-                            icon={<Icon name="alert_triangle" size={14} />}
-                          />
+                          <Badge tone="danger" label={row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'} icon={<Icon name="alert_triangle" size={14} />} />
                         ) : isPartial ? (
                           <Badge tone="warning" label="Partial return" icon={<Icon name="alert_triangle" size={14} />} />
                         ) : (
                           <Badge tone="primary" label={row.atDayAd === today ? 'Due today' : 'Return scheduled'} icon={<Icon name="timer" size={14} />} />
                         )}
                       </div>
-                    </div>
-
-                    <div className="movement-card__main">
-                      <div className="movement-card__title">
-                        <Link
-                          className="movement-card__booking-link"
-                          to={`/rentals/${row.bookingNo}`}
-                        >
-                          <span className="movement-card__avatar" aria-hidden="true">
-                            {row.monogram || (row.client ? row.client.slice(0, 2).toUpperCase() : 'BK')}
-                          </span>
-                          <strong className="movement-card__client">{row.client}</strong>
-                          <span className="movement-card__number identifier">#{row.bookingNo}</span>
-                        </Link>
-                      </div>
-
-                      <div className="movement-card__items-row">
-                        {row.project && (
-                          <span className="movement-card__project-pill" title={`Project: ${row.project}`}>
-                            <Icon name="briefcase" size={12} />
-                            <span>{row.project}</span>
-                          </span>
-                        )}
-                        <span className="movement-card__items figure">
-                          <Icon name="box" size={12} style={{ marginRight: 3, verticalAlign: -1 }} />
-                          {side === 'outgoing' ? (
-                            `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'}`
-                          ) : (
-                            `${row.itemCount} ${row.itemCount === 1 ? 'item' : 'items'} booked`
-                          )}
-                        </span>
-
-                        {side === 'outgoing' && (
-                          isReady ? (
-                            <span className="movement-card__case-pill is-packed" title="All serialized equipment packed into flight cases">
-                              <Icon name="check" size={12} />
-                              <span>Cases Packed</span>
-                            </span>
-                          ) : (
-                            <span className="movement-card__case-pill is-prep" title="Prep & packing in progress in gear vault">
-                              <Icon name="checklist" size={12} />
-                              <span>Prep in Vault</span>
-                            </span>
-                          )
-                        )}
-
-                        <span className="movement-card__deposit-pill" title="Security deposit & KYC verified">
-                          <Icon name="card" size={12} />
-                          <span>Deposit Clear</span>
-                        </span>
-
-                        {side === 'outgoing' && !isReady && row.statusNote && (
-                          <span className="movement-card__subnote">
-                            {row.statusNote}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Logistics / Delivery pill if applicable */}
-                      {row.deliveryType && row.deliveryType !== 'Client Pickup' && (
-                        <div className="movement-card__meta-tag">
-                          <Icon name="truck" size={12} />
-                          <span>{row.deliveryType}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="movement-card__footer">
-                      {side === 'outgoing' && isReady && (
-                        <Link
-                          to={`/rentals/${row.bookingNo}`}
-                          className="movement-card__manifest-btn"
-                          title={`Share Manifest on WhatsApp for #${row.bookingNo}`}
-                          onClick={(e) => e.stopPropagation()}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.4rem',
-                            minHeight: 44,
-                            padding: '0 0.85rem',
-                            fontSize: '0.825rem',
-                            fontWeight: 500,
-                            borderRadius: 'var(--r-btn, 8px)',
-                            border: '1px solid var(--w12, var(--border))',
-                            color: 'var(--text)',
-                            background: 'var(--card2)',
-                            textDecoration: 'none',
-                          }}
-                        >
-                          <span style={{ color: '#25D366', display: 'inline-flex', alignItems: 'center' }} aria-hidden="true">
-                            <Icon name="phone" size={14} />
-                          </span>
-                          <span>WhatsApp</span>
-                        </Link>
-                      )}
-                      <Link
-                        to={`/rentals/${row.bookingNo}`}
-                        className="movement-card__details-btn"
-                        title={`Open Flight Cases & Booking Workspace for #${row.bookingNo}`}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '0.35rem',
-                          minHeight: 44,
-                          padding: '0 0.85rem',
-                          fontSize: '0.825rem',
-                          fontWeight: 500,
-                          borderRadius: 'var(--r-btn, 8px)',
-                          border: '1px solid var(--w12, var(--border))',
-                          color: 'var(--text2)',
-                          background: 'var(--card2)',
-                          textDecoration: 'none',
-                        }}
-                      >
-                        <Icon name="package" size={14} style={{ color: 'var(--accent, var(--primary))' }} />
-                        <span>Cases & Gear</span>
-                      </Link>
                       <button
                         type="button"
-                        className={`movement-card__cta-btn ${
-                          (side === 'incoming' || isReady) ? 'is-dominant' : 'is-prep'
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          const bookingStatus: BookingStatus =
-                            (row.status as BookingStatus) ||
-                            (side === 'incoming' ? 'On Rent' : 'Booked')
+                        className={`movement-card__cta-btn ${(side === 'incoming' || isReady) ? 'is-dominant' : 'is-prep'}`}
+                        onClick={() => {
+                          const bookingStatus: BookingStatus = (row.status as BookingStatus) || (side === 'incoming' ? 'On Rent' : 'Booked')
                           openOperations(row.bookingNo, bookingStatus, action.job)
                         }}
                         aria-label={`${actionLabel} for ${row.client}, booking ${row.bookingNo}`}

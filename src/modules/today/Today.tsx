@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { PageHeader, PageActions, Button } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
-import { toBs, formatBs } from '../../lib/bs'
+import { toBs, formatBs, BS_MONTHS } from '../../lib/bs'
 import { businessDayAd, businessNowAd, overDays, pickupsQuery, toMovementRow, type MovementRow } from '../../lib/queries/today'
 import { listBookings, operationQueue, todaysOutgoing } from '../../lib/queries/bookings'
 import type { ListFilters } from '../../lib/queries/listQuery'
@@ -14,13 +13,21 @@ import { useList, type ListQueryResult, type ListResult } from '../../lib/querie
 import { useViewport } from '../../lib/device'
 import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 import type { BookingStatus } from '../../lib/workflow'
-import DashboardMovementPanel from './DashboardMovementPanel'
+import RawDashboardMovementPanel from './DashboardMovementPanel'
 import './dashboard.css'
+
+const DashboardMovementPanel = RawDashboardMovementPanel as React.ComponentType<
+  React.ComponentProps<typeof RawDashboardMovementPanel> & {
+    noun?: 'pickup' | 'return'
+    date?: string
+  }
+>
 
 type QuickPeriod = 'Today' | 'Tomorrow' | 'Next 7 Days'
 type DateFilter = { kind: 'quick'; period: QuickPeriod } | { kind: 'custom'; from: string; to: string }
 
 const QUICK_PERIODS: readonly QuickPeriod[] = ['Today', 'Tomorrow', 'Next 7 Days']
+const STORAGE_DISPATCH = 'dashboard.dispatchDateFilter'
 const STORAGE_PICKUPS = 'dashboard.pickupDateFilter'
 const STORAGE_RETURNS = 'dashboard.returnDateFilter'
 
@@ -30,34 +37,27 @@ function shiftDay(day: string, amount: number): string {
   return date.toISOString().slice(0, 10)
 }
 
-function readStoredFilter(key: string): DateFilter {
-  if (typeof window === 'undefined') return { kind: 'quick', period: 'Today' }
-  try {
-    const parsed = JSON.parse(window.sessionStorage.getItem(key) ?? 'null') as DateFilter | null
-    if (parsed?.kind === 'quick' && QUICK_PERIODS.includes(parsed.period)) return parsed
-    if (parsed?.kind === 'custom' && isCalendarDay(parsed.from) && isCalendarDay(parsed.to) && parsed.from <= parsed.to) return parsed
-  } catch {
-    // A stale browser value should never prevent the movement board from opening.
-  }
-  return { kind: 'quick', period: 'Today' }
-}
-
 function isCalendarDay(day: unknown): day is string {
   if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return false
   const date = new Date(`${day}T00:00:00.000Z`)
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === day
 }
 
-function useStoredFilter(key: string): [DateFilter, (filter: DateFilter) => void] {
-  const [filter, setFilter] = useState<DateFilter>(() => readStoredFilter(key))
-  useEffect(() => {
-    try {
-      window.sessionStorage.setItem(key, JSON.stringify(filter))
-    } catch {
-      // Persistence is optional in privacy-restricted browser sessions.
-    }
-  }, [filter, key])
-  return [filter, setFilter]
+function readStoredFilter(key?: string): DateFilter {
+  if (typeof window === 'undefined') return { kind: 'quick', period: 'Today' }
+  try {
+    const raw = key
+      ? window.sessionStorage.getItem(key)
+      : (window.sessionStorage.getItem(STORAGE_DISPATCH) ??
+         window.sessionStorage.getItem(STORAGE_PICKUPS) ??
+         window.sessionStorage.getItem(STORAGE_RETURNS))
+    const parsed = JSON.parse(raw ?? 'null') as DateFilter | null
+    if (parsed?.kind === 'quick' && QUICK_PERIODS.includes(parsed.period)) return parsed
+    if (parsed?.kind === 'custom' && isCalendarDay(parsed.from) && isCalendarDay(parsed.to) && parsed.from <= parsed.to) return parsed
+  } catch {
+    // Stale browser storage should not break dispatch board
+  }
+  return { kind: 'quick', period: 'Today' }
 }
 
 function rangeFor(filter: DateFilter, today: string): { from: string; to: string } {
@@ -81,12 +81,30 @@ function returnFilter(filter: DateFilter, today: string): ListFilters {
   return operationQueue('return', filter.kind === 'quick' && filter.period === 'Today' ? undefined : range.from, range.to)
 }
 
+import { useCurrentLanguage } from '../../lib/i18n'
+
+const QUICK_PERIOD_LABELS: Record<'en' | 'ne', Record<QuickPeriod, string>> = {
+  en: {
+    Today: 'Today',
+    Tomorrow: 'Tomorrow',
+    'Next 7 Days': 'Next 7 Days',
+  },
+  ne: {
+    Today: 'आज',
+    Tomorrow: 'भोलि',
+    'Next 7 Days': 'यो हप्ता (७ दिन)',
+  },
+}
+
+const NE_WEEKDAYS = ['आइत', 'सोम', 'मंगल', 'बुध', 'बिही', 'शुक्र', 'शनि'] as const
+const EN_WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] as const
+
 function compactDate(day: string): string {
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00.000Z`))
 }
 
-function filterLabel(filter: DateFilter): string {
-  if (filter.kind === 'quick') return filter.period
+function filterLabel(filter: DateFilter, lang: 'en' | 'ne' = 'en'): string {
+  if (filter.kind === 'quick') return QUICK_PERIOD_LABELS[lang][filter.period]
   if (filter.from === filter.to) return compactDate(filter.from)
   const from = new Date(`${filter.from}T00:00:00.000Z`)
   const to = new Date(`${filter.to}T00:00:00.000Z`)
@@ -106,7 +124,48 @@ function calendarDays(month: Date): Array<string | null> {
   return result
 }
 
-function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' | 'return' | 'dispatch'; filter: DateFilter; onChange: (filter: DateFilter) => void; today: string }) {
+function formatMasterDispatchDate(filter: DateFilter, today: string, lang: 'en' | 'ne' = 'en'): string {
+  if (filter.kind === 'quick' && filter.period === 'Next 7 Days') {
+    return QUICK_PERIOD_LABELS[lang]['Next 7 Days']
+  }
+  const day = filter.kind === 'custom' ? filter.from : rangeFor(filter, today).from
+  if (filter.kind === 'custom' && filter.from !== filter.to) {
+    return filterLabel(filter, lang)
+  }
+  const dateObj = new Date(`${day}T00:00:00.000Z`)
+  const adMonth = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(dateObj)
+  const adDay = dateObj.getUTCDate()
+  const adPart = `${adMonth} ${adDay}`
+
+  const bs = toBs(dateObj)
+  const bsPart = bs ? `${BS_MONTHS[bs.month - 1]} ${bs.day}` : ''
+  const dual = bsPart ? `${adPart} / ${bsPart}` : adPart
+
+  const isToday = day === today
+  const isTomorrow = day === shiftDay(today, 1)
+
+  if (isToday) {
+    const todayPrefix = lang === 'ne' ? 'आज' : 'Today'
+    return `${todayPrefix} · ${dual}`
+  }
+  if (isTomorrow) {
+    const tomorrowPrefix = lang === 'ne' ? 'भोलि' : 'Tomorrow'
+    return `${tomorrowPrefix} · ${dual}`
+  }
+  return dual
+}
+
+function DateFilterControl({
+  noun,
+  filter,
+  onChange,
+  today,
+}: {
+  noun: 'pickup' | 'return' | 'dispatch'
+  filter: DateFilter
+  onChange: (filter: DateFilter) => void
+  today: string
+}) {
   const [open, setOpen] = useState(false)
   const [rangeStart, setRangeStart] = useState<string | null>(null)
   const [rangeMode, setRangeMode] = useState(false)
@@ -123,15 +182,18 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
     trigger.current?.focus()
   }
 
-  // Move focus into the dialog when it opens — a keyboard user otherwise stays
-  // on the trigger after it closes over.
   useEffect(() => {
     if (open) dialog.current?.focus()
   }, [open])
 
   useEffect(() => {
     if (!open) return
-    const closeAway = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) { setOpen(false); setRangeStart(null) } }
+    const closeAway = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) {
+        setOpen(false)
+        setRangeStart(null)
+      }
+    }
     const closeEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
@@ -195,17 +257,30 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
   const dialogLabel = noun === 'dispatch' ? 'Dispatch date filter' : `${noun} date filter`
 
   return (
-    <div className="dashboard-date-filter" ref={root} onBlur={(event) => {
-      if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) {
-        setOpen(false)
-        setRangeStart(null)
-      }
-    }}>
-      <button ref={trigger} type="button" className="dashboard-date-filter__button" aria-label={triggerLabel} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? `${noun}-date-dialog` : undefined} onClick={() => {
-        setRangeStart(null)
-        if (!open) setMonth(new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
-        setOpen((value) => !value)
-      }}>
+    <div
+      className="dashboard-date-filter"
+      ref={root}
+      onBlur={(event) => {
+        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) {
+          setOpen(false)
+          setRangeStart(null)
+        }
+      }}
+    >
+      <button
+        ref={trigger}
+        type="button"
+        className="dashboard-date-filter__button"
+        aria-label={triggerLabel}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? `${noun}-date-dialog` : undefined}
+        onClick={() => {
+          setRangeStart(null)
+          if (!open) setMonth(new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
+          setOpen((value) => !value)
+        }}
+      >
         <span className="dashboard-date-filter__calendar" aria-hidden="true"><Icon name="calendar" size={18} /></span>
         <span className="dashboard-date-filter__label">{filterLabel(filter)}</span>
         <Icon name="chevron_down" size={15} />
@@ -215,7 +290,251 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
         <div id={`${noun}-date-dialog`} className="dashboard-calendar" role="dialog" aria-label={dialogLabel} tabIndex={-1} ref={dialog}>
           <div className="dashboard-calendar__quick" role="group" aria-label="Quick date filters">
             {QUICK_PERIODS.map((period) => (
-              <button key={period} type="button" aria-pressed={filter.kind === 'quick' && filter.period === period} onClick={() => selectQuick(period)}>{period}</button>
+              <button
+                key={period}
+                type="button"
+                aria-pressed={filter.kind === 'quick' && filter.period === period}
+                onClick={() => selectQuick(period)}
+              >
+                {period}
+              </button>
+            ))}
+          </div>
+          <div className="dashboard-calendar__month-row">
+            <button type="button" aria-label="Previous month" onClick={() => setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() - 1, 1)))}>
+              <Icon name="chevron_left" size={17} />
+            </button>
+            <strong>{monthName}</strong>
+            <button type="button" aria-label="Next month" onClick={() => setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1)))}>
+              <Icon name="chevron_right" size={17} />
+            </button>
+          </div>
+          <div className="dashboard-calendar__weekdays" aria-hidden="true">
+            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => <span key={day}>{day}</span>)}
+          </div>
+          <div className="dashboard-calendar__days">
+            {days.map((day, index) => {
+              if (!day) return <span key={`blank-${index}`} />
+              const selected = day === rangeStart || day === currentFrom || day === currentTo
+              const inRange = !!currentFrom && !!currentTo && day > currentFrom && day < currentTo
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  data-calendar-day={day}
+                  className={selected ? 'is-selected' : inRange ? 'is-in-range' : undefined}
+                  aria-label={compactDate(day)}
+                  aria-pressed={selected || inRange}
+                  onClick={() => selectDay(day)}
+                  onKeyDown={(event) => onDayKeyDown(event, day)}
+                >
+                  {Number(day.slice(-2))}
+                </button>
+              )
+            })}
+          </div>
+          <div className="dashboard-calendar__footer">
+            <button type="button" aria-pressed={rangeMode} onClick={() => { setRangeMode(!rangeMode); setRangeStart(null) }}>
+              {rangeMode ? 'Date range' : 'Single date'}
+            </button>
+            <span aria-live="polite">{rangeStart ? 'Choose an end date.' : rangeMode ? 'Select start and end dates' : 'Select a date'}</span>
+            {rangeStart && <button type="button" onClick={useSingleDay}>Use {compactDate(rangeStart)}</button>}
+            <button type="button" className="dashboard-calendar__close" onClick={close}>Close</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MasterDispatchDateControl({
+  filter,
+  onChange,
+  today,
+  onStepDay,
+}: {
+  filter: DateFilter
+  onChange: (filter: DateFilter) => void
+  today: string
+  onStepDay: (delta: number) => void
+}) {
+  const lang = useCurrentLanguage()
+  const [open, setOpen] = useState(false)
+  const [rangeStart, setRangeStart] = useState<string | null>(null)
+  const [rangeMode, setRangeMode] = useState(false)
+  const initialDay = filter.kind === 'custom' ? filter.from : rangeFor(filter, today).from
+  const initialDate = new Date(`${initialDay}T00:00:00.000Z`)
+  const [month, setMonth] = useState(() => new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
+  const root = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const dialog = useRef<HTMLDivElement>(null)
+  const days = useMemo(() => calendarDays(month), [month])
+  const close = () => {
+    setOpen(false)
+    setRangeStart(null)
+    trigger.current?.focus()
+  }
+
+  // Move focus into the dialog when it opens — a keyboard user otherwise stays
+  // on the trigger after it closes over.
+  useEffect(() => {
+    if (open) dialog.current?.focus()
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const closeAway = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) {
+        setOpen(false)
+        setRangeStart(null)
+      }
+    }
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setOpen(false)
+        setRangeStart(null)
+        trigger.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', closeAway)
+    document.addEventListener('keydown', closeEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeAway)
+      document.removeEventListener('keydown', closeEscape)
+    }
+  }, [open])
+
+  const selectQuick = (period: QuickPeriod) => {
+    onChange({ kind: 'quick', period })
+    close()
+  }
+
+  const selectDay = (day: string) => {
+    if (!rangeMode) {
+      onChange({ kind: 'custom', from: day, to: day })
+      close()
+      return
+    }
+    if (!rangeStart) {
+      setRangeStart(day)
+      return
+    }
+    onChange({ kind: 'custom', from: day < rangeStart ? day : rangeStart, to: day < rangeStart ? rangeStart : day })
+    close()
+  }
+
+  const useSingleDay = () => {
+    if (!rangeStart) return
+    onChange({ kind: 'custom', from: rangeStart, to: rangeStart })
+    close()
+  }
+
+  const onDayKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, day: string) => {
+    const delta = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' ? -7 : event.key === 'ArrowDown' ? 7 : 0
+    if (!delta) return
+    event.preventDefault()
+    const target = shiftDay(day, delta)
+    const targetDate = new Date(`${target}T00:00:00.000Z`)
+    if (targetDate.getUTCMonth() !== month.getUTCMonth() || targetDate.getUTCFullYear() !== month.getUTCFullYear()) {
+      setMonth(new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth(), 1)))
+      window.setTimeout(() => root.current?.querySelector<HTMLButtonElement>(`[data-calendar-day="${target}"]`)?.focus(), 0)
+    } else {
+      root.current?.querySelector<HTMLButtonElement>(`[data-calendar-day="${target}"]`)?.focus()
+    }
+  }
+
+  const currentFrom = filter.kind === 'custom' ? filter.from : null
+  const currentTo = filter.kind === 'custom' ? filter.to : null
+  const monthName = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(month)
+  const masterLabel = formatMasterDispatchDate(filter, today, lang)
+  const isToday = filter.kind === 'quick' && filter.period === 'Today'
+
+  return (
+    <div
+      className="dashboard-master-date-control"
+      ref={root}
+      role="group"
+      aria-label="Master dispatch date"
+      onBlur={(event) => {
+        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) {
+          setOpen(false)
+          setRangeStart(null)
+        }
+      }}
+    >
+      <span className="dashboard-header-controls__label" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 500, marginRight: 4 }}>
+        Sync dispatch day:
+      </span>
+      <button
+        type="button"
+        className="dashboard-master-date-control__btn"
+        aria-label="Previous day"
+        title="Previous day (Shortcut: [ or P)"
+        onClick={() => onStepDay(-1)}
+      >
+        <Icon name="chevron_left" size={16} />
+      </button>
+
+      <button
+        type="button"
+        className={`dashboard-master-date-control__btn dashboard-day-pager__btn--today ${isToday ? 'is-today' : ''}`}
+        aria-label="Today"
+        onClick={() => onChange({ kind: 'quick', period: 'Today' })}
+      >
+        Today
+      </button>
+
+      <button
+        ref={trigger}
+        type="button"
+        className={`dashboard-master-date-control__date-btn ${isToday ? 'is-today' : ''}`}
+        aria-label="Choose dispatch date filter"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? 'dispatch-date-dialog' : undefined}
+        onClick={() => {
+          setRangeStart(null)
+          if (!open) setMonth(new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
+          setOpen((v) => !v)
+        }}
+      >
+        <span className="dashboard-master-date-control__label">{masterLabel}</span>
+      </button>
+
+      <button
+        type="button"
+        className="dashboard-master-date-control__btn"
+        aria-label="Next day"
+        title="Next day (Shortcut: ] or N)"
+        onClick={() => onStepDay(1)}
+      >
+        <Icon name="chevron_right" size={16} />
+      </button>
+
+      <button
+        type="button"
+        className="dashboard-master-date-control__calendar-btn"
+        aria-label="Dispatch calendar"
+        title="Open calendar (📅)"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => {
+          setRangeStart(null)
+          if (!open) setMonth(new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
+          setOpen((v) => !v)
+        }}
+      >
+        <Icon name="calendar" size={18} />
+      </button>
+
+      {open && (
+        <div id="dispatch-date-dialog" className="dashboard-calendar" role="dialog" aria-label="Dispatch date filter" tabIndex={-1} ref={dialog}>
+          <div className="dashboard-calendar__quick" role="group" aria-label="Quick date filters">
+            {QUICK_PERIODS.map((period) => (
+              <button key={period} type="button" aria-pressed={filter.kind === 'quick' && filter.period === period} onClick={() => selectQuick(period)}>
+                {QUICK_PERIOD_LABELS[lang][period]}
+              </button>
             ))}
           </div>
           <div className="dashboard-calendar__month-row">
@@ -224,7 +543,7 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
             <button type="button" aria-label="Next month" onClick={() => setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1)))}><Icon name="chevron_right" size={17} /></button>
           </div>
           <div className="dashboard-calendar__weekdays" aria-hidden="true">
-            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => <span key={day}>{day}</span>)}
+            {(lang === 'ne' ? NE_WEEKDAYS : EN_WEEKDAYS).map((day) => <span key={day}>{day}</span>)}
           </div>
           <div className="dashboard-calendar__days">
             {days.map((day, index) => {
@@ -239,10 +558,20 @@ function DateFilterControl({ noun, filter, onChange, today }: { noun: 'pickup' |
             })}
           </div>
           <div className="dashboard-calendar__footer">
-            <button type="button" aria-pressed={rangeMode} onClick={() => { setRangeMode(!rangeMode); setRangeStart(null) }}>{rangeMode ? 'Date range' : 'Single date'}</button>
-            <span aria-live="polite">{rangeStart ? 'Choose an end date.' : rangeMode ? 'Select start and end dates' : 'Select a date'}</span>
-            {rangeStart && <button type="button" onClick={useSingleDay}>Use {compactDate(rangeStart)}</button>}
-            <button type="button" className="dashboard-calendar__close" onClick={close}>Close</button>
+            <button type="button" aria-pressed={rangeMode} onClick={() => { setRangeMode(!rangeMode); setRangeStart(null) }}>
+              {rangeMode ? (lang === 'ne' ? 'मिति दायरा' : 'Date range') : (lang === 'ne' ? 'एकल मिति' : 'Single date')}
+            </button>
+            <span aria-live="polite">
+              {rangeStart ? (lang === 'ne' ? 'अन्त्य मिति चयन गर्नुहोस्।' : 'Choose an end date.') : rangeMode ? (lang === 'ne' ? 'सुरु र अन्त्य मिति छान्नुहोस्' : 'Select start and end dates') : (lang === 'ne' ? 'मिति छान्नुहोस्' : 'Select a date')}
+            </span>
+            {rangeStart && (
+              <button type="button" onClick={useSingleDay}>
+                {lang === 'ne' ? `${compactDate(rangeStart)} प्रयोग गर्नुहोस्` : `Use ${compactDate(rangeStart)}`}
+              </button>
+            )}
+            <button type="button" className="dashboard-calendar__close" onClick={close}>
+              {lang === 'ne' ? 'बन्द गर्नुहोस्' : 'Close'}
+            </button>
           </div>
         </div>
       )}
@@ -258,11 +587,35 @@ export default function Today() {
   const [globalSearch, setGlobalSearch] = useState('')
   const counterInputRef = useRef<HTMLInputElement>(null)
 
-  const [pickupDateFilter, setPickupDateFilter] = useStoredFilter(STORAGE_PICKUPS)
-  const [returnDateFilter, setReturnDateFilter] = useStoredFilter(STORAGE_RETURNS)
+  const [pickupDateFilter, setPickupDateFilter] = useState<DateFilter>(() => readStoredFilter(STORAGE_PICKUPS))
+  const [returnDateFilter, setReturnDateFilter] = useState<DateFilter>(() => readStoredFilter(STORAGE_RETURNS))
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(STORAGE_PICKUPS, JSON.stringify(pickupDateFilter))
+      window.sessionStorage.setItem(STORAGE_RETURNS, JSON.stringify(returnDateFilter))
+      window.sessionStorage.setItem(STORAGE_DISPATCH, JSON.stringify(pickupDateFilter))
+    } catch {
+      // Persistence is optional in privacy-restricted browser sessions.
+    }
+  }, [pickupDateFilter, returnDateFilter])
+
   const [pickupPage, setPickupPage] = useState(0)
   const [returnPage, setReturnPage] = useState(0)
   const dayAd = businessDayAd()
+
+  const syncBothPanels = useCallback((nextFilter: DateFilter) => {
+    setPickupPage(0)
+    setReturnPage(0)
+    setPickupDateFilter(nextFilter)
+    setReturnDateFilter(nextFilter)
+  }, [])
+
+  const dispatchDate = useMemo(() => {
+    if (pickupDateFilter.kind === 'custom') return pickupDateFilter.from
+    return rangeFor(pickupDateFilter, dayAd).from
+  }, [pickupDateFilter, dayAd])
+
   const pickupSet = pickupFilter(pickupDateFilter, dayAd)
   const returnSet = returnFilter(returnDateFilter, dayAd)
 
@@ -280,8 +633,10 @@ export default function Today() {
 
   const pickupFilters = { ...pickupSet.filters, page: { index: 0, size: (pickupPage + 1) * 50 } }
   const returnFilters = { ...returnSet, page: { index: 0, size: (returnPage + 1) * 50 } }
-  const pickups: ListResult<MovementRow> = useList(fetchPickups, pickupFilters, { isFilteredOverride: pickupDateFilter.kind !== 'quick' || pickupDateFilter.period !== 'Today' })
-  const returns: ListResult<MovementRow> = useList(fetchReturns, returnFilters, { isFilteredOverride: returnDateFilter.kind !== 'quick' || returnDateFilter.period !== 'Today' })
+  const isPickupFiltered = pickupDateFilter.kind !== 'quick' || pickupDateFilter.period !== 'Today'
+  const isReturnFiltered = returnDateFilter.kind !== 'quick' || returnDateFilter.period !== 'Today'
+  const pickups: ListResult<MovementRow> = useList(fetchPickups, pickupFilters, { isFilteredOverride: isPickupFiltered })
+  const returns: ListResult<MovementRow> = useList(fetchReturns, returnFilters, { isFilteredOverride: isReturnFiltered })
   const { refetch: refetchPickups } = pickups
   const { refetch: refetchReturns } = returns
   const refetchMovement = useCallback(() => { refetchPickups(); refetchReturns() }, [refetchPickups, refetchReturns])
@@ -296,6 +651,7 @@ export default function Today() {
   useDomainEvent(EVENT_TYPES.RENTAL_CONFIRMED, refetchMovement)
   useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refetchMovement)
 
+  const isDispatchToday = pickupDateFilter.kind === 'quick' && pickupDateFilter.period === 'Today'
   const isReturnToday = returnDateFilter.kind === 'quick' && returnDateFilter.period === 'Today'
   const pickupCount = pickups.loading || pickups.error ? undefined : pickups.total ?? pickups.rows.length
   const returnCount = returns.loading || returns.error ? undefined : returns.total ?? returns.rows.length
@@ -304,22 +660,6 @@ export default function Today() {
     () => returns.rows.filter((r) => r.flags.includes('Overdue') || (r.statusNote && r.statusNote.includes('late'))).length,
     [returns.rows]
   )
-
-  const readyPickupsCount = useMemo(() => pickups.rows.filter((r) => r.status === 'Packed').length, [pickups.rows])
-  const prepPickupsCount = useMemo(() => pickups.rows.filter((r) => r.status !== 'Packed').length, [pickups.rows])
-  const todayBs = useMemo(() => {
-    const d = new Date(dayAd ? `${dayAd}T00:00:00Z` : Date.now())
-    return Number.isNaN(d.getTime()) ? null : toBs(d)
-  }, [dayAd])
-
-  const isDispatchToday = pickupDateFilter.kind === 'quick' && pickupDateFilter.period === 'Today'
-
-  const syncBothPanels = useCallback((nextFilter: DateFilter) => {
-    setPickupPage(0)
-    setReturnPage(0)
-    setPickupDateFilter(nextFilter)
-    setReturnDateFilter(nextFilter)
-  }, [setPickupDateFilter, setReturnDateFilter])
 
   const goToToday = useCallback(() => {
     syncBothPanels({ kind: 'quick', period: 'Today' })
@@ -414,45 +754,14 @@ export default function Today() {
           description={`Prepare pickups, receive returns, and keep equipment moving. · ${dualDateLabel}`}
           actions={
             <PageActions
+              key="today-actions"
               extra={
-                <div className="dashboard-header-controls">
-                  <span className="dashboard-header-controls__label">Sync dispatch day:</span>
-                  <div className="dashboard-day-pager" role="group" aria-label="Quick day navigation">
-                    <button
-                      type="button"
-                      className="dashboard-day-pager__btn"
-                      aria-label="Previous day"
-                      title="Previous day (Shortcut: [ or P)"
-                      onClick={() => stepDay(-1)}
-                    >
-                      <Icon name="chevron_left" size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      className={`dashboard-day-pager__btn dashboard-day-pager__btn--today ${isDispatchToday ? 'is-current' : ''}`}
-                      aria-label="Today"
-                      title="Today (Shortcut: T)"
-                      onClick={goToToday}
-                    >
-                      Today
-                    </button>
-                    <button
-                      type="button"
-                      className="dashboard-day-pager__btn"
-                      aria-label="Next day"
-                      title="Next day (Shortcut: ] or N)"
-                      onClick={() => stepDay(1)}
-                    >
-                      <Icon name="chevron_right" size={16} />
-                    </button>
-                  </div>
-                  <DateFilterControl
-                    noun="dispatch"
-                    filter={pickupDateFilter}
-                    onChange={syncBothPanels}
-                    today={dayAd}
-                  />
-                </div>
+                <MasterDispatchDateControl
+                  filter={pickupDateFilter}
+                  onChange={syncBothPanels}
+                  today={dayAd}
+                  onStepDay={stepDay}
+                />
               }
               secondary={[
                 <Button
@@ -470,94 +779,6 @@ export default function Today() {
         />
       }
     >
-      {/* Bento 2.0 Operational Movement Snapshot */}
-      <section className="dashboard-bento-strip" aria-label="Daily Movement Snapshot">
-        {/* Tile 1: Dual Calendar & Date Context */}
-        <div className="dashboard-bento-tile">
-          <div className="dashboard-bento-tile__header">
-            <span className="dashboard-bento-tile__label">Operational Day</span>
-            <span className="status-live-dot" title="Live movement sync" />
-          </div>
-          <div className="dashboard-bento-tile__value" style={{ fontSize: 'var(--t-h3)' }}>
-            {compactDate(dayAd)}
-          </div>
-          <div className="dashboard-bento-tile__sub">
-            {todayBs ? (
-              <span className="dashboard-bento-tile__sub-pill is-bs">
-                BS {formatBs(todayBs)}
-              </span>
-            ) : null}
-            <span style={{ color: 'var(--muted)', fontSize: 'var(--t-th)' }}>
-              {isDispatchToday ? 'Today (Active Shift)' : 'Scheduled Shift'}
-            </span>
-          </div>
-        </div>
-
-        {/* Tile 2: Outgoing Pickups Readiness */}
-        <div className="dashboard-bento-tile">
-          <div className="dashboard-bento-tile__header">
-            <span className="dashboard-bento-tile__label">Pickups Today</span>
-            <Icon name="truck" size={15} style={{ color: 'var(--accent, var(--primary))' }} />
-          </div>
-          <div className="dashboard-bento-tile__value">
-            {pickups.loading ? '—' : (pickups.total ?? pickups.rows.length)}
-          </div>
-          <div className="dashboard-bento-tile__sub">
-            <span className="dashboard-bento-tile__sub-pill is-ready">
-              {readyPickupsCount} Ready
-            </span>
-            <span className="dashboard-bento-tile__sub-pill is-prep">
-              {prepPickupsCount} In Prep
-            </span>
-          </div>
-        </div>
-
-        {/* Tile 3: Inbound Returns & Overdue */}
-        <div className="dashboard-bento-tile">
-          <div className="dashboard-bento-tile__header">
-            <span className="dashboard-bento-tile__label">Returns Due</span>
-            <Icon name="return_arrow" size={15} style={{ color: overdueCount > 0 ? 'var(--danger-text)' : 'var(--muted)' }} />
-          </div>
-          <div className="dashboard-bento-tile__value">
-            {returns.loading ? '—' : (returns.total ?? returns.rows.length)}
-          </div>
-          <div className="dashboard-bento-tile__sub">
-            {overdueCount > 0 ? (
-              <span className="dashboard-bento-tile__sub-pill is-overdue">
-                {overdueCount} Overdue
-              </span>
-            ) : (
-              <span className="dashboard-bento-tile__sub-pill is-clean">
-                All On Track
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Tile 4: Quick Warehouse Floor Shortcuts */}
-        <div className="dashboard-bento-tile">
-          <div className="dashboard-bento-tile__header">
-            <span className="dashboard-bento-tile__label">Floor Shortcuts</span>
-            <Icon name="zap" size={15} style={{ color: 'var(--accent, var(--primary))' }} />
-          </div>
-          <div className="dashboard-bento-tile__sub" style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <Link
-              to="/rentals/new"
-              className="dashboard-bento-btn dashboard-bento-btn--primary"
-            >
-              <Icon name="plus" size={15} /> New Rental Quote
-            </Link>
-            <button
-              type="button"
-              className="dashboard-bento-btn dashboard-bento-btn--secondary"
-              onClick={() => counterInputRef.current?.focus()}
-            >
-              <Icon name="barcode" size={14} /> Quick Barcode <kbd className="new-rental-kbd" style={{ fontSize: 'var(--t-th)', padding: '1px 5px' }}>/</kbd>
-            </button>
-          </div>
-        </div>
-      </section>
-
       {/* Universal Express Counter Bar (Quick Search / Barcode Scanner) */}
       <div className="dashboard-counter-bar" role="search" aria-label="Express Counter Lookup">
         <div className="dashboard-counter-bar__search">
@@ -566,11 +787,11 @@ export default function Today() {
             ref={counterInputRef}
             type="search"
             className="dashboard-counter-bar__input"
-            placeholder="Scan barcode, serial #, or search client / booking # across pickups and returns..."
+            placeholder="Search or scan…"
             value={globalSearch}
             onChange={(e) => setGlobalSearch(e.target.value)}
             onKeyDown={handleGlobalSearchKeyDown}
-            aria-label="Universal express counter search"
+            aria-label="Search or scan bookings, clients, serials"
           />
           {globalSearch && (
             <button
@@ -580,35 +801,36 @@ export default function Today() {
                 setGlobalSearch('')
                 counterInputRef.current?.focus()
               }}
-              aria-label="Clear counter search"
+              aria-label="Clear search"
             >
               <Icon name="close" size={16} />
             </button>
           )}
         </div>
-        <div className="dashboard-counter-bar__hint" aria-hidden="true">
-          <span className="dashboard-counter-bar__kbd-hint">
-            <kbd className="new-rental-kbd">/</kbd> search <kbd className="new-rental-kbd">↵</kbd> select
-          </span>
-        </div>
       </div>
 
-      {/* Critical Overdue Warning Alert */}
+      {/* Condensed Overdue Alert (⚠ N overdue returns [View Returns]) */}
       {overdueCount > 0 && (
         <div
           role="alert"
           className="dashboard-alert dashboard-alert--overdue"
         >
-          <span className="status-live-dot is-danger" style={{ marginRight: 8, flexShrink: 0 }} />
-          <span className="dashboard-alert__icon" aria-hidden="true">
+          <div className="dashboard-alert__content">
             <Icon name="alert_circle" size={18} />
-          </span>
-          <div className="dashboard-alert__body">
-            <strong className="dashboard-alert__title">Action Required:</strong>
-            <span className="dashboard-alert__text">
-              {overdueCount} rental return{overdueCount > 1 ? 's are' : ' is'} overdue. Follow up with client or initiate return check-in.
-            </span>
+            <span>{overdueCount} overdue {overdueCount > 1 ? 'returns' : 'return'}</span>
           </div>
+          <button
+            type="button"
+            className="dashboard-alert__action"
+            onClick={() => {
+              if (isPhone) setMobileTab('returns')
+              const returnsHeading = document.getElementById('incoming-panel-title')
+              returnsHeading?.scrollIntoView({ behavior: 'smooth' })
+              returnsHeading?.focus()
+            }}
+          >
+            View Returns
+          </button>
         </div>
       )}
 
@@ -633,6 +855,8 @@ export default function Today() {
         {(!isPhone || mobileTab === 'pickups') && (
           <DashboardMovementPanel
             side="outgoing"
+            noun="pickup"
+            date={dispatchDate}
             title="Pickups"
             subtitle="Rentals scheduled for pickup"
             icon="truck"
@@ -642,6 +866,7 @@ export default function Today() {
             onClearFilters={() => { setPickupPage(0); setPickupDateFilter({ kind: 'quick', period: 'Today' }) }}
             onLoadMore={() => setPickupPage((page) => page + 1)}
             hasMore={pickups.total !== null && pickups.rows.length < pickups.total}
+            isToday={isDispatchToday}
             filterControl={
               <DateFilterControl
                 noun="pickup"
@@ -656,6 +881,8 @@ export default function Today() {
         {(!isPhone || mobileTab === 'returns') && (
           <DashboardMovementPanel
             side="incoming"
+            noun="return"
+            date={dispatchDate}
             title="Returns"
             subtitle={isReturnToday ? 'Today · Overdue included' : 'Rentals expected to be returned'}
             icon="return_arrow"

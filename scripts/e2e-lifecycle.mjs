@@ -1487,6 +1487,41 @@ const STEPS = [
       )
     },
   },
+
+  {
+    id: 'L19',
+    title: 'A payment reversal cannot exceed the receipt across partial corrections',
+    expect: 'green',
+    async run() {
+      /* Keep the probe reversible: this proves the ledger guard without changing
+         the settled lifecycle record L10/L11 established above. */
+      await undone(async () => {
+        await as('Manager', async () => {
+          const paymentId = await one(
+            `select id from payments where booking_id = $1 and amount = 3000 order by created_at limit 1`,
+            [bookingIds.a],
+          )
+          assert(paymentId !== null, 'L19 needs L10\'s Rs 3,000 receipt.')
+
+          await q(
+            `insert into payment_reversals
+               (client_uuid, reversal_no, original_payment_id, amount, reason, reversed_by, approved_by)
+             values (gen_random_uuid(), 'REV-L19-0001', $1, 2500, 'Lifecycle partial correction', $2, $2)`,
+            [paymentId, U.Manager],
+          )
+
+          await refuses(
+            'a second partial reversal beyond the remaining Rs 500',
+            `insert into payment_reversals
+               (client_uuid, reversal_no, original_payment_id, amount, reason, reversed_by, approved_by)
+             values (gen_random_uuid(), 'REV-L19-0002', $1, 501, 'Lifecycle excess correction', $2, $2)`,
+            [paymentId, U.Manager],
+            /remaining reversible amount|exceeds/i,
+          )
+        })
+      })
+    },
+  },
 ]
 
 /* ── Run ──────────────────────────────────────────────────────────────────── */

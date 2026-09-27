@@ -189,6 +189,7 @@ export const StickyFloorBar: FC<StickyFloorBarProps> = ({
         {/* Primary Completion trigger */}
         <button
           type="button"
+          data-primary-verb="true"
           onClick={primaryAction.onClick}
           disabled={primaryAction.disabled || primaryAction.loading}
           style={{
@@ -196,7 +197,7 @@ export const StickyFloorBar: FC<StickyFloorBarProps> = ({
             alignItems: 'center',
             justifyContent: 'center',
             gap: 6,
-            minHeight: 44,
+            minHeight: 48,
             padding: '0 14px',
             borderRadius: 'var(--r-btn)',
             fontSize: 'var(--t-meta)',

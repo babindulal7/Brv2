@@ -111,6 +111,7 @@ export interface BookingListRow {
    * `{ withDeposit: true }`, which a money-blind surface must never do.
    */
   depositRequired: Paisa | null
+  totalAmount?: Paisa | null
   isCancelled: boolean
   isClosed: boolean
 }
@@ -360,6 +361,17 @@ function toRow(r: RawBookingRow): BookingListRow {
     createdAtAd: r.created_at,
     itemCount: sumQty(r.booking_lines),
     depositRequired: toPaisa(r.deposit_required),
+    totalAmount: toPaisa(
+      typeof (r as unknown as Record<string, unknown>).total_amount === 'number'
+        ? ((r as unknown as Record<string, unknown>).total_amount as number)
+        : typeof (r as unknown as Record<string, unknown>).rental_total === 'number'
+          ? ((r as unknown as Record<string, unknown>).rental_total as number)
+          : (r as unknown as Record<string, unknown>).total_amount != null
+            ? Number((r as unknown as Record<string, unknown>).total_amount)
+            : (r as unknown as Record<string, unknown>).rental_total != null
+              ? Number((r as unknown as Record<string, unknown>).rental_total)
+              : null,
+    ),
     isCancelled: r.cancelled_at !== null,
     isClosed: r.closed_at !== null,
   }
@@ -397,6 +409,38 @@ export interface BookingListOptions extends ListFilters {
    * definer-rights is what keeps them working under 0062 (AUDIT_0062.md).
    */
   withDeposit?: boolean
+  /** Include total amount for bookings (from non-void invoices or live calculation). Opt-in for money-viewing roles. */
+  withTotalAmount?: boolean
+}
+
+async function readTotalAmounts(ids: string[]): Promise<Map<string, number | null>> {
+  if (ids.length === 0) return new Map()
+
+  try {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('booking_id, total_amount, status, voided_at')
+      .in('booking_id', ids)
+
+    if (error) {
+      return new Map()
+    }
+
+    const totals = new Map<string, number>()
+    for (const inv of (data ?? []) as unknown as Array<{
+      booking_id: string
+      total_amount: number | null
+      status: string
+      voided_at: string | null
+    }>) {
+      if (inv.voided_at !== null || inv.status === 'Void') continue
+      const current = totals.get(inv.booking_id) ?? 0
+      totals.set(inv.booking_id, current + (inv.total_amount ?? 0))
+    }
+    return totals
+  } catch {
+    return new Map()
+  }
 }
 
 /**
@@ -429,7 +473,7 @@ async function readDeposits(ids: string[]): Promise<Map<string, number | null>> 
 }
 
 export async function listBookings(opts: BookingListOptions = {}): Promise<ListQueryResult<BookingListRow>> {
-  const { withCount, withDeposit, headOnly, ...filters } = opts
+  const { withCount, withDeposit, withTotalAmount, headOnly, ...filters } = opts
 
   if (headOnly) {
     const base = supabase
@@ -517,11 +561,28 @@ export async function listBookings(opts: BookingListOptions = {}): Promise<ListQ
   const rows = raw.map(toRow)
 
   /* Second query, and only if asked. `toRow` has already set every
-     `depositRequired` to null (the base select no longer carries the column),
-     so this fills in the ones the view is willing to answer for. */
-  if (withDeposit && rows.length > 0) {
-    const deposits = await readDeposits(raw.map((r) => r.id))
-    for (const row of rows) row.depositRequired = toPaisa(deposits.get(row.id))
+     `depositRequired` and `totalAmount` to null (unless pre-populated),
+     so this fills in the ones invoices/views are willing to answer for. */
+  if ((withDeposit || withTotalAmount) && rows.length > 0) {
+    const ids = raw.map((r) => r.id)
+    if (withTotalAmount) {
+      const totals = await readTotalAmounts(ids)
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        if (!row) continue
+        const rawRow = raw[i] as unknown as Record<string, unknown> | undefined
+        const t = totals.get(row.id)
+        if (t !== undefined && t !== null) {
+          row.totalAmount = toPaisa(t)
+        } else if (rawRow?.['rental_total'] !== undefined && rawRow?.['rental_total'] !== null) {
+          row.totalAmount = toPaisa(rawRow['rental_total'] as number)
+        }
+      }
+    }
+    if (withDeposit) {
+      const deposits = await readDeposits(ids)
+      for (const row of rows) row.depositRequired = toPaisa(deposits.get(row.id))
+    }
   }
 
   return { rows, total: count ?? null }

@@ -1,4 +1,229 @@
-.new-rental-stepper-container { scroll-margin-top: 12px; }
+.new-rental-shell {
+  --new-rental-line: color-mix(in srgb, var(--border) 72%, var(--surface));
+}
+
+.new-rental-shell .page-header {
+  align-items: center !important;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--new-rental-line);
+}
+
+.new-rental-shell .page-header h1 {
+  font-size: clamp(24px, 2vw, 30px) !important;
+  letter-spacing: -0.035em !important;
+}
+
+.new-rental-shell .page-header__actions {
+  align-self: center !important;
+}
+
+.new-rental-status {
+  order: -1;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+  letter-spacing: .025em;
+}
+
+.new-rental-workspace {
+  margin-top: 18px;
+  scroll-margin-top: 18px;
+}
+
+.new-rental-canvas {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.new-rental-stage {
+  display: contents;
+}
+
+.new-rental-stage-next,
+.new-rental-stage--review {
+  display: none !important;
+}
+
+.new-rental-canvas #section-0,
+.new-rental-canvas #section-1,
+.new-rental-canvas #section-3,
+.new-rental-canvas #section-4 {
+  grid-column: span 1;
+}
+
+.new-rental-canvas #section-2,
+.new-rental-canvas #section-5,
+.new-rental-canvas > [role='status'] {
+  grid-column: 1 / -1;
+}
+
+.new-rental-canvas .new-rental-section-card {
+  border: 1px solid var(--new-rental-line) !important;
+  border-radius: 9px !important;
+  box-shadow: none !important;
+  scroll-margin-top: 22px;
+}
+
+.new-rental-canvas .new-rental-section-card:hover,
+.new-rental-canvas .new-rental-section-card.is-active {
+  border-color: var(--border) !important;
+  box-shadow: none !important;
+}
+
+.new-rental-canvas .new-rental-section-card > div:first-child {
+  border-bottom-color: var(--new-rental-line) !important;
+  min-height: 56px !important;
+  padding: 11px 18px !important;
+}
+
+.new-rental-canvas .new-rental-section-card > div:first-child h2 {
+  font-size: 15px !important;
+  font-weight: 650 !important;
+  letter-spacing: -.015em;
+}
+
+.new-rental-section-number {
+  display: none !important;
+}
+
+.new-rental-canvas .new-rental-section-card > div:nth-child(2) {
+  padding: 18px !important;
+}
+
+.new-rental-canvas .new-rental-section-card > div:first-child > button:last-child {
+  border: 1px solid var(--new-rental-line) !important;
+  color: var(--text2) !important;
+}
+
+.new-rental-preset-disclosure {
+  margin: 0 0 12px;
+}
+
+.new-rental-preset-disclosure > summary {
+  width: fit-content;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  color: var(--link);
+  font-size: var(--t-meta);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.new-rental-preset-disclosure > summary:hover {
+  text-decoration: underline;
+}
+
+.new-rental-preset-disclosure > summary:focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
+}
+
+.new-rental-preset-disclosure .new-rental-shoot-presets {
+  margin-top: 8px;
+}
+
+.new-rental-workspace #rail-booking-summary {
+  border-radius: 9px;
+  box-shadow: none;
+  scroll-margin-top: 20px;
+}
+
+.new-rental-workspace .new-rental-summary-context {
+  grid-template-columns: 1fr;
+  gap: 0;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+}
+
+.new-rental-workspace .new-rental-summary-context > div {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.new-rental-workspace .new-rental-summary-context dt {
+  flex: 0 0 auto;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.new-rental-workspace .new-rental-summary-context dd {
+  min-width: 0;
+  text-align: right;
+  font-size: 12px;
+}
+
+.new-rental-workspace .new-rental-bento-hero-total {
+  margin: 0 0 14px;
+  padding: 12px 0;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--new-rental-line);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.new-rental-workspace .new-rental-bento-hero-total-val {
+  font-size: 25px;
+  color: var(--text);
+}
+
+.new-rental-footer-total {
+  font-family: var(--font-mono, monospace);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.new-rental-mobile-state {
+  color: var(--text2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@media (max-width: 1179px) {
+  .new-rental-workspace {
+    margin-top: 14px;
+  }
+  .new-rental-inline-summary {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  .new-rental-canvas {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .new-rental-canvas #section-0,
+  .new-rental-canvas #section-1,
+  .new-rental-canvas #section-2,
+  .new-rental-canvas #section-3,
+  .new-rental-canvas #section-4,
+  .new-rental-canvas #section-5 {
+    grid-column: 1;
+  }
+  .new-rental-shell .page-header {
+    padding-bottom: 12px;
+  }
+  .new-rental-shell .page-header__actions {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+  .new-rental-canvas .new-rental-section-card > div:nth-child(2) {
+    padding: 14px !important;
+  }
+}
 .new-rental-mobile-progress { display: grid; gap: 4px; width: 100%; }
 .new-rental-mobile-progress > span { color: var(--text2); font-size: 12px; font-weight: 500; }
 .new-rental-mobile-progress > strong { font-size: 16px; font-weight: 700; color: var(--text); }
@@ -59,4 +284,3 @@
   .new-rental-shell .new-rental-step-footer > div { flex-wrap: wrap; }
   .new-rental-shell #rail-booking-summary { scroll-margin-bottom: 120px; }
 }
-

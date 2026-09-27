@@ -399,21 +399,21 @@ describe('Law 4 — the screen offers no edit', () => {
     expect(text()).not.toContain('Delete')
   })
 
-  it('disables Reverse on an advance, naming the reason rather than passing a payment id as an invoice id', async () => {
+  it('enables Reverse on both receipts and advances, naming the payment in aria-label', async () => {
     await mount(1280)
     const reverse = allButtons().filter((b) => b.textContent?.trim() === 'Reverse')
     expect(reverse).toHaveLength(2)
-    // PAY-0007 is invoice-linked; PAY-0008 is an advance.
+    // Both PAY-0007 (invoice-linked) and PAY-0008 (advance) can be reversed directly
     expect(reverse[0]?.disabled).toBe(false)
-    expect(reverse[1]?.disabled).toBe(true)
-    expect(reverse[1]?.getAttribute('aria-label')).toContain('advance')
+    expect(reverse[1]?.disabled).toBe(false)
+    expect(reverse[1]?.getAttribute('aria-label')).toContain('PAY-0008')
   })
 
-  /** The reversal is invoice-scoped today; the control must not imply otherwise. */
-  it('says on the control itself that the reversal lands on the invoice, not this payment', async () => {
+  /** The reversal corrects this receipt directly; the control names this. */
+  it('says on the control itself that the reversal corrects the receipt', async () => {
     await mount(1280)
     const reverse = allButtons().find((b) => b.textContent?.trim() === 'Reverse')
-    expect(reverse?.getAttribute('aria-label')).toContain('original_payment_id')
+    expect(reverse?.getAttribute('aria-label')).toContain('Corrects this receipt only')
   })
 
   it('states that no ↳ reversal row is drawn, so its absence is not read as "none exist"', async () => {

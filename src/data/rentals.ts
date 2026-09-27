@@ -368,23 +368,15 @@ export const ROWS: RentalRow[] = [
  * which is real, and `deposit_required`, which is real **and money** — see
  * `RENTAL_DEPOSIT_NOTE`.
  */
-export const OPTIONAL_COLUMNS = ['Items', 'Pickup', 'Return', 'Deposit'] as const
+export const OPTIONAL_COLUMNS = ['Items', 'Pickup', 'Return', 'Total Amount'] as const
 export type OptionalColumn = (typeof OPTIONAL_COLUMNS)[number]
 
 export const ROWS_PER_PAGE = [5, 10, 20, 50] as const
 
-/**
- * Why the Deposit column is opt-in.
- *
- * `bookings.deposit_required` is **unmasked money on a base table** — there is
- * no `bookings_v`, and `bookings_select` is `auth_is_staff()`, which includes
- * Warehouse, Technician and Driver. `listBookings` therefore only selects it
- * when the caller passes `withDeposit`, and the caller must gate on
- * `useCanViewMoney()`. `RentalsList.tsx` does exactly that; nothing in Postgres
- * would stop it if it did not.
- */
-export const RENTAL_DEPOSIT_NOTE =
-  'Deposit required, from the booking row. The rental total and the outstanding balance are the Financial Engine’s and are not on a list row.'
+export const RENTAL_TOTAL_NOTE =
+  'Total Amount from the booking invoices / live calculation.'
+
+export const RENTAL_DEPOSIT_NOTE = RENTAL_TOTAL_NOTE
 
 /* ── the twelve quick-filter chips ─────────────────────────────────────── */
 
@@ -1011,6 +1003,8 @@ export interface RentalListRow {
    * is what a money-blind session must produce — not "no deposit".
    */
   deposit: Paisa | null
+  /** Total Amount for the rental booking (from invoices / rental calculation). `null` when not asked. */
+  totalAmount?: Paisa | null
   /**
    * Does this booking carry externally-sourced (sub-rented) gear?
    *
@@ -1118,6 +1112,7 @@ export function toRentalListRow(
     deliveryType: row.deliveryType,
     quoteExpires: row.quoteExpiresAtAd ? formatAd(new Date(row.quoteExpiresAtAd)) : null,
     deposit: row.depositRequired,
+    totalAmount: (((row as unknown as Record<string, unknown>).totalAmount ?? (row as unknown as Record<string, unknown>).rentalTotal ?? row.depositRequired ?? null)) as Paisa | null,
     // §11.1 — derived from the lines, never a column. `null` while the set is
     // unknown; deliberately NOT defaulted to `false`, which would assert "no
     // external gear" from a question nobody asked. See the field's own comment.

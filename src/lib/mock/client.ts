@@ -277,7 +277,7 @@ const auth = {
 /* ── rpc ───────────────────────────────────────────────────────────────── */
 
 const SEQ_PREFIX: Record<string, string> = {
-  client: 'C', booking: 'B', invoice: 'INV', payment: 'PAY',
+  client: 'C', booking: 'B', invoice: 'INV', payment: 'PAY', payment_reversal: 'REV',
   deposit: 'DEP', expense: 'EXP', equipment: 'EQ',
   CL: 'C', BK: 'B', EQ: 'EQ', PAY: 'PAY', DEP: 'DEP',
 }

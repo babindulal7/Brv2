@@ -1,5 +1,5 @@
 import Icon from '../ui/Icon'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../lib/auth'
 import { useViewport } from '../../lib/device'
@@ -7,7 +7,6 @@ import { openCommandPalette } from './CommandPalette'
 import HandoverSheet from '../../modules/auth/HandoverSheet'
 import { useSync } from '../../lib/syncContext'
 import { QuickCreateMenu } from './QuickCreateMenu'
-import { getBusinessToday, formatAd, toBs, formatBs } from '../../lib/bs'
 import { useOptionalWorkspace } from '../../lib/workspaceContext'
 import { InfoTooltip } from '../ui/InfoTooltip'
 import './shell.css'
@@ -65,13 +64,17 @@ const iconBtn = {
  */
 export default function Header({ crumbs, actions }: HeaderProps) {
   const { user, logout, lockNow, hasPin } = useAuth()
-  const { status: syncStatus, pendingCount, error: syncError, triggerSync } = useSync()
+  const sync = useSync()
+  const syncStatus = sync?.status ?? (sync as any)?.syncStatus ?? 'synced'
+  const pendingCount = sync?.pendingCount ?? 0
+  const syncError = sync?.error
+  const triggerSync = sync?.triggerSync ?? (async () => {})
+  const isAbnormalSync = syncStatus !== 'synced' || pendingCount > 0
   const navigate = useNavigate()
   const vp = useViewport()
   const isPhone = vp === 'phone'
   const [profileOpen, setProfileOpen] = useState(false)
   const [showHandover, setShowHandover] = useState(false)
-  const [now, setNow] = useState(() => new Date())
   const ws = useOptionalWorkspace()
 
   const activeCrumb = crumbs[crumbs.length - 1]?.label || crumbs[0]?.label || ''
@@ -86,24 +89,6 @@ export default function Header({ crumbs, actions }: HeaderProps) {
     }
     return null
   }, [ws?.pageInfo, crumbs])
-
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 10000)
-    return () => clearInterval(t)
-  }, [])
-
-  const businessToday = useMemo(() => getBusinessToday(now), [now])
-  const adDateLabel = useMemo(() => formatAd(businessToday), [businessToday])
-  const bsDate = useMemo(() => toBs(businessToday), [businessToday])
-  const bsDateLabel = useMemo(() => (bsDate ? formatBs(bsDate, { suffix: true }) : null), [bsDate])
-  const liveTimeLabel = useMemo(() => {
-    return now.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'Asia/Kathmandu',
-    })
-  }, [now])
 
   const handleLogoutRequest = () => {
     if (!user) return
@@ -287,106 +272,25 @@ export default function Header({ crumbs, actions }: HeaderProps) {
             )}
           </button>
 
-          {/* Operational Date & Bikram Sambat Context + Live Clock */}
-          <div
-            className="header-operational-context"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              flexShrink: 0,
-            }}
-          >
-            {/* Live Clock with Kathmandu Pulse */}
-            <div
-              className="header-clock"
-              title="Kathmandu Local Time"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 10px',
-                borderRadius: 'var(--r-xs, 6px)',
-                background: 'var(--card2)',
-                border: '1px solid var(--w10, var(--border))',
-                boxShadow: 'var(--shadow-sm)',
-                fontSize: '12px',
-                fontWeight: 700,
-                color: 'var(--text)',
-                fontVariantNumeric: 'tabular-nums',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  backgroundColor: 'var(--st-ready-fg, #22c55e)',
-                  boxShadow: '0 0 6px var(--st-ready-fg, #22c55e)',
-                  display: 'inline-block',
-                }}
-              />
-              <span>{liveTimeLabel}</span>
-            </div>
-
-            {/* Operational Date & BS Calendar Pill */}
-            <div
-              className="header-date-badge"
-              title={`Operational Day: ${adDateLabel}${bsDateLabel ? ` · ${bsDateLabel}` : ''}`}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-                padding: '4px 10px',
-                borderRadius: 'var(--r-xs, 6px)',
-                background: 'var(--card2)',
-                border: '1px solid var(--w10, var(--border))',
-                boxShadow: 'var(--shadow-sm)',
-                fontSize: '12px',
-                fontWeight: 600,
-                color: 'var(--text)',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <span className="header-date-ad">{adDateLabel}</span>
-              {bsDateLabel && (
-                <span
-                  className="header-date-bs"
-                  style={{
-                    background: 'rgba(245, 166, 35, 0.12)',
-                    color: 'var(--gold, var(--st-warn-fg))',
-                    border: '1px solid var(--st-warn-border, rgba(245, 166, 35, 0.28))',
-                    padding: '1px 7px',
-                    borderRadius: '999px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    letterSpacing: '0.01em',
-                  }}
-                >
-                  {bsDateLabel}
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Sync Status Badge — shown only during sync operations, pending changes, or issues (§4) */}
-          {(syncStatus !== 'synced' || pendingCount > 0) && (
+          {/* Outbox Sync Status Badge — shown ONLY in abnormal states (syncing, offline, error, or queued mutations) */}
+          {isAbnormalSync && (
             <div className="header-sync-context" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <button
-                className="header-sync-control"
+                className="header-sync-control tap"
                 type="button"
                 onClick={() => triggerSync()}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
+                  minHeight: 44,
+                  minWidth: 44,
                   padding: '4px 11px',
                   borderRadius: 999,
                   background:
                     syncStatus === 'syncing'
                       ? 'var(--nav-active-bg)'
-                      : syncStatus === 'pending'
+                      : pendingCount > 0 || syncStatus === 'pending'
                       ? 'rgba(232, 118, 45, 0.12)'
                       : syncStatus === 'offline'
                       ? 'var(--surface-2)'
@@ -400,7 +304,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                   color:
                     syncStatus === 'syncing'
                       ? 'var(--primary-text)'
-                      : syncStatus === 'pending'
+                      : pendingCount > 0 || syncStatus === 'pending'
                       ? 'var(--warn-text)'
                       : syncStatus === 'offline'
                       ? 'var(--muted)'
@@ -414,7 +318,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                 title={
                   syncStatus === 'syncing'
                     ? 'Syncing with Supabase Cloud...'
-                    : syncStatus === 'pending'
+                    : pendingCount > 0
                     ? `${pendingCount} offline mutations pending. Click to sync now.`
                     : syncStatus === 'offline'
                     ? 'Offline Mode active (Dexie cache). Click to sync when reconnected.'
@@ -432,7 +336,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                     background:
                       syncStatus === 'syncing'
                         ? 'var(--primary-text)'
-                        : syncStatus === 'pending'
+                        : pendingCount > 0 || syncStatus === 'pending'
                         ? 'var(--warn-text)'
                         : syncStatus === 'error'
                         ? 'var(--danger-text)'
@@ -450,8 +354,8 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                 <span>
                   {syncStatus === 'syncing'
                     ? 'Syncing…'
-                    : syncStatus === 'pending'
-                    ? `Pending (${pendingCount})`
+                    : pendingCount > 0
+                    ? `${pendingCount} Queued`
                     : syncStatus === 'offline'
                     ? 'Offline'
                     : syncStatus === 'error'
@@ -481,105 +385,78 @@ export default function Header({ crumbs, actions }: HeaderProps) {
           </button>
         )}
 
-
-        {isPhone ? (
-          <div style={{ position: 'relative' }}>
-            <button
-              type="button"
-              onClick={() => setProfileOpen((v) => !v)}
-              aria-label="User profile"
-title="User profile"
-              aria-expanded={profileOpen}
+        {/* Compact User Profile Trigger (Law 15: >= 44x44px hit area across all viewports) */}
+        <div style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => setProfileOpen((v) => !v)}
+            aria-label="User profile"
+            title="User profile"
+            aria-expanded={profileOpen}
+            style={{
+              ...iconBtn,
+              padding: 0,
+            }}
+          >
+            <span
               style={{
-                ...iconBtn,
-                padding: 0,
+                width: 36,
+                height: 36,
+                borderRadius: 'var(--r-badge)',
+                background: 'var(--card2)',
+                border: '1px solid var(--border)',
+                display: 'grid',
+                placeItems: 'center',
+                color: 'var(--text)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 700,
               }}
             >
-              <span
+              {initials}
+            </span>
+          </button>
+
+          {profileOpen && (
+            <>
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 90 }}
+                onClick={() => setProfileOpen(false)}
+                aria-hidden="true"
+              />
+              <div
+                role="dialog"
+                aria-label="User profile"
+                title="User profile"
                 style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 'var(--r-badge)',
-                  background: 'var(--card2)',
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  zIndex: 91,
+                  width: 230,
+                  background: 'var(--card)',
                   border: '1px solid var(--border)',
-                  display: 'grid',
-                  placeItems: 'center',
-                  color: 'var(--text)',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 700,
+                  borderRadius: 'var(--r-card)',
+                  boxShadow: 'var(--shadow-modal)',
+                  padding: '12px 14px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
                 }}
               >
-                {initials}
-              </span>
-            </button>
-
-            {profileOpen && (
-              <>
-                <div
-                  style={{ position: 'fixed', inset: 0, zIndex: 90 }}
-                  onClick={() => setProfileOpen(false)}
-                  aria-hidden="true"
-                />
-                <div
-                  role="dialog"
-                  aria-label="User profile"
-title="User profile"
-                  style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 8px)',
-                    right: 0,
-                    zIndex: 91,
-                    width: 230,
-                    background: 'var(--card)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--r-card)',
-                    boxShadow: 'var(--shadow-modal)',
-                    padding: '12px 14px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 10,
-                  }}
-                >
-                  <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
-                    <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
-                      {user?.name || 'Guest'}
-                    </div>
-                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
-                      {user?.role || ''} · Kathmandu HQ
-                    </div>
+                <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
+                  <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                    {user?.name || 'Guest'}
                   </div>
-                  {hasPin && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setProfileOpen(false)
-                        lockNow()
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
-                        minHeight: 44,
-                        padding: '0 10px',
-                        borderRadius: 'var(--r-sm)',
-                        border: '1px solid var(--border)',
-                        background: 'var(--card2)',
-                        color: 'var(--text)',
-                        fontSize: 'var(--t-ui)',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      <Icon name="lock" size={16} />
-                      Lock Session
-                    </button>
-                  )}
+                  <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
+                    {user?.role || ''} · Kathmandu HQ
+                  </div>
+                </div>
+                {hasPin && (
                   <button
                     type="button"
                     onClick={() => {
                       setProfileOpen(false)
-                      handleLogoutRequest()
+                      lockNow()
                     }}
                     style={{
                       display: 'flex',
@@ -588,75 +465,47 @@ title="User profile"
                       minHeight: 44,
                       padding: '0 10px',
                       borderRadius: 'var(--r-sm)',
-                      border: '1px solid transparent',
-                      background: 'var(--btn-danger-bg)',
-                      color: 'var(--btn-danger-fg)',
+                      border: '1px solid var(--border)',
+                      background: 'var(--card2)',
+                      color: 'var(--text)',
                       fontSize: 'var(--t-ui)',
                       fontWeight: 600,
                       cursor: 'pointer',
                       fontFamily: 'inherit',
                     }}
                   >
-                    Log Out
+                    <Icon name="lock" size={16} />
+                    Lock Session
                   </button>
-                </div>
-              </>
-            )}
-          </div>
-        ) : (
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 'var(--sp-sm)',
-              height: 38,
-              padding: '0 6px 0 3px',
-              fontFamily: 'inherit',
-            }}
-          >
-            <span
-              style={{
-                width: 30,
-                height: 30,
-                borderRadius: 'var(--r-badge)',
-                background: 'var(--card2)',
-                border: '1px solid var(--border)',
-                display: 'grid',
-                placeItems: 'center',
-                color: 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-                flexShrink: 0,
-              }}
-            >
-              {initials}
-            </span>
-            {vp === 'desktop' && (
-              <span style={{ textAlign: 'left', lineHeight: 1.25 }}>
-                <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
-                  {user?.name || 'Guest'}
-                </span>
-                <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{user?.role || ''}</span>
-              </span>
-            )}
-            {hasPin && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); lockNow() }}
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)', minHeight: 44 }}
-              >
-                Lock
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); handleLogoutRequest() }}
-              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 'var(--t-meta)', fontWeight: 600, marginLeft: 'var(--sp-sm)', minHeight: 44 }}
-            >
-              Log Out
-            </button>
-          </div>
-        )}
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProfileOpen(false)
+                    handleLogoutRequest()
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    minHeight: 44,
+                    padding: '0 10px',
+                    borderRadius: 'var(--r-sm)',
+                    border: '1px solid transparent',
+                    background: 'var(--btn-danger-bg)',
+                    color: 'var(--btn-danger-fg)',
+                    fontSize: 'var(--t-ui)',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Log Out
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
     </header>

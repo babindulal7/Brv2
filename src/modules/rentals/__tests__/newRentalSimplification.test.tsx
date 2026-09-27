@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -46,7 +46,7 @@ window.matchMedia = ((query: string) => ({
 import NewRental from '../NewRental'
 
 describe('NewRental simplification (Part A - D)', () => {
-  it('guides phone stages without remounting fields and opens the selected group', async () => {
+  it('keeps the full booking available on a phone without remounting fields', async () => {
     device.viewport = 'phone'
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -56,21 +56,23 @@ describe('NewRental simplification (Part A - D)', () => {
       const clientSection = container.querySelector('#section-0')!
       const clientInput = clientSection.querySelector('input')!
       expect(clientInput).not.toBeNull()
-      const progress = container.querySelector('.new-rental-mobile-progress')!
-      expect(progress.textContent).toContain('Step 1 of 5')
       const summary = container.querySelector('#rail-booking-summary')!
-      expect(summary.parentElement?.hidden).toBe(true)
-      const actions = container.querySelector('.new-rental-mobile-actions')!
-      const next = () => [...actions.querySelectorAll('button')].find((button) => button.textContent === 'Continue')!
-      await act(async () => next().click())
-      expect(progress.textContent).toContain('Equipment & Bundles')
-      expect(container.querySelector('#section-2')?.parentElement?.style.display).toBe('flex')
-      expect(document.activeElement).toBe(container.querySelector('.new-rental-stepper-container'))
-      await act(async () => [...actions.querySelectorAll('button')].find((button) => button.textContent === 'Back')!.click())
-      expect(container.querySelector('#section-0 input')).toBe(clientInput)
-      await act(async () => (actions.querySelector('[aria-label="Review rental summary"]') as HTMLButtonElement).click())
-      expect(progress.textContent).toContain('Review & Confirm')
       expect(summary.parentElement?.hidden).toBe(false)
+      expect(container.querySelector('#section-1')?.textContent).toContain('Rental period')
+      expect(container.querySelector('#section-2')?.textContent).toContain('Equipment, Bundles & Services')
+      expect(container.querySelector('.rental-stepper')).toBeNull()
+      const actions = container.querySelector('.new-rental-mobile-actions')!
+      expect(actions.textContent).toContain('Save draft')
+      expect(actions.textContent).toContain('Confirm booking')
+      await act(async () => (clientSection.querySelector('[aria-label="Collapse Client"]') as HTMLButtonElement).click())
+      await act(async () => (clientSection.querySelector('[aria-label="Expand Client"]') as HTMLButtonElement).click())
+      expect(container.querySelector('#section-0 input')).toBe(clientInput)
+      const scroll = vi.fn()
+      const oldScroll = Element.prototype.scrollIntoView
+      Element.prototype.scrollIntoView = scroll
+      await act(async () => (actions.querySelector('[aria-label="Review rental summary"]') as HTMLButtonElement).click())
+      expect(scroll).toHaveBeenCalled()
+      Element.prototype.scrollIntoView = oldScroll
     } finally {
       await act(async () => root.unmount())
       container.remove()
@@ -131,9 +133,8 @@ describe('NewRental simplification (Part A - D)', () => {
       return 1
     })
     await act(async () => openEquipment.click())
-    expect(container.querySelector('[aria-current="step"]')?.textContent).toContain('Equipment & Bundles')
-    expect(container.querySelector('#section-2')?.parentElement?.style.display).not.toBe('none')
-    expect(container.querySelectorAll('.rental-stepper__item.is-completed')).toHaveLength(0)
+    expect(container.querySelector('.rental-stepper')).toBeNull()
+    expect(container.querySelector('#section-2')?.closest('.new-rental-canvas')).not.toBeNull()
     expect(scroll).toHaveBeenCalled()
     Element.prototype.scrollIntoView = oldScroll
     vi.unstubAllGlobals()

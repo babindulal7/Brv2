@@ -256,21 +256,21 @@
   --primary-text: #7ea2ff; /* text-safe blue on --surface */
 
   /* ---- §3.2 status hues + their on-colours ---- */
-  --success: #1e864a;      /* WCAG AA 4.60:1 with white on-success */
+  --success: #1e864a;      /* draft #1F8A4C → white was 4.38, now 4.60 */
   --on-success: #ffffff;
-  --success-text: #2ecc8f;
+  --success-text: #4ade80;
 
   --danger: #c73a3a;       /* WCAG AA 5.13:1 with white on-danger */
   --on-danger: #ffffff;
-  --danger-text: #ff6b6b;
+  --danger-text: #f08a8a;
 
-  --warn: #f5a623;         /* Luminous orange — "out with the client". Never a button. */
+  --warn: #e8762d;         /* ORANGE — "out with the client". Never a button. */
   --on-warn: #1c1005;
-  --warn-text: #f5a623;
+  --warn-text: #f0985e;
 
-  --ready: #d9a83c;        /* Luminous gold/amber — in-house work / waiting. Never a button. */
+  --ready: #edbe2a;        /* YELLOW — in-house work / waiting. Never a button. */
   --on-ready: #1c1405;
-  --ready-text: #d9a83c;
+  --ready-text: #edbe2a;
 
   --neutral: #3a3e47;      /* GRAY — not started yet */
   --on-neutral: #c9cbd1;
@@ -279,10 +279,10 @@
   --on-dim: #8b8e96;
 
   --ext-fg: #85b2ff;
-  --ext-line: #4d8dff;
-  --ext-bg: rgba(77, 141, 255, 0.14);
-  --gold: #d9a83c;
-  --brand-mark: #4d8dff;
+  --ext-line: #386af7;
+  --ext-bg: rgba(56, 106, 247, 0.14);
+  --gold: #386af7;
+  --brand-mark: #85b2ff;
 
   --app: #050b12;
   --sidebar: #050b12;
@@ -293,58 +293,29 @@
 
   --hover-card: #0f1e30;
   --hover-sidebar: #0d1a29;
-  --hover-button: #3c7bf0;
+  --hover-button: #2f5ce0;
   --hover-row: rgba(255, 255, 255, 0.035);
 
   --btn-primary-bg: #386af7;
   --btn-primary-fg: #ffffff;
-  --btn-secondary-bg: rgba(255, 255, 255, 0.04);
-  --btn-secondary-border: var(--w12);
+  --btn-secondary-bg: transparent;
+  --btn-secondary-border: #263849;
   --btn-danger-bg: #c73a3a;
   --btn-danger-fg: #ffffff;
 
-  --nav-active-accent: #4d8dff;
-  --nav-active-bg: rgba(77, 141, 255, 0.14);
+  --nav-active-accent: #386af7;
+  --nav-active-bg: #102b48;
   --nav-icon: #94a3b8;
 
   --input-bg: #081522;
   --input-border: var(--w12);
   --input-placeholder: #64748b;
-  --input-focus: #4d8dff;
+  --input-focus: #386af7;
 
   --th-bg: #081522;
   --tr-bg: #0b1622;
   --tr-hover: rgba(255, 255, 255, 0.035);
   --tr-alt: #081522;
-
-  /* Luminous translucent status tokens for Obsidian Dark */
-  --st-neutral-bg: rgba(255, 255, 255, 0.06);
-  --st-neutral-fg: #94a3b8;
-  --st-neutral-border: var(--w12);
-
-  --st-primary-bg: rgba(77, 141, 255, 0.12);
-  --st-primary-fg: #7ea2ff;
-  --st-primary-border: rgba(77, 141, 255, 0.28);
-
-  --st-progress-bg: rgba(217, 168, 60, 0.14);
-  --st-progress-fg: #f5c042;
-  --st-progress-border: rgba(217, 168, 60, 0.28);
-
-  --st-out-bg: rgba(245, 166, 35, 0.14);
-  --st-out-fg: #f5a623;
-  --st-out-border: rgba(245, 166, 35, 0.28);
-
-  --st-in-bg: rgba(46, 204, 143, 0.12);
-  --st-in-fg: #2ecc8f;
-  --st-in-border: rgba(46, 204, 143, 0.28);
-
-  --st-danger-bg: rgba(255, 107, 107, 0.12);
-  --st-danger-fg: #ff6b6b;
-  --st-danger-border: rgba(255, 107, 107, 0.28);
-
-  --st-dim-bg: rgba(255, 255, 255, 0.04);
-  --st-dim-fg: #64748b;
-  --st-dim-border: var(--w08);
 
   --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
   --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
@@ -512,13 +483,13 @@
                    because On Rent is orange: the gear is with the client.
        --st-in-*   was a soft green wash -> now SOLID green: home & settled.
      ══════════════════════════════════════════════════════════════════════ */
-  --st-neutral-bg: var(--neutral);  --st-neutral-fg: var(--on-neutral);  --st-neutral-border: transparent; /* Quote, Draft */
-  --st-primary-bg: var(--primary);  --st-primary-fg: var(--on-primary);  --st-primary-border: transparent; /* Booked, Reserved, Issued */
-  --st-progress-bg: var(--ready);   --st-progress-fg: var(--on-ready);   --st-progress-border: transparent; /* Packed, Due Soon, Partial, Cleaning, Maintenance */
-  --st-out-bg: var(--warn);         --st-out-fg: var(--on-warn);         --st-out-border: transparent; /* On Rent, Picked Up — out with the client */
-  --st-in-bg: var(--success);       --st-in-fg: var(--on-success);       --st-in-border: transparent; /* Returned, Available, Paid — home */
-  --st-danger-bg: var(--danger);    --st-danger-fg: var(--on-danger);    --st-danger-border: transparent; /* Overdue, Damaged, Unpaid, Blocked */
-  --st-dim-bg: var(--dim);          --st-dim-fg: var(--on-dim);          --st-dim-border: transparent; /* Closed, Void, Retired, Deactivated */
+  --st-neutral-bg: var(--neutral);  --st-neutral-fg: var(--on-neutral);  /* Quote, Draft */
+  --st-primary-bg: var(--primary);  --st-primary-fg: var(--on-primary);  /* Booked, Reserved, Issued */
+  --st-progress-bg: var(--ready);   --st-progress-fg: var(--on-ready);   /* Packed, Due Soon, Partial, Cleaning, Maintenance */
+  --st-out-bg: var(--warn);         --st-out-fg: var(--on-warn);         /* On Rent, Picked Up — out with the client */
+  --st-in-bg: var(--success);       --st-in-fg: var(--on-success);       /* Returned, Available, Paid — home */
+  --st-danger-bg: var(--danger);    --st-danger-fg: var(--on-danger);    /* Overdue, Damaged, Unpaid, Blocked */
+  --st-dim-bg: var(--dim);          --st-dim-fg: var(--on-dim);          /* Closed, Void, Retired, Deactivated */
 
   /* Canonical v4.1 spellings, for code written against the spec directly. */
   --st-ready-bg: var(--ready);      --st-ready-fg: var(--on-ready);
@@ -1011,10 +982,41 @@ table,
   --surface-card: var(--surface);
   --surface-card-hover: var(--surface-2);
   --card: var(--surface);
+  --tap: 48px;
+  /* Anti-glare contrast for industrial warehouse floor surfaces */
+  letter-spacing: 0.01em;
 }
 [data-floor='true'] * {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+}
+
+/* Floor hit-targets & glove-friendly ergonomics */
+[data-floor='true'] button:not(.btn-link):not([data-compact]),
+[data-floor='true'] .tap:not([data-compact]),
+[data-floor='true'] select,
+[data-floor='true'] input[type='text'],
+[data-floor='true'] input[type='search'] {
+  min-height: 48px !important;
+}
+
+[data-floor='true'] button[data-primary-verb],
+[data-floor='true'] .btn-floor-primary {
+  min-height: 56px !important;
+}
+
+[data-floor='true'] input[type='checkbox'] {
+  min-width: 22px;
+  min-height: 22px;
+  cursor: pointer;
+}
+
+[data-floor='true'] .serial,
+[data-floor='true'] .identifier,
+[data-floor='true'] [data-serial] {
+  font-family: var(--font-id);
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }
 
 /* §4.3.2 — Outfit carries the brand voice, never body copy. */

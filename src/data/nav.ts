@@ -81,7 +81,7 @@ export const NAV_GROUPS: NavGroup[] = [
     sections: [
       { label: 'Finance', icon: 'card', to: '/finance' },
       { label: 'Documents', icon: 'file', to: '/documents' },
-      { label: 'Analytics', icon: 'chart', to: '/reports' },
+      { label: 'Analytics', icon: 'chart', to: '/reports/pulse' },
     ],
   },
 ]
@@ -282,7 +282,12 @@ export function activeNavTo(sections: NavSection[], path: string): string | null
       if (best === null || s.to.length > best.to.length) best = s
     }
   }
-  return best === null ? null : best.to
+  if (best) return best.to
+  // Analytics opens Pulse directly, while the other reports are sibling routes.
+  if (base === '/reports' || base.startsWith('/reports/')) {
+    return sections.find((s) => s.to === '/reports/pulse')?.to ?? null
+  }
+  return null
 }
 
 /* ══ phone bottom bar ════════════════════════════════════════════════════ */
@@ -364,7 +369,7 @@ export const MORE_ROUTES: readonly string[] = [
   '/crew',
   '/finance',
   '/documents',
-  '/reports',
+  '/reports/pulse',
   '/tools',
   '/settings',
 ]

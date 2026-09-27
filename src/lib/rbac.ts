@@ -438,6 +438,15 @@ export function canRecordPayment(role: SystemRole, isOnline: boolean = true): bo
 }
 
 /**
+ * Payment corrections move money out and must match the `payment_reversals`
+ * RLS policy and PERMISSIONS F-a: Owner, Admin, or Manager only.
+ */
+export function canReversePayment(role: SystemRole, isOnline: boolean = true): boolean {
+  if (!isOnline) return false
+  return role === 'Owner' || role === 'Admin' || role === 'Manager'
+}
+
+/**
  * Approve a daily closing — **§4.20's method, mirrored not invented.**
  *
  * The RLS policy on the table this writes is `daily_closings_finance_insert`

@@ -12,7 +12,7 @@ import { formatMoney, toRupees } from '../../lib/money'
 import { toBs, formatBs } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
-import { canRecordPayment } from '../../lib/rbac'
+import { canRecordPayment, canReversePayment } from '../../lib/rbac'
 import { useList } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import {
@@ -374,67 +374,12 @@ export function chipFromParam(param: string | null): PaymentChip {
 }
 
 /* ── REVERSAL ─────────────────────────────────────────────────────────────
- *
- * §9.3's row carries a `⋮`, and the section is titled "record · refund ·
- * reversals". Law 4 makes the only correction a compensating row, so the action
- * is Reverse. Two limits, both structural, both surfaced on the control itself
- * rather than discovered by an operator mid-correction:
- *
- *  1. **The reversal is recorded against the INVOICE, not against this payment.**
- *     `payment_reversals.original_payment_id` (0006:215) is the real linkage, and
- *     nothing in `src/actions/` reaches it: `refundPayment`'s whole input is
- *     `{ id: string }` and `RefundPaymentModal` is invoice-scoped. Widening that
- *     input is a change to the action contract, which is not this screen's to
- *     make. The button says so.
- *  2. **An advance has no invoice to reverse against.** `payments.invoice_id` is
- *     nullable (0006:181) and null is an ordinary state — money taken before the
- *     invoice was raised. There is nothing to pass, so the control is disabled
- *     with that reason rather than passing the payment's own id into a prop named
- *     `invoiceId`, which is precisely the class of fabrication this codebase
- *     keeps removing.
- *
- * `invoiceId` carries `invoiceNo`, not the uuid, because that is the existing
- * contract at the only other call site (`Finance.tsx` passes
- * `selectedInvoiceForRefund.invoiceNo`) and the modal renders it in its own
- * title.
- *
- * ## `currentPaidPaisa` — the cap this route was skipping
- *
- * This mount passed NO `currentPaidPaisa`, and the modal's cap read
- * `if (currentPaidPaisa !== undefined && …)`. So the reversal ceiling was not
- * merely unstated here, it was **switched off**: an operator could reverse any
- * figure at all against an invoice from this screen. The half of that defect
- * that lives in the modal is fixed there (absence now refuses); this is the
- * other half.
- *
- * The figure is `invoices.paid_amount`, and `PaymentListRow` genuinely does not
- * carry it — a payment row knows its own amount, never the invoice's running
- * total. Substituting this payment's amount would put a false figure behind the
- * modal's "Only … has been received against …" sentence, so it is still not
- * done. What IS available is the invoice row itself: this screen already reads
- * `invoices` for the Record Payment modal, and `InvoiceListRow.paidAmount` is
- * that exact column. `reversalPaidPaisa` below matches on `invoiceNo`, which is
- * `text not null unique` (0006:76, :112), so a match is the invoice — never a
- * near-miss.
- *
- * ⚠ Coverage is partial and the refusal, not a guess, is what covers the rest.
- * That read is `payableInvoices()` — Draft, 'Sent' and 'Partially Paid' — so a
- * reversal against a fully settled ('Paid') invoice finds nothing and hands the
- * modal `undefined`, which refuses and says the figure is unavailable. Refusing
- * is the correct behaviour for "we did not read what was received"; it is not a
- * claim that nothing was received. (The set gained 'Draft' with MONEY-05, which
- * narrows the gap rather than widening it: a Draft carrying an advance is now
- * reversible from here where before it was not readable at all.)
- *
- * TODO(persistence): a single-invoice read (`invoices` by `invoice_no`) would
- * close the gap. `lib/queries/finance.ts` has no such reader — only list sets —
- * and adding one is that module's change, not this screen's.
+ * Law 4 corrections name the immutable payment directly. This includes advance
+ * payments; the interface checks the receipt amount and Postgres enforces the
+ * remaining cumulative cap under concurrent submissions.
  */
 const REVERSAL_SCOPE_NOTE =
-  'Reversal is recorded against the invoice, not against this individual payment — ' +
-  'payment_reversals.original_payment_id is not reachable from the current action.'
-const REVERSAL_NO_INVOICE_NOTE =
-  'This payment is an advance taken before any invoice was raised, so there is no invoice to reverse against.'
+  'Corrects this receipt only. The ledger prevents cumulative reversals above its remaining amount.'
 
 /**
  * Why no `↳ reversal row` is drawn beneath its original.
@@ -530,34 +475,14 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth()
   const canTakePayment = user ? canRecordPayment(user.role) : false
 
-  /*
-   * The row's Reverse control had NO capability gate at all — it was drawn for
-   * any money-visible session, so an Admin or a Manager was offered a reversal
-   * that `actions/core.ts` would refuse only after the amount and the reason had
-   * been typed.
-   *
-   * `canRecordPayment` is the rule, and it is not a choice made here:
-   * `actions/core.ts:110-112` resolves BOTH `payment.create` and
-   * `payment.refund` through it, and `refundPayment` declares
-   * `permissions: ['payment.refund']`. Gating on the same predicate the
-   * dispatcher will apply is what stops the UI offering what the engine refuses.
-   * Money out is the same rule as money in — which is also why this is a
-   * separate boolean from `money`: reading the receipt ledger is not moving it.
-   *
-   * TODO(decision): `lib/rbac` has no refund-specific rule, so a reversal
-   * inherits Coordinator from `canRecordPayment`. Taking an advance at the
-   * counter and paying money back out are plausibly not the same authority —
-   * `canVoidInvoice` is the narrower Owner/Accounts shape — but narrowing it
-   * here would invent a product decision AND desync the UI from the dispatcher.
-   * The rule belongs in `lib/rbac` + `actions/core.ts` together, and PLAN.md §4.
-   */
-  const canReverse = canTakePayment
+  // docs/PERMISSIONS.md F-a and the payment_reversals RLS policy agree exactly.
+  const canReverse = user ? canReversePayment(user.role) : false
 
   const [recordOpen, setRecordOpen] = useState(false)
   const [reversing, setReversing] = useState<PaymentListRow | null>(null)
 
   const hasLoadedInvoices = useRef(false)
-  const shouldLoadInvoices = recordOpen || reversing !== null
+  const shouldLoadInvoices = recordOpen
 
   /* See the block above `Payments()` for why both of these close over `money`. */
   const fetchPayments = useCallback(
@@ -665,22 +590,6 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
     [invoiceList.rows],
   )
 
-  /**
-   * `invoices.paid_amount` for the invoice the payment being reversed settles —
-   * the cap the reversal modal bounds itself with. See the REVERSAL block above
-   * for why this is a lookup against the invoice rows rather than anything read
-   * off the payment, and for what `undefined` means here (refusal, not "zero
-   * received").
-   *
-   * This is a single-key lookup, not list filtering — `listQuery.ts`'s rule that
-   * narrowing happens server-side is about which ROWS a list shows, and nothing
-   * here changes the list.
-   */
-  const reversalPaidPaisa = useMemo(() => {
-    if (!reversing || reversing.invoiceNo === null) return undefined
-    return invoiceList.rows.find((r) => r.invoiceNo === reversing.invoiceNo)?.paidAmount
-  }, [reversing, invoiceList.rows])
-
   const refreshAll = () => {
     list.refetch()
     if (hasLoadedInvoices.current) {
@@ -696,9 +605,6 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
   }
 
   const openReverse = (row: PaymentListRow) => {
-    if (!hasLoadedInvoices.current) {
-      invoiceList.refetch()
-    }
     setReversing(row)
   }
 
@@ -1111,19 +1017,17 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
         />
       )}
 
-      {/* `canReverse` alongside `money`, on the same reasoning the Record
-          Payment mount above carries it: a role change mid-session must not
-          leave an open reversal form belonging to a session that may not post
-          one. `currentPaidPaisa` is the cap this mount used to omit entirely —
-          see the REVERSAL block. */}
-      {money && canReverse && reversing && reversing.invoiceNo !== null && (
+      {/* The interface caps one receipt; the database remains the concurrent,
+          cumulative authority. */}
+      {money && canReverse && reversing && (
         <RefundPaymentModal
-          isOpen={reversing.invoiceNo !== null}
+          isOpen
           onClose={() => setReversing(null)}
           onSuccess={() => refreshAll()}
-          invoiceId={reversing.invoiceNo}
+          paymentId={reversing.id}
+          paymentNo={reversing.paymentNo}
+          paymentAmountPaisa={reversing.amount}
           client={reversing.clientName}
-          currentPaidPaisa={reversalPaidPaisa}
         />
       )}
       </div>
@@ -1143,37 +1047,20 @@ function ReverseAction({
 }: {
   row: PaymentListRow
   onOpen: (row: PaymentListRow) => void
-  /**
-   * `rbac.canRecordPayment` for the signed-in session — the same predicate
-   * `actions/core.ts` resolves `refundPayment`'s `payment.refund` through.
-   * Required, not defaulted: a `canReverse = true` default would silently
-   * restore the ungated behaviour at any call site that forgot it, which is
-   * exactly how this control came to have no gate.
-   */
+  /** `rbac.canReversePayment`, aligned with payment_reversals RLS. */
   canReverse: boolean
   full?: boolean
 }) {
-  /*
-   * ABSENT, not disabled — `MovementList.tsx:307`. A greyed Reverse still tells
-   * a Warehouse-adjacent or Admin session that reversing money is something this
-   * screen does. The `disabled` below answers a different question (this payment
-   * is an advance with no invoice to reverse against), which is a fact about the
-   * ROW and is worth stating; who may act is a fact about the SESSION and is
-   * not.
-   */
+  /* Absent, not disabled: an unauthorized session must not be told this exists. */
   if (!canReverse) return null
 
-  const linked = row.invoiceNo !== null
-  const label = linked
-    ? `Reverse payment ${row.paymentNo}. ${REVERSAL_SCOPE_NOTE}`
-    : `Reverse payment ${row.paymentNo} — unavailable. ${REVERSAL_NO_INVOICE_NOTE}`
+  const label = `Reverse payment ${row.paymentNo}. ${REVERSAL_SCOPE_NOTE}`
 
   return (
     <button
       type="button"
-      disabled={!linked}
       aria-label={label}
-      title={linked ? REVERSAL_SCOPE_NOTE : REVERSAL_NO_INVOICE_NOTE}
+      title={REVERSAL_SCOPE_NOTE}
       onClick={() => onOpen(row)}
       style={{
         display: 'inline-flex',
@@ -1186,12 +1073,12 @@ function ReverseAction({
         borderRadius: 'var(--r-btn)',
         border: '1px solid var(--border)',
         background: 'var(--card)',
-        color: linked ? 'var(--text2)' : 'var(--muted)',
+        color: 'var(--text2)',
         fontSize: 'var(--t-meta)',
         fontWeight: 600,
         fontFamily: 'inherit',
-        cursor: linked ? 'pointer' : 'not-allowed',
-        opacity: linked ? 1 : 0.55,
+        cursor: 'pointer',
+        opacity: 1,
         whiteSpace: 'nowrap',
       }}
     >

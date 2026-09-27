@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode, type CSSProperties } from 'react'
+import React, { useEffect, isValidElement, type ReactNode, type CSSProperties } from 'react'
 import Icon from './Icon'
 import type { IconName } from './Icon'
 import { InfoTooltip } from './InfoTooltip'
@@ -10,6 +10,7 @@ import { useViewport } from '../../lib/device'
 import { Button as SharedButton, type ButtonProps } from './Button'
 import { Card as SharedCard } from './Card'
 import { useOptionalWorkspace } from '../../lib/workspaceContext'
+import { extractValidActions } from './PageActions'
 
 /**
  * Page furniture shared by every Generation C screen.
@@ -91,6 +92,9 @@ export function PageHeader({
 
   const resolvedEyebrow = eyebrow
 
+  const validActions = actions ? extractValidActions(actions) : []
+  const hasActions = validActions.length > 0
+
   return (
     <header className="page-header animate-entrance" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' }}>
       <div className="page-header__copy" style={{ minWidth: 0, flex: '1 1 16rem' }}>
@@ -136,7 +140,7 @@ export function PageHeader({
           {status}
         </div>
       </div>
-      {actions && (
+      {hasActions && (
         <div
           className="page-header__actions"
           style={{
@@ -150,7 +154,11 @@ export function PageHeader({
             flexShrink: 0,
           }}
         >
-          {actions}
+          {validActions.map((action, idx) =>
+            isValidElement(action)
+              ? React.cloneElement(action, { key: action.key ?? `hdr-act-${idx}` })
+              : <span key={`hdr-act-${idx}`}>{action}</span>
+          )}
         </div>
       )}
     </header>

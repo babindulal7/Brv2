@@ -366,7 +366,7 @@ interface QueueChipProps {
 }
 
 function QueueChip({ queue, active, total, loading, error, onToggle }: QueueChipProps) {
-  const tok = STATUS[statusToken(JOBS_META[queue.job].runsAt)]
+  const tok = queue.job === 'Reset' ? STATUS.progress : STATUS[statusToken(JOBS_META[queue.job].runsAt)]
 
   /*
    * The count, or an explicit non-value. `—` is not a zero and must not be
@@ -743,8 +743,6 @@ export default function OperationsQueues() {
             </div>
           )}
         </div>
-        <select className="operations-v2__filter-select" aria-label="Client filter" value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}><option value="all">All clients</option>{clients.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
-        <select className="operations-v2__filter-select" aria-label="Project filter" value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}><option value="all">All projects</option>{projects.map((project) => <option key={project} value={project}>{project}</option>)}</select>
         <div style={{ flex: '1 1 240px', minWidth: 180 }}>
           <SearchInput
             ref={queueSearchRef}
@@ -755,6 +753,12 @@ export default function OperationsQueues() {
             aria-label="Search ID, client, project"
           />
         </div>
+        <FilterButton
+          onClick={() => setShowMoreFilters((open) => !open)}
+          activeCount={operationFilterCount}
+          controls="operations-filters"
+          expanded={showMoreFilters}
+        />
         {(isFiltered || search || clientFilter !== 'all' || projectFilter !== 'all') && <Button variant="ghost" onClick={clearOperationFilters}>Clear filters</Button>}
       </div>
 
@@ -840,7 +844,7 @@ export default function OperationsQueues() {
                           aria-label="Select visible bookings"
                         />
                       </th>
-                      {['Booking', 'Client', 'Project', 'Items', 'Stage', 'Time', 'Action', ''].map((heading, index) => (
+                      {['Booking', 'Client', 'Items', 'Stage', 'Time', 'Action', ''].map((heading, index) => (
                         <th key={heading || index} style={th}>{heading}</th>
                       ))}
                     </tr>
@@ -862,11 +866,15 @@ export default function OperationsQueues() {
                           </Link>
                         </td>
                         <td style={td}>
-                          <Link to={`/clients/${job.clientId}`} style={{ color: 'inherit', textDecoration: 'none', fontWeight: 500 }}>
+                          <Link to={`/clients/${job.clientId}`} style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }}>
                             {job.clientName}
                           </Link>
+                          {job.project && (
+                            <div style={{ fontSize: '11px', color: 'var(--text2)', marginTop: 2 }}>
+                              {job.project}
+                            </div>
+                          )}
                         </td>
-                        <td style={{ ...td, color: 'var(--text2)' }}>{job.project ?? '—'}</td>
                         <td className="figure" style={{ ...td, fontWeight: 600 }}>{job.itemCount}</td>
                         <td style={td}>
                           <StageBadge stage={job.stage} />

@@ -344,4 +344,58 @@ export async function applyLanguage(lang: Language): Promise<void> {
     root.style.removeProperty('--font-display')
     root.style.removeProperty('--font-body')
   }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('languagechange', { detail: { lang } }))
+  }
 }
+
+import { useState, useEffect } from 'react'
+
+/** Synchronously checks active document language. */
+export function getCurrentLanguage(): Language {
+  if (typeof document !== 'undefined') {
+    const docLang = document.documentElement.getAttribute('lang')
+    if (docLang === 'ne') return 'ne'
+  }
+  if (typeof window !== 'undefined') {
+    const stored = window.localStorage.getItem('br.settings.language')
+    if (stored === 'नेपाली') return 'ne'
+  }
+  return 'en'
+}
+
+/** Reactive hook for components that adapt their typography or preset labels to the active language. */
+export function useCurrentLanguage(): Language {
+  const [lang, setLang] = useState<Language>(() => getCurrentLanguage())
+
+  useEffect(() => {
+    const handler = () => {
+      setLang(getCurrentLanguage())
+    }
+    window.addEventListener('languagechange', handler)
+    window.addEventListener('storage', handler)
+    return () => {
+      window.removeEventListener('languagechange', handler)
+      window.removeEventListener('storage', handler)
+    }
+  }, [])
+
+  return lang
+}
+
+/** Toggles between English and Nepali, persisting to settings and applying fonts immediately. */
+export async function toggleLanguage(): Promise<Language> {
+  const current = getCurrentLanguage()
+  const next: Language = current === 'en' ? 'ne' : 'en'
+  const nextLabel = next === 'ne' ? 'नेपाली' : 'English'
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem('br.settings.language', nextLabel)
+    } catch {
+      /* ignore */
+    }
+  }
+  await applyLanguage(next)
+  return next
+}
+

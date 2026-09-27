@@ -18,12 +18,12 @@
   --dashboard-accent-soft: var(--ext-bg);
 }
 
-/* Two equal columns for desktop (>= 1280px) */
+/* Center viewport on dispatch operations: Pickups and Returns columns side-by-side */
 .rental-dashboard__panels {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 1rem;
+  gap: 1.25rem;
   min-width: 0;
 }
 
@@ -34,7 +34,7 @@
   border: 1px solid var(--w10, var(--border));
   border-radius: var(--r-card, 14px);
   background: var(--surface-card, var(--card));
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25), var(--specular-rim);
+  box-shadow: var(--shadow-sm);
   transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
@@ -46,7 +46,7 @@
   min-height: 5rem;
   padding: 1.15rem 1.25rem;
   border-bottom: 1px solid var(--w08, var(--border));
-  background: linear-gradient(180deg, var(--card2) 0%, var(--card) 100%);
+  background: var(--card);
   border-top-left-radius: var(--r-card, 14px);
   border-top-right-radius: var(--r-card, 14px);
 }
@@ -87,6 +87,88 @@
 .movement-panel__filter {
   position: relative;
   z-index: 4;
+}
+
+/* ─── Unified Master Dispatch Date Control ────────────────────────────────── */
+.dashboard-master-date-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-btn, 8px);
+  background: var(--card2);
+  box-shadow: var(--shadow-sm);
+}
+
+.dashboard-master-date-control__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: calc(var(--r-btn, 8px) - 2px);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.dashboard-master-date-control__btn:hover {
+  background: var(--hover-card);
+  color: var(--text);
+}
+
+.dashboard-master-date-control__btn:active {
+  transform: scale(0.96);
+}
+
+.dashboard-master-date-control__date-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 0.85rem;
+  border: 0;
+  border-radius: calc(var(--r-btn, 8px) - 2px);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.dashboard-master-date-control__date-btn:hover {
+  background: var(--hover-card);
+  color: var(--dashboard-accent-strong);
+}
+
+.dashboard-master-date-control__date-btn.is-today {
+  color: var(--dashboard-accent-strong);
+}
+
+.dashboard-master-date-control__calendar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0 calc(var(--r-btn, 8px) - 2px) calc(var(--r-btn, 8px) - 2px) 0;
+  background: transparent;
+  color: var(--dashboard-accent-strong);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.dashboard-master-date-control__calendar-btn:hover {
+  background: var(--dashboard-accent-soft);
 }
 
 .dashboard-date-filter {
@@ -850,28 +932,27 @@
 }
 
 .movement-card__cta-btn.is-dominant {
-  background: linear-gradient(180deg, var(--primary) 0%, var(--brand-glow, var(--primary)) 100%);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  box-shadow: 0 0 14px rgba(77, 141, 255, 0.35);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  border: 1px solid transparent;
 }
 
 .movement-card__cta-btn.is-dominant:hover {
-  box-shadow: 0 0 18px rgba(77, 141, 255, 0.55);
-  filter: brightness(1.06);
+  background: var(--hover-button);
+  filter: brightness(1.08);
 }
 
 .movement-card__cta-btn.is-secondary,
 .movement-card__cta-btn.is-prep {
   background: var(--card2);
   color: var(--text);
-  border: 1px solid var(--w12, var(--border));
+  border: 1px solid var(--border);
 }
 
 .movement-card__cta-btn.is-secondary:hover,
 .movement-card__cta-btn.is-prep:hover {
-  background: var(--card);
-  border-color: var(--w20, var(--border2));
+  background: var(--border);
+  color: var(--text);
 }
 
 .movement-card__cta-btn:active {
@@ -1053,13 +1134,12 @@
 .dashboard-day-pager__btn--today {
   padding: 0 0.85rem;
   min-width: auto;
-  border-left: 1px solid var(--w12, var(--border));
-  border-right: 1px solid var(--w12, var(--border));
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
 }
 
 .dashboard-day-pager__btn--today.is-current {
-  background: rgba(77, 141, 255, 0.12);
-  color: var(--st-info-fg);
+  color: var(--dashboard-accent-strong);
   font-weight: 700;
 }
 
@@ -1197,54 +1277,59 @@
   outline-offset: 2px;
 }
 
-/* ─── Overdue Alert Banner ─── */
+/* ─── Condensed Overdue Alert Banner ─── */
 .dashboard-alert {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--sp-sm);
-  padding: 0.85rem 1.15rem;
+  padding: 0.5rem 1rem;
   margin-bottom: var(--sp-md);
   border-radius: var(--r-card, 12px);
   border: 1px solid var(--w10, var(--border));
   background: var(--surface-card, var(--card));
   color: var(--text);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .dashboard-alert--overdue {
-  background: linear-gradient(90deg, rgba(255, 107, 107, 0.12) 0%, rgba(255, 107, 107, 0.04) 100%);
-  border: 1px solid var(--st-danger-border);
-  border-left: 4px solid var(--danger-text);
-  color: var(--text);
-  box-shadow: 0 4px 16px rgba(255, 107, 107, 0.12);
+  background: var(--danger-soft, var(--st-danger-bg));
+  border: 1px solid var(--st-danger-fg, var(--danger));
+  color: var(--danger-text, var(--st-danger-fg));
 }
 
-.dashboard-alert--overdue .dashboard-alert__title {
-  color: var(--danger-text);
-  font-weight: 700;
-}
-
-.dashboard-alert__icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  color: var(--danger-text);
-}
-
-.dashboard-alert__body {
-  display: flex;
+.dashboard-alert__content {
+  display: inline-flex;
   align-items: center;
-  gap: var(--sp-xs);
-  flex-wrap: wrap;
-  font-size: var(--t-ui);
+  gap: 0.5rem;
+  font-size: var(--t-meta);
+  font-weight: 600;
 }
 
-.dashboard-alert__title {
+.dashboard-alert__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 0.85rem;
+  border: 1px solid currentColor;
+  border-radius: var(--r-btn, 8px);
+  background: transparent;
+  color: inherit;
+  font-size: var(--t-th);
   font-weight: 700;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
 }
 
-.dashboard-alert__text {
-  font-weight: 500;
+.dashboard-alert__action:hover {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  transform: translateY(-1px);
+}
+
+.dashboard-alert__action:active {
+  transform: translateY(0);
 }
 
 /* ─── Mobile Segmented Nav Container ─── */
@@ -1472,263 +1557,589 @@
   color: var(--success-text);
 }
 
-/* ─── Bento 2.0 Operational Snapshot Strip ─── */
-.dashboard-bento-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.875rem;
-}
-
-@media (max-width: 1279px) {
-  .dashboard-bento-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @media (max-width: 767px) {
-  .dashboard-bento-strip {
+  .rental-dashboard__panels {
     grid-template-columns: 1fr;
   }
 }
 
-.dashboard-bento-tile {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 1.15rem 1.25rem;
-  background: var(--surface-card, var(--card));
-  border: 1px solid var(--w08, var(--border));
-  border-radius: var(--r-card, 14px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), var(--specular-rim);
-  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+/* ─── Compact booking records ───────────────────────────────────────────── */
+.movement-cards-list {
+  gap: 0;
+  padding: 0;
 }
 
-.dashboard-bento-tile:hover {
-  transform: translateY(-1.5px);
-  border-color: var(--w20, var(--border2));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32), var(--specular-rim);
-}
-
-.dashboard-bento-tile__header {
-  display: flex;
+.movement-card {
+  display: grid;
+  grid-template-columns: minmax(4.75rem, 0.7fr) minmax(9rem, 1.55fr) minmax(6.25rem, 0.9fr) minmax(6.25rem, 0.9fr) minmax(8.5rem, auto);
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
+  gap: 0.875rem;
+  min-height: 6.5rem;
+  padding: 0.875rem 1.1rem;
+  border: 0;
+  border-bottom: 1px solid var(--w08, var(--border));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
-.dashboard-bento-tile__eyebrow {
+.movement-card:last-child {
+  border-bottom: 0;
+}
+
+.movement-card:hover {
+  transform: none;
+  border-color: var(--w08, var(--border));
+  background: var(--hover-row);
+  box-shadow: none;
+}
+
+.movement-card--overdue {
+  border-color: var(--w08, var(--border));
+  border-left: 3px solid var(--danger-text);
+  background: color-mix(in srgb, var(--st-danger-bg) 38%, transparent);
+}
+
+.movement-card--overdue:hover {
+  background: color-mix(in srgb, var(--st-danger-bg) 55%, var(--hover-row));
+}
+
+.movement-card__booking-link,
+.movement-card__client-link {
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.movement-card__booking-link { grid-column: 1; }
+.movement-card__client-link { grid-column: 2; }
+.movement-card__schedule--pickup { grid-column: 3; }
+.movement-card__schedule--return { grid-column: 4; }
+.movement-card__status-action { grid-column: 5; }
+
+.movement-card__booking-link {
+  display: grid;
+  gap: 0.25rem;
+  align-content: center;
+}
+
+.movement-card__record-label,
+.movement-card__schedule > span {
+  color: var(--text3);
   font-size: var(--t-th);
   font-weight: 700;
+  letter-spacing: 0.055em;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
 }
 
-.dashboard-bento-tile__icon {
-  color: var(--text2);
-}
-
-.dashboard-bento-tile__main {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.5rem;
-}
-
-.dashboard-bento-tile__title {
-  font-size: var(--t-h4);
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: -0.015em;
-}
-
-.dashboard-bento-tile__value {
-  font-size: var(--t-kpi);
-  font-weight: 800;
-  color: var(--text);
-  font-family: 'JetBrains Mono Variable', monospace;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-}
-
-.dashboard-bento-tile__badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: var(--r-badge, 999px);
-  background: var(--card2);
-  border: 1px solid var(--w10, var(--border));
+.movement-card__number {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--primary-text);
-  font-size: var(--t-th);
-  font-weight: 600;
-  font-family: 'JetBrains Mono Variable', monospace;
+  font-size: var(--t-meta);
+  font-weight: 750;
 }
 
-.dashboard-bento-tile__pill-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-wrap: wrap;
+.movement-card__booking-link:hover .movement-card__number,
+.movement-card__client-link:hover .movement-card__client {
+  color: var(--primary-text);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
-.dashboard-bento-tile__sub-pill {
-  display: inline-flex;
+.movement-card__client-link {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
   align-items: center;
-  gap: 4px;
+  gap: 0.65rem;
+}
+
+.movement-card__avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.55rem;
   font-size: var(--t-th);
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: var(--r-badge, 999px);
+}
+
+.movement-card__client-copy {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.movement-card__client-copy > span,
+.movement-card__client {
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.dashboard-bento-tile__sub-pill.is-bs {
-  background: rgba(245, 166, 35, 0.12);
-  color: var(--st-warn-fg);
-  border: 1px solid var(--st-warn-border, rgba(245, 166, 35, 0.28));
+.movement-card__client {
+  font-size: var(--t-meta);
+  font-weight: 700;
 }
 
-.dashboard-bento-tile__sub-pill.is-ready {
-  background: var(--st-ready-bg);
-  color: var(--st-ready-fg);
-  border: 1px solid var(--st-ready-border);
-}
-
-.dashboard-bento-tile__sub-pill.is-prep {
-  background: var(--st-warn-bg);
-  color: var(--st-warn-fg);
-  border: 1px solid var(--st-warn-border);
-}
-
-.dashboard-bento-tile__sub-pill.is-overdue {
-  background: var(--st-danger-bg);
-  color: var(--st-danger-fg);
-  border: 1px solid var(--st-danger-border);
-}
-
-.dashboard-bento-tile__sub-pill.is-clean {
-  background: var(--st-ready-bg);
-  color: var(--st-ready-fg);
-  border: 1px solid var(--st-ready-border);
-}
-
-.dashboard-bento-tile__meta {
+.movement-card__client-copy > span {
+  color: var(--text2);
   font-size: var(--t-th);
-  color: var(--muted);
-  font-weight: 500;
 }
 
-.dashboard-bento-btn {
+.movement-card__schedule {
+  display: grid;
+  gap: 0.32rem;
+  min-width: 0;
+}
+
+.movement-card__schedule strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--t-th);
+  font-weight: 650;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.movement-card__status-action {
+  display: grid;
+  justify-items: end;
+  gap: 0.45rem;
+}
+
+.movement-card__badge-wrap {
+  min-height: 1.35rem;
+}
+
+.movement-card__cta-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  min-height: 44px;
-  padding: 0 1rem;
+  gap: 0.35rem;
+  min-height: var(--tap, 44px);
+  min-width: 44px;
+  padding: 0 0.85rem;
+  border-radius: var(--r-btn, 8px);
+  font-size: var(--t-th);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .movement-cards-list {
+    padding: 0;
+  }
+
+  .movement-card {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "booking client"
+      "pickup return"
+      "status status";
+    gap: 0.75rem 1rem;
+    min-height: 0;
+    padding: 1rem;
+  }
+
+  .movement-card__booking-link { grid-area: booking; }
+  .movement-card__client-link { grid-area: client; }
+  .movement-card__schedule--pickup { grid-area: pickup; }
+  .movement-card__schedule--return { grid-area: return; }
+  .movement-card__status-action {
+    grid-area: status;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    justify-items: stretch;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--w08, var(--border));
+  }
+
+  .movement-card__badge-wrap { align-self: center; }
+}
+
+/* Today uses the same dense list language as the Rentals table. */
+.rental-dashboard__panels {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-md);
+}
+
+.movement-panel {
+  overflow: hidden;
+  border-color: var(--border);
+  border-radius: var(--r-card, 12px);
+  background: var(--card);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.movement-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 4.25rem;
+  padding: 0.75rem 1rem;
+  border-color: var(--border);
+  background: var(--card);
+}
+
+.movement-panel__icon {
+  display: none;
+}
+
+.movement-panel__icon .ui-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.movement-panel__heading h2 {
+  font-size: var(--t-h4);
+  font-weight: 700;
+  /* The overdue shortcut scrolls to this heading inside the shell's own
+     scroller; leave enough room for the full panel header below its top edge. */
+  scroll-margin-block-start: 3rem;
+}
+
+.movement-panel__heading p {
+  margin-top: 0.1rem;
+  color: var(--text2);
+  font-size: var(--t-th);
+}
+
+.movement-panel__filter {
+  margin-left: auto;
+}
+
+.movement-panel__body {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.movement-cards-list {
+  display: block;
+  min-width: 61rem;
+}
+
+.movement-cards-list__head,
+.movement-card {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, 0.6fr) minmax(13rem, 1.7fr) minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(7rem, 0.8fr) minmax(9rem, 1fr);
+  gap: 0.875rem;
+  align-items: center;
+  padding-inline: 1rem;
+}
+
+.movement-cards-list__head {
+  min-height: 3rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--th-bg, var(--card2));
+  color: var(--text2);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.movement-card {
+  min-height: 5.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+
+.movement-card:nth-child(even) {
+  background: var(--card2);
+}
+
+.movement-card:hover,
+.movement-card--overdue:hover {
+  background: var(--hover-row);
+}
+
+.movement-card--overdue {
+  border-left: 3px solid var(--danger-text);
+  background: var(--card);
+}
+
+.movement-card__record-label,
+.movement-card__schedule > span {
+  display: none;
+}
+
+.movement-card__booking-link {
+  min-height: 2.75rem;
+  align-items: center;
+}
+
+.movement-card__number {
+  font-size: var(--t-meta);
+  font-weight: 700;
+}
+
+.movement-card__client-link {
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  min-height: 2.75rem;
+}
+
+.movement-card__avatar {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+}
+
+.movement-card__client-copy > span {
+  color: var(--text2);
+  font-size: var(--t-meta);
+}
+
+.movement-card__client-copy > .movement-card__items-count {
+  color: var(--text3);
+  font-size: var(--t-th);
+}
+
+.movement-card__schedule strong {
   font-size: var(--t-meta);
   font-weight: 600;
-  border-radius: var(--r-btn, 8px);
-  text-decoration: none;
-  cursor: pointer;
-  transition: all var(--dur-fast) var(--ease);
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
-.dashboard-bento-btn--primary {
-  background: linear-gradient(180deg, var(--primary) 0%, var(--brand-glow, var(--primary)) 100%);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 0 12px rgba(77, 141, 255, 0.25);
+.movement-card__status-action {
+  display: contents;
 }
 
-.dashboard-bento-btn--primary:hover {
-  box-shadow: 0 0 16px rgba(77, 141, 255, 0.45);
-  filter: brightness(1.05);
+.movement-card__badge-wrap {
+  grid-column: 5;
+  min-width: 0;
 }
 
-.dashboard-bento-btn--secondary {
-  background: var(--card2);
-  color: var(--text);
-  border: 1px solid var(--w12, var(--border));
-}
-
-.dashboard-bento-btn--secondary:hover {
-  background: var(--card);
-  border-color: var(--w20, var(--border2));
-}
-
-.dashboard-bento-btn--secondary .new-rental-kbd {
-  font-size: var(--t-th);
-  padding: 1px 5px;
-  background: var(--inset);
-  border: 1px solid var(--w12, var(--border));
-  border-radius: 4px;
-  color: var(--text2);
-}
-
-.dashboard-bento-tile__action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  border-radius: var(--r-btn, 8px);
-  font-size: var(--t-th);
-  font-weight: 600;
-  text-decoration: none;
-  background: var(--btn-primary-bg);
-  color: var(--btn-primary-fg);
-  border: 1px solid transparent;
-  transition: transform var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease);
-}
-
-.dashboard-bento-tile__action-btn:hover {
-  filter: brightness(1.08);
-}
-
-.dashboard-bento-tile__action-btn:active {
-  transform: scale(0.97);
-}
-
-.dashboard-bento-tile__action-btn.is-secondary {
-  background: var(--card2);
-  color: var(--text);
-  border-color: var(--border);
-}
-
-.dashboard-bento-tile__action-btn.is-secondary:hover {
-  background: var(--border);
-}
-
-/* ─── Status Live Pulse Dot ─── */
-.status-live-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 70%, transparent);
-  animation: status-pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+.movement-card__cta-btn {
+  grid-column: 6;
+  justify-self: end;
   flex-shrink: 0;
+  min-height: 44px;
+  padding-inline: 0.75rem;
+  border-radius: var(--r-btn, 8px);
 }
 
-.status-live-dot.is-danger {
-  background: var(--danger);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 70%, transparent);
-  animation: status-pulse-danger 1.8s infinite cubic-bezier(0.4, 0, 0.6, 1);
+.movement-card__client-link:focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
 }
 
-@keyframes status-pulse {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 70%, transparent); }
-  70% { transform: scale(1); box-shadow: 0 0 0 5px transparent; }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 70%, transparent); }
+.dashboard-counter-bar {
+  max-width: 34rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border-color: var(--border);
+  border-radius: var(--r-btn, 8px);
+  background: var(--card);
+  box-shadow: none;
 }
 
-@keyframes status-pulse-danger {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 70%, transparent); }
-  70% { transform: scale(1); box-shadow: 0 0 0 6px transparent; }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 70%, transparent); }
+.dashboard-counter-bar:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--dashboard-accent-soft);
 }
 
+.dashboard-alert {
+  margin-bottom: 0;
+  border-radius: var(--r-btn, 8px);
+  box-shadow: none;
+}
 
+.dashboard-alert--overdue {
+  border-color: var(--st-danger-border, var(--border));
+  background: var(--st-danger-bg);
+}
 
+.dashboard-alert__action:hover {
+  transform: none;
+}
+
+.dashboard-master-date-control {
+  background: var(--card);
+  box-shadow: none;
+}
+
+@media (max-width: 767px) {
+  .movement-panel__header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .movement-panel__filter {
+    grid-column: 1 / -1;
+    margin-left: 0;
+  }
+
+  .movement-panel__body {
+    overflow-x: visible;
+  }
+
+  .movement-cards-list {
+    min-width: 0;
+  }
+
+  .movement-cards-list__head {
+    display: none;
+  }
+
+  .movement-card {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "booking client"
+      "pickup return"
+      "status status";
+    min-height: 0;
+    padding: 1rem;
+  }
+
+  .movement-card__record-label,
+  .movement-card__schedule > span {
+    display: block;
+  }
+
+  .movement-card__status-action {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 0.75rem;
+  }
+
+  .movement-card__badge-wrap,
+  .movement-card__cta-btn {
+    grid-column: auto;
+  }
+
+  .dashboard-counter-bar {
+    max-width: none;
+  }
+}
+
+/* Preserve the left/right dispatch layout at desktop widths. Each side keeps
+   the Rentals list surface, with record details arranged for a half-width panel. */
+@media (min-width: 1280px) {
+  .movement-panel__body {
+    overflow-x: visible;
+  }
+
+  .movement-cards-list {
+    min-width: 0;
+  }
+
+  .movement-cards-list__head {
+    display: none;
+  }
+
+  .movement-card {
+    grid-template-columns: minmax(4.5rem, 0.6fr) minmax(9rem, 1.4fr) minmax(6.5rem, 1fr) minmax(6.5rem, 1fr);
+    grid-template-areas:
+      "booking client pickup return"
+      "booking client status status";
+    gap: 0.35rem 0.6rem;
+    min-height: 7rem;
+    padding-block: 0.8rem;
+  }
+
+  .movement-card__booking-link {
+    grid-area: booking;
+    grid-column: auto;
+    align-self: start;
+  }
+
+  .movement-card__client-link {
+    grid-area: client;
+    grid-column: auto;
+  }
+
+  .movement-card__schedule--pickup {
+    grid-area: pickup;
+    grid-column: auto;
+  }
+
+  .movement-card__schedule--return {
+    grid-area: return;
+    grid-column: auto;
+  }
+
+  .movement-card__record-label,
+  .movement-card__schedule > span {
+    display: block;
+  }
+
+  .movement-card__status-action {
+    display: flex;
+    flex-direction: column;
+    grid-area: status;
+    grid-column: auto;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.35rem;
+  }
+
+  .movement-card__badge-wrap,
+  .movement-card__cta-btn {
+    grid-column: auto;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  .rental-dashboard__panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .movement-panel__body {
+    overflow-x: visible;
+  }
+
+  .movement-cards-list {
+    min-width: 0;
+  }
+
+  .movement-cards-list__head {
+    display: none;
+  }
+
+  .movement-card {
+    grid-template-columns: minmax(5rem, 0.7fr) minmax(0, 1.3fr);
+    grid-template-areas:
+      "booking client"
+      "pickup return"
+      "status status";
+    gap: 0.75rem;
+    min-height: 0;
+    padding: 1rem;
+  }
+
+  .movement-card__booking-link { grid-area: booking; grid-column: auto; }
+  .movement-card__client-link { grid-area: client; grid-column: auto; }
+  .movement-card__schedule--pickup { grid-area: pickup; grid-column: auto; }
+  .movement-card__schedule--return { grid-area: return; grid-column: auto; }
+
+  .movement-card__record-label,
+  .movement-card__schedule > span {
+    display: block;
+  }
+
+  .movement-card__status-action {
+    display: flex;
+    grid-area: status;
+    grid-column: auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .movement-card__badge-wrap,
+  .movement-card__cta-btn {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  .rental-dashboard__panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

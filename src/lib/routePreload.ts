@@ -11,6 +11,7 @@ const routes: Record<string, () => Promise<unknown>> = {
   '/inventory': () => import('../modules/inventory/Inventory'),
   '/clients': () => import('../modules/clients/Clients'),
   '/finance': () => import('../modules/finance/Finance'),
+  '/reports/pulse': () => import('../modules/reports/Pulse'),
   '/tools': () => import('../modules/tools/ToolsLanding'),
   '/settings': () => import('../modules/settings/Settings'),
 }

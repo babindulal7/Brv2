@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import type { CSSProperties, ReactNode } from 'react'
-import { Card, Button, PageHeader, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
+import { Card, Button, PageHeader, Rail, SummaryRows, cardStyle, KpiStrip } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { thStyle } from '../../components/ui/TableHeaderCell'
@@ -137,27 +137,6 @@ const BOOK_CREW_UNAVAILABLE =
  */
 const CALL_SHEET_UNAVAILABLE = 'Not built yet — call sheets are spec §13'
 
-/**
- * `Export` toasted "Generating crew payroll report…" and generated nothing —
- * no file, no download, no report, no dispatch. Same honest-gap shape
- * `NewRental.tsx`'s Send Quote menu uses for the artefacts it cannot produce
- * ("No PDF generator is connected in this build").
- *
- * Deliberately **not** replaced with a client-side CSV of the visible table:
- * the label promises a payroll report, half these columns are `asset-finance`
- * money behind `canCrewMoney` (Law 6), and quietly redefining what an operator
- * gets when they press Export is its own kind of untruth.
- */
-const EXPORT_UNAVAILABLE = 'Not built yet — no payroll-report generator is connected in this build'
-
-/**
- * §6.1 draws `[date range ▾]` beside the chip row. No assignment-date filter
- * model exists on this screen — `CREW_ROSTER` carries no availability calendar
- * (`data/crew.ts:59` says so outright), so a range picker here would filter
- * nothing. Stated where it stands rather than drawn as a working control.
- */
-const DATE_RANGE_UNAVAILABLE =
-  'Not built yet — the roster carries no availability calendar to filter a date range against'
 
 /**
  * Rulings §1 removes the Booking/Directory/Timesheets/Payouts tab strip
@@ -402,19 +381,10 @@ export function CrewBooking() {
     <PageShell width="full">
       <div className="crew-v2">
         <PageHeader
-        icon="crew"
-        // The nav item (`data/nav.ts:73`), the route breadcrumb (`App.tsx:264`)
-        // and spec 06's own heading all read "Crew Assist". The `<h1>` said
-        // "Crew Booking"; three surfaces against one is not a naming question.
-        title="Crew Assist"
-        actions={
-          <Unavailable reason={BOOK_CREW_UNAVAILABLE}>
-            <Button variant="primary" icon="plus" disabled aria-label="Book Crew">
-              {phone ? '' : 'Book Crew'}
-            </Button>
-          </Unavailable>
-        }
-      />
+          icon="crew"
+          title="Crew Assist"
+          description="Roster management, shoot-day assignments, and conflict detection."
+        />
 
       {rosterLoadError && (
         <p
@@ -451,31 +421,27 @@ export function CrewBooking() {
           {/* RULING 2026-09-20: KPI cap ≤4 (Foundation page-type rule) over crew spec §10 six-tiles line — four shown, timesheet copy moved.
               Clamped per band the way `KpiStrip` (Page.tsx:204) does: four 1fr
               columns keep every tile legible on a 375px phone. */}
-          <div
-            className="crew-kpi-grid"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${kpiColumns(4, viewport)}, minmax(0,1fr))`,
-              gap: 'var(--sp-md)',
-            }}
-          >
-            <KpiTile label="Booked Today" value={String(crewBookedToday)} note="Confirmed, shoot day is today" icon="crew" accent="primary" />
-            <KpiTile label="Available" value={String(roster.available)} note={`${roster.total} on the roster`} icon="check" accent="in" />
-            <KpiTile
-              label="Conflicts"
-              value={String(conflicts.length + travelWarnings.length)}
-              note="Double bookings + travel warnings, next 7 days"
-              icon="alert_triangle"
-              accent={conflicts.length > 0 ? 'danger' : 'neutral'}
-            />
-            <KpiTile
-              label="Fill Rate"
-              value={`${crewDays} · ${fill.pct}%`}
-              note={`${fill.filled} of ${fill.requested} roles filled this month`}
-              icon="users"
-              accent="primary"
-            />
-          </div>
+          <KpiStrip
+            items={[
+              { label: 'Booked Today', value: String(crewBookedToday), note: 'Confirmed, shoot day is today', icon: 'crew', accent: 'primary' },
+              { label: 'Available', value: String(roster.available), note: `${roster.total} on the roster`, icon: 'check', accent: 'success' },
+              {
+                label: 'Conflicts',
+                value: String(conflicts.length + travelWarnings.length),
+                note: 'Next 7 days',
+                icon: 'alert_triangle',
+                accent: conflicts.length > 0 ? 'danger' : 'neutral',
+              },
+              {
+                label: 'Fill Rate',
+                value: `${crewDays} days · ${fill.pct}%`,
+                note: `${fill.filled} of ${fill.requested} roles filled`,
+                icon: 'users',
+                accent: 'primary',
+              },
+            ]}
+            columns={4}
+          />
 
           {/* Toolbar & filter chips — §6.1 draws `(All)(Available)(Booked)(Unavailable)`,
               roster availability rather than assignment status. The union and its
@@ -487,9 +453,10 @@ export function CrewBooking() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 'var(--sp-sm)',
-                flexWrap: phone ? 'nowrap' : 'wrap',
-                overflowX: phone ? 'auto' : 'visible',
-                width: phone ? '100%' : undefined,
+                flexWrap: 'nowrap',
+                overflowX: 'auto',
+                width: phone ? '100%' : 'auto',
+                maxWidth: phone ? '100%' : 'calc(100% - 400px)',
                 paddingBottom: phone ? 4 : 0,
               }}
             >
@@ -521,8 +488,8 @@ export function CrewBooking() {
               ))}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', width: phone ? '100%' : 'auto' }}>
-              <div style={{ flex: phone ? 1 : undefined, width: phone ? undefined : 240 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: phone ? 'wrap' : 'nowrap', width: phone ? '100%' : 'auto', flexShrink: 0 }}>
+              <div style={{ flex: phone ? '1 1 100%' : '1 1 320px', width: phone ? '100%' : 320, minWidth: phone ? '100%' : 240, maxWidth: 440 }}>
                 <SearchInput
                   placeholder="Search crew, role, production…"
                   value={searchQuery}
@@ -530,20 +497,6 @@ export function CrewBooking() {
                   onClear={() => setSearchQuery('')}
                 />
               </div>
-              {!phone && (
-                <Unavailable reason={DATE_RANGE_UNAVAILABLE}>
-                  <Button variant="secondary" icon="calendar" disabled>
-                    Date range
-                  </Button>
-                </Unavailable>
-              )}
-              {!phone && (
-                <Unavailable reason={EXPORT_UNAVAILABLE}>
-                  <Button variant="secondary" icon="download" disabled>
-                    Export
-                  </Button>
-                </Unavailable>
-              )}
             </div>
           </div>
 
@@ -799,16 +752,6 @@ export function CrewBooking() {
   )
 }
 
-/**
- * Four KPI tiles across a 375px phone is already two columns of reading; the
- * clamp pattern matches `KpiStrip` (Page.tsx:204), kept local because this
- * screen's tiles are bespoke.
- */
-function kpiColumns(count: number, viewport: 'phone' | 'tablet' | 'desktop'): number {
-  if (viewport === 'phone') return Math.min(count, 2)
-  if (viewport === 'tablet') return Math.min(count, 3)
-  return count
-}
 
 /** Law 11 — colour + icon + label, never colour alone. */
 function StateChip({ label, tone }: { label: string; tone: StatusKey }) {
@@ -915,23 +858,6 @@ function AssignmentCard({
   )
 }
 
-/* ── KPI tiles ────────────────────────────────────────────────────────── */
-
-function KpiTile({ label, value, note, icon, accent }: { label: string; value: string; note: string; icon: IconName; accent: StatusKey }) {
-  const c = STATUS[accent]
-  return (
-    <article className="crew-kpi-card lift" style={{ minWidth: 0 }}>
-      <div className="crew-kpi-header" style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-        <span className="crew-kpi-icon" style={{ width: 30, height: 30, borderRadius: 'var(--r-sm)', background: c.bg, color: c.fg, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
-          <Icon name={icon} size={16} fill />
-        </span>
-        <div className="crew-kpi-label" title={label} style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-      </div>
-      <div className="figure crew-kpi-value" style={{ marginTop: 9, fontSize: 'clamp(16px, 1.5vw, 22px)', fontWeight: 700, color: 'var(--text)' }}>{value}</div>
-      <div className="crew-kpi-note" title={note} style={{ marginTop: 6, fontSize: 'var(--t-meta)', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note}</div>
-    </article>
-  )
-}
 
 /**
  * Law 11 — colour + icon + label — now satisfied by delegating to <Badge>.

@@ -40,7 +40,7 @@ export type StatusKey =
   | 'neutral'
   /** Blue, solid — Booked, Reserved, Issued. "Committed / scheduled." */
   | 'primary'
-  /** Yellow, solid — Packed, Due Soon, Partial, Cleaning, Maintenance. */
+  /** Yellow, solid — Packed, Due Soon, Partial, Cleaning, Maintenance, Reset, QC. */
   | 'progress'
   /** Orange, solid — On Rent, Picked Up, Partial Pickup. "Out with the client." */
   | 'out'
@@ -64,13 +64,13 @@ export interface StatusTokens {
 }
 
 export const STATUS: Record<StatusKey, StatusTokens> = {
-  neutral: { bg: 'var(--st-neutral-bg)', fg: 'var(--st-neutral-fg)', border: 'var(--st-neutral-border)' },
-  primary: { bg: 'var(--st-primary-bg)', fg: 'var(--st-primary-fg)', border: 'var(--st-primary-border)' },
-  progress: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', border: 'var(--st-progress-border)' },
-  out: { bg: 'var(--st-out-bg)', fg: 'var(--st-out-fg)', border: 'var(--st-out-border)' },
-  in: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)', border: 'var(--st-in-border)' },
-  danger: { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)', border: 'var(--st-danger-border)' },
-  dim: { bg: 'var(--st-dim-bg)', fg: 'var(--st-dim-fg)', border: 'var(--st-dim-border)' },
+  neutral: { bg: 'var(--st-neutral-bg)', fg: 'var(--st-neutral-fg)' },
+  primary: { bg: 'var(--st-primary-bg)', fg: 'var(--st-primary-fg)' },
+  progress: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)' },
+  out: { bg: 'var(--st-out-bg)', fg: 'var(--st-out-fg)' },
+  in: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)' },
+  danger: { bg: 'var(--st-danger-bg)', fg: 'var(--st-danger-fg)' },
+  dim: { bg: 'var(--st-dim-bg)', fg: 'var(--st-dim-fg)' },
   ext: { bg: 'var(--ext-bg)', fg: 'var(--ext-fg)', border: 'var(--ext-line)' },
 }
 

@@ -96,14 +96,14 @@ import { formatGateError } from '../../lib/gates'
 const BLUE_PRIMARY = { background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)', border: '1px solid transparent' } as const
 
 /**
- * §4.2's five tokens, mapped onto the four queue states. QC's render colour
- * was purple — banned outright. `progress` is the literal definition of
- * `Cleaning`; `in` (soft green, "back in stock") is `Ready`'s natural home.
+ * §4.2's tokens, mapped onto the four queue states. Both Cleaning and QC
+ * represent in-house turnaround & testing, mapped to `progress` (yellow)
+ * with dark ink per design direction.
  */
 const TONE: Record<QueueState, StatusKey> = {
   Waiting: 'neutral',
   Cleaning: 'progress',
-  QC: 'primary',
+  QC: 'progress',
   Ready: 'in',
 }
 

@@ -9,6 +9,7 @@ import {
   canApproveDamage,
   canApproveLateFeeWaiver,
   canRecordPayment,
+  canReversePayment,
   canOverrideCreditLimit,
   canManageSettings,
   canConfirmRental,
@@ -144,6 +145,17 @@ describe('canRecordPayment', () => {
 
   it('is blocked offline', () => {
     for (const role of ALL_ROLES) expect(canRecordPayment(role, false)).toBe(false)
+  })
+})
+
+describe('canReversePayment', () => {
+  it('is Owner, Admin and Manager only, matching payment_reversals RLS', () => {
+    const allowed = ALL_ROLES.filter((r) => canReversePayment(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager'])
+  })
+
+  it('is blocked offline', () => {
+    for (const role of ALL_ROLES) expect(canReversePayment(role, false)).toBe(false)
   })
 })
 

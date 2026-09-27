@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } fr
 import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { ConfirmDialog, Input, Select, Modal, Stepper, PageActions } from '../../components/ui'
+import { ConfirmDialog, Input, Select, Modal, PageActions } from '../../components/ui'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { Card, PageHeader, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
@@ -424,7 +424,7 @@ interface CrewLine {
  */
 const SECTIONS = [
   'Client',
-  'Dates',
+  'Rental period',
   'Equipment, Bundles & Services',
   'Crew',
   'Delivery',
@@ -679,7 +679,7 @@ function Section({
           gap: 10,
           padding: '12px 16px',
           borderBottom: open ? '1px solid var(--border)' : 'none',
-          background: open ? 'color-mix(in srgb, var(--brand, var(--primary)) 4%, var(--card2))' : 'transparent',
+          background: 'var(--surface)',
           cursor: 'pointer',
           userSelect: 'none',
           minHeight: 48,
@@ -688,6 +688,7 @@ function Section({
       >
         {stepNumber && (
           <span
+            className="new-rental-section-number"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -1570,62 +1571,25 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * pick the wrong band and never correct it. The effect below is what makes
    * a band change actually reach the accordion.
    */
-  const phoneAccordion = viewport === 'phone'
-  /*
-   * Seeded from `phoneAccordion`, not `window.innerWidth`.
-   *
-   * The comment above claimed this read had already been removed while the
-   * initializer directly below still performed it — the comment described the
-   * intent and the code kept the bug. `useViewport()` resolves synchronously
-   * on its own first render (it seeds from `viewportFor(window.innerWidth)`),
-   * so reading the band here is correct at mount AND stays correct afterwards,
-   * which the raw width read never did.
-   */
-  const [open, setOpen] = useState<boolean[]>(() =>
-    phoneAccordion
-      ? [true, false, false, false, false, false]
-      : [true, true, true, false, false, true],
-  )
-  useEffect(() => {
-    if (!phoneAccordion) return
-    // Crossing into the phone band collapses to one open section, keeping the
-    // first one already open (Equipment by default) rather than closing them
-    // all and leaving a wall of headers.
-    setOpen((p) => {
-      const openCount = p.filter(Boolean).length
-      if (openCount <= 1) return p
-      const first = p.indexOf(true)
-      return p.map((_, j) => j === first)
-    })
-  }, [phoneAccordion])
+  const [open, setOpen] = useState<boolean[]>([true, true, true, false, false, true])
   const toggle = (i: number) =>
-    setOpen((p) =>
-      // Phone: opening a section closes the others. Width decides, never
-      // orientation and never a platform check (Law 13/14).
-      phoneAccordion
-        ? p.map((v, j) => (j === i ? !v : false))
-        : p.map((v, j) => (j === i ? !v : v)),
-    )
+    setOpen((p) => p.map((v, j) => (j === i ? !v : v)))
 
-  // 5-Step Workflow State (§3)
+  // Section shortcuts still use these anchors; the booking itself is one page.
   const [currentStep, setCurrentStep] = useState<number>(1)
-  const [preferredViewMode, setViewMode] = useState<'steps' | 'all'>('all')
-  const viewMode = isPhone ? 'steps' : preferredViewMode
   const workflowRef = useRef<HTMLDivElement>(null)
   const previousStep = useRef(currentStep)
-  const stageLabels = ['Client & Schedule', 'Equipment & Bundles', 'Crew & Delivery', 'Pricing & Payment', 'Review & Confirm']
   useEffect(() => {
-    // Presentation only: sections stay mounted, so moving back preserves edits.
-    const indices = currentStep === 1 ? [0, 1] : currentStep === 2 ? [2] : currentStep === 3 ? [3, 4] : currentStep === 4 ? [5] : []
-    if (viewMode === 'steps' && indices.length) {
-      setOpen((previous) => previous.map((value, index) => isPhone ? index === indices[0] : indices.includes(index) || value))
+    const indices = currentStep === 1 ? [0, 1] : currentStep === 2 ? [2] : currentStep === 3 ? [5] : []
+    if (indices.length) {
+      setOpen((previous) => previous.map((value, index) => indices.includes(index) || value))
     }
     if (previousStep.current !== currentStep) {
-      workflowRef.current?.focus({ preventScroll: true })
-      workflowRef.current?.scrollIntoView?.({ block: 'start', behavior: 'auto' })
+      const targetId = currentStep === 1 ? 'section-0' : currentStep === 2 ? 'section-2' : currentStep === 3 ? 'section-5' : 'rail-booking-summary'
+      document.getElementById(targetId)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
       previousStep.current = currentStep
     }
-  }, [currentStep, isPhone, viewMode])
+  }, [currentStep])
 
 
   // Return Pickup Logistics (§3.3)
@@ -3451,8 +3415,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         return
       }
 
-      // Alt+1 to Alt+5: Navigate Steps
-      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key >= '1' && e.key <= '5') {
+      // Alt+1 to Alt+4: Navigate Steps
+      if (e.altKey && !e.ctrlKey && !e.metaKey && e.key >= '1' && e.key <= '4') {
         e.preventDefault()
         const stepNum = Number(e.key)
         setCurrentStep(stepNum)
@@ -3464,11 +3428,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           } else if (stepNum === 2) {
             next[2] = true
           } else if (stepNum === 3) {
-            next[3] = true
-            next[4] = true
-          } else if (stepNum === 4) {
             next[5] = true
-          } else if (stepNum === 5) {
+          } else if (stepNum === 4) {
             return next.map(() => true)
           }
           return next
@@ -3496,7 +3457,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     const sectionIndex = SECTIONS.findIndex((_, i) => `section-${i}` === targetId)
     if (sectionIndex >= 0) {
       setOpen((prev) => prev.map((v, j) => (j === sectionIndex ? true : v)))
-      setCurrentStep(sectionIndex <= 1 ? 1 : sectionIndex === 2 ? 2 : sectionIndex <= 4 ? 3 : 4)
+      setCurrentStep(sectionIndex <= 1 || sectionIndex === 3 || sectionIndex === 4 ? 1 : sectionIndex === 2 ? 2 : 3)
     }
     globalThis.requestAnimationFrame(() => {
       const section = document.getElementById(targetId)
@@ -4068,7 +4029,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           title={draftBookingNo ? `Draft #${draftBookingNo}` : 'New Rental'}
           actions={
             <PageActions
-              secondary={
+              secondary={[
                 embedded ? (
                   <Button
                     variant="ghost"
@@ -4078,10 +4039,20 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                   >
                     Back to Rentals
                   </Button>
-                ) : undefined
-              }
-              overflow={
+                ) : null,
+                <Button
+                  key="save-draft"
+                  variant="outline"
+                  icon="file"
+                  onClick={() => saveDraft()}
+                  disabled={saveState === 'saving'}
+                >
+                  {saveState === 'saving' ? 'Saving…' : 'Save as draft'}
+                </Button>,
+              ]}
+              extra={
                 <span
+                  className="new-rental-status"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, padding: '0 10px', borderRadius: 'var(--r-badge)', background: STATUS[statusToken(status)].bg, color: STATUS[statusToken(status)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}
                 >
                   <Icon name="file" size={13} />
@@ -4110,7 +4081,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 'var(--sp-md)',
-            padding: '12px 16px',
+            padding: '8px 14px',
             borderRadius: 'var(--r-card)',
             background: 'var(--st-danger-bg)',
             color: 'var(--st-danger-fg)',
@@ -4118,16 +4089,9 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             marginBottom: 'var(--sp-md)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Icon name="alert_triangle" size={18} style={{ flexShrink: 0 }} />
-            <div>
-              <strong style={{ display: 'block', fontSize: 'var(--t-body)' }}>
-                Inventory Stock Contention ({conflictLines.length} conflict{conflictLines.length > 1 ? 's' : ''})
-              </strong>
-              <span style={{ fontSize: 'var(--t-meta)', opacity: 0.9 }}>
-                {conflictLines.map((c) => c.text).join(' · ')}
-              </span>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta)' }}>
+            <Icon name="alert_triangle" size={16} style={{ flexShrink: 0 }} />
+            <span>{conflictLines.length} equipment conflict{conflictLines.length > 1 ? 's' : ''}</span>
           </div>
           <Button
             variant="outline"
@@ -4136,130 +4100,28 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               whiteSpace: 'nowrap',
               borderColor: 'currentColor',
               color: 'inherit',
-              minHeight: 36,
+              minHeight: 32,
+              padding: '0 10px',
+              fontSize: 'var(--t-meta)',
             }}
           >
-            Resolve Equipment
+            Review
           </Button>
         </div>
       )}
 
-      {/* ── WORKFLOW 5-STEP PERSISTENT STEPPER (§3) ── */}
       <div
-        className="new-rental-stepper-container"
+        className="new-rental-workspace"
         ref={workflowRef}
-        tabIndex={-1}
-        aria-label={`Step ${currentStep} of 5: ${stageLabels[currentStep - 1]}`}
-        style={{
-          marginBottom: 'var(--sp-md)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          background: 'var(--card-bg, var(--surface))',
-          padding: '12px 16px',
-          borderRadius: 'var(--r-card)',
-          border: '1px solid var(--border)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          {isPhone && (
-            <div className="new-rental-mobile-progress" aria-live="polite">
-              <span>Step {currentStep} of 5</span>
-              <strong>{stageLabels[currentStep - 1]}</strong>
-              <progress value={currentStep} max={5} aria-label="Rental workflow progress" />
-            </div>
-          )}
-          <div hidden={isPhone} style={{ flex: '1 1 100%', minWidth: 0 }}>
-            <Stepper
-              steps={[
-                { id: 1, label: 'Client & Schedule', description: client ? client.name : 'Who & When' },
-                { id: 2, label: 'Equipment & Bundles', description: lines.length > 0 ? `${lines.length} items` : 'Select Gear' },
-                { id: 3, label: 'Crew & Delivery', description: 'Logistics', optional: true },
-                { id: 4, label: 'Pricing & Payment', description: canBookingMoney && pricing.rentalTotalPaisa > 0 ? formatMoney(pricing.rentalTotalPaisa) : 'Financials' },
-                { id: 5, label: 'Review & Confirm', description: 'Finalize' },
-              ]}
-              currentStep={currentStep}
-              onStepClick={(step: number) => {
-                setViewMode('steps')
-                setCurrentStep(step)
-                if (step === 1) setOpen((prev) => prev.map((v, i) => (i === 0 || i === 1 ? true : v)))
-                if (step === 2) setOpen((prev) => prev.map((v, i) => (i === 2 ? true : v)))
-                if (step === 3) setOpen((prev) => prev.map((v, i) => (i === 3 || i === 4 ? true : v)))
-                if (step === 4) setOpen((prev) => prev.map((v, i) => (i === 5 ? true : v)))
-                if (step === 5) setOpen((prev) => prev.map(() => true))
-              }}
-            />
-          </div>
-          <div style={{ display: isPhone ? 'none' : 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
-            <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <span className="new-rental-kbd" title="Use Alt+1 to Alt+5 to jump directly between steps">Alt+1..5</span>
-              <span>Jump steps</span>
-            </span>
-            <button
-              type="button"
-              className="press"
-              onClick={() => setViewMode((m) => (m === 'steps' ? 'all' : 'steps'))}
-              title={viewMode === 'steps' ? 'Switch to All Sections view' : 'Switch to 5-Step flow'}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                minHeight: 44,
-                padding: '0 10px',
-                borderRadius: 'var(--r-badge)',
-                border: '1px solid var(--border)',
-                background: viewMode === 'all' ? 'var(--hover-bg, var(--card2))' : 'transparent',
-                color: 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              <Icon name={viewMode === 'all' ? 'check' : 'checklist'} size={13} />
-              {viewMode === 'all' ? 'Use guided steps' : 'Show all sections'}
-            </button>
-            {viewMode === 'all' && (
-              <button
-                type="button"
-                className="press"
-                onClick={() => {
-                  const allOpen = open.every(Boolean)
-                  setOpen([!allOpen, !allOpen, !allOpen, !allOpen, !allOpen, !allOpen])
-                }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  minHeight: 44,
-                  padding: '0 10px',
-                  borderRadius: 'var(--r-badge)',
-                  border: '1px solid var(--border)',
-                  background: 'transparent',
-                  color: 'var(--text2)',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                <Icon name={open.every(Boolean) ? 'chevron_up' : 'chevron_down'} size={13} />
-                {open.every(Boolean) ? 'Collapse All' : 'Expand All'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div
         style={{
           display: 'grid',
-          gridTemplateColumns: isDesktop ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
+          gridTemplateColumns: isDesktop ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)',
           gap: 'var(--sp-md)',
           alignItems: 'start',
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          {/* ── STEP 1: Client & Schedule (§3.1) ── */}
-          <div style={{ display: viewMode === 'all' || currentStep === 1 ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <div className="new-rental-canvas" style={{ minWidth: 0 }}>
+          <div className="new-rental-stage new-rental-stage--setup">
             <Section
               id="section-0"
             title={SECTIONS[0]}
@@ -4392,19 +4254,21 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               )}
             </Field>
 
-            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : viewport === 'tablet' ? 'repeat(2, minmax(0,1fr))' : 'repeat(3, minmax(0,1fr))', gap: 11, marginTop: 11 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr))', gap: 11, marginTop: 11 }}>
               <Field label="Project">
                 <Input value={project} onChange={(e) => setProject(e.target.value)} style={inputStyle} />
               </Field>
               <Field label="Project Type">
                 <Input value={kind} onChange={(e) => setKind(e.target.value)} style={inputStyle} />
               </Field>
-              <Field
-                label="Government ID / PAN"
-                error={client && govId.trim().length === 0 ? 'Required before confirming. Enter the PAN or citizenship number, or add it on the client record.' : undefined}
-              >
-                <Input value={govId} onChange={(e) => setGovId(e.target.value)} style={inputStyle} />
-              </Field>
+              <div style={{ gridColumn: isPhone ? 'auto' : '1 / -1' }}>
+                <Field
+                  label="Government ID / PAN"
+                  error={client && govId.trim().length === 0 ? 'Required before confirming. Enter the PAN or citizenship number, or add it on the client record.' : undefined}
+                >
+                  <Input value={govId} onChange={(e) => setGovId(e.target.value)} style={inputStyle} />
+                </Field>
+              </div>
               {/* §60 "no duplicate information" — Delivery Type is *not* repeated
                   here. It lives once, in the Delivery section, beside the
                   delivery and fuel charges it drives (§9.2). */}
@@ -4451,25 +4315,25 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 : `${pickupBs ? formatBs(pickupBs) : formatAd(new Date(pickup))} → ${days} ${dayWord}`
             }
           >
-            <div className="new-rental-shoot-presets" role="group" aria-label="Production shoot presets">
-              <span style={{ fontSize: 'var(--t-meta, 11px)', fontWeight: 600, color: 'var(--muted)', marginRight: 2 }}>
-                Shoot Presets:
-              </span>
-              {SHOOT_PRESETS.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="new-rental-preset-chip"
-                  onClick={() => applyShootPreset(p.id)}
-                  title={p.description}
-                >
-                  <Icon name={p.icon} size={12} />
-                  <span>{p.label}</span>
-                </button>
-              ))}
-            </div>
+            <details className="new-rental-preset-disclosure">
+              <summary>Use a shoot preset</summary>
+              <div className="new-rental-shoot-presets" role="group" aria-label="Production shoot presets">
+                {SHOOT_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="new-rental-preset-chip"
+                    onClick={() => applyShootPreset(p.id)}
+                    title={p.description}
+                  >
+                    <Icon name={p.icon} size={12} />
+                    <span>{p.label}</span>
+                  </button>
+                ))}
+              </div>
+            </details>
 
-            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr)) auto', gap: 11, alignItems: 'start' }}>
+            <div className="new-rental-period-fields" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 11, alignItems: 'start' }}>
               {/* `DateTimeField` renders its own label and its own BS line, so
                   it is not wrapped in `Field` (that would double the label).
                   `lib/bs.ts` is the one Date Engine — nothing here hand-writes
@@ -4487,42 +4351,12 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 onTimeChange={setReturnTime}
                 error={days === 0 ? 'Return must be later than pickup. Change the return date or its time.' : undefined}
               />
-              {/* §8.6 — an unset value is an em dash, never a zero. */}
-              <div
-                style={{
-                  minWidth: 100,
-                  padding: '10px 14px',
-                  borderRadius: 'var(--r-card, 10px)',
-                  background: 'var(--card2)',
-                  border: '1px solid var(--border)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  textAlign: 'center',
-                  alignSelf: 'stretch',
-                }}
-              >
-                <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Rental Days
-                </span>
-                <span className="figure" style={{ fontSize: 'var(--t-h2, 24px)', fontWeight: 800, color: days === 0 ? 'var(--muted)' : 'var(--accent-text, var(--text))' }}>
-                  {days === 0 ? '—' : days}
-                </span>
-                <span style={{ fontSize: '11px', color: 'var(--text2)', fontWeight: 600 }}>
-                  {days === 1 ? 'Single day' : days > 1 ? `${days} billable days` : 'Select dates'}
-                </span>
-                {pickupBs && retBs && (
-                  <div style={{ marginTop: 6, paddingTop: 5, borderTop: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', fontSize: '10px', color: 'var(--muted)', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)', whiteSpace: 'nowrap' }}>
-                    {formatBs(pickupBs)} → {formatBs(retBs)}
-                  </div>
-                )}
-              </div>
             </div>
           </Section>
 
-          {viewMode === 'steps' && !isPhone && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 8 }}>
+
+          {!isPhone && (
+            <div className="new-rental-stage-next" style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 8 }}>
               <Button
                 variant="primary"
                 onClick={() => {
@@ -4537,8 +4371,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           )}
         </div>
 
-        {/* ── STEP 2: Equipment & Bundles (§3.2) ── */}
-        <div style={{ display: viewMode === 'all' || currentStep === 2 ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <div className="new-rental-stage new-rental-stage--equipment">
           <Section
             id="section-2"
             title={SECTIONS[2]}
@@ -4936,8 +4769,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </div>
           </Section>
 
-          {viewMode === 'steps' && !isPhone && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
+          {!isPhone && (
+            <div className="new-rental-stage-next" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
               <Button
                 variant="outline"
                 onClick={() => {
@@ -4946,26 +4779,22 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 }}
                 style={{ minHeight: 44 }}
               >
-                ← Back to Client
+                ← Back to Client & Dates
               </Button>
               <Button
                 variant="primary"
                 onClick={() => {
                   setCurrentStep(3)
-                  setOpen((p) => p.map((v, i) => (i === 3 || i === 4 ? true : v)))
+                  setOpen((p) => p.map((v, i) => (i === 5 ? true : v)))
                 }}
                 style={{ minHeight: 44, padding: '0 24px', fontWeight: 600 }}
               >
-                Continue to Crew & Delivery →
+                Continue to Pricing →
               </Button>
             </div>
           )}
         </div>
 
-        {/* ── STEP 3: Crew & Delivery (§3.3) ── */}
-        <div style={{ display: viewMode === 'all' || currentStep === 3 ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          {/* 01_NEW_RENTAL §1.1 — `＋ Crew (collapsed)` is its own box, so Crew
-              & Transport splits here. Delivery follows as its own box below. */}
           <Section
             id="section-3"
             title={SECTIONS[3]}
@@ -5396,34 +5225,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </div>
           </Section>
 
-          {viewMode === 'steps' && !isPhone && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setCurrentStep(2)
-                  setOpen((p) => p.map((v, i) => (i === 2 ? true : v)))
-                }}
-                style={{ minHeight: 44 }}
-              >
-                ← Back to Equipment
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setCurrentStep(4)
-                  setOpen((p) => p.map((v, i) => (i === 5 ? true : v)))
-                }}
-                style={{ minHeight: 44, padding: '0 24px', fontWeight: 600 }}
-              >
-                Continue to Pricing →
-              </Button>
-            </div>
-          )}
-        </div>
-
-        {/* ── STEP 4: Pricing & Payment (§3.4) ── */}
-        <div style={{ display: viewMode === 'all' || currentStep === 4 ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <div className="new-rental-stage new-rental-stage--pricing">
           {/* Kept deliberately. `WIREFRAME_RULINGS_2026-08-12.md` §1 names
               "New Rental's Pricing & Payments" among the sections that survive
               because no spec removes them in prose — the rail summarises this
@@ -5783,22 +5585,22 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </Section>
           )}
 
-          {viewMode === 'steps' && !isPhone && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
+          {!isPhone && (
+            <div className="new-rental-stage-next" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
               <Button
                 variant="outline"
                 onClick={() => {
-                  setCurrentStep(3)
-                  setOpen((p) => p.map((v, i) => (i === 3 || i === 4 ? true : v)))
+                  setCurrentStep(2)
+                  setOpen((p) => p.map((v, i) => (i === 2 ? true : v)))
                 }}
                 style={{ minHeight: 44 }}
               >
-                ← Back to Crew & Delivery
+                ← Back to Equipment
               </Button>
               <Button
                 variant="primary"
                 onClick={() => {
-                  setCurrentStep(5)
+                  setCurrentStep(4)
                   setOpen((p) => p.map(() => true))
                 }}
                 style={{ minHeight: 44, padding: '0 24px', fontWeight: 600 }}
@@ -5809,13 +5611,12 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           )}
         </div>
 
-        {/* ── STEP 5: Review & Confirm (§3.5) ── */}
-        <div style={{ display: viewMode === 'all' || currentStep === 5 ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+        <div className="new-rental-stage--review" hidden>
           <Card style={{ padding: 'var(--sp-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-md)', borderBottom: '1px solid var(--border)', paddingBottom: 'var(--sp-sm)', flexWrap: 'wrap', gap: 8 }}>
               <div>
                 <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>
-                  Step 5: Review & Confirm Rental
+                  Step 4: Review & Confirm Rental
                 </h2>
                 <p style={{ margin: '4px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                   Verify client, schedule, gear, logistics, and financials before finalizing.
@@ -5994,7 +5795,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
             {/* Step 5 Action Footer */}
             <div className="new-rental-step-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTop: '1px solid var(--border)', flexWrap: 'wrap', gap: 12 }}>
-              <Button variant="outline" onClick={() => setCurrentStep(4)} style={{ minHeight: 44 }}>
+              <Button variant="outline" onClick={() => setCurrentStep(3)} style={{ minHeight: 44 }}>
                 ← Back to Pricing
               </Button>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -6075,7 +5876,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       </div>
 
       {!isDesktop && (
-        <div hidden={isPhone && currentStep !== 5} style={{ marginTop: 'var(--sp-md)' }}>
+        <div className="new-rental-inline-summary" style={{ marginTop: 'var(--sp-md)' }}>
           {bookingSummaryCard}
         </div>
       )}
@@ -6091,39 +5892,29 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             >
               Cancel
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => saveDraft()}
-              disabled={saveState === 'saving'}
-              style={{ minHeight: 36, padding: '0 8px', fontSize: 'var(--t-meta)' }}
-            >
-              {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
-            </Button>
+            <span className="new-rental-mobile-state">{draftPersisted ? 'Draft' : 'New booking'}</span>
           </div>
-          <button type="button" className="new-rental-compact-summary" onClick={() => setCurrentStep(5)} aria-label="Review rental summary">
+          <button type="button" className="new-rental-compact-summary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} aria-label="Review rental summary">
             <span>{client?.name ?? 'No client selected'} · {totalUnits} items</span>
             {canBookingMoney && <strong>{formatMoney(pricing.rentalTotalPaisa)}</strong>}
           </button>
           <div className="new-rental-mobile-action-buttons">
-            <Button variant="outline" disabled={currentStep === 1} onClick={() => setCurrentStep((step) => Math.max(1, step - 1))}>Back</Button>
-            {currentStep < 5 ? (
-              <Button variant="primary" onClick={() => setCurrentStep((step) => Math.min(5, step + 1))}>{currentStep === 4 ? 'Review rental' : 'Continue'}</Button>
-            ) : (
-              <Button
-                variant="primary"
-                onClick={confirmBooking}
-                disabled={confirmBlocked || saveState === 'saving'}
-                title={blockReasonText}
-              >
-                {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
-              </Button>
-            )}
+            <Button variant="outline" onClick={() => saveDraft()} disabled={saveState === 'saving'}>
+              {saveState === 'saving' ? 'Saving…' : 'Save draft'}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={confirmBooking}
+              disabled={confirmBlocked || saveState === 'saving'}
+              title={blockReasonText}
+            >
+              {saveState === 'saving' ? 'Confirming…' : 'Confirm booking'}
+            </Button>
           </div>
         </nav>
       )}
 
-      {!isPhone && (
+      {!isPhone && !isDesktop && (
         <aside
           aria-label="Rental confirmation bar"
           style={{
@@ -6152,41 +5943,18 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             >
               Cancel
             </Button>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Button
-                variant="outline"
-                onClick={() => saveDraft()}
-                disabled={saveState === 'saving'}
-                title="Save Draft (⌘S / Ctrl+S)"
-                style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}
-              >
-                {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
-              </Button>
-              <span className="new-rental-kbd" title="Keyboard shortcut: Ctrl+S or ⌘S">⌘S</span>
-            </div>
+            <Button
+              variant="outline"
+              onClick={() => saveDraft()}
+              disabled={saveState === 'saving'}
+              style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}
+            >
+              {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
+            </Button>
           </div>
 
-          {/* Middle: Summary context */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-lg)', flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>{client?.name || 'No client selected'}</span>
-                <span>·</span>
-                <span>{totalUnits} {totalUnits === 1 ? 'item' : 'items'}</span>
-                <span>·</span>
-                <span style={{ fontWeight: 600 }}>{days > 0 ? `${days} ${dayWord}` : 'Dates unset'}</span>
-              </div>
-              {canBookingMoney && (
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 2 }}>
-                  <span style={{ fontSize: 'var(--t-h3)', fontWeight: 800, color: 'var(--text)', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)', letterSpacing: '-0.02em' }}>
-                    {formatMoney(pricing.rentalTotalPaisa)}
-                  </span>
-                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontVariantNumeric: 'tabular-nums' }}>
-                    Deposit: {formatMoney(pricing.securityDeposit.requiredPaisa)}
-                  </span>
-                </div>
-              )}
-            </div>
+          {/* Middle: Clean notices only (summary stats live in right rail) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
             {blockingNotices.length > 0 && (
               <span
                 style={{
@@ -6208,39 +5976,18 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             )}
           </div>
 
-          {/* Right: Back & Continue / Confirm Booking */}
+          {/* Confirm is always available while the booking stays on one page. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {currentStep > 1 && (
-              <Button
-                variant="outline"
-                onClick={() => setCurrentStep((step) => Math.max(1, step - 1))}
-                style={{ minHeight: 44, padding: '0 16px' }}
-              >
-                Back
-              </Button>
-            )}
-            {currentStep < 5 ? (
-              <Button
-                variant="primary"
-                onClick={() => setCurrentStep((step) => Math.min(5, step + 1))}
-                style={{ minHeight: 44, padding: '0 20px', fontWeight: 600 }}
-              >
-                {currentStep === 4 ? 'Review Rental' : 'Continue'}
-              </Button>
-            ) : (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Button
-                  variant="primary"
-                  onClick={confirmBooking}
-                  disabled={confirmBlocked || saveState === 'saving'}
-                  title={blockReasonText || 'Confirm Booking (⌘↵ / Ctrl+Enter)'}
-                  style={{ minHeight: 44, padding: '0 20px', fontWeight: 600 }}
-                >
-                  {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
-                </Button>
-                <span className="new-rental-kbd" title="Keyboard shortcut: Ctrl+Enter or ⌘Enter">⌘↵</span>
-              </div>
-            )}
+            {canBookingMoney && <strong className="new-rental-footer-total">{formatMoney(pricing.rentalTotalPaisa)}</strong>}
+            <Button
+              variant="primary"
+              onClick={confirmBooking}
+              disabled={confirmBlocked || saveState === 'saving'}
+              title={blockReasonText}
+              style={{ minHeight: 44, padding: '0 20px', fontWeight: 600 }}
+            >
+              {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
+            </Button>
           </div>
         </aside>
       )}

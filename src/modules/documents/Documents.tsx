@@ -49,7 +49,6 @@ import {
   expiringFor,
   kpisFor,
   missingFor,
-  quickActionsFor,
   summarySlices,
   type CategoryKey,
   type DocRow,
@@ -436,7 +435,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const slices = useMemo(() => summarySlices(categories), [categories])
   const missing = useMemo(() => missingFor(money), [money])
   const expiring = useMemo(() => expiringFor(money), [money])
-  const quickActions = useMemo(() => quickActionsFor(money), [money])
   const total = useMemo(() => categories.reduce((a, c) => a + c.count, 0), [categories])
 
   /*
@@ -994,35 +992,9 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               <span className="doc-bulk-count figure doc-mono">
                 {selected.size} selected
               </span>
-              {/*
-                §9.5 — *"Merge: pick several → [Consolidate] (on demand, not
-                monthly)."* Consolidate joins the bulk bar because that is what
-                the wireframe describes: a selection verb, not a scheduled job.
-                "On demand, not monthly" is a real instruction — it rules out
-                the batch/statement-run reading — and the control being here
-                rather than in a settings screen is what encodes it.
-
-                Drawn disabled with its own reason, not the shared one: merging
-                is not merely unbuilt, it is undecided. Nothing rules whether the
-                consolidated PDF is a NEW document in the register (and if so,
-                under which type and whose number from `numbering.ts`) or a
-                one-off download that is never stored. Law 3 makes that a
-                consequential difference — a new document has a terminal action
-                and an audit trail; a download has neither. TODO(decision).
-
-                Archive keeps its place beside it: §9.5's *"Terminal action is
-                Archive"*, and there is no Delete anywhere on this screen.
-              */}
-              <Unavailable reason="Consolidating several documents into one is not built, and the shape is not ruled: whether the result is a new document in the register — with its own type, its own number from numbering.ts and its own terminal action — or a one-off download that is never stored. TODO(decision) — PLAN.md §4.">
-                <Button icon="file" disabled>
-                  Consolidate
-                </Button>
-              </Unavailable>
-              {['Download', 'Email', 'Archive'].map((b) => (
-                <Unavailable key={b} reason={NOT_BUILT}>
-                  <Button disabled>{b}</Button>
-                </Unavailable>
-              ))}
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+                ({rows.filter((r) => selected.has(r.id)).length} documents)
+              </span>
               <button
                 type="button"
                 onClick={() => setSelected(new Set())}
@@ -1324,17 +1296,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             </div>
           </Card>
 
-          <Card
-            title="Missing Documents"
-            action={
-              <Unavailable
-                reason="A missing document has no row to open — the gate that requires it lives on the booking"
-                style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}
-              >
-                View All
-              </Unavailable>
-            }
-          >
+          <Card title="Missing Documents">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
               {missing.map((m) => (
                 <div key={m.doc + m.booking} className="doc-alert-item">
@@ -1391,21 +1353,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           </Card>
 
           <Card title="Quick Actions" bodyStyle={{ padding: 10 }}>
-            <div className="doc-qa-grid" style={{ gridTemplateColumns: `repeat(${Math.min(quickActions.length, 4)}, minmax(0,1fr))` }}>
-              {quickActions.map((q) => (
-                <button
-                  key={q.label}
-                  type="button"
-                  disabled
-                  title={`${q.label} — ${NOT_BUILT}`}
-                  className="doc-qa-tile"
-                >
-                  <Icon name={q.icon} size={17} />
-                  {q.label}
-                </button>
-              ))}
-            </div>
-
             {/* The one tile with somewhere real to go. */}
             <button
               type="button"
@@ -1418,7 +1365,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                 width: '100%',
                 minHeight: 44,
                 height: 44,
-                marginTop: 'var(--sp-sm)',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--btn-secondary-border)',
                 background: 'var(--btn-secondary-bg)',
@@ -1432,10 +1378,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               <Icon name="checklist" size={14} />
               Document Templates
             </button>
-
-            <p style={{ margin: '8px 2px 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>
-              Creating and uploading documents needs storage, which is unwired — the tiles stay visible and say so.
-            </p>
           </Card>
           </>
           )

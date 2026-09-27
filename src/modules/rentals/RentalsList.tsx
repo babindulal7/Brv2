@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, FooterNote, PageHeader, PageActions } from '../../components/ui/Page'
+import { FooterNote, PageHeader, PageActions } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { PageBody } from '../../components/ui/PageBody'
 import { PageShell } from '../../components/ui/PageShell'
@@ -9,7 +9,6 @@ import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { ContextDrawer } from '../../components/ui/ContextDrawer'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { ActiveFilterChips } from '../../components/ui/FilterDrawer'
-import { Unavailable } from '../../components/ui/Unavailable'
 import { SavedViewsMenu, type SavedListView } from '../../components/ui/SavedViewsMenu'
 import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
 import { AppSidePanel } from '../../components/shell/AppSidePanel'
@@ -20,7 +19,7 @@ import { Badge } from '../../components/ui/Badge'
 import { STATUS, BRAND } from '../../lib/status'
 import type { IconName } from '../../components/ui/Icon'
 import type { StatusKey, BrandKey } from '../../lib/status'
-import { formatMoney, toRupees } from '../../lib/money'
+import { formatMoney, toRupees, type Paisa } from '../../lib/money'
 import { listInvoices, payableInvoices } from '../../lib/queries/finance'
 import { businessNowAd } from '../../lib/queries/today'
 import { formatAd, getBusinessToday } from '../../lib/bs'
@@ -31,7 +30,7 @@ import {
   canRecordPayment,
   type Role as SystemRole,
 } from '../../lib/rbac'
-import { STATUS_ORDER, statusToken } from '../../lib/workflow'
+import { STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import { useAuth } from '../../lib/auth'
 import { supabase } from '../../lib/supabase'
@@ -160,15 +159,23 @@ function Tag({ text, status }: { text: string; status: StatusKey }) {
 const EXTERNAL_LABEL = 'Sub-rented — external gear'
 const EXTERNAL_ICON: IconName = 'external_link'
 
-/** Stage chip icons, typed against the REGISTRY — see `ExternalGearMark` above. */
-const STAGE_ICON: Record<BookingStatus | 'Draft', IconName> = {
-  Draft: 'file',
-  Quote: 'file',
-  Booked: 'check',
-  Packed: 'box',
-  'On Rent': 'truck',
-  Returned: 'return_arrow',
-  Closed: 'lock',
+function calculateDraftTotal(data: RentalDraftRecord['data']): Paisa {
+  let linesTotal = 0
+  for (const l of data.lines || []) {
+    const base = (l.ratePaisa || 0) * (l.qty || 1) * (l.days || 1)
+    const discount = Math.round((base * (l.discountPct || 0)) / 100)
+    linesTotal += base - discount
+  }
+  let crewTotal = 0
+  for (const c of data.crew || []) {
+    crewTotal += (c.dayRatePaisa || 0) + (c.overtimePaisa || 0) + (c.accommodationPaisa || 0) + (c.mealsPaisa || 0)
+  }
+  const delivery = (data.deliveryChargePaisa || 0) + (data.fuelChargePaisa || 0) + (data.returnPickupChargePaisa || 0)
+  const subtotal = linesTotal + crewTotal + delivery
+  const totalDiscount = Math.round((subtotal * (data.discountPct || 0)) / 100)
+  const taxable = subtotal - totalDiscount
+  const vat = data.vatOn ? Math.round((taxable * (data.vatRatePercent ?? 13)) / 100) : 0
+  return (taxable + vat) as Paisa
 }
 
 function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
@@ -206,6 +213,7 @@ function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
     deliveryType: data.deliveryType === 'Babin Delivery' ? 'Babin Delivery' : 'Client Pickup',
     quoteExpires: null,
     deposit: null,
+    totalAmount: calculateDraftTotal(data),
     isExternal: hasSubRental,
   }
 }
@@ -255,7 +263,7 @@ function stageChipStyle(on: boolean) {
     height: 32,
     padding: '0 12px',
     borderRadius: 'var(--r-btn, 8px)',
-    border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--w12, var(--border))'}`,
+    border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
     background: on ? 'var(--nav-active-bg)' : 'var(--card)',
     color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
     fontSize: 'var(--t-meta)',
@@ -265,7 +273,7 @@ function stageChipStyle(on: boolean) {
     whiteSpace: 'nowrap' as const,
     flexShrink: 0,
     transition: 'border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease)',
-    boxShadow: on ? '0 0 12px rgba(77, 141, 255, 0.25)' : 'none',
+    boxShadow: on ? '0 1px 3px rgba(0, 0, 0, 0.08)' : 'none',
   }
 }
 
@@ -504,10 +512,10 @@ function getPrimaryAction(
   if (statusStr === 'Returned') {
     return {
       label: 'Reset & QC',
-      icon: 'check',
-      bg: '#7c3aed',
-      fg: '#ffffff',
-      border: '1px solid #6d28d9',
+      icon: 'refresh',
+      bg: 'var(--st-progress-bg)',
+      fg: 'var(--st-progress-fg)',
+      border: '1px solid var(--ready-text)',
       onClick: () => openOperations(row.bookingNo, row.status, 'Reset'),
     }
   }
@@ -1055,7 +1063,6 @@ export default function RentalsList() {
     () => stageChips.filter((s): s is BookingStatus => s !== 'Draft'),
     [stageChips],
   )
-  const isDraftSelected = useMemo(() => stageChips.includes('Draft'), [stageChips])
   const statusFilter = useMemo(() => new Set(statuses), [statuses])
 
   const from = f.filters.dateRange?.fromAd ?? ''
@@ -1090,8 +1097,8 @@ export default function RentalsList() {
   const viewport = useViewport()
   const tabular = viewport !== 'phone'
 
-  /** §8.3 — Deposit is not offerable as a column when money is not visible. */
-  const optionalColumns = useMemo(() => OPTIONAL_COLUMNS.filter((c) => c !== 'Deposit' || money), [money])
+  /** §8.3 — Total Amount is not offerable as a column when money is not visible. */
+  const optionalColumns = useMemo(() => OPTIONAL_COLUMNS.filter((c) => c !== 'Total Amount' || money), [money])
 
   /*
    * The whole filter set: one chip plus the Status accordion, intersected.
@@ -1248,7 +1255,7 @@ export default function RentalsList() {
           page: undefined,
           range: { from: 0, to: slotsRemaining - 1 },
           withCount: true,
-          ...(money ? { withDeposit: true } : {}),
+          ...(money ? { withDeposit: true, withTotalAmount: true } : {}),
         })
 
         const bookingRows = res.rows.map((r) => toRentalListRow(r, businessNowAd()))
@@ -1268,7 +1275,7 @@ export default function RentalsList() {
         page: undefined,
         range: { from: bookingOffset, to: bookingOffset + pageSize - 1 },
         withCount: true,
-        ...(money ? { withDeposit: true } : {}),
+        ...(money ? { withDeposit: true, withTotalAmount: true } : {}),
       })
 
       const bookingRows = res.rows.map((r) => toRentalListRow(r, businessNowAd()))
@@ -1368,7 +1375,7 @@ export default function RentalsList() {
    */
   const NARROW_COLUMNS = new Set<OptionalColumn>(['Items', 'Return'])
   const show = (c: OptionalColumn) =>
-    !hiddenCols.has(c) && (c !== 'Deposit' || money) && !(viewport === 'tablet' && NARROW_COLUMNS.has(c))
+    !hiddenCols.has(c) && (c !== 'Total Amount' || money) && !(viewport === 'tablet' && NARROW_COLUMNS.has(c))
   const headers: string[] = [
     'Booking ID',
     'Created Date',
@@ -1377,7 +1384,7 @@ export default function RentalsList() {
     ...(show('Pickup') ? ['Pickup'] : []),
     ...(show('Return') ? ['Return'] : []),
     'Status',
-    ...(show('Deposit') ? ['Deposit'] : []),
+    ...(show('Total Amount') ? ['Total Amount'] : []),
   ]
 
   /* `All` is the absence of a quick filter, not a value of one — it drops the
@@ -1432,7 +1439,7 @@ export default function RentalsList() {
       'Pickup Date',
       'Return Date',
       'Items',
-      ...(money ? ['Deposit'] : []),
+      ...(money ? ['Total Amount'] : []),
     ]
     const csvLines = rows.map((r) => [
       `"${r.bookingNo}"`,
@@ -1443,7 +1450,7 @@ export default function RentalsList() {
       `"${r.pickup?.date || ''}"`,
       `"${r.ret?.date || ''}"`,
       r.itemCount,
-      ...(money ? [r.deposit != null ? `"${r.deposit}"` : '""'] : []),
+      ...(money ? [r.totalAmount != null ? `"${r.totalAmount}"` : (r.deposit != null ? `"${r.deposit}"` : '""')] : []),
     ])
     const csv = [csvHeaders.join(','), ...csvLines.map((l) => l.join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -1558,55 +1565,42 @@ export default function RentalsList() {
                 </Button>
               ) : undefined
             }
-            secondary={
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-                {canOperate && (
-                  <Button
-                    variant="secondary"
-                    icon="return_arrow"
-                    onClick={() => setFastReturnOpen(true)}
-                    title="Fast Return check-in"
-                  >
-                    Fast Return
-                  </Button>
-                )}
-                {canRecord && (
-                  <Button
-                    variant="secondary"
-                    icon="invoice"
-                    onClick={() => setPaymentModalOpen(true)}
-                    title="Record payment against invoice"
-                  >
-                    Record Payment
-                  </Button>
-                )}
+            secondary={[
+              canOperate && (
                 <Button
+                  key="fast-return"
                   variant="secondary"
-                  icon="search"
-                  onClick={() => setBarcodeModalOpen(true)}
-                  title="Scan barcode or lookup serial"
+                  icon="return_arrow"
+                  onClick={() => setFastReturnOpen(true)}
+                  title="Fast Return check-in"
                 >
-                  Scan Barcode
+                  Fast Return
                 </Button>
+              ),
+              canRecord && (
                 <Button
+                  key="record-payment"
                   variant="secondary"
-                  icon="refresh"
-                  onClick={refreshAll}
-                  title="Refresh list"
+                  icon="invoice"
+                  onClick={() => setPaymentModalOpen(true)}
+                  title="Record payment against invoice"
                 >
-                  Refresh
+                  Record Payment
                 </Button>
-                <Unavailable reason="Export is not built yet — nothing settles the file format, or which columns a role may export. A full-column export would also walk around Law 6's money masking, so it needs a role rule before it needs code.">
-                  <Button
-                    icon="download"
-                    variant="secondary"
-                    disabled
-                  >
-                    Export
-                  </Button>
-                </Unavailable>
-              </div>
-            }
+              ),
+            ].filter(Boolean)}
+            overflow={[
+              {
+                label: 'Scan Barcode',
+                icon: 'search',
+                onClick: () => setBarcodeModalOpen(true),
+              },
+              {
+                label: 'Refresh',
+                icon: 'refresh',
+                onClick: refreshAll,
+              },
+            ]}
           />
         }
       />
@@ -1632,24 +1626,7 @@ export default function RentalsList() {
         </AppSidePanel>
       </WorkspaceLeftPanel>
 
-      {/*
-        ## The chip row — §4.1's two lines
-        ```
-        (All)(Quote)(Booked)(Packed)(On Rent)(Returned)(Closed)
-        (Sub-Rental)  ← filter chip, not a tab   [▤ Table][▦ Cards]
-        ```
-        Line 1 is the **Status facet, moved out of the Filters rail** — the
-        move rulings §1 anticipated. It is the same `statusFilter` state the
-        rail's accordion writes, not a second copy, so the two surfaces
-        cannot disagree; `rentalsQuery` still INTERSECTS it with the quick
-        filter's own stage set (never replaces it), and reports an empty
-        intersection as `impossible` rather than sending `[]`, which
-        `applyListFilters` reads as "no constraint".
-
-        Below 1280 the whole row scrolls horizontally instead of wrapping —
-        §4.1's tablet note is "filter chips in one scrolling row" and its
-        phone note is "chips scroll".
-      */}
+      {/* 5-view operational bar + Sub-Rental + active facet chip */}
       <FilterBar
         search={f.filters.search ?? ''}
         onSearchChange={(val) => f.setSearch(val)}
@@ -1661,7 +1638,7 @@ export default function RentalsList() {
         activeCount={f.activeCount}
         onClearAll={clearFilters}
         filterChips={<ActiveFilterChips filters={f.chips} {...(isFiltered ? { onClearAll: clearFilters } : {})} />}
-        groupAriaLabel="Filter by stage"
+        groupAriaLabel="Filter by operational view"
         rightSlot={
           tabular && (
             <SegmentedControl
@@ -1677,52 +1654,49 @@ export default function RentalsList() {
           )
         }
       >
-        <button
-          type="button"
-          /* Empties the group rather than sending an empty `in()` — which
-             `applyListFilters` reads as "no constraint", not "match nothing". */
-          onClick={() => f.setChipGroup('stage', [])}
-          aria-pressed={statusFilter.size === 0}
-          style={stageChipStyle(statusFilter.size === 0)}
-        >
-          <TouchTarget axis="y" />
-          All
-        </button>
-        {STATUS_ORDER.map((s) => {
-          const on = statusFilter.has(s)
+        {[
+          { id: 'All', label: 'All', icon: 'checklist' as IconName, stages: [] as BookingStatus[] },
+          { id: 'Upcoming', label: 'Upcoming', icon: 'calendar' as IconName, stages: ['Quote', 'Booked', 'Packed'] as BookingStatus[] },
+          { id: 'Out', label: 'Out', icon: 'truck' as IconName, stages: ['On Rent'] as BookingStatus[] },
+          { id: 'Returns', label: 'Returns', icon: 'return_arrow' as IconName, stages: ['Returned'] as BookingStatus[] },
+          { id: 'Closed', label: 'Closed', icon: 'lock' as IconName, stages: ['Closed'] as BookingStatus[] },
+        ].map((viewItem) => {
+          const isAll = viewItem.id === 'All'
+          const isActive = isAll
+            ? statusFilter.size === 0 && chip === 'All'
+            : viewItem.id === 'Upcoming'
+              ? statusFilter.size === 3 && statusFilter.has('Quote') && statusFilter.has('Booked') && statusFilter.has('Packed')
+              : viewItem.stages.length === 1 && viewItem.stages[0] !== undefined && statusFilter.size === 1 && statusFilter.has(viewItem.stages[0])
+
           return (
             <button
-              key={s}
+              key={viewItem.id}
               type="button"
-              onClick={() => toggleStatus(s)}
-              aria-pressed={on}
-              style={stageChipStyle(on)}
+              onClick={() => {
+                if (isAll) {
+                  f.setChipGroup('stage', [])
+                  if (chip !== 'All') pickChip('All')
+                } else if (isActive) {
+                  f.setChipGroup('stage', [])
+                } else {
+                  f.setChipGroup('stage', viewItem.stages)
+                  if (chip !== 'All') pickChip('All')
+                }
+              }}
+              aria-pressed={isActive}
+              style={stageChipStyle(isActive)}
             >
               <TouchTarget axis="y" />
-              {/* Law 11 — the stage's own icon beside its own word. */}
               <Icon
-                name={STAGE_ICON[s]}
+                name={viewItem.icon}
                 size={13}
-                style={{ color: on ? 'var(--nav-active-accent)' : STATUS[statusToken(s)].fg }}
+                style={{ color: isActive ? 'var(--nav-active-accent)' : 'var(--text2)' }}
               />
-              {s}
+              {viewItem.label}
             </button>
           )
         })}
-        <button
-          type="button"
-          onClick={() => f.toggleChip('stage', 'Draft')}
-          aria-pressed={isDraftSelected}
-          style={stageChipStyle(isDraftSelected)}
-        >
-          <TouchTarget axis="y" />
-          <Icon
-            name="file"
-            size={13}
-            style={{ color: isDraftSelected ? 'var(--nav-active-accent)' : STATUS[statusToken('Quote')].fg }}
-          />
-          Draft
-        </button>
+
         {chip !== 'All' && (
           <button
             type="button"
@@ -1799,6 +1773,19 @@ export default function RentalsList() {
 
       {total !== null && (
         <AppPageToolbar
+          rightSlot={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+              <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+                {countedTitle}
+              </span>
+              <SavedViewsMenu
+                storageKey={savedViewStorageKey}
+                currentQuery={savedViewQuery}
+                currentHiddenColumns={[...hiddenCols]}
+                onApply={applySavedView}
+              />
+            </div>
+          }
           pagination={
             <Pagination
               page={page}
@@ -1813,40 +1800,9 @@ export default function RentalsList() {
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0, flex: 1 }}>
-        <Card
-          title={countedTitle}
-          action={
-            <SavedViewsMenu
-              storageKey={savedViewStorageKey}
-              currentQuery={savedViewQuery}
-              currentHiddenColumns={[...hiddenCols]}
-              onApply={applySavedView}
-            />
-          }
-          bodyStyle={{ padding: 0 }}
-        >
-            {/*
-              Fixed ladder: restricted → error → loading → empty → children.
-
-              `hasRows` is what keeps a failed REFRESH from blanking a list
-              someone is reading: with rows on screen the banner renders
-              above them instead of replacing them, which is the shape
-              `PageBody` documents for exactly this case.
-
-              `empty` also covers `query.impossible` — the Status picks that
-              do not intersect the chip. Nothing was sent to Postgres, and
-              "no rentals match these filters" is the true answer.
-            */}
+        <div style={{ background: 'var(--card)', borderRadius: 'var(--r-card)', border: '1px solid var(--border)', overflow: 'hidden' }}>
             <PageBody
-              /* With `?sub=on` the screen is waiting on TWO requests, and the
-                 derived set is the one the chip cannot narrow without. Holding
-                 the skeleton up until it lands is what stops a "no rentals
-                 match these filters" flashing over a question still in flight —
-                 `query.impossible` is true for that whole window by design. */
               loading={list.loading || (subOn && subPending)}
-              /* Law 12 — inline and persistent. A sub-rental read that failed
-                 is a real error on a screen filtering by it, not a silent
-                 empty list. */
               error={subOn && !subPending && subIds === null ? SUB_RENTAL_UNANSWERED : list.error}
               onRetry={refreshAll}
               hasRows={list.rows.length > 0}
@@ -1856,19 +1812,11 @@ export default function RentalsList() {
               noun="rentals"
               skeleton="table"
               skeletonRows={6}
-              emptyTitle={isFiltered ? 'No rentals match these filters' : 'No rentals yet'}
+              emptyTitle={isFiltered ? 'No rentals match these filters' : 'No rentals found'}
               emptyMessage={
-                /* Three different emptinesses, and saying which one it is
-                   matters: an empty derived set is a fact about the corpus, an
-                   empty stage intersection is a fact about the filters, and
-                   neither is "nothing exists". */
-                subOn && subIds !== null && subIds.length === 0
-                  ? 'No booking carries a sub-rented line. Sub-Rental is derived from booking_lines.line_type — a booking counts when any of its lines does — and no line in this corpus is one.'
-                  : query.impossible
-                    ? `The “${chip}” chip covers ${CHIP_MEANS[chip]}, and none of the stages you ticked is in it.`
-                    : isFiltered
-                      ? `“${chip}” covers ${CHIP_MEANS[chip]}${subOn ? ', narrowed to bookings carrying a sub-rented line' : ''}. Nothing matches right now.`
-                      : 'No booking has been created yet.'
+                isFiltered
+                  ? 'Try adjusting your search or active filters.'
+                  : 'Get started by creating your first rental.'
               }
             >
               {((view === 'Cards' && tabular) || !tabular) && (
@@ -1943,16 +1891,16 @@ export default function RentalsList() {
                             {r.project ?? '—'}
                           </span>
                         </span>
-                        {/* §8.3 — omitted, never shown blank. `deposit` is
+                        {/* §8.3 — omitted, never shown blank. `totalAmount` is
                             null when the query did not ask, which is the
                             money-blind case. */}
-                        {show('Deposit') && (
+                        {show('Total Amount') && (
                           <span style={{ textAlign: 'right', flexShrink: 0 }}>
                             <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-                              {r.deposit === null ? '—' : formatMoney(r.deposit)}
+                              {typeof r.totalAmount === 'number' ? formatMoney(r.totalAmount) : (typeof r.deposit === 'number' ? formatMoney(r.deposit) : '—')}
                             </span>
                             <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                              Deposit
+                              Total Amount
                             </span>
                           </span>
                         )}
@@ -2354,7 +2302,7 @@ export default function RentalsList() {
                           </td>
 
                           {/* §8.3 — the cell is omitted, not emptied. */}
-                          {show('Deposit') && (
+                          {show('Total Amount') && (
                             <td style={td}>
                               <span
                                 className="figure"
@@ -2365,7 +2313,7 @@ export default function RentalsList() {
                                   color: 'var(--text)',
                                 }}
                               >
-                                {r.deposit === null ? '—' : formatMoney(r.deposit)}
+                                {typeof r.totalAmount === 'number' ? formatMoney(r.totalAmount) : (typeof r.deposit === 'number' ? formatMoney(r.deposit) : '—')}
                               </span>
                             </td>
                           )}
@@ -2397,7 +2345,7 @@ export default function RentalsList() {
                 />
               </div>
             )}
-          </Card>
+          </div>
       </div>
 
       <ContextDrawer
@@ -2433,8 +2381,10 @@ export default function RentalsList() {
             </section>
             {money && (
               <section aria-labelledby="rental-quick-view-finance">
-                <h3 id="rental-quick-view-finance" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--gold, #d9a83c)', fontWeight: 600 }}>Deposit (Liability)</h3>
-                <p className="figure" style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 700 }}>{inspectingRental.deposit === null ? '—' : formatMoney(inspectingRental.deposit)}</p>
+                <h3 id="rental-quick-view-finance" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Total Amount</h3>
+                <p className="figure" style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 700 }}>
+                  {typeof inspectingRental.totalAmount === 'number' ? formatMoney(inspectingRental.totalAmount) : (typeof inspectingRental.deposit === 'number' ? formatMoney(inspectingRental.deposit) : '—')}
+                </p>
               </section>
             )}
           </div>

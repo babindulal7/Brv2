@@ -61,7 +61,7 @@
   background: var(--nav-active-bg);
 }
 .rentals-card-item.is-overdue {
-  border-left: 3px solid var(--danger, #ff6b6b);
+  border-left: 3px solid var(--danger, #dc2626);
 }
 
 /* ── New Rental Workspace Component Rules ── */

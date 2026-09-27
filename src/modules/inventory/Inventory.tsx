@@ -1300,7 +1300,11 @@ export default function Inventory() {
     [params, setParams],
   )
   const facets: Facets = useMemo(() => parseFacetsFromParams(params), [params])
-  /* The rail became an overlay — see the drawer below for why. */
+  const [showStats, setShowStats] = useState(false)
+  const PRIMARY_EQUIPMENT_CHIPS = useMemo(
+    () => EQUIPMENT_CHIPS.filter((c) => c.kind === 'all' || (c.kind === 'status' && (c.status === 'In Stock' || c.status === 'On Rent'))),
+    []
+  )
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [sort, setSort] = useState<SortKey>('Equipment A–Z')
   const [view, setView] = useState<'table' | 'grid'>('table')
@@ -1677,24 +1681,15 @@ export default function Inventory() {
         <StockCheck embedded />
       ) : (
         <div className="inventory-v2">
-          <KpiStrip items={kpis} columns={6} />
+          {showStats && (
+            <div style={{ marginBottom: 'var(--sp-sm)' }}>
+              <KpiStrip items={kpis} columns={6} />
+            </div>
+          )}
 
-          {/*
-            §7.1 — `(All)(Available)(On Rent)(Maintenance)(Damaged)(Missing)`.
-            Six chips over two dimensions; `EQUIPMENT_CHIPS` holds them and says
-            why Damaged is the Condition facet rather than a seventh status.
-
-            §4.3's counted chips are still uncounted chips. A chip is a filter;
-            the integer beside it was a fleet-wide `group by status` over
-            `product_units_v` that no query returns, and a per-model count in its
-            place would over-count every model that has units in two states.
-
-            Chips scroll rather than wrap, matching the tab strip above and the
-            tablet/phone drawings ("chips scroll").
-          */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <div className="inventory-chip-track">
-              {EQUIPMENT_CHIPS.map((c) => {
+              {PRIMARY_EQUIPMENT_CHIPS.map((c) => {
                 const key = chipKey(c)
                 const on = chipKey(chip) === key
                 const tone =
@@ -1702,10 +1697,7 @@ export default function Inventory() {
                     ? 'var(--text2)'
                     : c.kind === 'status'
                       ? INV_DOT[c.status]
-                      : /* `CONDITION_INK`, not `STATUS[…].fg`: a `-fg` token is
-                           a block's on-colour and painted this chip white on
-                           `--card`. See the note on `CONDITION_INK`. */
-                        CONDITION_INK[c.condition]
+                      : CONDITION_INK[c.condition]
                 return (
                   <button
                     key={key}
@@ -1718,9 +1710,6 @@ export default function Inventory() {
                     className={`inventory-filter-chip ${on ? 'is-active' : ''}`}
                     style={!on && tone ? { color: tone } : undefined}
                   >
-                    {/* Law 11 — never colour alone. The chips carry an icon as
-                        well as the tone, and the Damaged one says which
-                        dimension it filters. */}
                     {c.kind === 'status' && <Icon name={INV_STYLE[c.status].icon} size={12} />}
                     {c.kind === 'condition' && <Icon name="eye" size={12} />}
                     {c.label}
@@ -1728,6 +1717,33 @@ export default function Inventory() {
                 )
               })}
             </div>
+
+            <button
+              type="button"
+              onClick={() => setShowStats((s) => !s)}
+              aria-expanded={showStats}
+              aria-label={showStats ? 'Hide inventory statistics' : 'Show inventory statistics'}
+              style={{
+                flexShrink: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                minHeight: 44,
+                padding: '0 14px',
+                borderRadius: 'var(--r-btn, 8px)',
+                border: `1px solid ${showStats ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                background: showStats ? 'var(--nav-active-bg)' : 'var(--card)',
+                color: showStats ? 'var(--nav-active-accent)' : 'var(--text)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'all var(--dur-fast) var(--ease)',
+              }}
+            >
+              <Icon name="chart" size={14} />
+              <span>{showStats ? 'Hide Stats' : 'Stats'}</span>
+            </button>
 
             <button
               type="button"
@@ -1803,35 +1819,6 @@ export default function Inventory() {
               {phone ? '' : 'Clear Filters'}
             </button>
           </div>
-
-          {/*
-            A state chip narrows to models that HAVE a unit in that state, and a
-            quantity-tracked SKU has no unit rows at all — so it disappears from
-            every state chip. That is a property of the schema (state lives on
-            `product_units`), not of the query, and it is said out loud rather
-            than left to be discovered as a missing cable.
-
-            The Damaged chip says something different, because it is a different
-            dimension: it selects models with a Damaged UNIT, and a model can be
-            Damaged and Available at once.
-          */}
-          {chip.kind !== 'all' && (
-            <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              <Icon name="info" size={12} style={{ flexShrink: 0, marginTop: 1 }} />
-              {chip.kind === 'condition' ? (
-                <>
-                  “{chip.label}” is a <strong>condition</strong>, not a status — it filters the Condition facet, so a model can
-                  be Damaged and Available at the same time. Quantity- and consumable-tracked SKUs carry no unit rows, so it
-                  cannot reach them.
-                </>
-              ) : (
-                <>
-                  “{chip.label}” selects models with at least one unit in that state. Quantity- and consumable-tracked SKUs
-                  carry no unit rows, so no state chip can reach them.
-                </>
-              )}
-            </p>
-          )}
 
           {/*
             §7.1 desktop: a filter rail on the left, the table to its right.
@@ -2213,12 +2200,6 @@ export default function Inventory() {
               the list while a desktop operator found them beside it.
             */}
           </div>
-
-          <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-            Status is written by the Status Engine from booking and workspace events. There is no manual status
-            control in Inventory — not in a row menu, not in bulk.
-          </p>
         </div>
       )}
 

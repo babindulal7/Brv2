@@ -13,6 +13,7 @@ import {
   IconBan,
   IconExternalLink,
   IconCoin,
+  IconRefresh,
 } from '@tabler/icons-react'
 import type { BookingStatus, Flag } from '../../lib/workflow'
 import { BOOKING_STATUS, FLAGS } from '../../lib/workflow'
@@ -110,6 +111,14 @@ export const Badge: React.FC<BadgeProps> = ({
     effectiveLabel = 'Draft'
     effectiveTone = 'neutral'
     effectiveIcon = effectiveIcon || <IconFileText size={14} />
+  } else if ((status as string) === 'Reset' || label === 'Reset') {
+    effectiveLabel = label || 'Reset'
+    effectiveTone = 'progress'
+    effectiveIcon = effectiveIcon || <IconRefresh size={14} />
+  } else if ((status as string) === 'QC' || label === 'QC') {
+    effectiveLabel = label || 'QC'
+    effectiveTone = 'progress'
+    effectiveIcon = effectiveIcon || <IconCheck size={14} />
   } else if (flag && FLAGS[flag]) {
     const meta = FLAGS[flag]
     effectiveLabel = flag
@@ -167,7 +176,7 @@ export const Badge: React.FC<BadgeProps> = ({
         userSelect: 'none',
         background: tokens.bg,
         color: tokens.fg,
-        border: tokens.border ? `1px solid ${tokens.border}` : (isExt ? `1px solid ${tokens.border}` : '1px solid transparent'),
+        border: isExt ? `1px solid ${tokens.border}` : '1px solid transparent',
         borderRadius: shape.borderRadius,
         fontWeight: shape.fontWeight,
         letterSpacing: shape.letterSpacing,

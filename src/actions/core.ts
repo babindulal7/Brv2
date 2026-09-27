@@ -139,8 +139,9 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
 
   switch (capability) {
     case 'payment.create':
-    case 'payment.refund':
       return rbac.canRecordPayment(ctx.role, online);
+    case 'payment.reverse':
+      return rbac.canReversePayment(ctx.role, online);
     case 'invoice.void':
       return rbac.canVoidInvoice(ctx.role, online);
     case 'credit.override':

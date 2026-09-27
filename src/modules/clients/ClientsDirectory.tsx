@@ -569,6 +569,7 @@ export function ClientsDirectory({
   const [perPage, setPerPage] = useState<number>(CLIENT_ROWS_PER_PAGE[1])
   const [page, setPage] = useState(1)
   const [activeSavedView, setActiveSavedView] = useState<string | null>(null)
+  const [showKpis, setShowKpis] = useState(false)
   const [showBulkBlock, setShowBulkBlock] = useState(false)
   const [bulkBlockReason, setBulkBlockReason] = useState('')
   /** Which direction the open dialog is going. Law 3 — a block is lifted, never deleted. */
@@ -642,11 +643,6 @@ export function ClientsDirectory({
    */
   const stopCheckRan = useMemo(
     () => [...stopVerdicts.values()].some((v) => !v.indeterminate),
-    [stopVerdicts],
-  )
-  /** The reason to show when it did not — taken from a real verdict, not written here. */
-  const stopUnavailableReason = useMemo(
-    () => [...stopVerdicts.values()][0]?.unavailable.join(' ') ?? 'No client records were read, so the on-stop check had nothing to run against.',
     [stopVerdicts],
   )
 
@@ -1094,27 +1090,16 @@ export function ClientsDirectory({
    * many clients carry that condition, not how many survive the other filters,
    * and the two chips deliberately overlap each other.
    */
-  const overlayChips: Array<{
-    label: string
-    key: keyof Overlays
-    count: number
-    icon: IconName
-    /** Present when the condition cannot be evaluated at all — the chip goes inert and says why. */
-    unavailable?: string
-  }> = [
-    { label: 'Blocked', key: 'blocked', count: metrics.blocked, icon: 'alert_triangle' },
-    {
-      label: 'On Stop',
-      key: 'onStop',
-      count: onStopCount,
-      icon: 'lock',
-      ...(stopCheckRan ? {} : { unavailable: stopUnavailableReason }),
-    },
+  const primaryChipKeys: FilterKey[] = [
+    'all',
+    'active',
+    ...(money ? ['paymentDue' as FilterKey] : []),
   ]
+  const visibleChips = chips.filter((c) => primaryChipKeys.includes(c.key) || c.key === activeFilter)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-      <KpiStrip items={kpis} columns={kpis.length} />
+      {showKpis && <KpiStrip items={kpis} columns={kpis.length} />}
 
       {/* ── quick filters + view switch ───────────────────────────────── */}
       <div
@@ -1128,7 +1113,7 @@ export function ClientsDirectory({
           paddingBottom: phone ? 4 : 0,
         }}
       >
-        {chips.map((c) => {
+        {visibleChips.map((c) => {
           const on = activeFilter === c.key
           return (
             <button
@@ -1141,8 +1126,6 @@ export function ClientsDirectory({
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 7,
-                // Law 15 — 44×44 at every width, desktop included. Matches
-                // `Inventory.tsx:1547`, the same control built to the rule.
                 minHeight: 44,
                 padding: '0 11px',
                 borderRadius: 'var(--r-sm)',
@@ -1178,82 +1161,120 @@ export function ClientsDirectory({
           )
         })}
 
-        {/*
-          ── the intersecting overlays ─────────────────────────────────────
-          Rulings §11.2.4. Separated from the exclusive group by a rule and a
-          label so the difference is visible and not merely behavioural: these
-          two narrow whatever is selected on the left, they do not replace it,
-          and unlike the chips above they can both be on at once.
-        */}
-        <span aria-hidden style={{ width: 1, alignSelf: 'stretch', minHeight: 28, background: 'var(--divider)', margin: '0 2px' }} />
-        <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>Also show only</span>
-        {overlayChips.map((c) => {
-          const on = overlays[c.key]
-          const chip = (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => toggleOverlay(c.key)}
-              aria-pressed={on}
-              disabled={Boolean(c.unavailable)}
-              className={`client-overlay-chip ${on ? 'is-active' : ''}`}
+        <button
+          key="blocked"
+          type="button"
+          onClick={() => toggleOverlay('blocked')}
+          aria-pressed={overlays.blocked}
+          className={`client-filter-chip ${overlays.blocked ? 'is-active' : ''}`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 7,
+            minHeight: 44,
+            padding: '0 11px',
+            borderRadius: 'var(--r-sm)',
+            border: `1px solid ${overlays.blocked ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+            background: overlays.blocked ? 'var(--nav-active-bg)' : 'var(--card)',
+            color: overlays.blocked ? 'var(--nav-active-accent)' : 'var(--text2)',
+            fontSize: 'var(--t-meta)',
+            fontWeight: overlays.blocked ? 600 : 500,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <Icon name="alert_triangle" size={13} fill={overlays.blocked} />
+          Blocked
+          <span
+            className="client-chip-badge figure client-mono"
+            style={{
+              minWidth: 18,
+              height: 18,
+              borderRadius: 5,
+              display: 'inline-grid',
+              placeItems: 'center',
+              background: 'var(--card2)',
+              color: 'var(--text)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 700,
+              padding: '0 4px',
+            }}
+          >
+            {metrics.blocked}
+          </span>
+        </button>
+
+        {overlays.onStop && (
+          <button
+            key="onStop"
+            type="button"
+            onClick={() => toggleOverlay('onStop')}
+            aria-pressed={overlays.onStop}
+            className={`client-filter-chip is-active`}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 7,
+              minHeight: 44,
+              padding: '0 11px',
+              borderRadius: 'var(--r-sm)',
+              border: '1px solid var(--nav-active-accent)',
+              background: 'var(--nav-active-bg)',
+              color: 'var(--nav-active-accent)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Icon name="lock" size={13} fill={true} />
+            On Stop
+            <span
+              className="client-chip-badge figure client-mono"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-                /* Law 15 — 44×44 at every width, as with the chips above. */
-                minHeight: 44,
-                padding: '0 11px',
-                borderRadius: 'var(--r-sm)',
-                /* Law 11 — the overlay's state is icon + label + colour, never
-                   colour alone: the icon fills when the overlay is on. */
-                border: `1px dashed ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                background: on ? 'var(--nav-active-bg)' : 'var(--card)',
-                color: c.unavailable ? 'var(--muted)' : on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                minWidth: 18,
+                height: 18,
+                borderRadius: 5,
+                display: 'inline-grid',
+                placeItems: 'center',
+                background: 'var(--card2)',
+                color: 'var(--text)',
                 fontSize: 'var(--t-meta)',
-                fontWeight: on ? 600 : 500,
-                cursor: c.unavailable ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
+                fontWeight: 700,
+                padding: '0 4px',
               }}
             >
-              <Icon name={c.icon} size={13} fill={on} />
-              {c.label}
-              {c.unavailable ? (
-                <span style={{ fontSize: 'var(--t-th)', fontWeight: 600 }}>check unavailable</span>
-              ) : (
-                <span
-                  className="client-chip-badge figure client-mono"
-                  style={{
-                    minWidth: 18,
-                    height: 18,
-                    borderRadius: 5,
-                    display: 'inline-grid',
-                    placeItems: 'center',
-                    background: 'var(--card2)',
-                    color: 'var(--text)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 700,
-                    padding: '0 4px',
-                  }}
-                >
-                  {c.count}
-                </span>
-              )}
-            </button>
-          )
-          /* §11.2.7 — when a limb cannot be evaluated the UI says the check did
-             not run. It is not silently omitted (an operator would read its
-             absence as "nobody is on stop") and it does not filter to an empty
-             list, which would say the same thing more convincingly. */
-          return c.unavailable ? (
-            <Unavailable key={c.key} reason={c.unavailable}>
-              {chip}
-            </Unavailable>
-          ) : (
-            chip
-          )
-        })}
+              {onStopCount}
+            </span>
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setShowKpis((s) => !s)}
+          aria-expanded={showKpis}
+          aria-label={showKpis ? 'Hide client statistics' : 'Show client statistics'}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            minHeight: 44,
+            padding: '0 12px',
+            borderRadius: 'var(--r-sm)',
+            border: `1px solid ${showKpis ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+            background: showKpis ? 'var(--nav-active-bg)' : 'var(--card)',
+            color: showKpis ? 'var(--nav-active-accent)' : 'var(--text2)',
+            fontSize: 'var(--t-meta)',
+            fontWeight: 600,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          <Icon name="chart" size={14} />
+          <span>{showKpis ? 'Hide Stats' : 'Stats'}</span>
+        </button>
 
         <span style={{ marginLeft: phone ? 0 : 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', width: phone ? '100%' : 'auto', flexWrap: phone ? 'nowrap' : 'nowrap' }}>
           <div style={{ flex: phone ? '1 1 0' : undefined, width: phone ? undefined : 280, minWidth: 0 }}>

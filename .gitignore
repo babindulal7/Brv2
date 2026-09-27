@@ -65,3 +65,5 @@ tsc_check.txt
 __pycache__/
 *.pyc
 
+# Agent teamwork scratch space
+.agents/teamwork/

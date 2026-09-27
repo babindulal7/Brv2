@@ -8,6 +8,7 @@ import { useTheme } from '../../lib/theme'
 import { toggleScanner } from './ScannerFab'
 import { quickCreateActions } from './QuickCreateMenu'
 import { searchRecords, type GlobalSearchResult } from '../../lib/queries/globalSearch'
+import { useCurrentLanguage, toggleLanguage } from '../../lib/i18n'
 
 /**
  * The global ⌘K / Ctrl-K palette.
@@ -44,9 +45,11 @@ import { searchRecords, type GlobalSearchResult } from '../../lib/queries/global
 interface PaletteAction {
   id: string
   title: string
-  subtitle?: string
+  subtitle?: string | undefined
   category: 'Navigation' | 'Actions' | 'Records'
   icon: IconName
+  shortcut?: string | undefined
+  keywords?: string[] | undefined
   onSelect: () => void
 }
 
@@ -54,6 +57,19 @@ export function openCommandPalette() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('open-command-palette'))
   }
+}
+
+const NAV_SHORTCUTS: Record<string, { shortcut: string; keywords: string[] }> = {
+  '/dashboard': { shortcut: 'today', keywords: ['today', 'td', 'dash'] },
+  '/today': { shortcut: 'today', keywords: ['today', 'td', 'dash'] },
+  '/rentals/new': { shortcut: 'nr', keywords: ['nr', 'new', 'booking'] },
+  '/rentals': { shortcut: 'rentals', keywords: ['rentals', 'bk', 'list'] },
+  '/calendar': { shortcut: 'cal', keywords: ['cal', 'schedule', 'dates'] },
+  '/inventory': { shortcut: 'inv', keywords: ['inv', 'gear', 'stock'] },
+  '/clients': { shortcut: 'cl', keywords: ['cl', 'client', 'directory'] },
+  '/finance': { shortcut: 'fin', keywords: ['fin', 'money', 'invoices', 'closing'] },
+  '/tools': { shortcut: 'tools', keywords: ['tools', 'calc', 'pricing'] },
+  '/settings': { shortcut: 'set', keywords: ['set', 'settings', 'config'] },
 }
 
 export const CommandPalette: React.FC = () => {
@@ -65,6 +81,7 @@ export const CommandPalette: React.FC = () => {
   const { user } = useAuth()
   const hasUser = Boolean(user)
   const { theme, toggle } = useTheme()
+  const currentLang = useCurrentLanguage()
   const inputRef = useRef<HTMLInputElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const resultsId = useId()
@@ -137,6 +154,8 @@ export const CommandPalette: React.FC = () => {
         subtitle: s.to,
         category: 'Navigation',
         icon: s.icon,
+        shortcut: NAV_SHORTCUTS[s.to]?.shortcut,
+        keywords: NAV_SHORTCUTS[s.to]?.keywords,
         onSelect: () => navigate(s.to),
       }),
     ),
@@ -147,6 +166,8 @@ export const CommandPalette: React.FC = () => {
         subtitle: action.detail,
         category: 'Actions',
         icon: action.icon,
+        shortcut: action.id === 'rental' ? 'nr' : action.id === 'client' ? 'nc' : undefined,
+        keywords: [action.id, action.label.toLowerCase()],
         onSelect: () => navigate(action.to),
       }),
     ),
@@ -165,10 +186,20 @@ export const CommandPalette: React.FC = () => {
       title: 'Open Scanner',
       subtitle: 'Scan a barcode or QR label',
       category: 'Actions',
-      /* 'search' is the Scan glyph everywhere — BottomBar's centre slot and
-         the FAB both draw it — so the palette matches rather than invents. */
       icon: 'search',
+      shortcut: 'sc',
+      keywords: ['sc', 'scan', 'barcode', 'qr'],
       onSelect: toggleScanner,
+    },
+    {
+      id: 'act-toggle-lang',
+      title: currentLang === 'ne' ? 'Switch to English' : 'Switch Language to नेपाली (Nepali)',
+      subtitle: 'Toggle system & catalogue language (EN / ने)',
+      category: 'Actions',
+      icon: 'flag',
+      shortcut: 'lang',
+      keywords: ['lang', 'language', 'ne', 'en', 'nepali', 'नेपाली'],
+      onSelect: () => { void toggleLanguage() },
     },
     {
       id: 'act-toggle-theme',
@@ -176,17 +207,23 @@ export const CommandPalette: React.FC = () => {
       subtitle: 'Toggle theme preference',
       category: 'Actions',
       icon: theme === 'dark' ? 'sun' : 'moon',
+      shortcut: 'theme',
+      keywords: ['theme', 'dark', 'light', 'mode'],
       onSelect: toggle,
     },
   ]
 
-  const term = search.toLowerCase()
-  const filtered = actions.filter(
-    (a) =>
+  const term = search.trim().toLowerCase()
+  const filtered = actions.filter((a) => {
+    if (!term) return true
+    if (a.shortcut && a.shortcut.toLowerCase() === term) return true
+    if (a.keywords && a.keywords.some((k) => k.toLowerCase() === term || k.toLowerCase().startsWith(term))) return true
+    return (
       a.title.toLowerCase().includes(term) ||
       (a.subtitle && a.subtitle.toLowerCase().includes(term)) ||
-      a.category.toLowerCase().includes(term),
-  )
+      a.category.toLowerCase().includes(term)
+    )
+  })
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.nativeEvent.isComposing) return
@@ -405,25 +442,42 @@ export const CommandPalette: React.FC = () => {
                     </span>
                   </div>
 
-                  {isSelected && (
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        flexShrink: 0,
-                        marginLeft: 'var(--sp-md)',
-                        color: 'var(--nav-active-accent)',
-                      }}
-                    >
-                      <Icon name="arrow_right" size={16} />
-                    </span>
-                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 'var(--sp-md)' }}>
+                    {item.shortcut && (
+                      <kbd
+                        className="figure"
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: isSelected ? 'var(--nav-active-accent)' : 'var(--muted)',
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          background: isSelected ? 'var(--nav-active-bg)' : 'var(--card)',
+                          border: '1px solid var(--border)',
+                          fontFamily: 'var(--font-id)',
+                        }}
+                      >
+                        {item.shortcut}
+                      </kbd>
+                    )}
+                    {isSelected && (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          color: 'var(--nav-active-accent)',
+                        }}
+                      >
+                        <Icon name="arrow_right" size={16} />
+                      </span>
+                    )}
+                  </div>
                 </div>
               )
             })
           )}
         </div>
 
-        {/* Footer — only keys that actually work are named here. */}
+        {/* Footer — keys and quick codes that work */}
         <div
           style={{
             display: 'flex',
@@ -437,10 +491,12 @@ export const CommandPalette: React.FC = () => {
             fontFamily: 'var(--font-id)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', flexWrap: 'wrap' }}>
             <span>↑↓ Navigate</span>
             <span>↵ Select</span>
             <span>ESC Close</span>
+            <span style={{ color: 'var(--border)' }}>|</span>
+            <span style={{ color: 'var(--text2)' }}>Codes: <strong>nr</strong> · <strong>sc</strong> · <strong>today</strong> · <strong>lang</strong></span>
           </div>
           <span>Babin Rentals OS ⌘K</span>
         </div>

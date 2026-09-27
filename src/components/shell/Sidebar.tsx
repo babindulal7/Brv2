@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../ui/Icon'
 import { useTheme } from '../../lib/theme'
-import { BRANCH, permittedNav, permittedMoreNav, permittedNavGroups, activeNavTo } from '../../data/nav'
+import { permittedNav, permittedMoreNav, permittedNavGroups, activeNavTo } from '../../data/nav'
 import type { NavSection, NavGroup } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
 import { useCollapsed } from '../../lib/collapse'
@@ -139,47 +139,6 @@ export default function Sidebar({ active }: SidebarProps) {
       <NavList groups={allowedGroups} moreSections={allowedMore} activeTo={activeTo} rail={rail} />
 
       <div style={{ flexShrink: 0, borderTop: '1px solid var(--border)', padding: 10 }}>
-        {!rail && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 4px 10px' }}>
-            <span
-              className="title"
-              aria-hidden
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 'var(--r-sm)',
-                display: 'grid',
-                placeItems: 'center',
-                border: '1px solid var(--border)',
-                color: 'var(--brand-mark)',
-                fontWeight: 700,
-                fontSize: 'var(--t-ui)',
-                flexShrink: 0,
-              }}
-            >
-              BR
-            </span>
-            <span style={{ lineHeight: 1.3, minWidth: 0 }}>
-              <span
-                style={{
-                  display: 'block',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 600,
-                  color: 'var(--text)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-              >
-                {BRANCH.name}
-              </span>
-              <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{BRANCH.address}</span>
-              <span className="identifier" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                {BRANCH.vat}
-              </span>
-            </span>
-          </div>
-        )}
 
         {/* Two labelled halves, not an icon button — the renders always show both
             options with the current one filled. Collapsed to one icon toggle in
@@ -322,33 +281,17 @@ function NavList({
         style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}
       >
         {groups.map((group, groupIdx) => (
-          <div key={group.id} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {rail ? (
-              groupIdx > 0 && (
-                <div
-                  aria-hidden
-                  style={{
-                    height: 1,
-                    background: 'var(--border)',
-                    margin: '6px 8px',
-                    opacity: 0.6,
-                  }}
-                />
-              )
-            ) : (
+          <div key={group.id} data-nav-group={group.title} aria-label={group.title} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {groupIdx > 0 && (
               <div
+                aria-hidden
                 style={{
-                  padding: groupIdx === 0 ? '4px 10px 4px' : '12px 10px 4px',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                  color: 'var(--muted)',
-                  userSelect: 'none',
+                  height: 1,
+                  background: 'var(--border)',
+                  margin: rail ? '6px 8px' : '8px 10px',
+                  opacity: 0.6,
                 }}
-              >
-                {group.title}
-              </div>
+              />
             )}
             {group.sections.map((s) => {
               const on = s.to === activeTo

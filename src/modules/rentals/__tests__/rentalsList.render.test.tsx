@@ -195,18 +195,18 @@ describe('§4.1 — one list, no tabs', () => {
     expect(button('Bookings')).toBeUndefined()
   })
 
-  it('draws the seven stage chips the wireframe names, in stage order', async () => {
+  it('draws the 5 operational view chips in order', async () => {
     await mount(1280)
     const chips = allButtons()
       .filter((b) => b.getAttribute('aria-pressed') !== null)
       .map((b) => b.textContent?.trim())
-    expect(chips.slice(0, 7)).toEqual(['All', 'Quote', 'Booked', 'Packed', 'On Rent', 'Returned', 'Closed'])
+    expect(chips.slice(0, 5)).toEqual(['All', 'Upcoming', 'Out', 'Returns', 'Closed'])
   })
 
-  it('gives every stage chip an icon beside its word (Law 11 — never colour alone)', async () => {
+  it('gives every operational view chip an icon beside its word (Law 11 — never colour alone)', async () => {
     await mount(1280)
-    const quote = allButtons().find((b) => b.textContent?.trim() === 'Quote')
-    expect(quote?.querySelector('svg')).not.toBeNull()
+    const upcoming = allButtons().find((b) => b.textContent?.trim() === 'Upcoming')
+    expect(upcoming?.querySelector('svg')).not.toBeNull()
   })
 
   it('keeps the list and pager as the primary V2 workspace', async () => {
@@ -258,12 +258,10 @@ describe('Sub-Rental — the chip that replaced the tab, live since rulings §11
   })
 })
 
-describe('the header actions — §4.1 draws New Rental and Export, and nothing else', () => {
-  it('keeps Export, honestly disabled with its reason', async () => {
+describe('the header actions — 1 primary CTA, secondary actions, and no unbuilt Export', () => {
+  it('no longer draws an unbuilt placeholder Export button', async () => {
     await mount(1280)
-    const exportBtn = button('Export')
-    expect(exportBtn).toBeDefined()
-    expect(exportBtn?.disabled).toBe(true)
+    expect(button('Export')).toBeUndefined()
   })
 
   it('no longer draws an Import button', async () => {
@@ -305,15 +303,15 @@ describe('§18 — this screen’s filters are the query string', () => {
     await mount(1280, '/rentals?quick=Overdue&stage=Booked')
     const overdue = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Overdue')
     expect(overdue?.getAttribute('aria-pressed')).toBe('true')
-    const booked = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Booked')
-    expect(booked?.getAttribute('aria-pressed')).toBe('true')
+    const row = container.querySelector('[aria-label="Active filters"]')
+    expect(row?.textContent).toContain('Stage: Booked')
   })
 
-  it('puts a picked stage on the URL', async () => {
+  it('puts a picked operational view on the URL', async () => {
     await mount(1280)
-    const booked = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Booked')!
-    await act(async () => booked.click())
-    expect(search).toBe('?stage=Booked')
+    const out = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Out')!
+    await act(async () => out.click())
+    expect(search).toBe('?stage=On+Rent')
   })
 
   it('shows what is narrowing the list as removable chips', async () => {
@@ -427,9 +425,9 @@ describe('§Step 6 — cross-page and filter selection state', () => {
     expect(text()).toContain('1 rental selected')
 
     // Changing filter drops selection immediately
-    const booked = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Booked')!
+    const out = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Out')!
     await act(async () => {
-      booked.click()
+      out.click()
     })
     expect(text()).not.toContain('1 rental selected')
   })
@@ -467,6 +465,12 @@ describe('§Step 8 & 9 — quick action permissions and mobile card parity', () 
     expect(button('New Rental')).toBeDefined()
     expect(button('Fast Return')).toBeDefined()
     expect(button('Record Payment')).toBeDefined()
+    // Scan Barcode and Refresh are in the overflow menu (•••)
+    const moreBtn = container.querySelector('button[aria-label="More actions"]') as HTMLButtonElement
+    expect(moreBtn).not.toBeNull()
+    await act(async () => {
+      moreBtn.click()
+    })
     expect(button('Scan Barcode')).toBeDefined()
   })
 
@@ -526,7 +530,13 @@ describe('§Step 10 & 11 — Sub-Rental refresh and retry', () => {
     // Data changes in database
     lines.rows = [{ booking_id: ROW.id, line_type: 'Sub-rental' }]
 
-    // Click Refresh
+    // Click Refresh from overflow menu
+    const moreBtn = container.querySelector('button[aria-label="More actions"]') as HTMLButtonElement
+    if (moreBtn) {
+      await act(async () => {
+        moreBtn.click()
+      })
+    }
     const refreshBtn = button('Refresh')
     expect(refreshBtn).toBeDefined()
     await act(async () => {

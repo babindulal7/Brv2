@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Sidebar from './components/shell/Sidebar'
 import BottomBar, { BAR_BOX } from './components/shell/BottomBar'
@@ -1083,6 +1083,15 @@ function WorkspaceContent({
   children
 }: WorkspaceContentProps) {
   const { setLeftPanelElement, setRightPanelElement, setHeaderActionsElement } = useWorkspace()
+  const { pathname } = useLocation()
+  const mainRef = useRef<HTMLElement>(null)
+
+  // The workspace is the scroll container, not window. Without this reset a
+  shorter destination page can inherit the previous page's scroll position and
+  render its title underneath the fixed shell header.
+  useLayoutEffect(() => {
+    if (mainRef.current) mainRef.current.scrollTop = 0
+  }, [pathname])
 
   return (
     <div className="workspace-content" style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
@@ -1090,6 +1099,7 @@ function WorkspaceContent({
       <div ref={setLeftPanelElement} style={{ display: 'contents' }} />
 
       <main
+        ref={mainRef}
         id="main-content"
         className="app-workspace-main"
         tabIndex={-1}

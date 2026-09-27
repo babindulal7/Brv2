@@ -288,10 +288,11 @@ export function BarcodeScannerModal({
             const errorName = err instanceof Error && err.name ? err.name : 'Error'
             const detail =
               errorName === 'NotAllowedError'
-                ? 'Camera access denied by user or device policy.'
-                : `Camera error: ${err instanceof Error && err.message ? err.message : errorName}`
+                ? 'Camera access denied by user or device policy. Switched to manual input.'
+                : `Camera error: ${err instanceof Error && err.message ? err.message : errorName}. Switched to manual input.`
             setCameraError(detail)
             playAudioFeedback('error')
+            setTimeout(() => inputRef.current?.focus(), 80)
           }
         })
     }
@@ -568,32 +569,50 @@ export function BarcodeScannerModal({
           </div>
         </form>
 
-        {/* Feedback Alert Banner */}
+        {/* Feedback Alert Banner — High Contrast Dual-Sensory Confirmation Card */}
         {lastScanResult && (
           <div
+            role="status"
+            aria-live="polite"
             style={{
-              padding: '12px 14px',
+              padding: '14px 16px',
               borderRadius: 'var(--r-btn)',
-              /*
-                The status pairs, not aliases-with-a-light-theme-hex-behind-them.
-                These read `var(--success-bg, #dcfce7)` / `var(--danger-bg,
-                #fee2e2)` etc: six literals that were dead while the aliases
-                resolved and became a light-only pink/green the moment one did
-                not. §3 bans a literal in a screen regardless, and a scan
-                result is a STATE, so it takes the same st-* pair as every
-                other status surface.
-              */
               background: lastScanResult.success ? 'var(--st-in-bg)' : 'var(--st-danger-bg)',
               color: lastScanResult.success ? 'var(--st-in-fg)' : 'var(--st-danger-fg)',
-              fontSize: 'var(--t-meta)',
+              border: `2px solid ${lastScanResult.success ? 'var(--success)' : 'var(--danger)'}`,
+              boxShadow: lastScanResult.success ? '0 2px 12px rgba(16, 185, 129, 0.2)' : '0 2px 12px rgba(239, 68, 68, 0.2)',
+              fontSize: 'var(--t-body)',
               fontWeight: 600,
               display: 'flex',
               alignItems: 'center',
-              gap: 'var(--sp-sm)',
+              gap: 'var(--sp-md)',
+              transition: 'all var(--dur-fast) var(--ease)',
             }}
           >
-            <Icon name={lastScanResult.success ? 'check' : 'alert_triangle'} size={18} />
-            <span>{lastScanResult.message}</span>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                background: lastScanResult.success ? 'var(--success)' : 'var(--danger)',
+                color: '#fff',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <Icon name={lastScanResult.success ? 'check' : 'alert_triangle'} size={20} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+              {lastScanResult.itemName && (
+                <span style={{ fontSize: 'var(--t-title)', fontWeight: 700, letterSpacing: '-0.01em' }}>
+                  {lastScanResult.itemName}
+                </span>
+              )}
+              <span style={{ fontSize: 'var(--t-meta)', opacity: 0.95, wordBreak: 'break-word' }}>
+                {lastScanResult.message}
+              </span>
+            </div>
           </div>
         )}
 

@@ -224,7 +224,7 @@ function SupplierDirectoryTable({
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>
           {rows.length} counterpart{rows.length === 1 ? 'y' : 'ies'} — every Sub Rental record grouped by who it&apos;s with
         </span>
-        <div style={{ width: 240 }}>
+        <div style={{ width: '100%', maxWidth: 360, minWidth: 240 }}>
           <SearchInput
             placeholder="Search supplier name…"
             value={search}
@@ -611,8 +611,8 @@ export function SubRental() {
           ))}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 240 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'nowrap' }}>
+          <div style={{ width: '100%', maxWidth: 360, minWidth: 240 }}>
             <SearchInput
               placeholder="Search SR ID, equipment, partner…"
               value={searchQuery}
@@ -623,6 +623,7 @@ export function SubRental() {
           <Button
             variant="secondary"
             icon={<IconDownload size={16} />}
+            style={{ flexShrink: 0 }}
             onClick={() => exportSubRentalsCsv(filteredData, canSeeFinance)}
           >
             Export

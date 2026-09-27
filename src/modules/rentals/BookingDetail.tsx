@@ -1824,45 +1824,6 @@ export default function BookingDetail() {
 
       {showSegment('Docs') && (
         <>
-          {/* Real verbs only (30 Aug rework; the Dashboard quick panel is the
-              precedent). The three buttons this replaced — Print / Share /
-              More — had no onClick: dead controls dressed as actions, the
-              exact shape Law 16's discipline elsewhere on this page refuses.
-              Each action below reuses a launcher that already works, under
-              the SAME gates its other launchers carry — money visibility AND
-              capability, omitted not disabled. */}
-          <Card title="Quick Actions">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-              {canBookingMoney && canRaiseInvoice && createInvoiceButton('Create Invoice')}
-              {canBookingMoney && canTakePayment && recordPaymentButton('Receive Payment')}
-              {canBookingMoney &&
-                canOperate &&
-                (cancelledReason ? (
-                  <Unavailable reason={cancelledReason}>
-                    <Button icon="calendar" disabled>
-                      Extend Rental
-                    </Button>
-                  </Unavailable>
-                ) : (
-                  <Button icon="calendar" onClick={() => setShowExtendModal(true)}>
-                    Extend Rental
-                  </Button>
-                ))}
-              {user && canAssignPricedCrew(user.role) &&
-                (crewUnavailableReason ? (
-                  <Unavailable reason={crewUnavailableReason}>
-                    <Button icon="users" disabled>
-                      Assign Crew
-                    </Button>
-                  </Unavailable>
-                ) : (
-                  <Button icon="users" onClick={() => setShowCrewModal(true)}>
-                    Assign Crew
-                  </Button>
-                ))}
-            </div>
-          </Card>
-
           <NotesCard
             bookingId={bookingId ?? ''}
             ctx={user ? { userId: user.id, role: user.role } : null}
@@ -1878,12 +1839,9 @@ export default function BookingDetail() {
           />
 
           <Card title="Activity Timeline">
-            {/* `booking_stage_transitions` holds the real history and has no
-                query module yet — stated rather than seeded. */}
-            <NotWiredNote>
-              The stage history lives in booking_stage_transitions, which has no query module yet. Nothing is shown
-              rather than a seeded timeline that belongs to no booking.
-            </NotWiredNote>
+            <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+              Stage transitions live in booking_stage_transitions. No activity recorded yet.
+            </p>
           </Card>
         </>
       )}
@@ -1919,6 +1877,34 @@ export default function BookingDetail() {
                 <Badge status={stage} />
                 {booking.isCancelled && <Badge flag="Cancelled" />}
                 {subRental && <SubRentedMark label="Sub-rental" />}
+                {booking && (
+                  <WhatsAppShareButton
+                    key="wa"
+                    clientPhone={clientPhone}
+                    facts={{
+                      clientName: booking.clientName,
+                      bookingNo: booking.bookingNo,
+                      stage: (stage as import('../../lib/whatsappTemplates').WaStage) ?? 'Quote',
+                      startIso: booking.pickupAtAd,
+                      endIso: booking.returnAtAd,
+                      itemCount: booking.itemCount,
+                      topLines: (floor?.lines ?? [])
+                        .slice(0, 3)
+                        .map((l) => l.productName ?? l.description)
+                        .filter((x): x is string => Boolean(x)),
+                      isOverdue:
+                        booking.stage === 'On Rent' &&
+                        !booking.isClosed &&
+                        !booking.isCancelled &&
+                        booking.actualReturnAtAd === null &&
+                        new Date(booking.returnAtAd) < new Date(),
+                      total: canBookingMoney && hasInvoice ? (totals.total as Paisa) : null,
+                      advance: canBookingMoney && hasInvoice ? (totals.paid as Paisa) : null,
+                      deposit: canBookingMoney ? booking.depositRequired : null,
+                      balance: canBookingMoney && hasInvoice ? (totals.outstanding as Paisa) : null,
+                    }}
+                  />
+                )}
               </>
             }
             secondary={[
@@ -1960,34 +1946,6 @@ export default function BookingDetail() {
               <Button key="print" icon="file" variant="secondary" onClick={() => window.print()}>
                 Print booking
               </Button>,
-              booking && (
-                <WhatsAppShareButton
-                  key="wa"
-                  clientPhone={clientPhone}
-                  facts={{
-                    clientName: booking.clientName,
-                    bookingNo: booking.bookingNo,
-                    stage: (stage as import('../../lib/whatsappTemplates').WaStage) ?? 'Quote',
-                    startIso: booking.pickupAtAd,
-                    endIso: booking.returnAtAd,
-                    itemCount: booking.itemCount,
-                    topLines: (floor?.lines ?? [])
-                      .slice(0, 3)
-                      .map((l) => l.productName ?? l.description)
-                      .filter((x): x is string => Boolean(x)),
-                    isOverdue:
-                      booking.stage === 'On Rent' &&
-                      !booking.isClosed &&
-                      !booking.isCancelled &&
-                      booking.actualReturnAtAd === null &&
-                      new Date(booking.returnAtAd) < new Date(),
-                    total: canBookingMoney && hasInvoice ? (totals.total as Paisa) : null,
-                    advance: canBookingMoney && hasInvoice ? (totals.paid as Paisa) : null,
-                    deposit: canBookingMoney ? booking.depositRequired : null,
-                    balance: canBookingMoney && hasInvoice ? (totals.outstanding as Paisa) : null,
-                  }}
-                />
-              ),
             ].filter(Boolean)}
             overflow={
               <OverflowMenu

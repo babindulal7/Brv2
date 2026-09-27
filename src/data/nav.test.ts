@@ -56,6 +56,10 @@ describe('canonical primary and secondary nav', () => {
     expect(MORE_NAV).toHaveLength(2)
     expect(permittedMoreNav('Owner')).toHaveLength(2)
   })
+
+  it('opens Analytics at the rendered Pulse route', () => {
+    expect(NAV.find((s) => s.label === 'Analytics')?.to).toBe('/reports/pulse')
+  })
 })
 
 describe('Law 6 — money-blind roles never see money surfaces', () => {
@@ -140,6 +144,13 @@ describe('active row — most specific wins, exactly one owner', () => {
 
   it('strips the query — /operations?queue=packing is Operations', () => {
     expect(label('/operations?queue=packing')).toBe('Operations')
+  })
+
+  it('keeps Analytics active across its report routes', () => {
+    expect(label('/reports')).toBe('Analytics')
+    expect(label('/reports/pulse')).toBe('Analytics')
+    expect(label('/reports/clients')).toBe('Analytics')
+    expect(label('/reports-archive')).toBeNull()
   })
 
   it('never claims a sibling that merely shares a prefix', () => {

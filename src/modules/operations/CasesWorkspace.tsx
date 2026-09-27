@@ -428,9 +428,10 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
             display: 'flex',
             alignItems: 'center',
             gap: 'var(--sp-sm)',
-            flexWrap: phone ? 'nowrap' : 'wrap',
-            overflowX: phone ? 'auto' : 'visible',
-            width: phone ? '100%' : undefined,
+            flexWrap: 'nowrap',
+            overflowX: 'auto',
+            width: phone ? '100%' : 'auto',
+            maxWidth: phone ? '100%' : 'calc(100% - 500px)',
             paddingBottom: phone ? 4 : 0,
           }}
         >
@@ -468,8 +469,8 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
           ))}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: phone ? '100%' : 'auto' }}>
-          <div style={{ flex: phone ? 1 : undefined, width: phone ? undefined : 240 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: phone ? 'wrap' : 'nowrap', width: phone ? '100%' : 'auto', flexShrink: 0 }}>
+          <div style={{ flex: phone ? '1 1 100%' : '1 1 360px', width: phone ? '100%' : 360, minWidth: phone ? '100%' : 280, maxWidth: 520 }}>
             <SearchInput
               placeholder="Search ID, title, client…"
               value={searchInput}
@@ -488,6 +489,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
             <Button
               variant="secondary"
               icon={<IconDownload size={16} />}
+              style={{ flexShrink: 0 }}
               onClick={() => {
                 const toExport =
                   selectedRowIds.size > 0
@@ -506,7 +508,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
               states; the modal stays mounted below, unreachable from here. */}
           {!phone && (
             <Unavailable reason={NEW_CASE_UNAVAILABLE_REASON}>
-              <Button variant="primary" icon={<IconPlus size={16} />} disabled onClick={() => setIsLogCaseOpen(true)}>
+              <Button variant="primary" icon={<IconPlus size={16} />} disabled style={{ flexShrink: 0 }} onClick={() => setIsLogCaseOpen(true)}>
                 Log Incident
               </Button>
             </Unavailable>

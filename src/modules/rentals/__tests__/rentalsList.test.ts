@@ -873,6 +873,6 @@ describe('OPTIONAL_COLUMNS — renamed to what the query can actually fill', () 
     // "Package / Items" promised a bundle name needing a booking_lines→bundle
     // join; "Payment" promised a rental total and an outstanding balance, both
     // of which are the Financial Engine's and deliberately off the list row.
-    expect(OPTIONAL_COLUMNS).toEqual(['Items', 'Pickup', 'Return', 'Deposit'])
+    expect(OPTIONAL_COLUMNS).toEqual(['Items', 'Pickup', 'Return', 'Total Amount'])
   })
 })

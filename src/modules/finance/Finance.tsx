@@ -50,7 +50,6 @@ import type { ListFilters } from '../../lib/queries/listQuery'
 import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { CreateInvoiceModal } from './modals/CreateInvoiceModal'
 import type { CreateInvoiceResult } from '../../actions/finance/createInvoice'
-import { RefundPaymentModal } from './modals/RefundPaymentModal'
 import { VoidInvoiceModal } from './modals/VoidInvoiceModal'
 import Payments from './Payments'
 import Expenses from './Expenses'
@@ -529,36 +528,8 @@ export default function Finance() {
    */
   const canTakePayment = user ? canRecordPayment(user.role) : false
 
-  /**
-   * The other two row actions, which were left open when `+ Pay` was gated.
-   *
-   * **Refund** — `canRecordPayment`, the same rule as recording one. That is not
-   * a judgement made here: `actions/core.ts:110-112` resolves BOTH
-   * `payment.create` and `payment.refund` through `canRecordPayment`, and
-   * `refundPayment` declares `permissions: ['payment.refund']`. A reversal is a
-   * money movement, so it sits under the money-movement rule, and gating on the
-   * dispatcher's own predicate is what stops this screen offering an action the
-   * engine will refuse. It was gated on `!row.isVoid && row.paidAmount > 0`
-   * alone — two facts about the INVOICE, neither of them about the session.
-   *
-   * TODO(decision): `lib/rbac` has no refund-specific rule, so a reversal
-   * inherits Coordinator. Taking an advance and paying money back out are
-   * plausibly not the same authority, but narrowing it here would invent a
-   * product decision and would desync the UI from `actions/core.ts`. The rule
-   * belongs in `lib/rbac` + `actions/core.ts` together, and in PLAN.md §4.
-   *
-   * **Void** — `canVoidInvoice`, Owner / Accounts. This rule already existed,
-   * `actions/core.ts:113-114` already maps `invoice.void` to it, and the button
-   * had no gate at all: a comment where `RowActions` is defined acknowledged the
-   * omission and left it. Voiding is how an invoice reaches its terminal state
-   * (Law 3), so it is the narrowest of the three.
-   *
-   * `isOnline` is not passed to either, matching `canTakePayment` above — both
-   * rbac rules refuse offline, and the modals dispatch without it, so both sides
-   * must evaluate with the same online default or the UI and the dispatcher
-   * disagree about what is offered.
-   */
-  const canRefund = canTakePayment
+  /* Reversals are payment-specific, so they live in the Payments ledger rather
+     than selecting an arbitrary receipt from an invoice aggregate. */
   const canVoid = user ? canVoidInvoice(user.role) : false
 
   /**
@@ -665,7 +636,6 @@ export default function Finance() {
   const [showRecordPayment, setShowRecordPayment] = useState(false)
   const [showCreateInvoice, setShowCreateInvoice] = useState(false)
   const [selectedInvoiceForRecord, setSelectedInvoiceForRecord] = useState<string>('')
-  const [selectedInvoiceForRefund, setSelectedInvoiceForRefund] = useState<InvoiceListRow | null>(null)
   const [selectedInvoiceForVoid, setSelectedInvoiceForVoid] = useState<InvoiceListRow | null>(null)
 
   /**
@@ -984,10 +954,6 @@ export default function Finance() {
    * Law 4. `__tests__/FinanceDoubleWrite.test.tsx` counts the calls.
    */
   const handleRecordPaymentSuccess = useCallback(() => {
-    refreshAll()
-  }, [refreshAll])
-
-  const handleRefundSuccess = useCallback(() => {
     refreshAll()
   }, [refreshAll])
 
@@ -1496,12 +1462,12 @@ export default function Finance() {
                         {received.loading
                           ? 'Loading payments…'
                           : received.error
-                            ? 'The payments for this period could not be read, so no chart is drawn rather than one drawn short.'
-                            : 'More payments matched than were fetched in one request, so a chart drawn here would be short by an unknown amount.'}
+                            ? 'Payments for this period could not be loaded.'
+                            : 'Payment records unavailable.'}
                       </p>
                     ) : dailyCollections.length === 0 ? (
                       <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
-                        No payment was received in this period.
+                        No payments received in this period.
                       </p>
                     ) : (
                       <>
@@ -1552,7 +1518,7 @@ export default function Finance() {
                       skeleton="table"
                       skeletonRows={4}
                       emptyTitle="Nothing outstanding"
-                      emptyMessage="Every issued invoice has been settled. Drafts are excluded — a draft has not gone to the client, so it is not owed."
+                      emptyMessage="All issued invoices have been settled."
                       {...restriction}
                     >
                       <DataTableShell ariaLabel="Outstanding invoices" className="finance-table-shell">
@@ -1739,7 +1705,6 @@ export default function Finance() {
                                   <RowActions
                                     row={i}
                                     canPay={canTakePayment}
-                                    canRefund={canRefund}
                                     canVoid={canVoid}
                                     onPay={() => {
                                       // The UUID, not the number: a Draft has no
@@ -1748,7 +1713,6 @@ export default function Finance() {
                                       setSelectedInvoiceForRecord(i.id)
                                       setShowRecordPayment(true)
                                     }}
-                                    onRefund={() => setSelectedInvoiceForRefund(i)}
                                     onVoid={() => setSelectedInvoiceForVoid(i)}
                                     onExportPdf={() => handleExportPdf(i)}
                                   />
@@ -1813,7 +1777,6 @@ export default function Finance() {
                                 phone
                                 row={i}
                                 canPay={canTakePayment}
-                                canRefund={canRefund}
                                 canVoid={canVoid}
                                 onPay={() => {
                                   // The UUID, not the number — see the desk table's
@@ -1821,7 +1784,6 @@ export default function Finance() {
                                   setSelectedInvoiceForRecord(i.id)
                                   setShowRecordPayment(true)
                                 }}
-                                onRefund={() => setSelectedInvoiceForRefund(i)}
                                 onVoid={() => setSelectedInvoiceForVoid(i)}
                                 onExportPdf={() => handleExportPdf(i)}
                               />
@@ -1952,21 +1914,6 @@ export default function Finance() {
         />
       )}
 
-      {/* `canRefund` / `canVoid` here as well as on the launchers, for the reason
-          the Record Payment mount above states: a role change mid-session must
-          not leave an open money form belonging to a session that may no longer
-          submit it. */}
-      {money && canRefund && selectedInvoiceForRefund && (
-        <RefundPaymentModal
-          isOpen={!!selectedInvoiceForRefund}
-          onClose={() => setSelectedInvoiceForRefund(null)}
-          onSuccess={handleRefundSuccess}
-          invoiceId={selectedInvoiceForRefund.invoiceNo}
-          client={selectedInvoiceForRefund.clientName}
-          currentPaidPaisa={selectedInvoiceForRefund.paidAmount}
-        />
-      )}
-
       {money && canVoid && selectedInvoiceForVoid && (
         <VoidInvoiceModal
           isOpen={!!selectedInvoiceForVoid}
@@ -2025,19 +1972,15 @@ function StatusBadge({ row }: { row: InvoiceListRow }) {
  * Every condition now reads a real column instead of the status label:
  *  - **+ Pay** — there is something left to pay: `outstanding_amount > 0`.
  *    That is the invoice's own settled figure, computed by the engine.
- *  - **Refund** — something was actually received: `paid_amount > 0`. The old
- *    condition (`status === 'Paid' || 'Partially Paid'`) offered a refund on an
- *    invoice whose label had drifted and refused one where it had not caught up.
- *  - **Void** — the invoice is not already void, by timestamp.
+ *  - **Void** — the invoice is not already void, by timestamp. Receipt
+ *    corrections are started from the payment ledger, where one receipt is known.
  */
 function RowActions({
   row,
   phone = false,
   canPay,
-  canRefund,
   canVoid,
   onPay,
-  onRefund,
   onVoid,
   onExportPdf,
 }: {
@@ -2053,12 +1996,9 @@ function RowActions({
    * the ungated behaviour at any future call site that forgets it.
    */
   canPay: boolean
-  /** `rbac.canRecordPayment` — see the derivation in `Finance()`. Required, same reason as `canPay`. */
-  canRefund: boolean
   /** `rbac.canVoidInvoice` — Owner / Accounts. Required, same reason as `canPay`. */
   canVoid: boolean
   onPay: () => void
-  onRefund: () => void
   onVoid: () => void
   onExportPdf?: () => void
 }) {
@@ -2092,32 +2032,10 @@ function RowActions({
 
   return (
     <>
-      {/*
-        Every one of the three now carries BOTH questions: may this session do
-        it (the `can*` boolean, from `lib/rbac`), and does this invoice admit it
-        (the row conditions, from real columns). They are separate questions and
-        neither substitutes for the other — an invoice with nothing outstanding
-        offers no Pay to anyone, and an Owner is not offered a Refund on an
-        invoice nothing was received against.
-
-        Refund and Void were the two that answered only the second. `Refund` was
-        `!row.isVoid && row.paidAmount > 0` — no session question at all — and
-        `Void` was `!row.isVoid`, with a comment here that noted the missing
-        `canVoidInvoice` check and left it. Both moved money or moved an invoice
-        to a terminal state for anyone who could see the table, which is Admin
-        and Manager as well.
-
-        Absent, not disabled, per `MovementList.tsx:307` — a greyed control
-        still tells you the action lives here.
-      */}
+      {/* Each action checks both session capability and the invoice's real state. */}
       {canPay && !row.isVoid && row.outstandingAmount > 0 && (
         <button type="button" onClick={onPay} className="finance-action-btn is-primary" style={{ ...base, color: 'var(--nav-active-accent)', fontWeight: 600 }}>
           + Pay
-        </button>
-      )}
-      {canRefund && !row.isVoid && row.paidAmount > 0 && (
-        <button type="button" onClick={onRefund} className="finance-action-btn" style={{ ...base, color: 'var(--text2)', fontWeight: 500 }}>
-          Refund
         </button>
       )}
       {canVoid && !row.isVoid && (

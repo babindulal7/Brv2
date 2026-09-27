@@ -74,19 +74,6 @@ export default function Clients() {
 
   /**
    * Blocking is a write now, and this screen's only job in it is the re-read.
-   *
-   * ⛔ **What this replaced.** A `bulkBlock(ids, reason)` handler and a
-   * `blockRefusal` banner that said "N clients were NOT blocked … Nothing on
-   * this screen has changed", because `actions/clients/blockClient.ts` was a
-   * stub. It is now implemented: a block is an insert into `client_flags` and an
-   * unblock sets that row's removal fields (Law 3 — never a delete).
-   * `ClientsDirectory` owns the dispatch and reports its own outcome; the one
-   * thing it cannot do is refresh the list, because `useClients` lives here.
-   *
-   * `isBlocked` arrives from `client_directory_v.is_blocked` (migration 0054),
-   * so re-reading is the only way to show the change. There is deliberately no
-   * local override map: painting `isBlocked` over a fetched row is what made the
-   * old version unable to tell a real block from an imagined one.
    */
   const tabParam = (params.get('tab') as TabKey | null) ?? 'clients'
   const activeTab: TabKey = TAB_DEFS.some((t) => t.key === tabParam) ? tabParam : 'clients'
@@ -98,8 +85,11 @@ export default function Clients() {
     setParams(next)
   }
 
-  // Filter out tabs hidden from bar or money-restricted (§8.3)
-  const visibleTabs = TAB_DEFS.filter((t) => !t.hideInBar && (!t.money || money))
+  // Streamline visible tabs to core operational sections; secondary tools in overflow
+  const PRIMARY_TAB_KEYS: TabKey[] = ['clients', 'membership']
+  const visibleTabs = TAB_DEFS.filter(
+    (t) => (PRIMARY_TAB_KEYS.includes(t.key) || t.key === activeTab) && !t.hideInBar && (!t.money || money),
+  )
 
   /** Full directory export as CSV. Escaped cells; dates in both calendars. */
   const exportCsv = () => {
@@ -171,6 +161,12 @@ export default function Clients() {
               <Button key="export" icon="download" aria-label="Export clients" onClick={exportCsv}>
                 {phone ? '' : 'Export'}
               </Button>,
+            ]}
+            overflow={[
+              { label: 'Import Clients', icon: 'upload', onClick: () => setTab('import') },
+              { label: 'Duplicate Center', icon: 'users', onClick: () => setTab('duplicates') },
+              ...(money ? [{ label: 'Credit Policies', icon: 'card' as const, onClick: () => setTab('credit') }] : []),
+              { label: 'Referral Codes', icon: 'sparkles', onClick: () => setTab('referral') },
             ]}
           />
         }
