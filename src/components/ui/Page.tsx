@@ -4,7 +4,6 @@ import type { IconName } from './Icon'
 import { InfoTooltip } from './InfoTooltip'
 import { BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
-import { FOOTER_NOTE } from '../../data/nav'
 import { CollapsibleAside } from './CollapsibleAside'
 import { useViewport } from '../../lib/device'
 import { Button as SharedButton, type ButtonProps } from './Button'
@@ -519,7 +518,9 @@ export function SummaryRows({ rows }: { rows: Array<{ label: string; value: Reac
 /* ── footer note bar ───────────────────────────────────────────────────── */
 
 export function FooterNote({ extra }: { extra?: string[] }) {
-  const parts = [FOOTER_NOTE.dates, FOOTER_NOTE.timezone, ...(extra ?? [])]
+  const parts = [...new Set((extra ?? []).map((part) => part.trim()).filter(Boolean))]
+  if (parts.length === 0) return null
+
   return (
     <div
       className="footer-note"
@@ -540,9 +541,6 @@ export function FooterNote({ extra }: { extra?: string[] }) {
           {p}
         </span>
       ))}
-      <span className="figure" style={{ marginLeft: 'auto', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-        {FOOTER_NOTE.version}
-      </span>
     </div>
   )
 }

@@ -567,13 +567,6 @@
   background: var(--hover-row);
 }
 
-/* Tablet (768px – 1279px): Single column stacked panels, full-width rows */
-@media (max-width: 1279px) {
-  .rental-dashboard__panels {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* Phone (<768px): Single column, Pickups top, Returns bottom, compact cards */
 @media (max-width: 767px) {
   .movement-panel {
@@ -1758,55 +1751,126 @@
   .movement-card__badge-wrap { align-self: center; }
 }
 
-/* Today uses the same dense list language as the Rentals table. */
+/* ─── Side-by-Side Movement Board & Colorized Operational Icons ──────────── */
 .rental-dashboard__panels {
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--sp-md);
+  align-items: start;
+  gap: 1.25rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .movement-panel {
+  min-width: 0;
   overflow: hidden;
-  border-color: var(--border);
+  border: 1px solid var(--w10, var(--border));
   border-radius: var(--r-card, 12px);
-  background: var(--card);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  background: var(--surface-card, var(--card));
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+/* Left side: Outgoing Pickups */
+.movement-panel--outgoing {
+  grid-column: 1;
+  border-top: 3px solid var(--primary);
+}
+
+/* Right side: Incoming Returns */
+.movement-panel--incoming {
+  grid-column: 2;
+  border-top: 3px solid var(--success);
 }
 
 .movement-panel__header {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  min-height: 4.25rem;
-  padding: 0.75rem 1rem;
-  border-color: var(--border);
+  gap: 0.875rem;
+  min-height: 4.5rem;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--w08, var(--border));
   background: var(--card);
+  border-top-left-radius: var(--r-card, 12px);
+  border-top-right-radius: var(--r-card, 12px);
 }
 
+/* Operational Colorized Icons for Pickups (Blue Truck) and Returns (Green Arrow) */
 .movement-panel__icon {
-  display: none;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border-radius: var(--r-btn, 8px);
+  flex-shrink: 0;
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 
 .movement-panel__icon .ui-icon {
-  width: 1.125rem;
-  height: 1.125rem;
+  width: 1.35rem;
+  height: 1.35rem;
+}
+
+.movement-panel__icon--outgoing {
+  background: var(--ext-bg);
+  color: var(--primary-text);
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.movement-panel__icon--incoming {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success-text);
+  border: 1px solid color-mix(in srgb, var(--success) 28%, transparent);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--success) 18%, transparent);
+}
+
+.movement-panel__heading {
+  min-width: 0;
 }
 
 .movement-panel__heading h2 {
+  margin: 0;
+  color: var(--text);
+  font-family: 'Outfit', var(--font-display);
   font-size: var(--t-h4);
   font-weight: 700;
-  /* The overdue shortcut scrolls to this heading inside the shell's own
-     scroller; leave enough room for the full panel header below its top edge. */
+  letter-spacing: -0.02em;
   scroll-margin-block-start: 3rem;
 }
 
+.movement-panel--outgoing .movement-panel__heading h2 .figure {
+  color: var(--primary-text);
+}
+
+.movement-panel--incoming .movement-panel__heading h2 .figure {
+  color: var(--success-text);
+}
+
 .movement-panel__heading p {
-  margin-top: 0.1rem;
+  margin: 0.15rem 0 0;
+  overflow: hidden;
   color: var(--text2);
   font-size: var(--t-th);
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .movement-panel__filter {
   margin-left: auto;
+  position: relative;
+  z-index: 4;
+}
+
+.movement-panel--outgoing .dashboard-date-filter__calendar {
+  color: var(--primary-text);
+}
+
+.movement-panel--incoming .dashboard-date-filter__calendar {
+  color: var(--success-text);
 }
 
 .movement-panel--compact {
@@ -1824,129 +1888,326 @@
   white-space: normal;
 }
 
+.rental-dashboard__panels--returns-focus,
+.rental-dashboard__panels--pickups-focus {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rental-dashboard__panels--returns-focus .movement-panel,
+.rental-dashboard__panels--pickups-focus .movement-panel {
+  grid-column: 1;
+}
+
+@media (min-width: 1280px) {
+  .rental-dashboard__panels--returns-focus .movement-cards-list,
+  .rental-dashboard__panels--pickups-focus .movement-cards-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  .rental-dashboard__panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rental-dashboard__panels .movement-panel {
+    grid-column: 1;
+  }
+}
+
 .movement-panel__body {
   min-width: 0;
-  overflow-x: auto;
+  overflow-x: visible;
 }
 
+/* ─── Self-Contained Movement Cards (Zero Horizontal Overflow) ─────────── */
 .movement-cards-list {
-  display: block;
-  min-width: 61rem;
-}
-
-.movement-cards-list__head,
-.movement-card {
-  display: grid;
-  grid-template-columns: minmax(5.5rem, 0.6fr) minmax(13rem, 1.7fr) minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(14rem, 1.4fr);
-  gap: 0.875rem;
-  align-items: center;
-  padding-inline: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem 1rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .movement-cards-list__head {
-  min-height: 3rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--th-bg, var(--card2));
+  display: none;
+}
+
+.movement-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+  grid-template-areas:
+    "client booking"
+    "pickup return"
+    "status status";
+  gap: 0.65rem 0.85rem;
+  min-height: 0;
+  padding: 0.95rem 1.15rem;
+  border: 1px solid var(--w08, var(--border));
+  border-radius: var(--r-card, 10px);
+  background: var(--card2);
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.movement-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--border2);
+  background: var(--surface-card-hover, var(--hover-card));
+  box-shadow: var(--shadow-sm);
+}
+
+.movement-card--overdue {
+  border-left: 3.5px solid var(--danger-text);
+  background: color-mix(in srgb, var(--st-danger-bg) 5%, var(--card2));
+  border-color: color-mix(in srgb, var(--danger-text) 30%, var(--border)) var(--border) var(--border) var(--danger-text);
+}
+
+.movement-card--overdue:hover {
+  background: color-mix(in srgb, var(--st-danger-bg) 9%, var(--hover-card));
+}
+
+.movement-card__client-link {
+  grid-area: client;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.movement-card__client-link:focus-visible,
+.movement-card__booking-link:focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
+}
+
+.movement-card__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  border-radius: 50%;
+  font-size: var(--t-th);
+  font-weight: 700;
+  font-family: 'JetBrains Mono Variable', monospace;
+  flex-shrink: 0;
+}
+
+.movement-card--outgoing .movement-card__avatar {
+  background: color-mix(in srgb, var(--primary) 12%, var(--card));
+  color: var(--primary-text);
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+.movement-card--incoming .movement-card__avatar {
+  background: color-mix(in srgb, var(--success) 12%, var(--card));
+  color: var(--success-text);
+  border: 1px solid color-mix(in srgb, var(--success) 22%, transparent);
+}
+
+.movement-card__client-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.movement-card__client {
+  font-size: var(--t-meta);
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.movement-card__project {
+  font-size: var(--t-th);
   color: var(--text2);
-  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.movement-card__items-count {
+  font-size: var(--t-caption, 11px);
+  color: var(--text3);
+  font-weight: 500;
+}
+
+.movement-card__booking-link {
+  grid-area: booking;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+  gap: 0.2rem;
+}
+
+.movement-card__record-label {
+  display: block;
+  font-size: var(--t-caption, 11px);
+  color: var(--text3);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
-.movement-card {
-  min-height: 5.75rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--card);
-  transition: background-color var(--dur-fast) var(--ease);
-}
-
-.movement-card:nth-child(even) {
-  background: var(--card2);
-}
-
-.movement-card:hover,
-.movement-card--overdue:hover {
-  background: var(--hover-row);
-}
-
-.movement-card--overdue {
-  border-left: 3px solid var(--danger-text);
-  background: var(--card);
-}
-
-.movement-card__record-label,
-.movement-card__schedule > span {
-  display: none;
-}
-
-.movement-card__booking-link {
-  min-height: 2.75rem;
-  align-items: center;
-}
-
 .movement-card__number {
   font-size: var(--t-meta);
+  font-weight: 750;
+  color: var(--primary-text);
+  font-family: 'JetBrains Mono Variable', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.movement-card__booking-link:hover .movement-card__number,
+.movement-card__client-link:hover .movement-card__client {
+  color: var(--primary-text);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.movement-card__schedule {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.movement-card__schedule--pickup {
+  grid-area: pickup;
+}
+
+.movement-card__schedule--return {
+  grid-area: return;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.movement-card__schedule > span {
+  display: block;
+  font-size: var(--t-caption, 11px);
+  color: var(--muted);
   font-weight: 700;
-}
-
-.movement-card__client-link {
-  grid-template-columns: 2.25rem minmax(0, 1fr);
-  min-height: 2.75rem;
-}
-
-.movement-card__avatar {
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: 50%;
-}
-
-.movement-card__client-copy > span {
-  color: var(--text2);
-  font-size: var(--t-meta);
-}
-
-.movement-card__client-copy > .movement-card__items-count {
-  color: var(--text3);
-  font-size: var(--t-th);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .movement-card__schedule strong {
   font-size: var(--t-meta);
   font-weight: 600;
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.movement-card--outgoing .movement-card__schedule--pickup strong {
+  color: var(--primary-text);
+  font-weight: 700;
+}
+
+.movement-card--incoming .movement-card__schedule--return strong {
+  color: var(--success-text);
+  font-weight: 700;
 }
 
 .movement-card__status-action {
+  grid-area: status;
   display: flex;
-  grid-column: 5;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 0.5rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--w08, var(--border));
 }
 
 .movement-card__badge-wrap {
-  grid-column: auto;
   min-width: 0;
 }
 
 .movement-card__cta-btn {
-  grid-column: auto;
-  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: var(--tap, 44px);
+  min-width: 44px;
+  padding: 0 1rem;
   margin-left: auto;
-  flex-shrink: 0;
-  min-height: 44px;
-  padding-inline: 0.75rem;
   border-radius: var(--r-btn, 8px);
+  font-size: var(--t-ui);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease);
 }
 
-.movement-card__client-link:focus-visible {
-  outline: 2px solid var(--input-focus);
-  outline-offset: 2px;
+.movement-card__cta-btn.is-dominant {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  border: 1px solid transparent;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--primary) 25%, transparent);
 }
 
+.movement-card__cta-btn.is-dominant:hover {
+  background: var(--hover-button);
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.movement-card__cta-btn.is-prep {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.movement-card__cta-btn.is-prep:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong, var(--border));
+  color: var(--dashboard-accent-strong);
+  transform: translateY(-1px);
+}
+
+.movement-card__cta-btn:active {
+  transform: translateY(1px);
+}
+
+.movement-card__cta-btn .ui-icon {
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.movement-card__cta-btn:hover .ui-icon {
+  transform: translateX(2px);
+}
+
+/* Empty state icon colorized */
+.movement-panel--outgoing .movement-panel__empty-icon {
+  color: var(--primary-text);
+  background: var(--ext-bg);
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.movement-panel--incoming .movement-panel__empty-icon {
+  color: var(--success-text);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
+}
+
+/* Express counter search bar */
 .dashboard-counter-bar {
   max-width: 34rem;
   min-height: 2.75rem;
@@ -1962,6 +2223,19 @@
   box-shadow: 0 0 0 2px var(--dashboard-accent-soft);
 }
 
+.dashboard-counter-bar__icon {
+  color: var(--primary-text);
+}
+
+.dashboard-counter-bar__clear {
+  color: var(--muted);
+}
+
+.dashboard-counter-bar__clear:hover {
+  color: var(--text);
+}
+
+/* Overdue banner */
 .dashboard-alert {
   margin-bottom: 0;
   border-radius: var(--r-btn, 8px);
@@ -1974,16 +2248,39 @@
   color: var(--danger-text);
 }
 
+.dashboard-alert--overdue .dashboard-alert__content .ui-icon {
+  color: var(--danger-text);
+}
+
 .dashboard-alert__action:hover {
   transform: none;
 }
 
+/* Master dispatch bar calendar button */
 .dashboard-master-date-control {
   background: var(--card);
   box-shadow: none;
 }
 
+.dashboard-master-date-control__calendar-btn {
+  color: var(--primary-text);
+}
+
+.dashboard-master-date-control__calendar-btn:hover {
+  background: var(--ext-bg);
+}
+
+/* ─── Mobile Viewport (<768px): Single column, tab switcher active ──────── */
 @media (max-width: 767px) {
+  .rental-dashboard__panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .movement-panel--outgoing,
+  .movement-panel--incoming {
+    grid-column: auto;
+  }
+
   .movement-panel__header {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
@@ -1994,83 +2291,21 @@
     margin-left: 0;
   }
 
-  .movement-panel__body {
-    overflow-x: visible;
-  }
-
-  .movement-cards-list {
-    min-width: 0;
-  }
-
-  .movement-cards-list__head {
-    display: none;
-  }
-
   .movement-card {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
     grid-template-areas:
       "booking client"
       "pickup return"
       "status status";
     min-height: 0;
+    gap: 0.75rem;
     padding: 1rem;
-  }
-
-  .movement-card__record-label,
-  .movement-card__schedule > span {
-    display: block;
-  }
-
-  .movement-card__status-action {
-    display: flex;
-    justify-content: space-between;
-    padding-top: 0.75rem;
-  }
-
-  .movement-card__badge-wrap,
-  .movement-card__cta-btn {
-    grid-column: auto;
-  }
-
-  .dashboard-counter-bar {
-    max-width: none;
-  }
-}
-
-/* An empty queue becomes a full-width summary above or below the active queue. */
-@media (min-width: 1280px) {
-  .rental-dashboard__panels--returns-focus,
-  .rental-dashboard__panels--pickups-focus {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .movement-panel__body {
-    overflow-x: visible;
-  }
-
-  .movement-cards-list {
-    min-width: 0;
-  }
-
-  .movement-cards-list__head {
-    display: none;
-  }
-
-  .movement-card {
-    grid-template-columns: minmax(0, 1fr) minmax(6rem, auto);
-    grid-template-areas:
-      "client booking"
-      "pickup return"
-      "status status";
-    gap: 0.65rem 1rem;
-    min-height: 0;
-    padding-block: 0.9rem;
   }
 
   .movement-card__booking-link {
     grid-area: booking;
-    justify-self: end;
-    text-align: right;
+    align-items: flex-start;
+    text-align: left;
   }
 
   .movement-card__client-link {
@@ -2083,89 +2318,376 @@
 
   .movement-card__schedule--return {
     grid-area: return;
+    align-items: flex-start;
+    text-align: left;
   }
 
-  .movement-card__record-label,
-  .movement-card__schedule > span {
-    display: block;
-  }
-
-  .movement-card__status-action {
-    display: flex;
-    grid-area: status;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding-top: 0.65rem;
-    border-top: 1px solid var(--border);
-  }
-
-  .movement-card__badge-wrap,
-  .movement-card__cta-btn {
-    grid-column: auto;
-  }
-
-  .movement-card__cta-btn {
-    flex-shrink: 0;
+  .dashboard-counter-bar {
+    max-width: none;
   }
 }
 
-@media (min-width: 768px) and (max-width: 1279px) {
-  .rental-dashboard__panels {
-    grid-template-columns: minmax(0, 1fr);
-  }
+/* Today is a working ledger. Reserve strong color for status and interaction. */
+.dashboard-workbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  min-width: 0;
+}
 
-  .movement-panel__body {
-    overflow-x: visible;
-  }
+.dashboard-workbar .dashboard-counter-bar {
+  width: min(100%, 32rem);
+  max-width: none;
+  min-height: 3rem;
+  border-color: color-mix(in srgb, var(--border) 75%, transparent);
+  box-shadow: none;
+}
 
-  .movement-cards-list {
-    min-width: 0;
-  }
+.dashboard-workbar .dashboard-counter-bar__icon {
+  color: var(--muted);
+}
 
-  .movement-cards-list__head {
-    display: none;
-  }
+.dashboard-workbar .dashboard-alert {
+  min-height: 3rem;
+  flex-shrink: 0;
+  padding: 0 0 0 1rem;
+  border: 0;
+  border-left: 2px solid var(--danger-text);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
 
-  .movement-card {
-    grid-template-columns: minmax(5rem, 0.7fr) minmax(0, 1.3fr);
-    grid-template-areas:
-      "booking client"
-      "pickup return"
-      "status status";
-    gap: 0.75rem;
-    min-height: 0;
-    padding: 1rem;
-  }
+.dashboard-workbar .dashboard-alert__content {
+  font-weight: 650;
+}
 
-  .movement-card__booking-link { grid-area: booking; }
-  .movement-card__client-link { grid-area: client; }
-  .movement-card__schedule--pickup { grid-area: pickup; }
-  .movement-card__schedule--return { grid-area: return; }
+.dashboard-workbar .dashboard-alert__action {
+  padding-inline: 0.625rem;
+  border: 0;
+  border-radius: 5px;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
 
-  .movement-card__record-label,
-  .movement-card__schedule > span {
-    display: block;
-  }
+.rental-dashboard__panels {
+  gap: 1rem;
+}
 
-  .movement-card__status-action {
-    display: flex;
-    grid-area: status;
+.rental-dashboard__panels .movement-panel {
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 10px;
+  background: var(--card);
+  box-shadow: none;
+}
+
+.rental-dashboard__panels .movement-panel--outgoing,
+.rental-dashboard__panels .movement-panel--incoming {
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.rental-dashboard__panels .movement-panel__header {
+  min-height: 4.25rem;
+  padding: 0.85rem 1.25rem;
+  gap: 0;
+  background: transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.rental-dashboard__panels .movement-panel__icon {
+  display: none;
+}
+
+.rental-dashboard__panels .movement-panel__heading h2 {
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.rental-dashboard__panels .movement-panel__heading h2 .figure,
+.rental-dashboard__panels .movement-panel--outgoing .movement-panel__heading h2 .figure,
+.rental-dashboard__panels .movement-panel--incoming .movement-panel__heading h2 .figure {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.rental-dashboard__panels .movement-panel__heading p {
+  font-size: var(--t-th);
+  color: var(--muted);
+}
+
+.rental-dashboard__panels .movement-panel--compact,
+.rental-dashboard__panels .movement-panel--compact .movement-panel__header {
+  background: var(--card);
+}
+
+.rental-dashboard__panels .movement-panel--compact .movement-panel__header {
+  border-bottom: 0;
+}
+
+.rental-dashboard__panels .movement-panel__body {
+  container-type: inline-size;
+}
+
+.rental-dashboard__panels .dashboard-date-filter__calendar,
+.rental-dashboard__panels .movement-panel--outgoing .dashboard-date-filter__calendar,
+.rental-dashboard__panels .movement-panel--incoming .dashboard-date-filter__calendar {
+  color: var(--muted);
+}
+
+.rental-dashboard__panels .dashboard-date-filter__button {
+  grid-template-columns: auto auto auto;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text2);
+}
+
+.rental-dashboard__panels .dashboard-date-filter__button:hover,
+.rental-dashboard__panels .dashboard-date-filter__button[aria-expanded='true'] {
+  border: 0;
+  background: var(--hover-row);
+  box-shadow: none;
+  transform: none;
+}
+
+.rental-dashboard__panels .dashboard-date-filter__calendar {
+  min-height: 44px;
+  border-right: 0;
+}
+
+.rental-dashboard__panels .dashboard-date-filter__label {
+  padding-inline: 0;
+}
+
+.rental-dashboard__panels .movement-cards-list,
+.rental-dashboard__panels--returns-focus .movement-cards-list,
+.rental-dashboard__panels--pickups-focus .movement-cards-list {
+  display: block;
+  width: 100%;
+  padding: 0;
+}
+
+.rental-dashboard__panels .movement-card {
+  min-height: 0;
+  margin: 0;
+  padding: 1rem 1.25rem;
+  gap: 0.5rem 1rem;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.rental-dashboard__panels .movement-card:last-child {
+  border-bottom: 0;
+}
+
+.rental-dashboard__panels .movement-card:hover,
+.rental-dashboard__panels .movement-card--overdue:hover {
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
+  background: var(--hover-row);
+  box-shadow: none;
+  transform: none;
+}
+
+.rental-dashboard__panels .movement-card--overdue {
+  background: transparent;
+  border-left: 0;
+}
+
+.rental-dashboard__panels .movement-card__avatar {
+  display: none;
+}
+
+.rental-dashboard__panels .movement-card__client {
+  font-size: var(--t-ui);
+  font-weight: 650;
+}
+
+.rental-dashboard__panels .movement-card__project,
+.rental-dashboard__panels .movement-card__items-count {
+  color: var(--muted);
+}
+
+.rental-dashboard__panels .movement-card__number,
+.rental-dashboard__panels .movement-card--incoming .movement-card__schedule--return strong,
+.rental-dashboard__panels .movement-card--outgoing .movement-card__schedule--pickup strong {
+  color: var(--text);
+}
+
+.rental-dashboard__panels .movement-card__schedule > span,
+.rental-dashboard__panels .movement-card__record-label {
+  color: var(--muted);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+}
+
+.rental-dashboard__panels .movement-card__status-action {
+  padding-top: 0.5rem;
+  border-top: 0;
+}
+
+.movement-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--danger-text);
+  font-size: var(--t-th);
+  font-weight: 650;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.movement-card__status--partial {
+  color: var(--warning-text, var(--text2));
+}
+
+.rental-dashboard__panels .movement-card__cta-btn,
+.rental-dashboard__panels .movement-card__cta-btn.is-dominant,
+.rental-dashboard__panels .movement-card__cta-btn.is-prep {
+  min-height: 44px;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--primary-text);
+  box-shadow: none;
+  font-size: var(--t-meta);
+  font-weight: 650;
+  transition: background 180ms cubic-bezier(0.32, 0.72, 0, 1), transform 180ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.rental-dashboard__panels .movement-card__cta-btn:hover,
+.rental-dashboard__panels .movement-card__cta-btn.is-dominant:hover,
+.rental-dashboard__panels .movement-card__cta-btn.is-prep:hover {
+  background: var(--ext-bg);
+  color: var(--primary-text);
+  box-shadow: none;
+  filter: none;
+  transform: none;
+}
+
+.rental-dashboard__panels .movement-card__cta-btn:focus-visible,
+.dashboard-workbar .dashboard-alert__action:focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
+}
+
+@container (min-width: 52rem) {
+  .rental-dashboard__panels--returns-focus .movement-cards-list__head,
+  .rental-dashboard__panels--pickups-focus .movement-cards-list__head,
+  .rental-dashboard__panels--returns-focus .movement-card,
+  .rental-dashboard__panels--pickups-focus .movement-card {
+    display: grid;
+    grid-template-columns: minmax(12rem, 2.1fr) minmax(5rem, 0.65fr) minmax(7rem, 0.9fr) minmax(10rem, 1.15fr) minmax(15rem, 1.8fr);
+    grid-template-areas: "client booking pickup return status";
     align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--border);
+    column-gap: 1rem;
   }
 
-  .movement-card__badge-wrap,
-  .movement-card__cta-btn {
-    grid-column: auto;
+  .rental-dashboard__panels--returns-focus .movement-cards-list__head,
+  .rental-dashboard__panels--pickups-focus .movement-cards-list__head {
+    min-height: 2.75rem;
+    padding-inline: 1.25rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+    background: color-mix(in srgb, var(--card2) 45%, var(--card));
+    color: var(--muted);
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .rental-dashboard__panels--returns-focus .movement-card,
+  .rental-dashboard__panels--pickups-focus .movement-card {
+    min-height: 5.75rem;
+    padding-block: 0.75rem;
+  }
+
+  .rental-dashboard__panels--returns-focus .movement-card__record-label,
+  .rental-dashboard__panels--pickups-focus .movement-card__record-label,
+  .rental-dashboard__panels--returns-focus .movement-card__schedule > span,
+  .rental-dashboard__panels--pickups-focus .movement-card__schedule > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .rental-dashboard__panels--returns-focus .movement-card__booking-link,
+  .rental-dashboard__panels--pickups-focus .movement-card__booking-link,
+  .rental-dashboard__panels--returns-focus .movement-card__schedule--return,
+  .rental-dashboard__panels--pickups-focus .movement-card__schedule--return {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .rental-dashboard__panels--returns-focus .movement-card__status-action,
+  .rental-dashboard__panels--pickups-focus .movement-card__status-action {
+    padding: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.125rem;
+  }
+
+  .rental-dashboard__panels--returns-focus .movement-card__cta-btn,
+  .rental-dashboard__panels--pickups-focus .movement-card__cta-btn {
+    margin-left: 0;
   }
 }
 
 @media (max-width: 767px) {
-  .rental-dashboard__panels {
+  .dashboard-workbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .dashboard-workbar .dashboard-counter-bar {
+    width: 100%;
+  }
+
+  .dashboard-workbar .dashboard-alert {
+    min-height: 2.75rem;
+  }
+
+  .rental-dashboard__panels .movement-panel__header {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .rental-dashboard__panels .movement-panel__filter {
+    grid-column: 1;
+  }
+
+  .rental-dashboard__panels .movement-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "client booking"
+      "pickup return"
+      "status status";
+  }
+
+  .rental-dashboard__panels .movement-card__booking-link,
+  .rental-dashboard__panels .movement-card__schedule--return {
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  .rental-dashboard__panels .movement-card__status-action {
+    flex-wrap: wrap;
   }
 }

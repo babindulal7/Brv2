@@ -128,7 +128,10 @@ export function BooqableRentalFilterDrawer({
                     textAlign: 'left',
                     fontFamily: 'inherit',
                     transition: 'all 120ms ease',
+                    outline: 'none',
                   }}
+                  onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                  onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
                 >
                   <span
                     style={{
@@ -186,7 +189,10 @@ export function BooqableRentalFilterDrawer({
                     border: `1px solid ${isChecked ? 'var(--primary)' : 'var(--border)'}`,
                     background: isChecked ? 'var(--hover-card)' : 'transparent',
                     cursor: 'pointer',
+                    outline: 'none',
                   }}
+                  onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                  onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
                 >
                   <input
                     type="checkbox"

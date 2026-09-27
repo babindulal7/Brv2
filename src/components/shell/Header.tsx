@@ -390,7 +390,17 @@ export default function Header({ crumbs, actions }: HeaderProps) {
           <button
             type="button"
             onClick={() => setProfileOpen((v) => !v)}
-            aria-label="User profile"
+            /*
+             * WCAG 2.5.3 "Label in Name" — the visible initials ("BA") are
+             * part of what a sighted user reads, so the accessible name has to
+             * CONTAIN them. `aria-hidden` on the avatar was tried first and is
+             * not enough: axe still counts aria-hidden text as visible for this
+             * rule, because from a sighted user's side it very much is. Leading
+             * with the initials and following with the role is the form the
+             * rule wants, and it reads better too — a screen-reader user hears
+             * who they are signed in as before they hear what the control does.
+             */
+            aria-label={`${initials} — user profile`}
             title="User profile"
             aria-expanded={profileOpen}
             style={{
@@ -399,6 +409,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
             }}
           >
             <span
+              aria-hidden="true"
               style={{
                 width: 36,
                 height: 36,

@@ -323,7 +323,10 @@ export function FilterDrawer({
               display: 'grid',
               placeItems: 'center',
               borderRadius: 'var(--r-btn)',
+              outline: 'none',
             }}
+            onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+            onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
           >
             <Icon name="close" size={16} />
           </button>
@@ -382,7 +385,10 @@ export function FilterDrawer({
                 fontWeight: 600,
                 cursor: activeCount > 0 ? 'pointer' : 'not-allowed',
                 opacity: activeCount > 0 ? 1 : 0.45,
+                outline: 'none',
               }}
+              onFocus={(e) => { if (!e.currentTarget.disabled) { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}}
+              onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
             >
               Clear all {activeCount > 0 ? `(${activeCount})` : ''}
             </button>
@@ -406,7 +412,10 @@ export function FilterDrawer({
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 6,
+                outline: 'none',
               }}
+              onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+              onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
             >
               {applyLabel ?? (resultCount !== null && resultCount !== undefined ? `Show ${resultCount} Results` : 'Apply')}
             </button>

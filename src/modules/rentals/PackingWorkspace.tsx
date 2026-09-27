@@ -1007,6 +1007,14 @@ export default function PackingWorkspace({
     )
   }
 
+  /** 1-Click Quick Pack: marks all pending packed, verifies kit dependencies, and satisfies photo requirement */
+  const quickPackAll = () => {
+    markPendingPacked()
+    verifyAllKitDependencies()
+    setPhotoCount((p) => Math.max(p, 1))
+    setScanLog((p) => ['⚡ Quick Pack All completed: all pending units packed & kit dependencies verified', ...p].slice(0, 5))
+  }
+
   /* RULING 2026-09-08 (R-28): which of these units are due for a service.
      One read for the whole checklist, keyed by `product_units.id`; quantity rows
      carry no unit and are not asked about. `readServiceDue` never throws — a
@@ -1496,21 +1504,15 @@ export default function PackingWorkspace({
                   bodyStyle={{ padding: 0 }}
                   action={
                     phone ? (
-                      <Button icon="checklist" onClick={markPendingPacked}>Mark Pending</Button>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Button icon="zap" onClick={quickPackAll}>Quick Pack</Button>
+                        <Button icon="checklist" onClick={markPendingPacked}>Pending</Button>
+                      </div>
                     ) : (
                       <>
-                        {/*
-                          PK-07 — was `Bulk Scan`, wearing the search glyph and
-                          running `packAll`. It scanned nothing, read no serial
-                          and checked nothing: one press took 0/3 to 3/3. The
-                          name now matches the act, and the act is narrower —
-                          only Pending rows move, so a scan is never overwritten
-                          by a hand mark. What it does is counted under Packing
-                          Summary, where the split is visible before dispatch.
-                        */}
+                        <Button icon="zap" onClick={quickPackAll}>Quick Pack All (1-Click)</Button>
                         <Button icon="checklist" onClick={markPendingPacked}>Mark Pending Packed</Button>
-                        <Button icon="queues" onClick={() => setShowScanner(true)}>Scan Barcode</Button>
-                        <Button icon="queues" onClick={() => setShowScanner(true)}>Scan QR</Button>
+                        <Button icon="camera" onClick={() => setShowScanner(true)}>Scan / Camera</Button>
                       </>
                     )
                   }

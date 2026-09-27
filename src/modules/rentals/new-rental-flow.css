@@ -17,13 +17,6 @@
   align-self: center !important;
 }
 
-.new-rental-status {
-  order: -1;
-  border-radius: 6px !important;
-  font-size: 11px !important;
-  letter-spacing: .025em;
-}
-
 .new-rental-workspace {
   margin-top: 18px;
   scroll-margin-top: 18px;
@@ -205,12 +198,6 @@
   font-size: 16px;
   font-variant-numeric: tabular-nums;
   color: var(--text);
-}
-
-.new-rental-mobile-state {
-  color: var(--text2);
-  font-size: 12px;
-  font-weight: 600;
 }
 
 @media (max-width: 1179px) {

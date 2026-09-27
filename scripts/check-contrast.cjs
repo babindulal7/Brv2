@@ -42,6 +42,28 @@ for(const [theme,T] of [['DARK ',D],['LIGHT',L]]){
   chk(theme,T,'muted(text-2) / surface','--muted','--surface',4.5)
   chk(theme,T,'text / surface','--text','--surface',4.5)
   chk(theme,T,'text2 / surface','--text2','--surface',4.5)
+  /*
+   * v4.1 bug, found on /dashboard by Lighthouse: `--muted` was only ever
+   * checked against `--surface`. It is overwhelmingly painted on the app's
+   * TINTED surfaces, and #6d7076 measured 4.48:1 on #eef4fb and 4.45:1 on
+   * #edf3fa — under AA — while passing 4.97:1 on white. A token that passes
+   * the gate and fails the screen is worse than no gate, because it reports
+   * green. These four pairs are the ones that actually shipped broken.
+   */
+  chk(theme,T,'muted / surface-2 (tinted)','--muted','--surface-2',4.5)
+  chk(theme,T,'muted / card2 (tinted)','--muted','--card2',4.5)
+  chk(theme,T,'muted / bg (canvas)','--muted','--bg',4.5)
+  chk(theme,T,'muted / inset2 (darkest)','--muted','--inset2',4.5)
+  /*
+   * The same class of bug in the DARK sidebar: `--nav-active-accent` paints
+   * the ACTIVE destination on the rail, and #386af7 measured 4.30:1 on
+   * #050b12. Where the app tells you where you are cannot be the faintest
+   * text on the screen. Three backgrounds, because the accent is used as ink
+   * both inside and outside the active pill.
+   */
+  chk(theme,T,'nav-active-accent / sidebar','--nav-active-accent','--sidebar',4.5)
+  chk(theme,T,'nav-active-accent / nav-bg','--nav-active-accent','--nav-active-bg',4.5)
+  chk(theme,T,'nav-active-accent / surface','--nav-active-accent','--surface',4.5)
   // §7.8: --ext text on both backgrounds
   chk(theme,T,'ext-fg / surface','--ext-fg','--surface',4.5)
   chk(theme,T,'ext-fg / bg','--ext-fg','--bg',4.5)

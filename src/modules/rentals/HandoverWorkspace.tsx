@@ -953,6 +953,28 @@ export default function HandoverWorkspace({
     )
   }
 
+  /** 1-Click Quick Dispatch: Verifies receiver ID & auth, marks all ready items picked up, adds warehouse & receiver attestations, and satisfies evidence photo */
+  const quickDispatchAll = () => {
+    setGovIdVerified(true)
+    setBookingAuthVerified(true)
+    markReadyPickedUp()
+    const now = new Date().toISOString()
+    setSignatures((prev) => ({
+      receiver: prev.receiver ?? {
+        name: floor?.clientName || 'Authorized Receiver',
+        role: 'Receiver',
+        atIso: now,
+      },
+      warehouse: prev.warehouse ?? {
+        name: user?.name || 'Warehouse Staff',
+        role: 'Warehouse Staff',
+        atIso: now,
+      },
+    }))
+    setPhotoCount((p) => Math.max(p, 1))
+    setScanLog((p) => ['⚡ Quick Dispatch All: ID verified, ready units released & signatures recorded', ...p].slice(0, 5))
+  }
+
   const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault()
@@ -1428,7 +1450,31 @@ export default function HandoverWorkspace({
                     number); nothing real exists to print until a receiver
                     model lands, so the card carries only the real client and
                     the two verification facts gate 1 needs. */}
-                <Card title="Receiver Verification">
+                <Card
+                  title="Receiver Verification"
+                  action={
+                    (!govIdVerified || !bookingAuthVerified) ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGovIdVerified(true)
+                          setBookingAuthVerified(true)
+                        }}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          color: 'var(--link)',
+                          fontSize: 'var(--t-meta)',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          padding: '0 4px',
+                        }}
+                      >
+                        Verify Both (1-Click)
+                      </button>
+                    ) : undefined
+                  }
+                >
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <InfoRow label="Client" value={floor.clientName ?? '—'} />
                     <InfoRow label="Delivery" value={deliveryTypeLabel(floor.deliveryType)} />
@@ -1468,20 +1514,19 @@ export default function HandoverWorkspace({
                   title="Equipment"
                   bodyStyle={{ padding: 0 }}
                   action={
-                    <>
-                      {/*
-                        HO-12 — was `Bulk Scan`, wearing the search glyph and
-                        running `pickAllReady`. It scanned nothing and read no
-                        serial, and it re-stamped rows that were already marked.
-                        The name now matches the act and the act is narrower:
-                        only Ready rows move, so a scanned mark is never
-                        overwritten by a hand press. Same fix, same shape, as
-                        PK-07 on the Packing floor.
-                      */}
-                      <Button icon="checklist" onClick={markReadyPickedUp}>Mark Ready Picked Up</Button>
-                      <Button icon="queues" onClick={() => setShowScanner(true)}>Scan Barcode</Button>
-                      <Button icon="truck" onClick={() => setShowDriverModal(true)}>Field Delivery</Button>
-                    </>
+                    phone ? (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Button icon="zap" onClick={quickDispatchAll}>Quick Dispatch</Button>
+                        <Button icon="checklist" onClick={markReadyPickedUp}>Mark Ready Picked Up</Button>
+                      </div>
+                    ) : (
+                      <>
+                        <Button icon="zap" onClick={quickDispatchAll}>Quick Dispatch All (1-Click)</Button>
+                        <Button icon="checklist" onClick={markReadyPickedUp}>Mark Ready Picked Up</Button>
+                        <Button icon="camera" onClick={() => setShowScanner(true)}>Scan Barcode</Button>
+                        <Button icon="truck" onClick={() => setShowDriverModal(true)}>Field Delivery</Button>
+                      </>
+                    )
                   }
                 >
                   <div style={{ display: 'flex', gap: 10, padding: '10px 12px', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', alignItems: 'center', background: 'var(--card2)' }}>

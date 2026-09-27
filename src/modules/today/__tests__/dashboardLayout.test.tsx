@@ -39,7 +39,16 @@ async function mount() {
 }
 
 const buttons = () => [...container.querySelectorAll('button')]
-const buttonByLabel = (label: string) => buttons().find((button) => button.getAttribute('aria-label') === label)
+/*
+ * Substring, not equality. The filter triggers used to be found by their exact
+ * aria-label ("Choose pickup date filter"), but WCAG 2.5.3 "Label in Name"
+ * requires the accessible name to CONTAIN the visible period, so the label is
+ * now "Today — Choose pickup date filter" and moves as the period changes.
+ * These tests care about WHICH control, not its exact wording; the label's
+ * composition is asserted on its own below.
+ */
+const buttonByLabel = (label: string) =>
+  buttons().find((button) => (button.getAttribute('aria-label') ?? '').includes(label))
 
 beforeEach(() => window.sessionStorage.clear())
 afterEach(async () => {
@@ -61,6 +70,25 @@ describe('focused pickup and return dashboard', () => {
     await mount()
     expect(buttonByLabel('Choose pickup date filter')).toBeDefined()
     expect(buttonByLabel('Choose return date filter')).toBeDefined()
+  })
+
+  /*
+   * WCAG 2.5.3 "Label in Name". Axe failed this live on /dashboard: the trigger
+   * painted "Today" / "Tomorrow" / "Sep 27" but announced only "Choose pickup
+   * date filter", so a screen-reader user was told a control changed a filter
+   * without ever being told which period was currently in effect. The rule is
+   * that the accessible name CONTAINS the visible text — so this asserts the
+   * name carries the period, not just that the period is on screen.
+   */
+  it.each([
+    ['Choose pickup date filter', 'pickup'],
+    ['Choose return date filter', 'return'],
+  ])('names the %s control after the period it shows', async (label) => {
+    await mount()
+    const button = buttonByLabel(label)
+    const visible = button?.textContent?.trim() ?? ''
+    expect(visible).not.toBe('')
+    expect(button?.getAttribute('aria-label') ?? '').toContain(visible)
   })
 
   it('changes the pickup period without changing returns', async () => {

@@ -249,7 +249,7 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', () => {
       expect(searchBtn?.textContent).toContain('Ctrl+K / ⌘K')
 
       // User profile trigger representation
-      const profileBtn = container.querySelector('button[aria-label="User profile"]')
+      const profileBtn = container.querySelector('button[aria-label*="user profile"]')
       expect(profileBtn).not.toBeNull()
       // Clicking profile trigger expands profile dialog
       await act(async () => {
@@ -384,7 +384,7 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', () => {
   })
 
   describe('R5: Booking Detail Simplification', () => {
-    it('renders LifecycleProgress, action controls, and core facts', async () => {
+    it('renders booking stages, action controls, and core facts', async () => {
       const { default: BookingDetail } = await import('../../modules/rentals/BookingDetail')
       await mountComponent(
         <Routes>

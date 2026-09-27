@@ -799,7 +799,7 @@ describe('Empirical Challenger — Header Sync Badge Visibility States', () => {
     expect(syncBadge?.style.minHeight).toBe('44px')
     expect(syncBadge?.style.minWidth).toBe('44px')
 
-    const userProfile = container.querySelector<HTMLButtonElement>('button[aria-label="User profile"]')
+    const userProfile = container.querySelector<HTMLButtonElement>('button[aria-label*="user profile"]')
     expect(userProfile?.style.minHeight).toBe('44px')
     expect(userProfile?.style.minWidth).toBe('44px')
   })
@@ -835,7 +835,7 @@ describe('Empirical Challenger — Header Sync Badge Visibility States', () => {
   it('closes profile dialog when clicking outside the dialog', async () => {
     viewport = 'desktop'
     await mount(<Header crumbs={[{ label: 'Dashboard' }]} />)
-    const profileBtn = container.querySelector<HTMLButtonElement>('button[aria-label="User profile"]')
+    const profileBtn = container.querySelector<HTMLButtonElement>('button[aria-label*="user profile"]')
     expect(profileBtn).not.toBeNull()
 
     // Open profile

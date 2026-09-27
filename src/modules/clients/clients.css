@@ -113,7 +113,7 @@
   color: var(--text);
   font-size: var(--t-th);
   font-weight: 700;
-  font-family: var(--font-mono, monospace);
+  font-family: 'Outfit', var(--font-display, sans-serif);
   font-feature-settings: "tnum" 1;
   padding: 0 4px;
 }
@@ -165,7 +165,7 @@
   place-items: center;
   font-size: var(--t-ui);
   font-weight: 700;
-  font-family: var(--font-mono, monospace);
+  font-family: 'Outfit', var(--font-display, sans-serif);
   flex-shrink: 0;
   letter-spacing: -0.02em;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -190,7 +190,7 @@
 .client-card-sub {
   font-size: var(--t-meta);
   color: var(--muted);
-  font-family: var(--font-mono, monospace);
+  font-family: 'Outfit', var(--font-display, sans-serif);
 }
 
 .client-card-tags {
@@ -225,7 +225,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-family: var(--font-mono, monospace);
+  font-family: 'Outfit', var(--font-display, sans-serif);
   font-feature-settings: "tnum" 1;
 }
 
@@ -254,6 +254,7 @@
   padding: 8px 12px;
   font-size: var(--t-th);
   font-weight: 700;
+  font-family: 'Outfit', var(--font-display, sans-serif);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text2);
@@ -288,9 +289,16 @@
   vertical-align: middle;
 }
 
-/* ── Monospace Figures & Identifiers ────────────────────────────────────── */
+/* ── Figures & Identifiers ──────────────────────────────────────────────── */
+.client-outfit {
+  font-family: 'Outfit', var(--font-display, sans-serif);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
 .client-mono {
-  font-family: var(--font-mono, monospace);
+  font-family: 'Outfit', var(--font-display, sans-serif);
+  font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
 
@@ -304,7 +312,7 @@
   border: 1px solid var(--border);
   font-size: var(--t-th);
   font-weight: 600;
-  font-family: var(--font-mono, monospace);
+  font-family: 'Outfit', var(--font-display, sans-serif);
   color: var(--text2);
 }
 
@@ -363,7 +371,7 @@
   font-size: var(--t-h3);
   font-weight: 700;
   color: var(--text);
-  font-family: var(--font-mono, monospace);
+  font-family: 'Outfit', var(--font-display, sans-serif);
   font-feature-settings: "tnum" 1;
   letter-spacing: -0.02em;
 }

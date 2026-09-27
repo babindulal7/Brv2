@@ -594,6 +594,57 @@ export default function ResetWorkspace({
     })
   }
 
+  /** 1-Click Quick Reset: completes cleaning tasks and passes standard QC for all problem-free items */
+  const quickResetAll = () => {
+    if (!actor) {
+      setDispatchError(NO_ACTOR)
+      return
+    }
+    setDispatchError(null)
+    const candidates = rows.filter((r) => recOf(r.key).problem === 'No Problems')
+    if (candidates.length === 0) return
+
+    setMarks((prev) => {
+      const next = { ...prev }
+      candidates.forEach((r) => {
+        const rec = next[r.key] ?? FRESH
+        next[r.key] = {
+          ...rec,
+          ticks: [...ROW_TASKS],
+          queueState: 'Ready',
+          cleanedBy: rec.cleanedBy ?? actor,
+          qcBy: actor,
+          qcSkipReason: 'Routine QC passed',
+        }
+      })
+      return next
+    })
+    setSelected(new Set(candidates.map((r) => r.key)))
+  }
+
+  /** 1-Click Quick Pass for all currently selected items */
+  const quickPassSelectedToReady = () => {
+    if (!actor || selRows.length === 0) return
+    setDispatchError(null)
+    setMarks((prev) => {
+      const next = { ...prev }
+      selRows.forEach((r) => {
+        const rec = next[r.key] ?? FRESH
+        if (rec.problem === 'No Problems') {
+          next[r.key] = {
+            ...rec,
+            ticks: [...ROW_TASKS],
+            queueState: 'Ready',
+            cleanedBy: rec.cleanedBy ?? actor,
+            qcBy: actor,
+            qcSkipReason: 'Routine QC passed',
+          }
+        }
+      })
+      return next
+    })
+  }
+
   /* ── selection & row actions ─────────────────────────────────────────── */
   const toggleSelect = (key: string) => {
     setSelected((prev) => {
@@ -1223,7 +1274,19 @@ export default function ResetWorkspace({
                 <Card
                   title="Reset Queue"
                   bodyStyle={{ padding: 0 }}
-                  action={<Button icon="checklist" onClick={selectAllVisible}>Select All Visible</Button>}
+                  action={
+                    phone ? (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Button icon="zap" onClick={quickResetAll}>Reset All</Button>
+                        <Button icon="checklist" onClick={selectAllVisible}>Select All</Button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Button icon="zap" onClick={quickResetAll}>Quick Reset All (1-Click)</Button>
+                        <Button icon="checklist" onClick={selectAllVisible}>Select All Visible</Button>
+                      </div>
+                    )
+                  }
                 >
                   {phone ? (
                     /* Shell rule — "Tables become card rows below 768." One card
@@ -1467,6 +1530,33 @@ export default function ResetWorkspace({
                       <div aria-hidden style={{ height: 7, borderRadius: 'var(--r-badge)', background: 'var(--card2)', marginTop: 6, overflow: 'hidden' }}>
                         <div style={{ width: '100%', height: '100%', background: 'var(--success)', borderRadius: 'var(--r-badge)', transform: `scaleX(${overallPct / 100})`, transformOrigin: 'left', transition: 'transform var(--dur) ease' }} />
                       </div>
+
+                      {selRows.length > 0 && (
+                        <div style={{ marginTop: 10 }}>
+                          <button
+                            type="button"
+                            onClick={quickPassSelectedToReady}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              width: '100%',
+                              minHeight: 40,
+                              borderRadius: 'var(--r-btn)',
+                              fontSize: 'var(--t-meta)',
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              background: 'var(--btn-secondary-bg)',
+                              color: 'var(--text)',
+                              border: '1px solid var(--btn-secondary-border)',
+                            }}
+                          >
+                            <Icon name="zap" size={14} />
+                            Quick Pass {selRows.length} to Ready (1-Click)
+                          </button>
+                        </div>
+                      )}
 
                       {/* Shared tasks cascade to every selected item (§6.1's
                           honest subset — see ROW_TASKS above). */}

@@ -46,6 +46,22 @@ window.matchMedia = ((query: string) => ({
 import NewRental from '../NewRental'
 
 describe('NewRental simplification (Part A - D)', () => {
+  it('keeps one save and confirm action on a tablet', async () => {
+    device.viewport = 'tablet'
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      await act(async () => root.render(<MemoryRouter><NewRental /></MemoryRouter>))
+      expect([...container.querySelectorAll('button')].filter((button) => /^save (as )?draft$/i.test(button.textContent?.trim() ?? ''))).toHaveLength(1)
+      expect([...container.querySelectorAll('button')].filter((button) => /^confirm booking$/i.test(button.textContent?.trim() ?? ''))).toHaveLength(1)
+    } finally {
+      await act(async () => root.unmount())
+      container.remove()
+      device.viewport = 'desktop'
+    }
+  })
+
   it('keeps the full booking available on a phone without remounting fields', async () => {
     device.viewport = 'phone'
     const container = document.createElement('div')
@@ -64,6 +80,8 @@ describe('NewRental simplification (Part A - D)', () => {
       const actions = container.querySelector('.new-rental-mobile-actions')!
       expect(actions.textContent).toContain('Save draft')
       expect(actions.textContent).toContain('Confirm booking')
+      expect([...container.querySelectorAll('button')].filter((button) => /^save (as )?draft$/i.test(button.textContent?.trim() ?? ''))).toHaveLength(1)
+      expect([...container.querySelectorAll('button')].filter((button) => /^confirm booking$/i.test(button.textContent?.trim() ?? ''))).toHaveLength(1)
       await act(async () => (clientSection.querySelector('[aria-label="Collapse Client"]') as HTMLButtonElement).click())
       await act(async () => (clientSection.querySelector('[aria-label="Expand Client"]') as HTMLButtonElement).click())
       expect(container.querySelector('#section-0 input')).toBe(clientInput)
@@ -109,6 +127,8 @@ describe('NewRental simplification (Part A - D)', () => {
       (b) => b.textContent?.trim() === 'Confirm Booking',
     )
     expect(confirmBtn).toBeDefined()
+    expect([...container.querySelectorAll('button')].filter((button) => /^save (as )?draft$/i.test(button.textContent?.trim() ?? ''))).toHaveLength(1)
+    expect([...container.querySelectorAll('button')].filter((button) => /^confirm booking$/i.test(button.textContent?.trim() ?? ''))).toHaveLength(1)
 
     expect(container.textContent).not.toContain('Quick Actions')
     expect(container.textContent).not.toContain('Activity Timeline')

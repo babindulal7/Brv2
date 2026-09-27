@@ -394,7 +394,7 @@ describe('Tier 2: Boundaries, Corner Cases & Guardrails', () => {
       expect(Number.parseInt(searchStyle.minHeight, 10)).toBeGreaterThanOrEqual(44)
 
       // User profile trigger
-      const profileBtn = container.querySelector('button[aria-label="User profile"]') as HTMLElement
+      const profileBtn = container.querySelector('button[aria-label*="user profile"]') as HTMLElement
       expect(profileBtn).not.toBeNull()
       expect(Number.parseInt(profileBtn.style.minHeight, 10)).toBeGreaterThanOrEqual(44)
 

@@ -266,6 +266,7 @@ export const REFERRALS: Referral[] = [
 const th = {
   textAlign: 'left' as const,
   padding: '9px 12px',
+  fontFamily: "'Outfit', var(--font-display), sans-serif",
   fontSize: 'var(--t-th)',
   fontWeight: 600,
   color: 'var(--text2)',
@@ -558,11 +559,11 @@ function CreditView({
                         {c.membership}
                       </span>
                     </td>
-                    <td className="figure client-mono" style={td}>
+                    <td className="figure client-outfit" style={td}>
                       {formatMoney(c.creditLimitPaisa)}
                     </td>
                     <td
-                      className="figure client-mono"
+                      className="figure client-outfit"
                       style={{ ...td, fontWeight: c.outstandingPaisa > 0 ? 600 : 400, color: c.outstandingPaisa > 0 ? 'var(--danger-text)' : 'var(--text2)' }}
                     >
                       {formatMoney(c.outstandingPaisa)}

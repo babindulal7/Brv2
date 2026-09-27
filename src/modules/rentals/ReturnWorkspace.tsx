@@ -987,6 +987,61 @@ export default function ReturnWorkspace({
     )
   }
 
+  /** 1-Click Quick Check-in: Marks all outstanding actionable items Returned in Good Condition and sets signatures */
+  const checkInAllClean = () => {
+    unlockAudioContext()
+    const at = new Date().toISOString()
+    const outstanding = actionable.filter((r) => marks[r.key]?.state !== 'Returned')
+    if (outstanding.length === 0) {
+      setScanLog((p) => ['• Nothing is outstanding — all items already received', ...p].slice(0, 5))
+      return
+    }
+
+    setMarks((p) => {
+      const next = { ...p }
+      for (const r of outstanding) {
+        next[r.key] = {
+          state: 'Returned',
+          returnedAtIso: at,
+          condition: next[r.key]?.condition ?? 'Good',
+        }
+      }
+      return next
+    })
+
+    // Auto-mark QC passed for any cinema items
+    const newQcMap: Record<string, boolean> = { ...qcStatusMap }
+    for (const r of outstanding) {
+      if (getCinemaQcItem(r.name)) {
+        newQcMap[r.key] = true
+      }
+    }
+    setQcStatusMap(newQcMap)
+
+    // Auto-fill signatures if not yet recorded
+    if (!sigWarehouse && user?.name) {
+      setSigWarehouse({
+        name: user.name,
+        role: 'Warehouse Staff',
+        atIso: at,
+      })
+    }
+    if (!sigReturning) {
+      setSigReturning({
+        name: returningName || floor?.clientName || 'Returning Person',
+        role: 'Returning Person',
+        atIso: at,
+      })
+    }
+
+    triggerScanPulse('success')
+    playCaseComplete()
+    setScanLog((p) => [
+      `⚡ Quick Check-in All: ${outstanding.length} item(s) received in Good Condition`,
+      ...p,
+    ].slice(0, 5))
+  }
+
   const declareNotReturned = (key: string) => {
     const row = rows.find((r) => r.key === key)
     if (!row || row.alreadyReturned) return
@@ -1406,7 +1461,23 @@ export default function ReturnWorkspace({
             >
               {/* ── centre — the triage list over the real rows ─────────────── */}
               <div style={{ minWidth: 0 }}>
-                <Card title="1 · Equipment Checklist" bodyStyle={{ padding: 0 }}>
+                <Card
+                  title="1 · Equipment Checklist"
+                  bodyStyle={{ padding: 0 }}
+                  action={
+                    phone ? (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <Button icon="zap" onClick={checkInAllClean}>Check In All</Button>
+                        <Button icon="camera" onClick={() => setShowScanner(true)}>Scan</Button>
+                      </div>
+                    ) : (
+                      <>
+                        <Button icon="zap" onClick={checkInAllClean}>Check In All Clean (1-Click)</Button>
+                        <Button icon="camera" onClick={() => setShowScanner(true)}>Scan / Camera</Button>
+                      </>
+                    )
+                  }
+                >
                   <div className="floor-scanner-hud">
                     <form
                       onSubmit={handleAmbientBarcodeSubmit}

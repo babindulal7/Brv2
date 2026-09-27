@@ -4,7 +4,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { ConfirmDialog, Input, Select, Modal, PageActions } from '../../components/ui'
 import { DataTableShell } from '../../components/ui/DataTable'
-import { Card, PageHeader, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Rail, cardStyle } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { PageShell } from '../../components/ui/PageShell'
 import { BAR_BOX } from '../../components/shell/BottomBar'
@@ -16,8 +16,6 @@ import { useToast } from '../../components/ui/Toast'
 import { useViewport } from '../../lib/device'
 import { useNetwork } from '../../lib/network'
 import { STATUS } from '../../lib/status'
-import { statusToken } from '../../lib/workflow'
-import type { BookingStatus } from '../../lib/workflow'
 import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
 import { NPT_OFFSET_STRING } from '../../lib/operationalDay'
 import { rentalDaysBetween } from '../../lib/rentalDays'
@@ -1521,10 +1519,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const canBookingMoney = canViewMoneyField(gctx, 'booking')
   const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
   const canClientBalance = canViewMoneyField(gctx, 'client-balance')
-  // §1.4 — the retired `Draft` stage is status Quote plus a Draft flag.
-  const status: BookingStatus = 'Quote'
-  const flag = 'Draft'
-
   /**
    * Desktop can work in any section; phones use focused workflow groups.
    *
@@ -3359,7 +3353,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
   const health = useMemo(() => (client ? clientHealth(client) : null), [client])
 
-  // Power-user keyboard shortcuts: ⌘S/Ctrl+S (Save Draft), ⌘B/Ctrl+B (Toggle Scanner), ⌘Enter/Ctrl+Enter (Confirm Booking), Alt+1..5 (Jump Workflow Steps)
+  // Power-user keyboard shortcuts: ⌘S/Ctrl+S (Save Draft), ⌘B/Ctrl+B (Toggle Scanner), ⌘Enter/Ctrl+Enter (Confirm Booking), Alt+1..4 (Jump Workflow Steps)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // ⌘S or Ctrl+S: Save Draft
@@ -3849,29 +3843,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         </p>
       )}
 
-      {/* Attention Status */}
-      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-        {blockingNotices.length === 0 ? (
-          <div
-            data-testid="booking-ready-status"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 12px',
-              borderRadius: 'var(--r-btn)',
-              background: 'var(--st-success-bg, #ecfdf5)',
-              border: '1px solid color-mix(in srgb, var(--success, #10b981) 30%, transparent)',
-              color: 'var(--st-success-fg, #065f46)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-            }}
-          >
-            <span className="status-live-dot" style={{ background: 'var(--success, #10b981)' }} />
-            <Icon name="check" size={15} style={{ color: 'var(--st-success-fg, #065f46)', flexShrink: 0 }} />
-            <span>Ready to confirm</span>
-          </div>
-        ) : (
+      {blockingNotices.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
           <div
             data-testid="booking-attention-status"
             style={{
@@ -3918,11 +3891,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               ))}
             </ul>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Action */}
-      <div style={{ marginTop: 14 }}>
+      {isDesktop && <div style={{ marginTop: 14 }}>
         <Button
           icon={saveState === 'saving' ? 'refresh' : 'check'}
           variant="primary"
@@ -3933,7 +3906,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         >
           {saveState === 'saving' ? 'Confirming Booking…' : 'Confirm Booking'}
         </Button>
-      </div>
+      </div>}
     </Card>
   )
 
@@ -3959,9 +3932,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           <div style={{ marginTop: 'var(--sp-md)', display: 'flex', gap: 10, justifyContent: 'center' }}>
             <Button variant="secondary" onClick={retryLoadDraft}>
               Retry
-            </Button>
-            <Button variant="ghost" onClick={doExit}>
-              Back to Rentals
             </Button>
           </div>
         </Card>
@@ -3990,14 +3960,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 <Icon name="chevron_left" size={14} />
                 Rentals
               </Link>
-              <span>›</span>
-              <span style={{ color: 'var(--text)', fontWeight: 600 }}>
-                {draftBookingNo ? `Draft #${draftBookingNo}` : 'New Rental'}
-              </span>
             </div>
           }
           title={draftBookingNo ? `Draft #${draftBookingNo}` : 'New Rental'}
-          actions={
+          actions={isDesktop ? (
             <PageActions
               secondary={
                 <Button
@@ -4009,17 +3975,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                   {saveState === 'saving' ? 'Saving…' : 'Save as draft'}
                 </Button>
               }
-              extra={
-                <span
-                  className="new-rental-status"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, padding: '0 10px', borderRadius: 'var(--r-badge)', background: STATUS[statusToken(status)].bg, color: STATUS[statusToken(status)].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}
-                >
-                  <Icon name="file" size={13} />
-                  {draftBookingNo ? `Draft #${draftBookingNo}` : `${status} · ${flag}`}
-                </span>
-              }
             />
-          }
+          ) : undefined}
         />
       }
     >
@@ -4089,11 +4046,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           { step: 4, label: 'Review & Confirm', id: 'rail-booking-summary' },
         ].map((s) => {
           const isActive = currentStep === s.step;
-          const isDone = currentStep > s.step;
           return (
             <button
               key={s.step}
               type="button"
+              aria-current={isActive ? 'step' : undefined}
               onClick={() => {
                 setCurrentStep(s.step);
                 if (s.step === 1) setOpen((p) => p.map((v, i) => (i === 0 || i === 1 ? true : v)));
@@ -4110,7 +4067,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 borderRadius: 'var(--r-badge)',
                 border: isActive ? '1px solid var(--primary)' : '1px solid var(--border)',
                 background: isActive ? 'var(--primary-subtle, rgba(56, 106, 247, 0.1))' : 'transparent',
-                color: isActive ? 'var(--primary)' : isDone ? 'var(--text)' : 'var(--text2)',
+                color: isActive ? 'var(--primary)' : 'var(--text2)',
                 fontWeight: isActive ? 700 : 500,
                 fontSize: 'var(--t-meta)',
                 cursor: 'pointer',
@@ -4125,13 +4082,13 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: isActive ? 'var(--primary)' : isDone ? 'var(--st-success-fg)' : 'var(--border)',
-                  color: isActive || isDone ? '#fff' : 'var(--text2)',
+                  background: isActive ? 'var(--primary)' : 'var(--border)',
+                  color: isActive ? '#fff' : 'var(--text2)',
                   fontSize: 11,
                   fontWeight: 700,
                 }}
               >
-                {isDone ? '✓' : s.step}
+                {s.step}
               </span>
               <span>{s.label}</span>
             </button>
@@ -5632,10 +5589,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           )}
         </div>
 
-          {/* §58 — the footer reports the database-backed save state and
-              nothing else. A fingerprint distinguishes the last successful
-              snapshot from edits made after it, so "Draft saved" cannot remain
-              on screen once the form diverges from the stored row. */}
+          {/* Keep save feedback brief; the inline error above carries failure details. */}
           <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '0 2px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
             {saveState === 'saving' ? (
               <>
@@ -5651,17 +5605,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 <span style={{ color: 'var(--danger-text)', fontWeight: 600 }}>Not saved</span>
               </>
             ) : (
-              /* Never colour alone — the words carry it, the glyph decorates. */
               <>
                 <Icon name={online ? 'info' : 'plug'} size={13} style={{ color: 'var(--text2)' }} />
-                <span style={{ lineHeight: 1.4 }}>
-                  <span style={{ fontWeight: 600, color: 'var(--text2)' }}>
-                    {draftPersisted ? 'Unsaved changes' : 'Not saved'}
-                  </span>{' '}
-                  — {draftPersisted
-                    ? 'save this draft again before leaving to keep the latest changes.'
-                    : 'this booking exists only in this browser tab. It is written when you save the draft or confirm it.'}
-                  {!online && ' You are offline, and confirming a booking is refused until you are back online.'}
+                <span style={{ fontWeight: 600, color: 'var(--text2)' }}>
+                  {draftPersisted ? 'Unsaved changes' : 'Not saved'}
+                  {!online && ' · Offline'}
                 </span>
               </>
             )}
@@ -5707,7 +5655,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             >
               Cancel
             </Button>
-            <span className="new-rental-mobile-state">{draftPersisted ? 'Draft' : 'New booking'}</span>
           </div>
           <button type="button" className="new-rental-compact-summary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} aria-label="Review rental summary">
             <span>{client?.name ?? 'No client selected'} · {totalUnits} items</span>
@@ -5806,8 +5753,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           </div>
         </aside>
       )}
-
-      <FooterNote extra={['Move between sections freely. Review the booking before confirming.']} />
 
       {/* ── Disclosures. None of these route; the booking stays behind them. ── */}
       {client && (

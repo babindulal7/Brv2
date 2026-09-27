@@ -106,7 +106,6 @@ export function BarcodeScannerModal({
   matchLabel = DEFAULT_MATCH_LABEL,
 }: BarcodeScannerModalProps) {
   const [query, setQuery] = useState('')
-  const [scanType, setScanType] = useState<'Barcode' | 'Serial' | 'QR'>('Serial')
   const [lastScanResult, setLastScanResult] = useState<{
     success: boolean
     message: string
@@ -351,29 +350,34 @@ export function BarcodeScannerModal({
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-        {/* Mode Selector & Camera Toggle */}
+        {/* Mode & Camera Controls */}
         <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
-          {(['Serial', 'Barcode', 'QR'] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              className="tap"
-              onClick={() => setScanType(t)}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 14px',
+              borderRadius: 'var(--r-btn)',
+              background: 'var(--card2)',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+            }}
+          >
+            <span
               style={{
-                minHeight: 44,
-                padding: '0 12px',
-                borderRadius: 'var(--r-btn)',
-                border: scanType === t ? '1px solid var(--nav-active-accent)' : '1px solid var(--border)',
-                background: scanType === t ? 'var(--nav-active-accent-bg, var(--card2))' : 'var(--card)',
-                color: scanType === t ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                cursor: 'pointer',
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: 'var(--success, #22c55e)',
+                display: 'inline-block',
+                boxShadow: '0 0 6px var(--success, #22c55e)',
               }}
-            >
-              {t} Mode
-            </button>
-          ))}
+            />
+            <span>Auto-Detect: Barcode · QR · Serial</span>
+          </div>
 
           <button
             type="button"
@@ -537,11 +541,7 @@ export function BarcodeScannerModal({
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={
-                  scanType === 'Serial'
-                    ? 'Scan barcode / type serial (e.g. SN-884192, CAM-001)...'
-                    : 'Scan QR tag / asset ID...'
-                }
+                placeholder="Scan barcode / QR / type serial or asset tag (e.g. SN-884192, CAM-001)..."
                 style={{
                   width: '100%',
                   minHeight: 44,

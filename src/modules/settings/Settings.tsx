@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import './settings.css'
 import Icon from '../../components/ui/Icon'
-import { Card, PageHeader, Button, Rail, FooterNote, cardStyle, SummaryRows } from '../../components/ui/Page'
+import type { IconName } from '../../components/ui/Icon'
+import { Card, PageHeader, Button, FooterNote, SummaryRows } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
 import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
@@ -22,11 +23,12 @@ import type { SettingKey, SettingValue, SettingsRecord } from '../../lib/setting
 import { applyLanguage } from '../../lib/i18n'
 import { canManageSettings } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
+import { useTheme } from '../../lib/theme'
+import { BRANCH } from '../../data/nav'
 import {
   TABS,
   LEGACY_TAB,
   DEFAULT_TAB,
-  TAB_ICON,
   TAB_SHORT_LABEL,
   TAB_SUMMARY,
   isTabKey,
@@ -45,10 +47,8 @@ import {
   controlStyle,
   downloadCsv,
   fieldValue,
-  NotBuilt,
 } from './sections/shared'
 import {
-
   FIELD_SECTIONS,
   FINANCIAL_SECTIONS,
   ORGANISATION_SECTIONS,
@@ -60,95 +60,59 @@ import {
 } from './sections'
 
 /*
- * The operating day, resolved once when this module loads, from the real
- * clock in Kathmandu (`lib/bs.ts`'s `getBusinessToday`). It replaced an
- * imported `TODAY` constant frozen at 31 Jul 2026.
+ * Operating day in Kathmandu (BS + AD).
  */
 const TODAY = getBusinessToday()
 
-
-/**
- * # Settings — the shell
- *
- * `11_SETTINGS.md` §11.1. This file used to be 2,502 lines carrying all eight
- * sections; the spec's own closing note is that *"these eight sections are the
- * split"*, and they now live under `sections/`. What is left here is the shell:
- * which section is showing, how it is laid out at each width, the loading and
- * error states, edit mode and the config export.
- *
- * ## The three layouts
- *
- * | Width | §11.1 draws | Built |
- * |---|---|---|
- * | **≥1280** | left tab column, right panel | left tab column · panel · rail |
- * | **768–1279** | tabs scroll in one row, panel full width | the same, rail reflowed under the panel |
- * | **<768** | a LIST of sections, each tapping through to its own screen | the same, breadcrumb back |
- *
- * The rail is the one addition, and it is a ruling rather than a liberty:
- * Rulings §1 keeps `OverviewRail`/`BranchesRail` because §11.1 draws two
- * columns but removes nothing in prose. Below 1280 it **reflows beneath the
- * panel** — Rulings §7, *"collapse means reflow, not hide"* — so it is not
- * wrapped in `CollapsibleAside` at those widths and that component's defaults
- * are untouched.
- *
- * `CONFLICTS.md` §11.6 reads §11.1's two columns as an instruction to delete
- * the rail, and §11.7 reads the missing KPI strips the same way. The register
- * outranks both: the conflict is recorded, nothing is deleted.
- *
- * ## What left this screen
- *
- * §11.2 parks **Automation · Channels/Communication · AI**, so those two tabs
- * are gone along with the AI Branch Insights card (Law 16, Rulings §7). The
- * ~20 destinations that pointed into them were **deleted, not re-pointed** —
- * see `data/settings.ts`. Every *screen* they linked to is still routed and
- * still reachable from System ▸ System, so no destination died.
- *
- * ## Law 6
- *
- * The Financial tab is money end to end, so it is **removed from the strip**
- * for a money-blind session rather than disabled in it — and the phone list is
- * built from that same filtered set, so a Warehouse operator sees six rows and
- * not seven. Every row elsewhere on the page that pointed at Financial is
- * dropped by the same filter; a control that lands the operator back on
- * Overview is a dead control.
- */
-
-/* ── layout atoms ──────────────────────────────────────────────────────── */
-
-const TAB_COLUMN_WIDTH = 208
+const TAB_CONFIG: Record<TabKey, { icon: IconName; color: string; bg: string; subtitle: string }> = {
+  business: {
+    icon: 'briefcase',
+    color: '#3b82f6',
+    bg: 'rgba(59, 130, 246, 0.12)',
+    subtitle: 'Identity, VAT & financial policies',
+  },
+  people: {
+    icon: 'users',
+    color: '#a855f7',
+    bg: 'rgba(168, 85, 247, 0.12)',
+    subtitle: 'Staff directory & 9-role matrix',
+  },
+  branches: {
+    icon: 'box',
+    color: '#f59e0b',
+    bg: 'rgba(245, 158, 11, 0.12)',
+    subtitle: 'Branches, warehouses & fleet',
+  },
+  system: {
+    icon: 'settings',
+    color: '#06b6d4',
+    bg: 'rgba(6, 182, 212, 0.12)',
+    subtitle: 'Preferences, security & audit',
+  },
+}
 
 export default function Settings() {
   const money = useCanViewMoney()
-  /* Law 13/14 — width decides, and the branch is on the viewport band, never
-     on a platform or a user agent. */
   const viewport = useViewport()
   const phone = viewport === 'phone'
   const desktop = viewport === 'desktop'
 
   const [params, setParams] = useSearchParams()
   const [addOpen, setAddOpen] = useState(false)
-  /* Held here, not in the pane: the Branches rail summary, the rail's Export
-     Report tile and the header Export button all read this same list, so a
-     branch added this session cannot appear in one of them and not the others. */
   const [branches, setBranches] = useState<Branch[]>(BRANCHES)
 
   const { user } = useAuth()
+  const { theme, setMode } = useTheme()
   const mayEdit = canManageSettings(user?.role ?? 'Client')
   const [leaveError, setLeaveError] = useState<string | null>(null)
 
-  /* §11.1 — "a settings page must show a loading state; stale settings are
-     wrong settings". Three distinct states, no timer anywhere. */
   const { load, reload, patch } = useSettingsLoad()
   const settings: SettingsRecord = load.status === 'ready' ? load.settings : SETTINGS_DEFAULTS
 
   const onSaveSetting = useCallback(
     async (p: Record<string, unknown>) => {
-      /* `writeSettings` throws on an invalid value; `useEditMode` catches it,
-         puts the message on the field and keeps the draft. */
       writeSettings(p as Partial<SettingsRecord>)
       patch(p as Partial<SettingsRecord>)
-      /* Language takes effect on save, not on reload — a picker that needs a
-         refresh to show its own result reads as broken. */
       if ('language' in p) {
         await applyLanguage(languageCodeOf(p.language as SettingValue))
       }
@@ -167,22 +131,12 @@ export default function Settings() {
 
   const edit = useEditMode({ record: settings, fields: settingFields, onSave: onSaveSetting })
 
-  /* Law 6 — a money-only tab is removed from the strip, not disabled in it. */
+  /* Law 6 — money-only tab is removed from the strip, not disabled. */
   const tabs = useMemo(() => TABS.filter((t) => money || !t.money), [money])
 
   const raw = params.get('tab')
-  /*
-   * Eight tabs became four on 15 Aug. A `?tab=` value is a contract — bookmarks,
-   * Administration Modules rows and the phone list all carry one — so a retired
-   * key is TRANSLATED through `LEGACY_TAB` rather than dropped on the default.
-   * `?tab=financial` lands on Business, where the financial cards now live;
-   * `?tab=security` lands on System, where its two cards now live. Only a key
-   * that was never a tab falls back.
-   */
   const requested: TabKey = isTabKey(raw) ? raw : (raw !== null && LEGACY_TAB[raw]) || DEFAULT_TAB
   const active: TabKey = tabs.some((t) => t.key === requested) ? requested : DEFAULT_TAB
-  /* At phone width the *absence* of a tab param is the section list; §11.1
-     draws no Overview row there because Overview is what the list replaces. */
   const onPhoneList = phone && (raw === null || !tabs.some((t) => t.key === raw))
 
   const go = (tab: TabKey) => {
@@ -203,6 +157,17 @@ export default function Settings() {
   const bs = toBs(TODAY)
   const asOf = `${bs ? formatBs(bs) : 'BS date unavailable'} · ${formatAd(TODAY)}`
 
+  const initials = useMemo(() => {
+    const name = user?.name?.trim() || 'Babin Shrestha'
+    const parts = name.split(/\s+/).filter(Boolean)
+    if (parts.length >= 2) {
+      const p0 = parts[0] || 'B'
+      const p1 = parts[parts.length - 1] || 'S'
+      return `${p0[0] || 'B'}${p1[0] || 'S'}`.toUpperCase()
+    }
+    return (name.slice(0, 2) || 'BR').toUpperCase()
+  }, [user?.name])
+
   const exportConfig = () => {
     const rows: string[][] = [['Section', 'Setting', 'Value']]
     const walk = (tabLabel: string, sections: readonly (typeof FINANCIAL_SECTIONS)[number][]) => {
@@ -216,36 +181,15 @@ export default function Settings() {
       const sections = FIELD_SECTIONS[t.key]
       if (sections) walk(t.label, sections)
     }
-    /* Law 6 — the financial rows reach the CSV only for a session that can see
-       money. They are kept out of FIELD_SECTIONS for exactly this reason: the
-       old money-gated TAB filtered them out of `tabs` and therefore out of the
-       export, and folding them into Business must not lose that. */
     if (money) walk('Business', FINANCIAL_SECTIONS)
     downloadCsv('babin-settings.csv', rows)
   }
 
   const exportBranches = () => downloadCsv('babin-branches.csv', branchCsvRows(branches, money))
 
-  const IMPORT_WHY = 'Importing branches writes to the org tree; no backend is connected in this build.'
-
   const headerActions =
     load.status !== 'ready' ? null : active === 'branches' && !onPhoneList ? (
       <>
-        {/* No `tap` here, deliberately, and the omission is the considered
-            answer rather than a miss. This is a `span`: no handler, no focus,
-            and it says outright that Import is not built. Law 15 sizes TARGETS,
-            and there is nothing here to aim at — an invisible 44px band around
-            a dead control cannot help anyone reach it, it can only sit over the
-            header strip catching presses that then do nothing at all. */}
-        <span
-          aria-disabled="true"
-          title={IMPORT_WHY}
-          style={{ ...controlStyle, cursor: 'not-allowed', color: 'var(--muted)', borderStyle: 'dashed', minHeight: 34 }}
-        >
-          <Icon name="upload" size={13} />
-          Import
-          <NotBuilt why={IMPORT_WHY} />
-        </span>
         <Button icon="download" onClick={exportBranches}>
           Export
         </Button>
@@ -255,15 +199,13 @@ export default function Settings() {
       </>
     ) : (
       <>
-        {/* `settings.manage` is Owner-only (`rbac.ts:91`). A role that cannot
-            manage settings gets no Edit button at all, rather than one that
-            refuses on press. */}
         {mayEdit &&
           !onPhoneList &&
           (edit.editing ? (
             <>
               <Button
                 icon="check"
+                variant="primary"
                 onClick={() => {
                   const outcome = edit.stopEditing()
                   setLeaveError(
@@ -306,11 +248,6 @@ export default function Settings() {
         <Button icon="download" onClick={exportConfig}>
           Export config
         </Button>
-        {/* 34 to sit level with the `Button`s beside it, so the header strip
-            does not step up and down; `tap` for the height those 34 pixels owe
-            Law 15. Only the short axis inflates — the label puts this well past
-            44 across — so the target grows into the header's padding rather
-            than sideways into Export config. */}
         <Link to="/admin/audit" className="tap" style={{ ...controlStyle, minHeight: 34 }}>
           <Icon name="checklist" size={14} />
           View audit log
@@ -328,38 +265,15 @@ export default function Settings() {
         <BranchesPane money={money} rows={branches} setRows={setBranches} addOpen={addOpen} setAddOpen={setAddOpen} />
       )
     }
-    /*
-     * People renders its custom pane AND any field sections declared for it.
-     *
-     * This used to be a bare `return <UsersPane />`, which short-circuited
-     * before the `FIELD_SECTIONS[active]` renderer below. The export walk near
-     * the top of this file iterates `FIELD_SECTIONS[t.key]` for EVERY tab, so
-     * the two disagreed by construction: a row added to `FIELD_SECTIONS.people`
-     * would appear in babin-settings.csv while rendering on no screen — a
-     * setting that exists in the audit trail and nowhere a person could see or
-     * change it. Nothing trips it today because `FIELD_SECTIONS` has no
-     * `people` key (sections/index.ts maps only `business` and `system`), which
-     * is exactly why it would have gone unnoticed until someone added one.
-     *
-     * Rendering the sections here rather than teaching the export to skip
-     * People is the direction that cannot silently diverge again: whatever the
-     * CSV claims about this tab is now, by construction, what the tab draws.
-     * With no `people` key this is a no-op.
-     */
-    if (active === 'people')
+    if (active === 'people') {
       return (
         <>
           <UsersPane />
           {FIELD_SECTIONS.people ? <SectionCards sections={FIELD_SECTIONS.people} /> : null}
         </>
       )
+    }
     if (active === 'business') {
-      /*
-       * Business is Organisation + Financial in one pane. Law 6 is applied HERE
-       * rather than by dropping a tab: a money-blind session gets the
-       * organisation cards and no financial cards at all — removed, not
-       * disabled, which is the same treatment the `financial` tab used to get.
-       */
       return (
         <>
           <SectionCards sections={ORGANISATION_SECTIONS} />
@@ -374,23 +288,7 @@ export default function Settings() {
   const rail =
     active === 'branches' ? (
       <BranchesRail money={money} branches={branches} onAdd={() => setAddOpen(true)} onExport={exportBranches} />
-    ) : (
-      <>
-        <div style={{ ...cardStyle, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-          The theme and text-size selectors are live and persist. The other controls are presentational — they do not save
-          yet, and this page says so rather than implying a write that never happens.
-        </div>
-        <Card title="Org-wide policy">
-          <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
-            Roles, permissions, numbering, taxes, fiscal year, backup and audit affect everyone, not just this workspace.
-            Changing one is audited and, for the critical ones, restricted to an Owner.
-          </p>
-        </Card>
-        <Card title="System Summary">
-          <SummaryRows rows={SYSTEM_SUMMARY.map((r) => ({ label: r.label, value: r.value }))} />
-        </Card>
-      </>
-    )
+    ) : null
 
   /* ── body, by state then by width ────────────────────────────────────── */
 
@@ -419,114 +317,104 @@ export default function Settings() {
       )
     }
 
-    /* PHONE — §11.1: a list of sections, each tapping through to its own
-       screen. Four rows since the 15 Aug cut, and no Overview row — Overview
-       was deleted, not hidden, so there is no longer a section the list has to
-       reach by a separate button underneath it. */
+    /* PHONE — §11.1: a list of sections, each tapping through to its own screen. */
     if (onPhoneList) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-          {tabs.map((t) => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => go(t.key)}
-                style={{
-                  ...cardStyle,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 'var(--sp-md)',
-                  width: '100%',
-                  minHeight: 64,
-                  padding: 'var(--sp-md)',
-                  fontFamily: 'inherit',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                }}
-              >
-                <Icon name={TAB_ICON[t.key]} size={20} style={{ color: 'var(--nav-active-accent)', flexShrink: 0 }} />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
-                    {t.label}
-                  </span>
-                  <span style={{ display: 'block', marginTop: 2, fontSize: 'var(--t-th)', color: 'var(--text2)', lineHeight: 1.5 }}>
-                    {TAB_SUMMARY[t.key]}
-                  </span>
-                </span>
-                <Icon name="chevron_right" size={16} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-              </button>
-          ))}
+        <div className="app-settings-mobile-list">
+          <div className="app-settings-mobile-section-header">APP SETTINGS</div>
+          <div className="app-settings-mobile-group">
+            {tabs.map((t) => {
+              const conf = TAB_CONFIG[t.key]
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => go(t.key)}
+                  className="app-settings-mobile-row"
+                >
+                  <div
+                    className="app-settings-mobile-icon"
+                    style={{ backgroundColor: conf.bg, color: conf.color }}
+                  >
+                    <Icon name={conf.icon} size={20} />
+                  </div>
+                  <div className="app-settings-mobile-text">
+                    <span className="app-settings-mobile-title">{t.label}</span>
+                    <span className="app-settings-mobile-desc">{TAB_SUMMARY[t.key]}</span>
+                  </div>
+                  <Icon name="chevron_right" size={16} className="app-settings-chevron-muted" />
+                </button>
+              )
+            })}
+          </div>
         </div>
       )
     }
 
-    /* PHONE — one section, full screen. Rulings §4: breadcrumbs everywhere,
-       and the `←` in the wireframes is shorthand for "this is a sub-page", not
-       an order to add a Back button. The crumb is the way up. */
+    /* PHONE — one section, full screen. */
     if (phone) {
       return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          <nav aria-label="Breadcrumb" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            {/* The crumb is the only way back up on phone — §4 rules out a
-                Back button — so it is the single most important target on this
-                layout, and it was a borderless 32px word with 2px of padding.
-                `tap` rather than a taller box because a breadcrumb that stands
-                44px tall reads as a button and stops reading as a trail; the
-                chevron and the current-page label beside it are inert, so
-                nothing is there to be stolen from. */}
+        <div className="app-settings-mobile-subpage">
+          <div className="app-settings-mobile-back-bar">
             <button
               type="button"
-              className="tap"
+              className="app-settings-back-btn tap"
               onClick={toList}
-              style={{
-                ...controlStyle,
-                minHeight: 32,
-                border: 'none',
-                background: 'transparent',
-                padding: '0 2px',
-                color: 'var(--link)',
-              }}
+              aria-label="Back to settings"
             >
-              Settings
+              <Icon name="chevron_left" size={18} />
+              <span>Settings</span>
             </button>
-            <Icon name="chevron_right" size={12} style={{ color: 'var(--muted)' }} />
-            <span aria-current="page" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-              {activeTab?.label ?? 'Overview'}
-            </span>
-          </nav>
-          {panel}
-          {/* Below 1280 the rail reflows under the panel rather than collapsing
-              behind a handle — Rulings §7. */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>{rail}</div>
+            <div className="app-settings-mobile-current-title">{activeTab?.label ?? 'Overview'}</div>
+            <div style={{ width: 44 }} aria-hidden="true" />
+          </div>
+
+          <div className="app-settings-pane">
+            {panel}
+            {active === 'branches' && rail && (
+              <div className="app-settings-branches-rail-wrap">{rail}</div>
+            )}
+            {active === 'system' && (
+              <Card title="System Summary">
+                <SummaryRows rows={SYSTEM_SUMMARY.map((r) => ({ label: r.label, value: r.value }))} />
+              </Card>
+            )}
+          </div>
         </div>
       )
     }
 
-    /* DESKTOP — left tab column, right panel. TABLET — the same tabs, scrolling
-       in one row, panel full width. */
+    /* DESKTOP & TABLET */
     return (
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: desktop ? `${TAB_COLUMN_WIDTH}px minmax(0,1fr) auto` : 'minmax(0,1fr)',
-          gap: 'var(--sp-md)',
-          alignItems: 'start',
-        }}
-      >
+      <div className={desktop ? 'app-settings-layout' : 'app-settings-tablet-wrapper'}>
         {desktop ? (
-          <nav aria-label="Settings sections" className="settings-nav-col">
+          <nav aria-label="Settings sections" className="app-settings-sidebar settings-nav-col">
+            <div className="app-settings-sidebar-header">PREFERENCES & POLICIES</div>
             {tabs.map((t) => {
               const on = t.key === active
+              const conf = TAB_CONFIG[t.key]
               return (
                 <button
                   key={t.key}
                   type="button"
                   aria-current={on ? 'page' : undefined}
                   onClick={() => go(t.key)}
-                  className={`settings-tab-btn ${on ? 'is-active' : ''}`}
+                  className={`app-settings-nav-item settings-tab-btn ${on ? 'is-active' : ''}`}
                 >
-                  <Icon name={TAB_ICON[t.key]} size={15} style={{ flexShrink: 0 }} />
-                  <span style={{ minWidth: 0 }}>{t.label}</span>
+                  <div
+                    className="app-settings-nav-icon-box"
+                    style={{
+                      backgroundColor: on ? conf.color : conf.bg,
+                      color: on ? '#ffffff' : conf.color,
+                    }}
+                  >
+                    <Icon name={conf.icon} size={16} />
+                  </div>
+                  <div className="app-settings-nav-text">
+                    <div className="app-settings-nav-label">{t.label}</div>
+                    <div className="app-settings-nav-subtitle">{conf.subtitle}</div>
+                  </div>
+                  <Icon name="chevron_right" size={14} className="app-settings-nav-chevron" />
                 </button>
               )
             })}
@@ -535,10 +423,11 @@ export default function Settings() {
           <div
             role="tablist"
             aria-label="Settings sections"
-            className="settings-tab-scroll"
+            className="app-settings-tablet-tabs settings-tab-scroll"
           >
             {tabs.map((t) => {
               const on = t.key === active
+              const conf = TAB_CONFIG[t.key]
               return (
                 <button
                   key={t.key}
@@ -546,29 +435,44 @@ export default function Settings() {
                   type="button"
                   aria-selected={on}
                   onClick={() => go(t.key)}
-                  className={`settings-tab-pill ${on ? 'is-active' : ''}`}
+                  className={`app-settings-tablet-tab settings-tab-pill ${on ? 'is-active' : ''}`}
                 >
-                  {TAB_SHORT_LABEL[t.key]}
+                  <div
+                    className="app-settings-tablet-icon"
+                    style={{
+                      backgroundColor: on ? conf.color : conf.bg,
+                      color: on ? '#ffffff' : conf.color,
+                    }}
+                  >
+                    <Icon name={conf.icon} size={14} />
+                  </div>
+                  <span>{TAB_SHORT_LABEL[t.key]}</span>
                 </button>
               )
             })}
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          {!desktop && (
-            <h2 style={{ margin: 0, fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>
-              {activeTab?.label ?? 'Overview'}
-            </h2>
-          )}
-          {panel}
-          {/* Tablet: the rail's content moves *below* the panel, still visible.
-              Not `CollapsibleAside` — Rulings §7 reads "collapse" as reflow, and
-              other pages depend on that component's defaults. */}
-          {!desktop && <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>{rail}</div>}
-        </div>
+        <div className="app-settings-pane">
+          <div className="app-settings-pane-header">
+            <h2 className="app-settings-pane-title">{activeTab?.label ?? 'Overview'}</h2>
+            <p className="app-settings-pane-desc">{TAB_SUMMARY[active]}</p>
+          </div>
 
-        {desktop && <Rail label="Settings summary">{rail}</Rail>}
+          {panel}
+
+          {active === 'branches' && rail && (
+            <div className="app-settings-branches-rail-wrap">
+              {rail}
+            </div>
+          )}
+
+          {active === 'system' && (
+            <Card title="System Summary">
+              <SummaryRows rows={SYSTEM_SUMMARY.map((r) => ({ label: r.label, value: r.value }))} />
+            </Card>
+          )}
+        </div>
       </div>
     )
   })()
@@ -582,24 +486,81 @@ export default function Settings() {
               <PageHeader
                 icon="settings"
                 title="Settings"
+                description="System preferences, organization profile, security, and workspace policies."
                 actions={headerActions}
               />
 
-              {/* Law 12 — errors inline, toasts for successes only. */}
+              {/* Inset User Profile Header (App Settings style) */}
+              <div className="app-settings-profile-card">
+                <div className="app-settings-profile-left">
+                  <div className="app-settings-avatar-wrap">
+                    <div className="app-settings-avatar" aria-hidden="true">
+                      {initials}
+                    </div>
+                    <span className="app-settings-avatar-status" title="Active session" />
+                  </div>
+                  <div className="app-settings-profile-info">
+                    <div className="app-settings-profile-name-row">
+                      <span className="app-settings-profile-name">{user?.name || 'Babin Shrestha'}</span>
+                      <span className="app-settings-role-badge">{user?.role || 'Owner'}</span>
+                      <span className="app-settings-status-chip">
+                        <span className="app-settings-status-dot" />
+                        Active Session
+                      </span>
+                    </div>
+                    <div className="app-settings-profile-meta">
+                      <span className="app-settings-meta-item">
+                        <Icon name="box" size={13} />
+                        {BRANCH.name || 'Kathmandu Main Branch'}
+                      </span>
+                      <span className="app-settings-meta-dot">·</span>
+                      <span className="app-settings-meta-item">
+                        <Icon name="calendar" size={13} />
+                        {asOf}
+                      </span>
+                      <span className="app-settings-meta-dot">·</span>
+                      <span className="app-settings-meta-item">
+                        <Icon name="lock" size={13} />
+                        RBAC Protected
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="app-settings-profile-right">
+                  <div className="app-settings-quick-theme" role="group" aria-label="Theme preference">
+                    <button
+                      type="button"
+                      className={`app-settings-theme-btn tap ${theme === 'light' ? 'is-active' : ''}`}
+                      onClick={() => setMode('light')}
+                      title="Switch to light theme"
+                    >
+                      <Icon name="sun" size={14} />
+                      <span>Light</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={`app-settings-theme-btn tap ${theme === 'dark' ? 'is-active' : ''}`}
+                      onClick={() => setMode('dark')}
+                      title="Switch to dark theme"
+                    >
+                      <Icon name="moon" size={14} />
+                      <span>Dark</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Errors inline */}
               {leaveError && <ErrorBanner title="Unsaved changes." message={leaveError} />}
 
-              {/* These writes are real — `lib/settingsStore` persists them and
-                  `getSetting` reads them back. But localStorage is per-browser,
-                  and an Owner changing the VAT rate would reasonably expect it to
-                  reach everyone. Saying where the value actually lands is the
-                  difference between a working setting and a misleading one. */}
               {edit.editing && (
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'flex-start',
                     gap: 'var(--sp-sm)',
-                    padding: '10px 12px',
+                    padding: '10px 14px',
                     borderRadius: 'var(--r-sm)',
                     border: '1px solid var(--border)',
                     background: 'var(--card2)',
@@ -615,10 +576,6 @@ export default function Settings() {
                 </div>
               )}
 
-              {/* A seed that stops reconciling is shown, not thrown — a
-                  module-scope throw runs before React mounts and blanks the app
-                  with no message. §11.3's branch ▸ warehouse join is asserted
-                  here per branch, not as a group total. */}
               {SEED_ERRORS.length > 0 && (
                 <ErrorBanner
                   title="Seed data does not reconcile"
@@ -643,7 +600,4 @@ export default function Settings() {
   )
 }
 
-/* `DestControl` is re-exported so the sibling screens in this module (Tools,
-   Business Hours) can keep importing it from `Settings` as they always have,
-   without reaching into `sections/`. */
 export { DestControl }

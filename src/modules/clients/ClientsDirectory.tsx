@@ -224,6 +224,7 @@ const SAVED_VIEWS: SavedView[] = [
 const th = {
   textAlign: 'left' as const,
   padding: '9px 12px',
+  fontFamily: "'Outfit', var(--font-display), sans-serif",
   fontSize: 'var(--t-meta)',
   fontWeight: 600,
   color: 'var(--text2)',
@@ -1703,13 +1704,13 @@ export function ClientsDirectory({
 
                       <div className="client-card-stats">
                         <span className="client-stat-badge">
-                          <span className="figure client-mono" style={{ color: 'var(--text)', fontWeight: 600 }}>
+                          <span className="figure client-outfit" style={{ color: 'var(--text)', fontWeight: 600 }}>
                             {client.currentRentalsCount}
                           </span>{' '}
                           active
                         </span>
                         {money && client.outstandingPaisa > 0 && (
-                          <span className="figure client-mono" style={{ color: 'var(--danger-text)', fontWeight: 600 }}>
+                          <span className="figure client-outfit" style={{ color: 'var(--danger-text)', fontWeight: 600 }}>
                             {formatMoney(client.outstandingPaisa)} due
                           </span>
                         )}
@@ -1900,11 +1901,11 @@ export function ClientsDirectory({
                           {!narrow && (
                           <td style={td}>
                             {client.currentRentalsCount > 0 ? (
-                              <span className="figure client-mono" style={{ color: 'var(--link)', fontWeight: 600 }}>
+                              <span className="figure client-outfit" style={{ color: 'var(--link)', fontWeight: 600 }}>
                                 {client.currentRentalsCount} active
                               </span>
                             ) : (
-                              <span className="figure client-mono" style={{ color: 'var(--muted)' }}>
+                              <span className="figure client-outfit" style={{ color: 'var(--muted)' }}>
                                 0
                               </span>
                             )}
@@ -1914,7 +1915,7 @@ export function ClientsDirectory({
                           {money && (
                             <td style={td}>
                               {client.outstandingPaisa > 0 ? (
-                                <span className="figure client-mono" style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
+                                <span className="figure client-outfit" style={{ fontWeight: 600, color: 'var(--danger-text)' }}>
                                   {formatMoney(client.outstandingPaisa)}
                                 </span>
                               ) : (
@@ -1927,7 +1928,7 @@ export function ClientsDirectory({
                             <td style={td}>
                               {client.depositHeldPaisa > 0 ? (
                                 <>
-                                  <span className="figure client-mono" style={{ display: 'block', color: 'var(--text)' }}>
+                                  <span className="figure client-outfit" style={{ display: 'block', color: 'var(--text)' }}>
                                     {formatMoney(client.depositHeldPaisa)}
                                   </span>
                                   {client.currentRentalsCount === 0 && (

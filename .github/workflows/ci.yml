@@ -73,6 +73,19 @@ jobs:
       - name: PROGRESS.md carries its Completion and Remaining blocks
         run: npm run lint:progress
 
+      # WCAG AA on the SHIPPED theme.css, both themes.
+      #
+      # This gate existed and was never in this file, which is how three real
+      # contrast bugs reached the dashboard: `--muted` was measured only against
+      # `--surface` (white) while being painted on the app's tinted surfaces,
+      # where it fell to 4.45:1; `--warn`'s desaturation took its dark ink to
+      # 4.03:1; and the dark sidebar's `--nav-active-accent` sat at 4.30:1. A
+      # gate nobody runs is not a gate. The tinted-surface and nav-accent pairs
+      # are now asserted too, so a token cannot pass by being checked against
+      # the one background it was never painted on.
+      - name: Contrast (WCAG AA, light + dark)
+        run: npm run check:contrast
+
       # `npm run build` is `tsc --noEmit && vite build`, so this re-runs the
       # typecheck. Kept separate anyway: a type error should fail in seconds
       # under its own name rather than inside a two-minute bundle step.

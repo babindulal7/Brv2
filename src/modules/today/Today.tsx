@@ -255,6 +255,7 @@ function DateFilterControl({
 
   const triggerLabel = noun === 'dispatch' ? 'Sync dispatch day' : `Choose ${noun} date filter`
   const dialogLabel = noun === 'dispatch' ? 'Dispatch date filter' : `${noun} date filter`
+  const visiblePeriod = filterLabel(filter)
 
   return (
     <div
@@ -271,7 +272,15 @@ function DateFilterControl({
         ref={trigger}
         type="button"
         className="dashboard-date-filter__button"
-        aria-label={triggerLabel}
+        /*
+         * WCAG 2.5.3 "Label in Name" — the accessible name must CONTAIN the
+         * visible text. It read only "Choose pickup date filter" while the
+         * button visibly reads "Today" / "Tomorrow" / "Sep 27", so a screen
+         * reader announced a control whose name said nothing about which period
+         * it currently showed. The period is now the first thing spoken, and
+         * the "change" affordance follows it.
+         */
+        aria-label={`${visiblePeriod} — ${triggerLabel}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? `${noun}-date-dialog` : undefined}
@@ -282,7 +291,7 @@ function DateFilterControl({
         }}
       >
         <span className="dashboard-date-filter__calendar" aria-hidden="true"><Icon name="calendar" size={18} /></span>
-        <span className="dashboard-date-filter__label">{filterLabel(filter)}</span>
+        <span className="dashboard-date-filter__label">{visiblePeriod}</span>
         <Icon name="chevron_down" size={15} />
       </button>
 
@@ -489,7 +498,13 @@ function MasterDispatchDateControl({
         ref={trigger}
         type="button"
         className={`dashboard-master-date-control__date-btn ${isToday ? 'is-today' : ''}`}
-        aria-label="Choose dispatch date filter"
+        /*
+         * WCAG 2.5.3 "Label in Name" — see the pickup/return filter above.
+         * The button paints `masterLabel` ("Today", "Sep 27", "Ashwin 11")
+         * but announced only "Choose dispatch date filter", so the current
+         * dispatch day was never spoken. The day leads; the affordance follows.
+         */
+        aria-label={`${masterLabel} — choose dispatch date filter`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? 'dispatch-date-dialog' : undefined}
@@ -770,63 +785,65 @@ export default function Today() {
         />
       }
     >
-      {/* Universal Express Counter Bar (Quick Search / Barcode Scanner) */}
-      <div className="dashboard-counter-bar" role="search" aria-label="Express Counter Lookup">
-        <div className="dashboard-counter-bar__search">
-          <Icon name="search" size={16} className="dashboard-counter-bar__icon" />
-          <input
-            ref={counterInputRef}
-            type="search"
-            className="dashboard-counter-bar__input"
-            placeholder="Search or scan…"
-            value={globalSearch}
-            onChange={(e) => setGlobalSearch(e.target.value)}
-            onKeyDown={handleGlobalSearchKeyDown}
-            aria-label="Search or scan bookings, clients, serials"
-          />
-          {globalSearch && (
+      <div className="dashboard-workbar">
+        {/* Universal Express Counter Bar (Quick Search / Barcode Scanner) */}
+        <div className="dashboard-counter-bar" role="search" aria-label="Express Counter Lookup">
+          <div className="dashboard-counter-bar__search">
+            <Icon name="search" size={16} className="dashboard-counter-bar__icon" />
+            <input
+              ref={counterInputRef}
+              type="search"
+              className="dashboard-counter-bar__input"
+              placeholder="Search or scan…"
+              value={globalSearch}
+              onChange={(e) => setGlobalSearch(e.target.value)}
+              onKeyDown={handleGlobalSearchKeyDown}
+              aria-label="Search or scan bookings, clients, serials"
+            />
+            {globalSearch && (
+              <button
+                type="button"
+                className="dashboard-counter-bar__clear"
+                onClick={() => {
+                  setGlobalSearch('')
+                  counterInputRef.current?.focus()
+                }}
+                aria-label="Clear search"
+              >
+                <Icon name="close" size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Condensed Overdue Alert (⚠ N overdue returns [View Returns]) */}
+        {overdueCount > 0 && (
+          <div
+            role="alert"
+            className="dashboard-alert dashboard-alert--overdue"
+          >
+            <div className="dashboard-alert__content">
+              <Icon name="alert_circle" size={18} />
+              <span>{overdueCount} overdue {overdueCount > 1 ? 'returns' : 'return'}</span>
+            </div>
             <button
               type="button"
-              className="dashboard-counter-bar__clear"
+              className="dashboard-alert__action"
               onClick={() => {
-                setGlobalSearch('')
-                counterInputRef.current?.focus()
+                if (isPhone) {
+                  mobileTabChosenRef.current = true
+                  setMobileTab('returns')
+                }
+                const returnsHeading = document.getElementById('incoming-panel-title')
+                returnsHeading?.scrollIntoView({ behavior: 'smooth' })
+                returnsHeading?.focus()
               }}
-              aria-label="Clear search"
             >
-              <Icon name="close" size={16} />
+              View Returns
             </button>
-          )}
-        </div>
-      </div>
-
-      {/* Condensed Overdue Alert (⚠ N overdue returns [View Returns]) */}
-      {overdueCount > 0 && (
-        <div
-          role="alert"
-          className="dashboard-alert dashboard-alert--overdue"
-        >
-          <div className="dashboard-alert__content">
-            <Icon name="alert_circle" size={18} />
-            <span>{overdueCount} overdue {overdueCount > 1 ? 'returns' : 'return'}</span>
           </div>
-          <button
-            type="button"
-            className="dashboard-alert__action"
-            onClick={() => {
-              if (isPhone) {
-                mobileTabChosenRef.current = true
-                setMobileTab('returns')
-              }
-              const returnsHeading = document.getElementById('incoming-panel-title')
-              returnsHeading?.scrollIntoView({ behavior: 'smooth' })
-              returnsHeading?.focus()
-            }}
-          >
-            View Returns
-          </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Spec §31: Mobile Segmented Control */}
       {isPhone && (

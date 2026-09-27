@@ -16,9 +16,14 @@
 
 .card, .surface-card {
   box-shadow: var(--shadow-card), var(--specular-rim);
-  border: 1px solid var(--border);
+  /* Border removed per design audit: cards should use background color for elevation, not border+shadow */
+  border: none;
   border-radius: var(--r-card);
   position: relative;
+}
+
+.card--bordered, .surface-card--bordered {
+  border: 1px solid var(--border);
 }
 .surface-card__header { background: var(--surface); }
 .ui-button { transition: transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }

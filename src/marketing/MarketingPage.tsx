@@ -348,7 +348,7 @@ export default function MarketingPage() {
       </header>
 
       {/* ── Attention: hero ────────────────────────────────────────── */}
-      <section id="top" className="relative flex min-h-[100svh] items-center justify-center overflow-hidden px-5 pt-32 pb-24">
+      <section id="top" className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 pt-32 pb-24">
         <div className="absolute inset-0 -z-10">
           <img
             data-hero-media
@@ -544,9 +544,9 @@ export default function MarketingPage() {
             weighted to what gets asked for, not what looks good in a catalogue.
           </p>
 
-          <div className="mt-16 grid auto-rows-[13rem] grid-flow-dense grid-cols-2 gap-4 md:grid-cols-4">
-            {/* Camera bodies — 2x2 */}
-            <article className="group relative col-span-2 row-span-2 overflow-hidden rounded-3xl border border-slate-line">
+          <div className="mt-16 grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
+            {/* Camera bodies — full width on mobile, left column on desktop */}
+            <article className="group relative md:col-span-1 overflow-hidden rounded-3xl border border-slate-line md:h-80 lg:h-96">
               <img
                 src={img('cinema-camera-body', 1400, 1400)}
                 alt="Cinema camera body on the prep bench"
@@ -554,7 +554,7 @@ export default function MarketingPage() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/40 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 p-7">
-                <h3 className="font-display text-3xl font-semibold tracking-tight">Camera bodies</h3>
+                <h3 className="font-display text-2xl md:text-3xl font-semibold tracking-tight">Camera bodies</h3>
                 <p className="mt-2 max-w-sm text-ash">
                   ARRI Alexa Mini LF, RED Komodo 6K, Sony FX6 and FX3, built out
                   with cages, monitoring, media and power.
@@ -562,21 +562,21 @@ export default function MarketingPage() {
               </div>
             </article>
 
-            {/* Glass — 2x1 */}
-            <article className="group relative col-span-2 overflow-hidden rounded-3xl border border-slate-line bg-ink-2 p-7">
+            {/* Glass — right column, shorter */}
+            <article className="group relative md:col-span-1 overflow-hidden rounded-3xl border border-slate-line bg-ink-2 p-7 md:h-80 lg:h-96">
               <div
                 className="absolute -right-8 -top-8 h-44 w-44 rounded-full bg-cover bg-center opacity-25 transition-transform duration-700 ease-out group-hover:scale-110"
                 style={{ backgroundImage: `url(${img('cine-lens-glass', 600, 600)})` }}
               />
-              <h3 className="relative font-display text-2xl font-semibold tracking-tight">Glass</h3>
+              <h3 className="relative font-display text-xl md:text-2xl font-semibold tracking-tight">Glass</h3>
               <p className="relative mt-2 max-w-xs text-ash">
                 NISI Athena T2.1 primes, Sigma 24-70mm f/2.8, Canon CN-E. Matched
                 sets, never mixed coatings.
               </p>
             </article>
 
-            {/* Light and grip — 2x1 */}
-            <article className="group relative col-span-2 overflow-hidden rounded-3xl border border-slate-line">
+            {/* Light and grip — full width on mobile, left column on desktop, taller */}
+            <article className="group relative md:col-span-1 overflow-hidden rounded-3xl border border-slate-line md:h-80 lg:h-96">
               <img
                 src={img('film-lighting-setup', 1200, 700)}
                 alt="Lighting setup on a stage"
@@ -584,7 +584,7 @@ export default function MarketingPage() {
               />
               <div className="absolute inset-0 bg-ink/55" />
               <div className="relative p-7">
-                <h3 className="font-display text-2xl font-semibold tracking-tight">Light and grip</h3>
+                <h3 className="font-display text-2xl md:text-3xl font-semibold tracking-tight">Light and grip</h3>
                 <p className="mt-2 max-w-xs text-ash">
                   Aputure 600D Pro and modifiers, stands, flags and the boring
                   hardware that saves a setup.
@@ -592,8 +592,8 @@ export default function MarketingPage() {
               </div>
             </article>
 
-            {/* Movement — 1x2 */}
-            <article className="group relative col-span-1 row-span-2 overflow-hidden rounded-3xl border border-slate-line">
+            {/* Movement — right column, shorter */}
+            <article className="group relative md:col-span-1 overflow-hidden rounded-3xl border border-slate-line md:h-80 lg:h-96">
               <img
                 src={img('gimbal-operator', 800, 1400)}
                 alt="Operator with a stabilised rig"
@@ -601,18 +601,18 @@ export default function MarketingPage() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/30 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 p-6">
-                <h3 className="font-display text-2xl font-semibold tracking-tight">Movement</h3>
+                <h3 className="font-display text-xl md:text-2xl font-semibold tracking-tight">Movement</h3>
                 <p className="mt-2 text-sm text-ash">DJI Ronin 4D, RS3, sliders and heads.</p>
               </div>
             </article>
 
-            {/* Counter hours — 1x2 */}
-            <article className="col-span-1 row-span-2 flex flex-col justify-between rounded-3xl border border-gold/25 bg-gold/[0.07] p-6">
+            {/* Counter hours — full width on mobile, spans both columns on desktop */}
+            <article className="md:col-span-2 flex flex-col justify-between rounded-3xl border border-gold/25 bg-gold/[0.07] p-6 md:py-10">
               <div>
-                <h3 className="font-display text-2xl font-semibold tracking-tight text-gold">
+                <h3 className="font-display text-2xl md:text-3xl font-semibold tracking-tight text-gold">
                   Boudha counter
                 </h3>
-                <p className="mt-2 text-sm text-ash">
+                <p className="mt-2 text-sm md:text-base text-ash max-w-xl">
                   Same-day pickup on anything showing free. Sunday to Friday,
                   07:00 to 19:00.
                 </p>

@@ -270,7 +270,7 @@ describe('Header — Phase 5, 390px phone layout & Law 15 hit targets', () => {
     expect(searchBtn?.style.minWidth).toBe('44px')
 
     // User profile avatar button has 44px minimum hit target (Law 15)
-    const profileBtn = container.querySelector<HTMLButtonElement>('button[aria-label="User profile"]')
+    const profileBtn = container.querySelector<HTMLButtonElement>('button[aria-label*="user profile"]')
     expect(profileBtn).not.toBeNull()
     expect(profileBtn?.style.minHeight).toBe('44px')
     expect(profileBtn?.style.minWidth).toBe('44px')
@@ -316,7 +316,7 @@ describe('Header — R1 simplification & abnormal sync gating', () => {
   it('renders compact user profile trigger with 44px minimum target on desktop and opens menu on click', async () => {
     viewport = 'desktop'
     await mount(<Header crumbs={[{ label: 'Dashboard' }]} />)
-    const profileBtn = container.querySelector<HTMLButtonElement>('button[aria-label="User profile"]')
+    const profileBtn = container.querySelector<HTMLButtonElement>('button[aria-label*="user profile"]')
     expect(profileBtn).not.toBeNull()
     expect(profileBtn?.style.minHeight).toBe('44px')
     expect(profileBtn?.style.minWidth).toBe('44px')

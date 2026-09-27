@@ -494,9 +494,5 @@ export const BRANCH = {
  * at this screen" and should not appear to.
  */
 
-/** Footer note bar, present on every deep screen. */
-export const FOOTER_NOTE = {
-  dates: 'All dates are shown in BS above AD',
-  timezone: 'Timezone: Asia/Kathmandu (NPT)',
-  version: 'Babin Rentals OS v3.0.0',
-}
+/** Single version source for the system settings view. */
+export const APP_VERSION = 'Babin Rentals OS v3.0.0'

@@ -608,6 +608,7 @@ function RowOperations({
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={toggle}
+          className="press"
           style={{
             border: 'none',
             background: open ? 'var(--hover-card)' : 'transparent',
@@ -646,7 +647,10 @@ function RowOperations({
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
+                  outline: 'none',
                 }}
+                onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
@@ -657,7 +661,9 @@ function RowOperations({
             <Link
               to={(row.status as string) === 'Draft' ? `/rentals?action=new&draft=${row.id}` : `/rentals/${row.bookingNo}`}
               role="menuitem"
-              style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer' }}
+              style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer', outline: 'none' }}
+              onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+              onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
@@ -685,6 +691,7 @@ function RowOperations({
                 ...menuItemStyle,
                 color: enabled ? 'var(--text)' : 'var(--muted)',
                 cursor: enabled ? 'pointer' : 'not-allowed',
+                outline: 'none',
               }
               return enabled ? (
                 <Link
@@ -698,13 +705,18 @@ function RowOperations({
                     openOperations(row.bookingNo, row.status, job)
                   }}
                   style={style}
+                  onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                  onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
                   {body}
                 </Link>
               ) : (
-                <span key={o.label} role="menuitem" aria-disabled title={why} tabIndex={0} style={style}>
+                <span key={o.label} role="menuitem" aria-disabled title={why} tabIndex={0} style={style}
+                  onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                  onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
+                >
                   {body}
                 </span>
               )
@@ -731,7 +743,10 @@ function RowOperations({
                     display: 'flex',
                     alignItems: 'center',
                     gap: 8,
+                    outline: 'none',
                   }}
+                  onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                  onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
@@ -771,6 +786,7 @@ function ColumnMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
+        className="press"
         style={{
           border: 'none',
           background: open ? 'var(--hover-card)' : 'transparent',
@@ -795,7 +811,9 @@ function ColumnMenu({
           {columns.map((c) => (
             <label
               key={c}
-              style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer' }}
+              style={{ ...menuItemStyle, color: 'var(--text)', cursor: 'pointer', outline: 'none' }}
+              onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+              onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >

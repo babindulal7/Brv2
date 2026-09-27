@@ -100,7 +100,22 @@
 
   --text: #1c1e22;
   --text2: #4b4e54;
-  --muted: #6d7076;   /* v4.1 --text-2, measured 4.97:1 on white */
+  /*
+   * v4.1 shipped #6d7076 here with the comment "measured 4.97:1 on white" —
+   * which was true, and was the whole problem. `--muted` is not painted on
+   * white; it is painted on the app's own tinted surfaces, and the ratio was
+   * only ever measured against the lightest of them. On `#eef4fb` (the Today
+   * dashboard's card) #6d7076 measures 4.48:1 and on `--surface-2` #edf3fa
+   * 4.45:1 — both UNDER WCAG AA's 4.5:1 for body text. Lighthouse flagged it
+   * live on `/dashboard` (`movement-card__project`, `movement-card__items-count`).
+   *
+   * #63666d is the same hue nudged down until it clears 4.5:1 on the DARKEST
+   * light-theme surface (`--inset2` #eae6de, 4.62:1) rather than on white, so
+   * every surface in the ladder passes, not just the one that was measured.
+   * `check:contrast` now asserts the muted-on-tinted pairs so this cannot
+   * regress behind a passing white-only check.
+   */
+  --muted: #63666d;
   --disabled: #9b9ea4;
 
   --primary: #2456d6;
@@ -116,14 +131,19 @@
   --danger-text: #a82f2f;
 
   /* Orange keeps the ruled hue; the INK moved to dark because white measured
-     3.61:1 on it (§10). Orange is dark-ink in both themes. */
-  --warn: #d96518;
-  --on-warn: #231a05;
-  --warn-text: #9c4710;
+     3.61:1 on it (§10). Orange is dark-ink in both themes.
 
-  --ready: #e3b117;
+     Desaturated from #d96518, but only to #d46218 and no further: #c45d16
+     dropped `--on-warn` (#231a05) to 4.03:1, under AA. Orange's ink is DARK,
+     so a *darker* fill is the wrong direction — it eats the ink's contrast.
+     #d46218 holds the desaturation and measures 4.55:1. */
+  --warn: #d46218;
+  --on-warn: #231a05;
+  --warn-text: #a05818;
+
+  --ready: #d4a315;       /* Desaturated from #e3b117. */
   --on-ready: #231a05;
-  --ready-text: #7a5f0c;
+  --ready-text: #8a6b0b;
 
   --neutral: #72757e;  /* draft #8A8D95 → white was 3.32, now 4.60 */
   --on-neutral: #ffffff;
@@ -170,15 +190,15 @@
   --tr-hover: #eef4fb;
   --tr-alt: #f5f7fb;
 
-  /* DESIGN_DIRECTION_SPEC v4.2 §6 Shadow Scale */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  /* DESIGN_DIRECTION_SPEC v4.2 §6 Shadow Scale — tinted to match background hue */
+  --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -1px rgba(15, 23, 42, 0.03);
   --shadow-card: 0 0 0 transparent;
   --shadow-kpi: 0 0 0 transparent;
   --shadow-md: 0 8px 20px -3px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.10), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.05), 0 4px 6px -2px rgba(15, 23, 42, 0.025);
+  --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.10), 0 10px 10px -5px rgba(15, 23, 42, 0.04);
   --shadow-modal: 0 20px 48px rgba(15, 23, 42, 0.16);
   --shadow-primary-glow: 0 8px 20px -4px rgba(36, 86, 214, 0.25);
 
@@ -264,13 +284,13 @@
   --on-danger: #ffffff;
   --danger-text: #f08a8a;
 
-  --warn: #e8762d;         /* ORANGE — "out with the client". Never a button. */
+  --warn: #d47026;         /* ORANGE — "out with the client". Never a button. Desaturated from #e8762d. */
   --on-warn: #1c1005;
-  --warn-text: #f0985e;
+  --warn-text: #e8a06e;
 
-  --ready: #edbe2a;        /* YELLOW — in-house work / waiting. Never a button. */
+  --ready: #d4a824;        /* YELLOW — in-house work / waiting. Never a button. Desaturated from #edbe2a. */
   --on-ready: #1c1405;
-  --ready-text: #edbe2a;
+  --ready-text: #d4a824;
 
   --neutral: #3a3e47;      /* GRAY — not started yet */
   --on-neutral: #c9cbd1;
@@ -303,7 +323,14 @@
   --btn-danger-bg: #c73a3a;
   --btn-danger-fg: #ffffff;
 
-  --nav-active-accent: #386af7;
+  /*
+   * The ACTIVE sidebar item's ink. #386af7 measured 4.30:1 on the dark rail
+   * (#050b12) — under AA for 14px text, and the rail is where the current
+   * destination is announced, so it is the last place to be illegible.
+   * Lightened to #6b95fc, the same hue: 6.9:1 on the rail, 5.0:1 on
+   * `--nav-active-bg`, 6.4:1 on `--surface`. Asserted by `check:contrast`.
+   */
+  --nav-active-accent: #6b95fc;
   --nav-active-bg: #102b48;
   --nav-icon: #94a3b8;
 
@@ -317,15 +344,15 @@
   --tr-hover: rgba(255, 255, 255, 0.035);
   --tr-alt: #081522;
 
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.35);
-  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
-  --shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.5), 0 2px 6px -1px rgba(0, 0, 0, 0.3);
+  --shadow-xs: 0 1px 2px 0 rgba(2, 6, 11, 0.35);
+  --shadow-sm: 0 1px 3px 0 rgba(2, 6, 11, 0.4), 0 1px 2px -1px rgba(2, 6, 11, 0.3);
+  --shadow: 0 4px 14px -2px rgba(2, 6, 11, 0.5), 0 2px 6px -1px rgba(2, 6, 11, 0.3);
   --shadow-card: 0 0 0 transparent;
   --shadow-kpi: var(--shadow-card);
-  --shadow-md: 0 14px 28px -4px rgba(0, 0, 0, 0.6), 0 6px 12px -2px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 20px 36px -6px rgba(0, 0, 0, 0.65), 0 8px 14px -3px rgba(0, 0, 0, 0.45);
-  --shadow-xl: 0 28px 56px -8px rgba(0, 0, 0, 0.75), 0 12px 18px -4px rgba(0, 0, 0, 0.5);
-  --shadow-modal: 0 28px 72px -12px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-md: 0 14px 28px -4px rgba(2, 6, 11, 0.6), 0 6px 12px -2px rgba(2, 6, 11, 0.4);
+  --shadow-lg: 0 20px 36px -6px rgba(2, 6, 11, 0.65), 0 8px 14px -3px rgba(2, 6, 11, 0.45);
+  --shadow-xl: 0 28px 56px -8px rgba(2, 6, 11, 0.75), 0 12px 18px -4px rgba(2, 6, 11, 0.5);
+  --shadow-modal: 0 28px 72px -12px rgba(2, 6, 11, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.08);
   --shadow-primary-glow: 0 8px 28px -4px rgba(56, 106, 247, 0.45);
 
   /* DESIGN_DIRECTION_SPEC v4.2 §6 Soft-tint non-status chips */
@@ -352,7 +379,7 @@
 
 /* ── §3.1 High-Contrast Outdoor Profile (Glare Reduction for Warehouse & Loading Bays) ── */
 :root[data-theme='high-contrast'] {
-  --bg: #000000;
+  --bg: #0a0a0a;
   --surface: #0a0a0a;
   --surface-2: #141414;
   --border: #facc15;
@@ -764,6 +791,7 @@ body,
 :root {
   --font-display: 'Outfit', system-ui, sans-serif;
   --font-body: 'Outfit', 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
   --font-id: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
   /* Declared, not loaded — §4.3.7 keeps Devanagari off the English path. */
   --font-ne-display: 'Asar', serif;
@@ -910,13 +938,19 @@ body {
   */
 }
 
+/* Bordered card variant for dense lists / tables where separation is needed */
+.card--bordered {
+  border: 1px solid var(--border);
+}
+
 /* DESIGN_DIRECTION_SPEC v4.2 §4 & §6 Card Glass & Layered Elevation */
 .card {
   background: var(--surface-card);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: var(--shadow-card);
-  border: 1px solid var(--border);
+  /* Border removed per design audit: cards use background color for elevation */
+  border: none;
   border-radius: var(--r-card);
   transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
@@ -924,6 +958,11 @@ body {
 @media (hover: hover) and (pointer: fine) {
   .card.interactive:hover,
   .card[data-interactive='true']:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+  .card--bordered.interactive:hover,
+  .card--bordered[data-interactive='true']:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-lg);
   }
@@ -1138,17 +1177,6 @@ td,
   outline: 2px solid var(--input-focus);
   outline-offset: 2px;
 }
-
-/*
-  ⛔ Removed 5 Aug — this block scoped a status token, `--st-inspection-*`, that
-  no longer exists. v2.0 replaced the eight status tokens with the five §4.2
-  names (neutral/primary/progress/out/in/danger), and v2.2's design review
-  caught that the override survived the rename: it referenced dead variables
-  and did nothing. The purple it was guarding against is banned outright by
-  §4.2 now — "No purple, cyan, teal, indigo, violet" — with no reservation for
-  Utilization or anything else, so no page-level exception is needed or legal.
-  `[data-page='today']` itself is unused elsewhere and removed with it.
-*/
 
 /*
   The movement row's geometry lives here rather than inline, because the

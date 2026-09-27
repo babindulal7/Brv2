@@ -12,7 +12,6 @@ import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
 import { Badge } from '../../components/ui/Badge'
 import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
-import { LifecycleProgress } from '../../components/ui/LifecycleProgress'
 import { PageActions } from '../../components/ui/PageActions'
 import { OverflowMenu, type OverflowMenuItem } from '../../components/ui/OverflowMenu'
 import { getRentalPrimaryAction } from '../../lib/rentalActions'
@@ -82,7 +81,7 @@ import { readSettings } from '../../lib/settingsStore'
 import { releaseBookingLineUnit } from '../../actions/rentals/releaseBookingLineUnit'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { deliveryTypeLabel } from '../../lib/format'
-import { rentalDaysBetween, formatRentalDays } from '../../lib/rentalDays'
+import { rentalDaysBetween } from '../../lib/rentalDays'
 import { LateFeePanel } from './LateFeePanel'
 import { lateFee } from '../../lib/lateFee'
 import type { LateFeeOutcome } from '../../lib/lateFee'
@@ -1367,13 +1366,13 @@ export default function BookingDetail() {
   /** On phone each segment owns the page; at every other width all three show. */
   const showSegment = (s: PhoneSegment) => !onPhone || activeSegment === s
 
-  // Facts strip — 5-up only on desktop; the money column is omitted from the
+  // Facts strip — the money column is omitted from the
   // TEMPLATE (not left visually empty) when this role can't see booking money.
   const factsCols =
     viewport === 'desktop'
       ? canBookingMoney
-        ? 'repeat(4, minmax(0,1fr)) minmax(0,1.1fr)'
-        : 'repeat(4, minmax(0,1fr))'
+        ? 'repeat(3, minmax(0,1fr)) minmax(0,1.1fr)'
+        : 'repeat(3, minmax(0,1fr))'
       : viewport === 'tablet'
         ? 'repeat(2, minmax(0,1fr))'
         : '1fr'
@@ -1857,16 +1856,10 @@ export default function BookingDetail() {
         <PageHeader
           breadcrumb={
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-              <Link to="/dashboard" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Link to="/rentals" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <Icon name="chevron_left" size={14} />
-                Today Dashboard
+                Back to rentals
               </Link>
-              <span>/</span>
-              <Link to="/rentals" style={{ color: 'var(--text2)', textDecoration: 'none', fontWeight: 500 }}>
-                Rentals
-              </Link>
-              <span>›</span>
-              <span style={{ color: 'var(--text)', fontWeight: 600 }}>{booking.bookingNo}</span>
             </div>
           }
           title={booking.clientName ? `${booking.bookingNo} · ${booking.clientName}` : booking.bookingNo}
@@ -2066,19 +2059,6 @@ export default function BookingDetail() {
         }}
       >
         <Stepper status={stage} dots={onPhone} />
-        <LifecycleProgress
-          status={stage}
-          meta={{
-            isOverdue:
-              booking.stage === 'On Rent' &&
-              !booking.isClosed &&
-              !booking.isCancelled &&
-              booking.actualReturnAtAd === null &&
-              new Date(booking.returnAtAd) < new Date(),
-            uncheckedCount: missingSerialsCount,
-          }}
-          showNextActionBanner={true}
-        />
       </div>
 
       {onPhone && <Segmented segments={segments} active={activeSegment} onPick={setSegment} />}
@@ -2095,12 +2075,6 @@ export default function BookingDetail() {
           background: 'var(--card)',
         }}
       >
-        <Fact icon="users" label="Client" viewport={viewport}>
-          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-            {booking.clientName}
-          </span>
-        </Fact>
-
         {[
           { label: 'Pickup', iso: booking.pickupAtAd },
           { label: 'Return', iso: booking.returnAtAd },
@@ -2129,17 +2103,6 @@ export default function BookingDetail() {
               Day{days === 1 ? '' : 's'}
             </span>
           )}
-          <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
-            {/* The second copy of the header's block, in the Rental Days fact.
-                Same delegation, `size="sm"` because it sits in the denser fact
-                strip — the weight, casing and tracking that ARE a status block
-                do not scale away with it. */}
-            <Badge status={stage} size="sm" />
-            {/* Law 3 — wherever the stage block appears, the cancellation
-                appears with it. A strip that shows "ON RENT" alone on a
-                cancelled booking is the reading BD-03 is about. */}
-            {booking.isCancelled && <Badge flag="Cancelled" size="sm" />}
-          </span>
         </Fact>
 
         {canBookingMoney && (
@@ -2235,9 +2198,6 @@ export default function BookingDetail() {
                   { label: 'Project', value: booking.project ?? 'Not recorded' },
                   { label: 'Pickup Location', value: booking.pickupLocation ?? 'Not recorded' },
                   { label: 'Return Location', value: booking.returnLocation ?? 'Not recorded' },
-                  /* `formatRentalDays` also fixes the unpluralised "1 Days"
-                     this row printed on a one-day hire. */
-                  { label: 'Rental Days', value: formatRentalDays(days, 'Not recorded') },
                 ]}
               />
               {/* Law 16 — Edit exists but is Unavailable-with-reason. A missing

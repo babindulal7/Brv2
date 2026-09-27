@@ -1,7 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon, { type IconName } from '../../components/ui/Icon'
-import { Badge } from '../../components/ui/Badge'
 import { PageBody } from '../../components/ui/PageBody'
 import { businessDayAd, has, timeOf, type MovementRow } from '../../lib/queries/today'
 import type { ListResult } from '../../lib/queries/useList'
@@ -149,11 +148,11 @@ export default function DashboardMovementPanel({
           ) : (
             <div className="movement-cards-list">
               <div className="movement-cards-list__head" aria-hidden="true">
-                <span>Booking ID</span>
                 <span>Client / project</span>
+                <span>Booking</span>
                 <span>Pickup</span>
                 <span>Return</span>
-                <span>Next step</span>
+                <span>Status / next step</span>
               </div>
               {rows.map((row) => {
                 const action = dashboardAction(row, side)
@@ -214,9 +213,15 @@ export default function DashboardMovementPanel({
                       {side === 'incoming' && (isOverdue || isPartial) && (
                         <div className="movement-card__badge-wrap">
                           {isOverdue ? (
-                            <Badge tone="danger" label={row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'} icon={<Icon name="alert_triangle" size={14} />} />
+                            <span className="movement-card__status movement-card__status--overdue">
+                              <Icon name="alert_triangle" size={14} />
+                              {row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'}
+                            </span>
                           ) : (
-                            <Badge tone="warning" label="Partial return" icon={<Icon name="alert_triangle" size={14} />} />
+                            <span className="movement-card__status movement-card__status--partial">
+                              <Icon name="alert_triangle" size={14} />
+                              Partial return
+                            </span>
                           )}
                         </div>
                       )}
