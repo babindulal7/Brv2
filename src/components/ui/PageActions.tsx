@@ -34,14 +34,26 @@ const PLACEHOLDER_PATTERNS = [
   'drop',
 ]
 
+interface ComponentWithMeta {
+  displayName?: string
+  name?: string
+}
+
+interface NodePropsWithReason {
+  reason?: unknown
+}
+
 export function isUnavailableElement(node: ReactNode): boolean {
   if (!isValidElement(node)) return false
+  const nodeType = node.type
   const isUnavailableType =
-    node.type === Unavailable ||
-    (typeof node.type === 'function' && ((node.type as any).displayName === 'Unavailable' || (node.type as any).name === 'Unavailable'))
+    nodeType === Unavailable ||
+    (typeof nodeType === 'function' &&
+      ((nodeType as ComponentWithMeta).displayName === 'Unavailable' || (nodeType as ComponentWithMeta).name === 'Unavailable'))
   if (!isUnavailableType) return false
 
-  const reason = typeof (node.props as any)?.reason === 'string' ? (node.props as any).reason.toLowerCase().trim() : ''
+  const props = node.props as NodePropsWithReason
+  const reason = typeof props?.reason === 'string' ? props.reason.toLowerCase().trim() : ''
   if (!reason) return true
 
   return PLACEHOLDER_PATTERNS.some((pat) => reason.includes(pat))
@@ -63,7 +75,8 @@ export function extractValidActions(children: ReactNode): ReactNode[] {
     }
     if (isValidElement(node)) {
       if (node.type === React.Fragment) {
-        Children.forEach((node.props as any).children, walk)
+        const fragmentProps = node.props as { children?: ReactNode }
+        Children.forEach(fragmentProps.children, walk)
         return
       }
       if (isUnavailableElement(node)) {
@@ -208,14 +221,20 @@ function ActionsOverflowMenu({
         >
           {actions.map((action, idx) => {
             if (isValidElement(action)) {
-              return React.cloneElement(action as React.ReactElement<any>, {
+              type ActionElementProps = {
+                onClick?: (e: React.MouseEvent<HTMLElement>) => void
+                style?: React.CSSProperties
+                [key: string]: unknown
+              }
+              const actionProps = action.props as ActionElementProps
+              return React.cloneElement(action as React.ReactElement<ActionElementProps>, {
                 key: action.key ?? `overflow-action-${idx}`,
                 role: 'menuitem',
                 tabIndex: 0,
-                onClick: (e: any) => {
+                onClick: (e: React.MouseEvent<HTMLElement>) => {
                   closeMenu(false)
-                  if (typeof (action.props as any).onClick === 'function') {
-                    (action.props as any).onClick(e)
+                  if (typeof actionProps.onClick === 'function') {
+                    actionProps.onClick(e)
                   }
                 },
                 style: {
@@ -234,7 +253,7 @@ function ActionsOverflowMenu({
                   fontFamily: 'inherit',
                   fontWeight: 500,
                   cursor: 'pointer',
-                  ...((action.props as any).style || {}),
+                  ...(actionProps.style || {}),
                 },
               })
             }

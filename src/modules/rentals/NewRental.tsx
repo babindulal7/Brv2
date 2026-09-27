@@ -649,7 +649,6 @@ function Field({
 function Section({
   id,
   title,
-  stepNumber,
   open,
   onToggle,
   action,
@@ -660,7 +659,6 @@ function Section({
   /** Scroll target for the rail's Review card — see `jumpToSection`. */
   id?: string
   title: string
-  stepNumber?: string
   open: boolean
   onToggle: () => void
   action?: React.ReactNode
@@ -686,29 +684,6 @@ function Section({
           transition: 'background var(--dur-fast) var(--ease)',
         }}
       >
-        {stepNumber && (
-          <span
-            className="new-rental-section-number"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 24,
-              height: 24,
-              borderRadius: 'var(--r-badge)',
-              background: open ? 'var(--brand, var(--accent-text, var(--text)))' : 'var(--surface)',
-              color: open ? '#fff' : 'var(--text2)',
-              fontSize: 11,
-              fontWeight: 700,
-              fontVariantNumeric: 'tabular-nums',
-              letterSpacing: '0.04em',
-              flexShrink: 0,
-              boxShadow: open ? '0 1px 4px color-mix(in srgb, var(--brand, var(--primary)) 30%, transparent)' : 'none',
-            }}
-          >
-            {stepNumber}
-          </span>
-        )}
         <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
           {title}
         </h2>
@@ -2441,11 +2416,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     : undefined
 
   const pickupBs = toBs(new Date(pickup))
-  const retBs = useMemo(() => {
-    if (!ret) return null
-    const d = new Date(ret)
-    return Number.isNaN(d.getTime()) ? null : toBs(d)
-  }, [ret])
 
   const [collapsedBundles, setCollapsedBundles] = useState<Record<string, boolean>>({})
 
@@ -4029,27 +3999,16 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           title={draftBookingNo ? `Draft #${draftBookingNo}` : 'New Rental'}
           actions={
             <PageActions
-              secondary={[
-                embedded ? (
-                  <Button
-                    variant="ghost"
-                    icon="chevron_left"
-                    onClick={handleExit}
-                    aria-label="Back to Rentals List"
-                  >
-                    Back to Rentals
-                  </Button>
-                ) : null,
+              secondary={
                 <Button
-                  key="save-draft"
                   variant="outline"
                   icon="file"
                   onClick={() => saveDraft()}
                   disabled={saveState === 'saving'}
                 >
                   {saveState === 'saving' ? 'Saving…' : 'Save as draft'}
-                </Button>,
-              ]}
+                </Button>
+              }
               extra={
                 <span
                   className="new-rental-status"
@@ -4110,6 +4069,76 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         </div>
       )}
 
+      {/* 4-Step Guided Wizard Stepper */}
+      <nav
+        aria-label="Booking steps"
+        className="new-rental-stepper-container"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--sp-sm)',
+          marginBottom: 'var(--sp-md)',
+          overflowX: 'auto',
+          paddingBottom: 4,
+        }}
+      >
+        {[
+          { step: 1, label: 'Client & Dates', id: 'section-0' },
+          { step: 2, label: 'Equipment & Bundles', id: 'section-2' },
+          { step: 3, label: 'Price & Payment', id: 'section-5' },
+          { step: 4, label: 'Review & Confirm', id: 'rail-booking-summary' },
+        ].map((s) => {
+          const isActive = currentStep === s.step;
+          const isDone = currentStep > s.step;
+          return (
+            <button
+              key={s.step}
+              type="button"
+              onClick={() => {
+                setCurrentStep(s.step);
+                if (s.step === 1) setOpen((p) => p.map((v, i) => (i === 0 || i === 1 ? true : v)));
+                if (s.step === 2) setOpen((p) => p.map((v, i) => (i === 2 ? true : v)));
+                if (s.step === 3) setOpen((p) => p.map((v, i) => (i === 5 ? true : v)));
+                if (s.step === 4) setOpen((p) => p.map(() => true));
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                minHeight: 36,
+                padding: '6px 12px',
+                borderRadius: 'var(--r-badge)',
+                border: isActive ? '1px solid var(--primary)' : '1px solid var(--border)',
+                background: isActive ? 'var(--primary-subtle, rgba(56, 106, 247, 0.1))' : 'transparent',
+                color: isActive ? 'var(--primary)' : isDone ? 'var(--text)' : 'var(--text2)',
+                fontWeight: isActive ? 700 : 500,
+                fontSize: 'var(--t-meta)',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: isActive ? 'var(--primary)' : isDone ? 'var(--st-success-fg)' : 'var(--border)',
+                  color: isActive || isDone ? '#fff' : 'var(--text2)',
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              >
+                {isDone ? '✓' : s.step}
+              </span>
+              <span>{s.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
       <div
         className="new-rental-workspace"
         ref={workflowRef}
@@ -4125,7 +4154,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             <Section
               id="section-0"
             title={SECTIONS[0]}
-            stepNumber="01"
             badge={
               client ? (
                 <span
@@ -4287,7 +4315,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           <Section
             id="section-1"
             title={SECTIONS[1]}
-            stepNumber="02"
             badge={
               days > 0 ? (
                 <span
@@ -4375,7 +4402,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           <Section
             id="section-2"
             title={SECTIONS[2]}
-            stepNumber="03"
             badge={
               lines.length > 0 ? (
                 <span
@@ -4620,6 +4646,13 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               </div>
             )}
 
+            {lines.length === 0 ? (
+              <div className="new-rental-empty-products">
+                <Icon name="box" size={22} />
+                <h3>This booking is empty</h3>
+                <p>Search above to add equipment or a bundle for this rental period.</p>
+              </div>
+            ) : (
             <DataTableShell ariaLabel="Booking equipment and bundles">
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                 <thead>
@@ -4729,19 +4762,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                       </Fragment>
                     )
                   })}
-                  {lines.length === 0 && (
-                    <tr>
-                      <td colSpan={equipmentColumns.length} style={{ padding: 20 }}>
-                        <EmptyState
-                          title="No equipment on this booking yet"
-                          description="Search above for bundles, equipment and accessories — availability is answered for these dates."
-                        />
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </DataTableShell>
+            )}
 
             {/* §39 — items / bundles / rental days / line subtotal. Packed,
                 Missing, Cases and Weight are Packing's fields, not booking
@@ -4798,7 +4822,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           <Section
             id="section-3"
             title={SECTIONS[3]}
-            stepNumber="04"
             badge={
               crew.length > 0 ? (
                 <span
@@ -5008,7 +5031,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           <Section
             id="section-4"
             title={SECTIONS[4]}
-            stepNumber="05"
             badge={
               <span
                 style={{
@@ -5235,7 +5257,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             <Section
               id="section-5"
               title={SECTIONS[5]}
-              stepNumber="06"
               badge={
                 pricing.rentalTotalPaisa > 0 ? (
                   <span
@@ -5610,212 +5631,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </div>
           )}
         </div>
-
-        <div className="new-rental-stage--review" hidden>
-          <Card style={{ padding: 'var(--sp-lg)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-md)', borderBottom: '1px solid var(--border)', paddingBottom: 'var(--sp-sm)', flexWrap: 'wrap', gap: 8 }}>
-              <div>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>
-                  Step 4: Review & Confirm Rental
-                </h2>
-                <p style={{ margin: '4px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  Verify client, schedule, gear, logistics, and financials before finalizing.
-                </p>
-              </div>
-              <span className="status-pill status-pill--quote">
-                Draft Quote
-              </span>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, 1fr)', gap: 'var(--sp-md)', marginBottom: 'var(--sp-lg)' }}>
-              {/* Client & Project */}
-              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.06em' }}>
-                  <Icon name="user" size={13} style={{ color: 'var(--brand)' }} />
-                  <span>Client & Project</span>
-                </div>
-                <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', marginBottom: 4 }}>
-                  {client?.name || 'No client selected'}
-                </div>
-                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {client?.phone && <span>Phone: {client.phone}</span>}
-                  {client?.company && <span>Company: {client.company}</span>}
-                  {project && <span>Project: {project}</span>}
-                  {govId && <span>PAN/ID: {govId}</span>}
-                </div>
-              </div>
-
-              {/* Schedule & Duration */}
-              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.06em' }}>
-                  <Icon name="calendar" size={13} style={{ color: 'var(--brand)' }} />
-                  <span>Rental Schedule</span>
-                </div>
-                <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>{days > 0 ? `${days} ${dayWord}` : 'Dates not set'}</span>
-                  {days > 0 && (
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--r-badge)', background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                      Active Window
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <span>Pickup: {pickup} {pickupTime}</span>
-                  <span>Return: {ret} {returnTime}</span>
-                  <span>Duration: {days} Rental Days</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Equipment & Bundles Summary */}
-            <div style={{ marginBottom: 'var(--sp-lg)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.06em' }}>
-                <Icon name="box" size={13} style={{ color: 'var(--brand)' }} />
-                <span>Equipment & Bundles ({lines.length} items)</span>
-              </div>
-              {lines.length === 0 ? (
-                <div style={{ padding: 'var(--sp-md)', textAlign: 'center', color: 'var(--text2)', background: 'var(--card2)', borderRadius: 'var(--r-card)', border: '1px solid var(--border)' }}>
-                  No equipment added yet. <Button variant="outline" onClick={() => setCurrentStep(2)} style={{ marginLeft: 8 }}>Go to Step 2</Button>
-                </div>
-              ) : (
-                <DataTableShell ariaLabel="Review equipment and bundles" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--t-meta)' }}>
-                    <thead>
-                      <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)' }}>
-                        <th style={{ textAlign: 'left', padding: '10px 12px', fontWeight: 600 }}>Item</th>
-                        <th style={{ textAlign: 'center', padding: '10px 12px', fontWeight: 600 }}>Qty</th>
-                        {canBookingMoney && <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 600 }}>Daily Rate</th>}
-                        {canBookingMoney && <th style={{ textAlign: 'right', padding: '10px 12px', fontWeight: 600 }}>Total</th>}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lines.map((l) => (
-                        <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td style={{ padding: '8px 12px' }}>
-                            <strong>{l.name}</strong>
-                            {l.category && <span style={{ color: 'var(--text2)', marginLeft: 6 }}>({l.category})</span>}
-                          </td>
-                          <td style={{ textAlign: 'center', padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>{l.qty}</td>
-                          {canBookingMoney && <td style={{ textAlign: 'right', padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(l.ratePaisa)}</td>}
-                          {canBookingMoney && <td style={{ textAlign: 'right', padding: '8px 12px', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatMoney(lineAmountPaisa(l))}</td>}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </DataTableShell>
-              )}
-            </div>
-
-            {/* Crew & Delivery Summary */}
-            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, 1fr)', gap: 'var(--sp-md)', marginBottom: 'var(--sp-lg)' }}>
-              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.06em' }}>
-                  <Icon name="users" size={13} style={{ color: 'var(--brand)' }} />
-                  <span>Crew Assignment ({crew.length})</span>
-                </div>
-                {crew.length === 0 ? (
-                  <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>No crew assigned (Optional)</span>
-                ) : (
-                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--t-meta)', color: 'var(--text)' }}>
-                    {crew.map((c, i) => (
-                      <li key={i}>{c.name} — <span style={{ color: 'var(--text2)' }}>{c.role}</span></li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 8, letterSpacing: '0.06em' }}>
-                  <Icon name="truck" size={13} style={{ color: 'var(--brand)' }} />
-                  <span>Logistics & Dispatch</span>
-                </div>
-                <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div><strong>Outgoing:</strong> {deliveryType}</div>
-                  <div><strong>Return:</strong> {returnPickupType === 'Babin Pickup' ? 'Babin Rentals Pickup from Location' : 'Client Returns to Warehouse'}</div>
-                  {vehicle && <div><strong>Vehicle:</strong> {vehicle} ({numberPlate})</div>}
-                </div>
-              </div>
-            </div>
-
-            {/* Financial Summary */}
-            {canBookingMoney && (
-              <div style={{ padding: 'var(--sp-md)', borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)', marginBottom: 'var(--sp-lg)', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: 'var(--text2)', marginBottom: 10, letterSpacing: '0.06em' }}>
-                  <Icon name="dollar" size={13} style={{ color: 'var(--brand)' }} />
-                  <span>Pricing Breakdown</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, 1fr)', gap: 10, fontSize: 'var(--t-meta)' }}>
-                  <div style={{ padding: '8px 12px', borderRadius: 'var(--r-btn)', background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                    <span style={{ color: 'var(--text2)', display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Gross Subtotal:</span>
-                    <strong style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>{formatMoney(breakdown.subtotal)}</strong>
-                  </div>
-                  {pricing.discounts.discountPaisa > 0 && (
-                    <div style={{ padding: '8px 12px', borderRadius: 'var(--r-btn)', background: 'color-mix(in srgb, var(--danger) 8%, var(--surface))', border: '1px solid color-mix(in srgb, var(--danger) 30%, var(--border))', color: 'var(--danger-text)' }}>
-                      <span style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Discount ({pricing.discounts.appliedPercent}%):</span>
-                      <strong style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>−{formatMoney(pricing.discounts.discountPaisa)}</strong>
-                    </div>
-                  )}
-                  {vatOn && (
-                    <div style={{ padding: '8px 12px', borderRadius: 'var(--r-btn)', background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                      <span style={{ color: 'var(--text2)', display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>VAT ({vatRatePercent}%):</span>
-                      <strong style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>+{formatMoney(breakdown.vat)}</strong>
-                    </div>
-                  )}
-                  <div style={{ padding: '8px 12px', borderRadius: 'var(--r-btn)', background: 'color-mix(in srgb, var(--brand) 8%, var(--surface))', border: '1px solid color-mix(in srgb, var(--brand) 35%, var(--border))' }}>
-                    <span style={{ color: 'var(--brand)', display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>Total Rental:</span>
-                    <strong style={{ fontSize: 18, color: 'var(--brand)', fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>{formatMoney(breakdown.rentalTotal)}</strong>
-                  </div>
-                  <div style={{ padding: '8px 12px', borderRadius: 'var(--r-btn)', background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                    <span style={{ color: 'var(--text2)', display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Deposit Required:</span>
-                    <strong style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', fontFamily: 'var(--font-mono, JetBrains Mono, monospace)' }}>{formatMoney(depositRequiredPaisa)}</strong>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {critical.length > 0 && (
-              <div
-                style={{
-                  marginBottom: 'var(--sp-md)',
-                  padding: 12,
-                  borderRadius: 'var(--r-card)',
-                  background: 'var(--st-danger-bg)',
-                  border: '1px solid color-mix(in srgb, var(--danger) 45%, transparent)',
-                  color: 'var(--st-danger-fg)',
-                }}
-              >
-                <strong>Cannot Confirm Rental:</strong>
-                <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                  {critical.map((a, i) => (
-                    <li key={i}>{a.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Step 5 Action Footer */}
-            <div className="new-rental-step-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, borderTop: '1px solid var(--border)', flexWrap: 'wrap', gap: 12 }}>
-              <Button variant="outline" onClick={() => setCurrentStep(3)} style={{ minHeight: 44 }}>
-                ← Back to Pricing
-              </Button>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <Button
-                  variant="outline"
-                  onClick={() => saveDraft()}
-                  disabled={saveState === 'saving'}
-                  style={{ minHeight: 44 }}
-                >
-                  {saveState === 'saving' ? 'Saving…' : 'Save as Quote / Draft'}
-                </Button>
-                <a className="new-rental-summary-link" href="#rail-booking-summary">Review booking summary</a>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-          {/* redesign v1 §6 — Section 5 "Documents & Review" is gone from the
-              body entirely. It is now the rail's Review + Documents cards,
-              below, which stay beside Confirm Booking instead of a screen away. */}
 
           {/* §58 — the footer reports the database-backed save state and
               nothing else. A fingerprint distinguishes the last successful

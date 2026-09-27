@@ -1,5 +1,76 @@
 # Progress Log
 
+## 2026-09-27 — UI Simplification & Information Architecture Refactor (M1–M7)
+
+Executed comprehensive UI simplification and information architecture refactor across all primary operational screens to eliminate visible density, duplicate controls, and action clutter without removing business capability:
+
+1. **Global Shell & Navigation Simplification (M1):**
+   - Streamlined `Header.tsx`: removed persistent Kathmandu clock, AD/BS dual dates, language toggle, and permanent healthy sync badge. Sync badge surfaces only in abnormal states (`Offline`, `Syncing`, `Queued`, `Sync Error`).
+   - Focused `Sidebar.tsx`: removed static branch address and VAT lines from footer, keeping high-contrast grouping for `Daily Dispatch`, `Assets & Relationships`, and `Business & Back Office`.
+   - Standardized `PageActions.tsx` & `Page.tsx`: enforced 1 primary CTA, max 2 secondary buttons, and collapsed remainder into overflow menu (`•••`). Filtered unbuilt placeholder actions (`<Unavailable>`) while preserving genuine RBAC/state refusal reasons.
+
+2. **Today / Dispatch Dashboard Refactor (M2):**
+   - Removed 4-tile bento strip (`dashboard-bento-strip`) to reclaim primary viewport height.
+   - Synchronized pickups and returns under single master dispatch date stepper (`‹ Today · Sep 27 / Ashwin 11 › 📅`).
+   - Simplified search to a single quick dispatch lookup (`Search or scan…`).
+   - Condensed overdue notifications to a single actionable banner (`⚠ N overdue returns`).
+   - Centered viewport on dispatch movements with Pickups and Returns columns side-by-side with visible next actions.
+
+3. **Rentals List Refactor (M3):**
+   - Standardized header to 1 primary CTA (`+ New Rental`), moving secondary tools into overflow (`•••`). Removed disabled `Export` placeholder.
+   - Replaced 9+ stage chips with 5-view operational segmented bar (`All`, `Upcoming`, `Out`, `Returns`, `Closed`), delegating fine facets to `BooqableRentalFilterDrawer`.
+   - Streamlined default visible table columns to 7 core fields (`Rental`, `Client`, `Schedule`, `Equipment`, `Status`, `Total`, `Next Action / •••`).
+
+4. **New Rental 4-Step Guided Wizard (M4):**
+   - Replaced 5-step stepper with 4-step wizard: 1. Client & Dates (with collapsible disclosure for Crew, Delivery, Project Info, Notes), 2. Equipment & Bundles, 3. Price & Payment, 4. Review & Confirm.
+   - Removed "Show all sections" toggle and visible keyboard badges; compressed inventory contention banners into compact expanders.
+   - Simplified desktop booking summary rail with expandable breakdown; sticky bottom bar reserved strictly for workflow action buttons.
+
+5. **Booking Detail Simplification (M5):**
+   - Consolidated header to 1 primary action + `Operations ▾` + `•••` overflow menu.
+   - Consolidated to single `LifecycleProgress` bar, removing duplicate stepper.
+   - Streamlined facts strip to 4 core operational metrics (`Client`, `Pickup`, `Return`, `Duration`).
+   - Organized desktop detail views into 6 tabs (`Overview`, `Equipment`, `Payments`, `Logistics`, `Documents`, `Activity`).
+   - Removed duplicate quick actions card from right rail.
+
+6. **Core Directories & Supporting Modules (M6):**
+   - Operations Queues (`OperationsQueues.tsx`): streamlined control bar and default table columns to 5-6 core columns with explicit primary row actions.
+   - Inventory (`Inventory.tsx`): made 6-KPI strip collapsible under `Stats`; trimmed quick filters to `All`, `Available`, `On Rent`; removed technical copy.
+   - Clients (`ClientsDirectory.tsx` & `Clients.tsx`): streamlined top tabs to `Directory` and `Membership`; made 4-KPI cards collapsible; trimmed status chips to `All`, `Active`, `Payment Due`, `Blocked`.
+   - Finance, Documents, and Crew modules cleaned of placeholder actions, duplicate cards, and redundant error copy.
+
+7. **Zero-Failure Verification & Opaque-Box E2E Test Suite (M7):**
+   - Implemented 4-tier opaque-box E2E test suite (`src/__tests__/e2e/`): 38 tests across 4 tiers (Tiers 1–4) covering full happy path isolations, boundary conditions, cross-feature combinations, and 6-stage lifecycle scenarios with Integer Paisa settlement math.
+   - Resolved all ESLint explicit-`any` warnings under `--max-warnings 0`.
+   - Verified 100% adherence to 06:00→06:00 operational day, VAT calculations, security deposit liability, RBAC money-blind gating, PII isolation, and minimum 44×44px touch targets.
+
+### Verified
+- `npm run typecheck` (`tsc --noEmit`): exit 0, 0 errors.
+- `npm run lint` (`eslint src --max-warnings 0`): exit 0, 0 warnings.
+- `npm run check:contrast`: 40/40 pass, 0 fail.
+- `npm run check:pglite`: 134/134 migrations applied, 0 failed.
+- `npm run check:lifecycle`: 19/19 steps green, 0 known-red.
+- Full Vitest suite: 257/257 test files passed, 3,685/3,685 tests passed.
+- `npm run build`: Vite production compilation clean in 48.48s.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 44 / 44 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 41 | 41 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 19 / 19 (100%) | +1 |
+| Overall | mean of five | ≈ 100% | +0 |
+
+Migrations 134 files · check:pglite 134/134 applied, 0 failed. Suite: green.
+Gates read from .lifecycle-result.json, written 2026-09-27T15:17:01.624Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live remote database backup (`scripts/backup-db.ps1`) and push of pending migrations 0125-0136 to Supabase project `sxguwvgoserhdolewibb` (Rule N-5).
+- Git push of branch `step1-foundation` to origin.
+
 ## 2026-09-25 (a) — Bundle component soft-deactivation (§4.52) & Zero-value close override (§4.51)
 
 Implemented open business and operational decisions while strictly maintaining Law 1 (DB triggers are the law) and Law 3 (no physical `DELETE`).

@@ -65,7 +65,7 @@ const iconBtn = {
 export default function Header({ crumbs, actions }: HeaderProps) {
   const { user, logout, lockNow, hasPin } = useAuth()
   const sync = useSync()
-  const syncStatus = sync?.status ?? (sync as any)?.syncStatus ?? 'synced'
+  const syncStatus = sync?.status ?? (sync as { syncStatus?: string } | undefined)?.syncStatus ?? 'synced'
   const pendingCount = sync?.pendingCount ?? 0
   const syncError = sync?.error
   const triggerSync = sync?.triggerSync ?? (async () => {})

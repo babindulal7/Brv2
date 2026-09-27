@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import Icon from '../../components/ui/Icon'
-import { PageHeader, PageActions, Button } from '../../components/ui/Page'
+import { PageHeader, PageActions } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
-import { toBs, formatBs, BS_MONTHS } from '../../lib/bs'
+import { toBs, BS_MONTHS } from '../../lib/bs'
 import { businessDayAd, businessNowAd, overDays, pickupsQuery, toMovementRow, type MovementRow } from '../../lib/queries/today'
 import { listBookings, operationQueue, todaysOutgoing } from '../../lib/queries/bookings'
 import type { ListFilters } from '../../lib/queries/listQuery'
@@ -583,6 +583,7 @@ export default function Today() {
   const viewport = useViewport()
   const isPhone = viewport === 'phone'
   const [mobileTab, setMobileTab] = useState<'pickups' | 'returns'>('pickups')
+  const mobileTabChosenRef = useRef(false)
   const { openOperations } = useOperationsWorkspace()
   const [globalSearch, setGlobalSearch] = useState('')
   const counterInputRef = useRef<HTMLInputElement>(null)
@@ -655,6 +656,18 @@ export default function Today() {
   const isReturnToday = returnDateFilter.kind === 'quick' && returnDateFilter.period === 'Today'
   const pickupCount = pickups.loading || pickups.error ? undefined : pickups.total ?? pickups.rows.length
   const returnCount = returns.loading || returns.error ? undefined : returns.total ?? returns.rows.length
+  const panelFocus = pickupCount === 0 && (returnCount ?? 0) > 0
+    ? 'returns-focus'
+    : returnCount === 0 && (pickupCount ?? 0) > 0
+      ? 'pickups-focus'
+      : null
+
+  useEffect(() => {
+    if (isPhone && !mobileTabChosenRef.current && pickupCount === 0 && (returnCount ?? 0) > 0) {
+      setMobileTab('returns')
+      mobileTabChosenRef.current = true
+    }
+  }, [isPhone, pickupCount, returnCount])
 
   const overdueCount = useMemo(
     () => returns.rows.filter((r) => r.flags.includes('Overdue') || (r.statusNote && r.statusNote.includes('late'))).length,
@@ -735,23 +748,12 @@ export default function Today() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [goToToday, stepDay])
 
-  const dualDateLabel = useMemo(() => {
-    try {
-      const ad = compactDate(dayAd)
-      const bs = toBs(new Date(`${dayAd}T00:00:00.000Z`))
-      return bs ? `${ad} (${formatBs(bs, { suffix: true })})` : ad
-    } catch {
-      return dayAd
-    }
-  }, [dayAd])
-
   return (
     <PageShell
       className="rental-dashboard"
       header={
         <PageHeader
           title="Today"
-          description={`Prepare pickups, receive returns, and keep equipment moving. · ${dualDateLabel}`}
           actions={
             <PageActions
               key="today-actions"
@@ -763,17 +765,6 @@ export default function Today() {
                   onStepDay={stepDay}
                 />
               }
-              secondary={[
-                <Button
-                  key="barcode"
-                  variant="secondary"
-                  icon="barcode"
-                  onClick={() => counterInputRef.current?.focus()}
-                  title="Quick barcode / serial lookup (/)"
-                >
-                  Quick Scan
-                </Button>,
-              ]}
             />
           }
         />
@@ -823,7 +814,10 @@ export default function Today() {
             type="button"
             className="dashboard-alert__action"
             onClick={() => {
-              if (isPhone) setMobileTab('returns')
+              if (isPhone) {
+                mobileTabChosenRef.current = true
+                setMobileTab('returns')
+              }
               const returnsHeading = document.getElementById('incoming-panel-title')
               returnsHeading?.scrollIntoView({ behavior: 'smooth' })
               returnsHeading?.focus()
@@ -845,20 +839,22 @@ export default function Today() {
               { id: 'returns', label: 'Returns', badge: returnCount },
             ]}
             value={mobileTab}
-            onChange={setMobileTab}
+            onChange={(nextTab) => {
+              mobileTabChosenRef.current = true
+              setMobileTab(nextTab)
+            }}
           />
         </div>
       )}
 
-      {/* Main 2-Column Movement Panels */}
-      <div className="rental-dashboard__panels">
+      {/* Both queues stay visible; an empty side condenses so active work has room. */}
+      <div className={`rental-dashboard__panels${panelFocus ? ` rental-dashboard__panels--${panelFocus}` : ''}`}>
         {(!isPhone || mobileTab === 'pickups') && (
           <DashboardMovementPanel
             side="outgoing"
             noun="pickup"
             date={dispatchDate}
             title="Pickups"
-            subtitle="Rentals scheduled for pickup"
             icon="truck"
             list={pickups}
             periodLabel={filterLabel(pickupDateFilter).toLowerCase()}
@@ -866,6 +862,7 @@ export default function Today() {
             onClearFilters={() => { setPickupPage(0); setPickupDateFilter({ kind: 'quick', period: 'Today' }) }}
             onLoadMore={() => setPickupPage((page) => page + 1)}
             hasMore={pickups.total !== null && pickups.rows.length < pickups.total}
+            compactEmpty={!isPhone && panelFocus === 'returns-focus'}
             isToday={isDispatchToday}
             filterControl={
               <DateFilterControl
@@ -884,7 +881,7 @@ export default function Today() {
             noun="return"
             date={dispatchDate}
             title="Returns"
-            subtitle={isReturnToday ? 'Today · Overdue included' : 'Rentals expected to be returned'}
+            subtitle={isReturnToday ? 'Today · Overdue included' : undefined}
             icon="return_arrow"
             list={returns}
             periodLabel={filterLabel(returnDateFilter).toLowerCase()}
@@ -893,6 +890,7 @@ export default function Today() {
             onClearFilters={() => { setReturnPage(0); setReturnDateFilter({ kind: 'quick', period: 'Today' }) }}
             onLoadMore={() => setReturnPage((page) => page + 1)}
             hasMore={returns.total !== null && returns.rows.length < returns.total}
+            compactEmpty={!isPhone && panelFocus === 'pickups-focus'}
             filterControl={
               <DateFilterControl
                 noun="return"

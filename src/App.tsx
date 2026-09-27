@@ -1087,8 +1087,8 @@ function WorkspaceContent({
   const mainRef = useRef<HTMLElement>(null)
 
   // The workspace is the scroll container, not window. Without this reset a
-  shorter destination page can inherit the previous page's scroll position and
-  render its title underneath the fixed shell header.
+  // shorter destination page can inherit the previous page's scroll position and
+  // render its title underneath the fixed shell header.
   useLayoutEffect(() => {
     if (mainRef.current) mainRef.current.scrollTop = 0
   }, [pathname])

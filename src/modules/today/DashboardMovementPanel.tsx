@@ -11,7 +11,7 @@ import type { BookingStatus, JobName } from '../../lib/workflow'
 interface DashboardMovementPanelProps {
   side: 'outgoing' | 'incoming'
   title: string
-  subtitle: string
+  subtitle?: string | undefined
   icon: IconName
   list: ListResult<MovementRow>
   periodLabel: string
@@ -21,6 +21,7 @@ interface DashboardMovementPanelProps {
   onLoadMore?: () => void
   hasMore?: boolean
   globalQuery?: string
+  compactEmpty?: boolean
 }
 
 export function dashboardAction(row: MovementRow, side: 'outgoing' | 'incoming'): {
@@ -55,10 +56,12 @@ export default function DashboardMovementPanel({
   onLoadMore,
   hasMore = false,
   globalQuery = '',
+  compactEmpty = false,
 }: DashboardMovementPanelProps) {
   const { openOperations } = useOperationsWorkspace()
   const count = list.loading || list.error ? '—' : String(list.total ?? list.rows.length)
   const noun = side === 'outgoing' ? 'pickups' : 'returns'
+  const panelSubtitle = compactEmpty ? `No ${noun} ${periodLabel}.` : subtitle
   const today = businessDayAd()
   // Visually place overdue returns before normal returns and apply instant search
   const rows = useMemo(() => {
@@ -86,7 +89,7 @@ export default function DashboardMovementPanel({
   }, [list.rows, side, globalQuery])
 
   return (
-    <section className="movement-panel" aria-labelledby={`${side}-panel-title`}>
+    <section className={`movement-panel movement-panel--${side}${compactEmpty ? ' movement-panel--compact' : ''}`} aria-labelledby={`${side}-panel-title`}>
       <header className="movement-panel__header">
         <span className={`movement-panel__icon movement-panel__icon--${side}`} aria-hidden="true">
           <Icon name={icon} size={24} />
@@ -95,12 +98,12 @@ export default function DashboardMovementPanel({
           <h2 id={`${side}-panel-title`}>
             {title} <span aria-hidden="true">·</span> <span className="figure">{count}</span>
           </h2>
-          <p title={subtitle}>{subtitle}</p>
+          {panelSubtitle && <p title={panelSubtitle}>{panelSubtitle}</p>}
         </div>
         {filterControl && <div className="movement-panel__filter">{filterControl}</div>}
       </header>
 
-      <div className={`movement-panel__body movement-panel__body--${side}`}>
+      {!compactEmpty && <div className={`movement-panel__body movement-panel__body--${side}`}>
         <PageBody
           loading={list.loading}
           error={list.error}
@@ -150,8 +153,7 @@ export default function DashboardMovementPanel({
                 <span>Client / project</span>
                 <span>Pickup</span>
                 <span>Return</span>
-                <span>Status</span>
-                <span>Actions</span>
+                <span>Next step</span>
               </div>
               {rows.map((row) => {
                 const action = dashboardAction(row, side)
@@ -209,21 +211,15 @@ export default function DashboardMovementPanel({
                     </div>
 
                     <div className="movement-card__status-action">
-                      <div className="movement-card__badge-wrap">
-                        {side === 'outgoing' ? (
-                          isReady ? (
-                            <Badge tone="in" label="Ready" icon={<Icon name="check" size={14} />} />
+                      {side === 'incoming' && (isOverdue || isPartial) && (
+                        <div className="movement-card__badge-wrap">
+                          {isOverdue ? (
+                            <Badge tone="danger" label={row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'} icon={<Icon name="alert_triangle" size={14} />} />
                           ) : (
-                            <Badge tone="warning" label="In prep" icon={<Icon name="checklist" size={14} />} />
-                          )
-                        ) : isOverdue ? (
-                          <Badge tone="danger" label={row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'} icon={<Icon name="alert_triangle" size={14} />} />
-                        ) : isPartial ? (
-                          <Badge tone="warning" label="Partial return" icon={<Icon name="alert_triangle" size={14} />} />
-                        ) : (
-                          <Badge tone="primary" label={row.atDayAd === today ? 'Due today' : 'Return scheduled'} icon={<Icon name="timer" size={14} />} />
-                        )}
-                      </div>
+                            <Badge tone="warning" label="Partial return" icon={<Icon name="alert_triangle" size={14} />} />
+                          )}
+                        </div>
+                      )}
                       <button
                         type="button"
                         className={`movement-card__cta-btn ${(side === 'incoming' || isReady) ? 'is-dominant' : 'is-prep'}`}
@@ -251,7 +247,7 @@ export default function DashboardMovementPanel({
             </div>
           )}
         </PageBody>
-      </div>
+      </div>}
     </section>
   )
 }

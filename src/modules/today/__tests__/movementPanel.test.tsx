@@ -42,8 +42,9 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi
 describe('movement board task clarity', () => {
   it('does not label a future return as due today or claim booked quantities are outstanding', async () => {
     await mount()
-    expect(host.textContent).toContain('Return scheduled')
+    expect(host.textContent).not.toContain('Return scheduled')
     expect(host.textContent).not.toContain('Due today')
+    expect(host.textContent).toContain('Return & Inspect')
     expect(host.textContent).toContain('8 items booked')
     expect(host.textContent).not.toContain('outstanding')
   })

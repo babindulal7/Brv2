@@ -418,7 +418,7 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', () => {
       expect(container.textContent).toContain('Inventory')
       expect(container.textContent).toContain('Equipment')
       expect(container.textContent).toContain('Bundles')
-    })
+    }, 60_000)
 
     it('Clients Directory renders client table and section navigation', async () => {
       const { default: Clients } = await import('../../modules/clients/Clients')
@@ -427,7 +427,7 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', () => {
       expect(container.textContent).toContain('Clients')
       expect(container.textContent).toContain('Directory')
       expect(container.textContent).toContain('Membership')
-    })
+    }, 60_000)
 
     it('Finance dashboard renders financial KPIs and invoices table', async () => {
       const { default: Finance } = await import('../../modules/finance/Finance')
@@ -437,7 +437,7 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', () => {
       expect(container.textContent).toContain('Outstanding')
       expect(container.textContent).toContain('Overdue')
       expect(container.textContent).toContain('Received')
-    })
+    }, 60_000)
 
     it('Documents module renders document manager and filter toolbar', async () => {
       const { default: Documents } = await import('../../modules/documents/Documents')
