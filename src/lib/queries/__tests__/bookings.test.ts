@@ -275,6 +275,8 @@ const RAW = {
   booking_no: 'B-715',
   client_id: 'c0ffee00-1111-4222-8333-444455556666',
   project: 'FX3 Documentary',
+  project_type: 'Documentary',
+  project_type_other: null,
   stage: 'Quote' as const,
   pickup_at: '2026-08-14T04:15:00+00:00',
   return_at: '2026-08-18T10:30:00+00:00',
@@ -308,6 +310,8 @@ describe('toRow — raw DB row → BookingListRow', () => {
     expect(row.returnLocation).toBe('Lalitpur yard')
     expect(row.quoteExpiresAtAd).toBe('2026-08-20T18:15:00+00:00')
     expect(row.createdAtAd).toBe('2026-07-12T09:41:00+00:00')
+    expect(row.projectType).toBe('Documentary')
+    expect(row.projectTypeOther).toBeNull()
   })
 
   it('does not disturb the fields that were already mapped', async () => {
@@ -341,10 +345,14 @@ describe('toRow — raw DB row → BookingListRow', () => {
       pickup_location: null,
       return_location: null,
       quote_expires_at: null,
+      project_type: null,
+      project_type_other: null,
     })
     expect(row.pickupLocation).toBeNull()
     expect(row.returnLocation).toBeNull()
     expect(row.quoteExpiresAtAd).toBeNull()
+    expect(row.projectType).toBeNull()
+    expect(row.projectTypeOther).toBeNull()
     // `created_at` is NOT NULL in the schema, so it has no null case to test.
     expect(row.createdAtAd).toBe(RAW.created_at)
   })
@@ -530,9 +538,20 @@ describe('named filter sets → the calls that actually reach the builder', () =
     expect(db.state.calls).not.toContainEqual(['in', 'stage', []])
   })
 
-  it('defaults the search columns to the two that exist on bookings', async () => {
+  it('defaults the search columns to the four that exist on bookings', async () => {
     await listBookings({ search: 'FX3' })
-    expect(db.state.calls).toContainEqual(['or', 'booking_no.ilike.*FX3*,project.ilike.*FX3*'])
+    expect(db.state.calls).toContainEqual([
+      'or',
+      'booking_no.ilike.*FX3*,project.ilike.*FX3*,project_type.ilike.*FX3*,project_type_other.ilike.*FX3*',
+    ])
+  })
+
+  it('finds bookings by project type text', async () => {
+    await listBookings({ search: 'documentary' })
+    expect(db.state.calls).toContainEqual([
+      'or',
+      'booking_no.ilike.*documentary*,project.ilike.*documentary*,project_type.ilike.*documentary*,project_type_other.ilike.*documentary*',
+    ])
   })
 })
 
