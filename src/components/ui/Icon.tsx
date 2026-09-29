@@ -224,10 +224,12 @@ export default function Icon({ name, fill = false, size = 20, label, className, 
   }
   const resolvedClass = ['ui-icon', className].filter(Boolean).join(' ') || undefined
   const resolvedStyle = color ? { color, ...style } : style
+  // Standardized stroke weights per design system: 1.5 regular, 2.0 fill (matches --icon-stroke / --icon-stroke-fill)
+  const strokeWidth = fill ? 2.0 : 1.5
   return (
     <Cmp
       size={size}
-      stroke={fill ? 2.4 : 1.9}
+      stroke={strokeWidth}
       className={resolvedClass}
       style={resolvedStyle}
       aria-hidden={label ? undefined : true}

@@ -108,7 +108,7 @@ export function LoadingSkeleton({
   label,
 }: {
   rows?: number
-  type?: 'card' | 'table' | 'kpi'
+  type?: 'card' | 'table' | 'kpi' | 'movement'
   /** The "Loading rentals…" text §2.1 requires — omit only where the skeleton sits right under a heading that already says what's loading. */
   label?: string
 }) {
@@ -150,6 +150,44 @@ export function LoadingSkeleton({
             <div style={{ ...pulse, width: 90, height: 30 }} />
             <div style={{ ...pulse, width: 90, height: 30 }} />
           </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (type === 'movement') {
+    // Matches DashboardMovementPanel movement-card layout:
+    // avatar | client/project/items | booking | time | status/action
+    return (
+      <div>
+        {labelEl}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+          <div className="movement-cards-list__head" aria-hidden="true" style={{ display: 'flex', gap: 'var(--sp-md)', padding: '0 var(--sp-md)', fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase' }}>
+            <div style={{ flex: 2, minWidth: 0 }} />
+            <div style={{ width: 100 }} />
+            <div style={{ width: 120 }} />
+            <div style={{ width: 100 }} />
+            <div style={{ width: 180 }} />
+          </div>
+          {Array.from({ length: rows }, (_, i) => (
+            <div key={i} style={{ ...cardStyle, padding: '12px var(--sp-md)', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
+              <div style={{ ...pulse, width: 40, height: 40, borderRadius: 'var(--r-badge)', flexShrink: 0 }} />
+              <div style={{ flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ ...pulse, width: '40%', height: 14 }} />
+                <div style={{ ...pulse, width: '60%', height: 10 }} />
+                <div style={{ ...pulse, width: '30%', height: 9 }} />
+              </div>
+              <div style={{ width: 100 }}>
+                <div style={{ ...pulse, width: '80%', height: 13 }} />
+              </div>
+              <div style={{ width: 120 }}>
+                <div style={{ ...pulse, width: '70%', height: 13 }} />
+              </div>
+              <div style={{ width: 180 }}>
+                <div style={{ ...pulse, width: '60%', height: 28, borderRadius: 'var(--r-btn)' }} />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     )

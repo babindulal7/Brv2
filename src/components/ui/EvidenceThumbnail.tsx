@@ -245,7 +245,7 @@ export const EvidenceThumbnail: React.FC<EvidenceThumbnailProps> = ({
                   </div>
                 )}
               </div>
-              {evidence.notes && <p style={{ margin: 0, fontStyle: 'italic', color: 'var(--text)' }}>{evidence.notes}</p>}
+              {evidence.notes && <p style={{ margin: 0, fontStyle: 'italic', lineHeight: '1.5', color: 'var(--text)' }}>{evidence.notes}</p>}
             </div>
           </div>
         </div>

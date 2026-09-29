@@ -1,0 +1,63 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // Rules are evaluated in order and the LAST match wins, so the broad `ask`
+  // comes first, the routine gates are opened up after it, and the hard denials
+  // sit last. Moving a block without moving the deny is how the denials get
+  // shadowed — see the note above the db: rules.
+  "permissions": [
+    // Nothing is pre-approved by default. This repo's own rules (CLAUDE.md N-4,
+    // N-5, N-8) forbid several things an agent would otherwise happily do, so
+    // the safe default is to ask and let the gate list below open the boring
+    // cases.
+    { "action": "shell", "resource": "*", "effect": "ask" },
+
+    // -- Gates -------------------------------------------------------------
+    // These are the commands that decide whether a change is admissible (B-4).
+    // They only read and compile; none of them mutates the database or the repo.
+    { "action": "shell", "resource": "npm test*", "effect": "allow" },
+    { "action": "shell", "resource": "npm run typecheck*", "effect": "allow" },
+    { "action": "shell", "resource": "npm run lint*", "effect": "allow" },
+    { "action": "shell", "resource": "npm run build*", "effect": "allow" },
+    { "action": "shell", "resource": "npm run completion*", "effect": "allow" },
+    { "action": "shell", "resource": "npx tsc*", "effect": "allow" },
+    { "action": "shell", "resource": "npx vitest*", "effect": "allow" },
+
+    // check:* is the schema/lifecycle verification layer. R-35: a migration is
+    // `Verified` only when check:pglite AND check:lifecycle are green together,
+    // because unit tests cannot see across the RPC boundary. Kept allowed so
+    // that pairing is never blocked on a prompt.
+    { "action": "shell", "resource": "npm run check:contrast*", "effect": "allow" },
+    { "action": "shell", "resource": "npm run check:pglite*", "effect": "allow" },
+    { "action": "shell", "resource": "npm run check:lifecycle*", "effect": "allow" },
+    { "action": "shell", "resource": "npm run check:db*", "effect": "allow" },
+    { "action": "shell", "resource": "npm run check:rebuild*", "effect": "allow" },
+    { "action": "shell", "resource": "npm run check:dump*", "effect": "allow" },
+
+    // -- Read-only inspection ---------------------------------------------
+    { "action": "shell", "resource": "git status*", "effect": "allow" },
+    { "action": "shell", "resource": "git diff*", "effect": "allow" },
+    { "action": "shell", "resource": "git log*", "effect": "allow" },
+    { "action": "shell", "resource": "git show*", "effect": "allow" },
+    { "action": "shell", "resource": "git blame*", "effect": "allow" },
+
+    // -- N-5: never apply a migration to the live Supabase project ----------
+    // Babin applies it, after the backup step. `db:apply` and `db:rebuild` are
+    // deliberately NOT denied: they target the local stack
+    // (scripts/apply-migrations-local.mjs, `supabase db reset --no-seed`) and
+    // N-5 requires "write it, number it, test it locally — do not run it [live]".
+    // Only the path that reaches a linked/live project is blocked, and it is
+    // blocked outright rather than asked, because it is irreversible.
+    { "action": "shell", "resource": "supabase db push*", "effect": "deny" },
+    { "action": "shell", "resource": "npx supabase db push*", "effect": "deny" },
+    { "action": "shell", "resource": "* supabase db push*", "effect": "deny" },
+    { "action": "shell", "resource": "npm run db:apply --remote*", "effect": "deny" }
+
+    // N-8 (never rotate/print/log/commit a credential) is deliberately absent.
+    // It cannot be expressed as a resource pattern — "do not print a secret" is
+    // not a matchable command shape — and a rule that only looks like it
+    // enforces N-8 is worse than none, because it reads as a guarantee. It
+    // stays a documented human rule in CLAUDE.md. Reading .env* still asks,
+    // via OpenCode's built-in default.
+  ]
+}

@@ -7,7 +7,7 @@ import { Card, Button, cardStyle } from '../../components/ui/Page'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FloorAside, floorPlacements } from '../operations/FloorAside'
-import { StickyFloorBar } from '../operations/StickyFloorBar'
+import { useOperationShell } from '../operations/RentalOperationShell'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
 import { STATUS, jobStateChip } from '../../lib/status'
@@ -30,6 +30,7 @@ import { serviceStatus, type ServiceRow } from '../../lib/serviceDue'
 import { formatGateError } from '../../lib/gates'
 import { clearFloorScan, loadFloorScan, saveFloorScan } from '../../lib/floorScanStorage'
 import { rentalDaysBetween } from '../../lib/rentalDays'
+import { NON_PACKABLE_LINE_TYPES } from '../../lib/bookingLineTypes'
 import { useFloorPresence } from '../../lib/floorPresence'
 import {
   playScanSuccess,
@@ -230,7 +231,6 @@ const MIN_REASON = 10
  * its children are the packable rows. Equipment, Accessory and a childless
  * Bundle line become rows; `buildPackLines` dispatches only lines that did.
  */
-const NON_PACKABLE_LINE_TYPES: ReadonlySet<string> = new Set(['Service', 'Sub-rental', 'Manual item'])
 
 function packableLines(lines: readonly FloorLine[]): FloorLine[] {
   const parentIds = new Set(lines.map((l) => l.parentLineId).filter((p): p is string => p !== null))
@@ -478,7 +478,6 @@ export interface PackingWorkspaceProps {
   bookingNo?: string
   embedded?: boolean
   onConfirmSuccess?: () => void
-  onCancel?: () => void
   onRegisterActions?: (actions: {
     canComplete: boolean
     dispatching: boolean
@@ -493,9 +492,9 @@ export default function PackingWorkspace({
   bookingNo: bookingNoProp,
   embedded = false,
   onConfirmSuccess,
-  onCancel,
   onRegisterActions,
 }: PackingWorkspaceProps = {}) {
+  const { registerActions } = useOperationShell()
   const navigate = useNavigate()
   const { bookingNo: bookingNoParam } = useParams()
   const id = bookingNoProp ?? bookingNoParam ?? ''
@@ -1134,16 +1133,18 @@ export default function PackingWorkspace({
     photoCount > 0 ||
     Object.keys(verifiedKitDeps).length > 0
   useEffect(() => {
-    onRegisterActions?.({
+    const actions = {
       canComplete,
       dispatching,
       complete: completePacking,
       isDirty,
       label: 'Confirm & Next →',
       error: dispatchError,
-    })
+    }
+    registerActions(actions)
+    onRegisterActions?.(actions)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onRegisterActions, canComplete, dispatching, isDirty, dispatchError])
+  }, [registerActions, onRegisterActions, canComplete, dispatching, isDirty, dispatchError])
 
   /* ── honest degradations, before any workspace chrome ──────────────────── */
 
@@ -2215,25 +2216,6 @@ export default function PackingWorkspace({
               </FloorAside>
             </div>
 
-            {/* §11 — footer. The single EXIT, and nothing else. */}
-            {!embedded && (
-              <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', gap: 'var(--sp-md)', padding: '12px 14px', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={() => (onCancel ? onCancel() : navigate(`/rentals/${id}`))}
-                  style={{ minHeight: 44, padding: '0 14px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--danger-text)', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-                >
-                  Cancel Packing
-                </button>
-                <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                  {pendingRows.length
-                    ? `${pendingRows.length} item${pendingRows.length > 1 ? 's' : ''} pending`
-                    : 'All items resolved'}
-                  {' · Nothing is saved until Complete Packing — cancelling discards this session'}
-                </span>
-              </div>
-            )}
-
             <BarcodeScannerModal
               isOpen={showScanner}
               onClose={() => setShowScanner(false)}
@@ -2246,25 +2228,6 @@ export default function PackingWorkspace({
                  rail behind it recorded. */
               onItemScanned={(item) => pack(item.id, 'scan')}
             />
-
-            {phone && !stageHeld && !embedded && (
-              <StickyFloorBar
-                progress={{
-                  current: packedUnits,
-                  total: totalUnits,
-                  label: pendingUnits ? `${pendingUnits} pending` : 'All items packed',
-                  complete: canComplete,
-                }}
-                onScan={() => setShowScanner(true)}
-                primaryAction={{
-                  label: dispatching ? 'Recording…' : 'Complete Packing',
-                  onClick: completePacking,
-                  disabled: !canComplete,
-                  loading: dispatching,
-                  icon: 'checklist',
-                }}
-              />
-            )}
           </div>
         )}
       </PageBody>

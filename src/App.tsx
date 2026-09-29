@@ -8,6 +8,7 @@ import type { Crumb } from './components/shell/Header'
 import ScannerFab from './components/shell/ScannerFab'
 import { ErrorBoundary } from './components/shell/ErrorBoundary'
 import { LoadingSkeleton, RestrictedState } from './components/ui/StateViews'
+import NotFound from './pages/NotFound'
 import Placeholder from './modules/Placeholder'
 import { WelcomeOnboarding } from './lib/WelcomeOnboarding'
 import { NAV, isMoneySurface, isStaffSurface, FLOOR_ROUTE_SUFFIXES } from './data/nav'
@@ -67,6 +68,10 @@ const ClientDetail      = lazy(() => import('./modules/clients/ClientDetail'))
 const CasesWorkspace    = lazy(() => import('./modules/operations/CasesWorkspace').then(m => ({ default: m.CasesWorkspace })))
 const CrewBooking       = lazy(() => import('./modules/crew/CrewBooking').then(m => ({ default: m.CrewBooking })))
 const SubRental         = lazy(() => import('./modules/operations/SubRental').then(m => ({ default: m.SubRental })))
+const DeliveryWorkspace = lazy(() => import('./modules/operations/DeliveryWorkspace'))
+const TimesheetTab      = lazy(() => import('./modules/crew/TimesheetTab'))
+const ProductionsList   = lazy(() => import('./modules/rentals/ProductionsList'))
+const WarrantyTracker   = lazy(() => import('./modules/inventory/WarrantyTracker'))
 
 function RentalsNewRedirect() {
   const [searchParams] = useSearchParams()
@@ -175,6 +180,15 @@ export default function App() {
           }
         />
 
+        <Route
+          path="/rentals/productions"
+          element={
+            <Shell crumbs={[{ label: 'Rentals', to: '/rentals' }, { label: 'Productions Hub' }]} search="Search productions, client, shoot…">
+              <ProductionsList />
+            </Shell>
+          }
+        />
+
         {/* Declared before /rentals/:bookingNo so "new" is not read as an ID. */}
         <Route path="/rentals/new" element={<RentalsNewRedirect />} />
 
@@ -260,10 +274,28 @@ export default function App() {
         />
 
         <Route
+          path="/crew/timesheet"
+          element={
+            <Shell crumbs={[{ label: 'Crew Assist', to: '/crew' }, { label: 'Timesheet' }]} search="Search staff, role…">
+              <TimesheetTab />
+            </Shell>
+          }
+        />
+
+        <Route
           path="/inventory"
           element={
             <Shell crumbs={[{ label: 'Inventory' }]} search="Search equipment, serial, SKU, category…">
               <Inventory />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/inventory/warranty"
+          element={
+            <Shell crumbs={[{ label: 'Inventory', to: '/inventory' }, { label: 'Warranty & RMA Tracker' }]} search="Search equipment, serial, provider…">
+              <WarrantyTracker />
             </Shell>
           }
         />
@@ -415,6 +447,15 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Operations', to: '/operations' }, { label: 'Sub Rental' }]} search="Search SR ID, equipment, partner…">
               <SubRental />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/operations/delivery"
+          element={
+            <Shell crumbs={[{ label: 'Operations', to: '/operations' }, { label: 'Delivery & Logistics' }]} search="Search dispatch, booking, address, rider…">
+              <DeliveryWorkspace />
             </Shell>
           }
         />
@@ -696,28 +737,7 @@ export default function App() {
           path="*"
           element={
             <Shell crumbs={[{ label: '404' }]}>
-              <div style={{ maxWidth: 440, margin: '80px auto', textAlign: 'center' }}>
-                <h1 style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>Page not found</h1>
-                <p style={{ color: 'var(--muted)', marginBottom: 20 }}>The URL does not exist in Babin Rentals OS.</p>
-                <a
-                  href="/dashboard"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    padding: '8px 16px',
-                    borderRadius: 8,
-                    background: 'var(--nav-active-accent)',
-                    // The nav accent IS --primary since v4.1 §2 retired gold
-                    // from every action, so its ink is --on-primary.
-                    color: 'var(--on-primary)',
-                    textDecoration: 'none',
-                    fontWeight: 600,
-                    fontSize: 13,
-                  }}
-                >
-                  Return to Today
-                </a>
-              </div>
+              <NotFound />
             </Shell>
           }
         />

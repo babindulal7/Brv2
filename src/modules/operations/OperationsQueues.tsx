@@ -688,6 +688,14 @@ export default function OperationsQueues() {
             <PageActions
               secondary={[
                 <Button
+                  key="delivery"
+                  variant="outline"
+                  icon="truck"
+                  onClick={() => routeNavigate('/operations/delivery')}
+                >
+                  Delivery & Logistics
+                </Button>,
+                <Button
                   key="sub-rentals"
                   variant="outline"
                   icon="box"

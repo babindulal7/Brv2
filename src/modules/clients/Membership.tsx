@@ -366,6 +366,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
     { label: 'Member' },
     { label: 'Level' },
     { label: 'Status' },
+    { label: 'Health' },
     { label: 'Join Date (BS / AD)' },
     { label: 'Renewal Date (BS / AD)' },
     { label: 'Days Left' },
@@ -807,6 +808,39 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                       </span>
                       <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 2 }}>
                         {m.statusNote}
+                      </span>
+                    </td>
+
+                    <td style={td}>
+                      <span
+                        className="figure client-mono"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          fontWeight: 700,
+                          fontSize: 'var(--t-meta)',
+                          color: (m.healthScore ?? 80) >= 70
+                            ? 'var(--success-text)'
+                            : (m.healthScore ?? 80) >= 55
+                            ? 'var(--warn-text)'
+                            : 'var(--danger-text)',
+                        }}
+                        title={`Member health & reliability score: ${m.healthScore ?? 80}/100`}
+                      >
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: (m.healthScore ?? 80) >= 70
+                              ? 'var(--success-text)'
+                              : (m.healthScore ?? 80) >= 55
+                              ? 'var(--warn-text)'
+                              : 'var(--danger-text)',
+                          }}
+                        />
+                        {m.healthScore ?? 80} / 100
                       </span>
                     </td>
 

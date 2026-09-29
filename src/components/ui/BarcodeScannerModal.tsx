@@ -672,7 +672,7 @@ export function BarcodeScannerModal({
             Session Scan History ({sessionScanLog.length})
           </div>
           {sessionScanLog.length === 0 ? (
-            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', fontStyle: 'italic' }}>
+            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', fontStyle: 'italic', lineHeight: '1.5' }}>
               No scans recorded in this session yet.
             </div>
           ) : (

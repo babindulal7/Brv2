@@ -40,6 +40,10 @@ export default tseslint.config(
       // 36 on the first run (2 Sep 2026); 0 since the A13 burn-down. Back to
       // an error so the next one is caught at the source, not in a sweep.
       '@typescript-eslint/no-explicit-any': 'error',
+      // TODO: Add custom rule to enforce CSS variable usage for z-index.
+      // Pattern: flag hardcoded z-index literals (zIndex: number, z-index: number)
+      // in component styles. Allowed: var(--z-dropdown), var(--z-sticky-nav),
+      // var(--z-overlay), var(--z-drawer), var(--z-modal), var(--z-toast), var(--z-system).
     },
   },
   {

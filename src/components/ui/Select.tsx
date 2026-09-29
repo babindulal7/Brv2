@@ -1,4 +1,5 @@
-import React, { forwardRef, useState, useRef, useEffect, useId, ReactNode, useImperativeHandle } from 'react'
+import React, { forwardRef, useState, useRef, useEffect, useId, useCallback, ReactNode, useImperativeHandle } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from './Icon'
 import { InfoTooltip } from './InfoTooltip'
 
@@ -36,6 +37,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const containerRef = useRef<HTMLDivElement>(null)
     const triggerRef = useRef<HTMLButtonElement>(null)
     const nativeSelectRef = useRef<HTMLSelectElement>(null)
+    const listboxRef = useRef<HTMLDivElement>(null)
+    /* Floating position of the portaled listbox. Measured from the trigger
+       when the menu opens and re-measured on scroll/resize so it tracks. */
+    const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null)
     const typeahead = useRef({ query: '', at: 0 })
 
     // Forward ref manually so we can still use the local ref if needed
@@ -69,7 +74,11 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
 
     useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
-        if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        const target = event.target as Node
+        // The open listbox is portaled to document.body — a pointer inside
+        // it is logically inside, even though it is outside `containerRef`.
+        if (listboxRef.current?.contains(target)) return
+        if (containerRef.current && !containerRef.current.contains(target)) {
           setIsOpen(false)
         }
       }
@@ -84,9 +93,39 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, highlight])
 
+    /* Measures the trigger and places the floating listbox: below it when
+       there is room, above it when the viewport bottom is tight. */
+    const measureMenu = useCallback(() => {
+      const el = triggerRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      const MENU_GAP = 6
+      const MENU_MAX = 300
+      const roomBelow = window.innerHeight - r.bottom - MENU_GAP - 8
+      const roomAbove = r.top - MENU_GAP - 8
+      const openUp = roomBelow < 160 && roomAbove > roomBelow
+      setMenuPos(
+        openUp
+          ? { top: Math.max(8, r.top - MENU_GAP - Math.min(MENU_MAX, roomAbove)), left: r.left, width: r.width, maxHeight: Math.min(MENU_MAX, Math.max(120, roomAbove)) }
+          : { top: r.bottom + MENU_GAP, left: r.left, width: r.width, maxHeight: MENU_MAX },
+      )
+    }, [])
+
+    /* Re-track the trigger while open so scrolling never detaches the menu. */
+    useEffect(() => {
+      if (!isOpen) return
+      window.addEventListener('scroll', measureMenu, true)
+      window.addEventListener('resize', measureMenu)
+      return () => {
+        window.removeEventListener('scroll', measureMenu, true)
+        window.removeEventListener('resize', measureMenu)
+      }
+    }, [isOpen, measureMenu])
+
     const openMenu = () => {
       if (props.disabled) return
       setHighlight(selectedIndex >= 0 ? selectedIndex : nextEnabled(-1, 1))
+      measureMenu()
       setIsOpen(true)
     }
 
@@ -338,19 +377,22 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             </div>
           </button>
 
-          {/* Dropdown Menu */}
-          {isOpen && (
+          {/* Dropdown Menu — portaled to document.body so table scroll
+              containers, drawers and modals can never clip it. Position is
+              measured from the trigger (see measureMenu). */}
+          {isOpen && menuPos && createPortal(
             <div
               id={listboxId}
+              ref={listboxRef}
               role="listbox"
               aria-labelledby={label ? labelId : undefined}
               style={{
-                position: 'absolute',
-                top: 'calc(100% + 6px)',
-                left: 0,
-                right: 0,
-                zIndex: 'var(--z-dropdown)' as unknown as number,
-                maxHeight: 300,
+                position: 'fixed',
+                top: menuPos.top,
+                left: menuPos.left,
+                width: menuPos.width,
+                zIndex: 'var(--z-dropdown)',
+                maxHeight: menuPos.maxHeight,
                 overflowY: 'auto',
                 background: 'var(--dropdown)',
                 backdropFilter: 'blur(16px)',
@@ -414,7 +456,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
                   No options
                 </div>
               )}
-            </div>
+            </div>,
+            document.body,
           )}
         </div>
 

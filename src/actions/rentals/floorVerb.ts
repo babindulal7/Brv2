@@ -4,6 +4,7 @@ import { operationSessionId } from '../../lib/deterministicId'
 import { applyBookingTransition } from '../../lib/bookingTransition'
 import { logAuditEvent } from '../../lib/audit'
 import { captureError } from '../../lib/monitoring'
+import { NON_PACKABLE_LINE_TYPES } from '../../lib/bookingLineTypes'
 import { JOBS, type BookingStatus, type JobName } from '../../lib/workflow'
 import type { ActionContext } from '../core'
 import type {
@@ -673,9 +674,9 @@ interface BookingHead {
   /**
    * `bookings.delivery_type` (`0002:34`), copied onto
    * `operation_sessions.delivery_method` (`0003:61`), which a Handover session
-   * must carry (CHECK :91). Two enum names, identical members —
-   * `0001_enums.sql:33-38` and `:279-284` — so this is a faithful copy, not a
-   * mapping table someone has to keep in step.
+   * must carry (CHECK :91). The two enums were renamed in separate
+   * migrations (0113 and 0137), so older databases may still require the
+   * original operation-session pickup member.
    */
   delivery_type: DeliveryMethod
   cancelled_at: string | null
@@ -685,6 +686,7 @@ interface BookingHead {
 interface BookingLineHead {
   id: string
   qty: number
+  line_type: string
 }
 
 async function readBooking(bookingRef: string): Promise<BookingHead> {
@@ -704,7 +706,7 @@ async function readBooking(bookingRef: string): Promise<BookingHead> {
 async function readBookingLines(bookingId: string): Promise<BookingLineHead[]> {
   const { data, error } = await supabase
     .from('booking_lines')
-    .select('id, qty')
+    .select('id, qty, line_type')
     .eq('booking_id', bookingId)
     .is('voided_at', null)
 
@@ -1098,7 +1100,7 @@ export async function runFloorVerb(
   const sessionId = resumed?.id ?? (await operationSessionId(booking.id, operation, nextSessionNo))
 
   if (resumed === null) {
-    await idempotentInsert('operation_sessions', {
+    const sessionPayload = {
       id: sessionId,
       client_uuid: actionUuid,
       booking_id: booking.id,
@@ -1113,7 +1115,22 @@ export async function runFloorVerb(
       ...(input.notes === undefined ? {} : { notes: input.notes }),
       ...(operation === 'Handover' ? gateOneFacts(input) : {}),
       created_by: ctx.userId,
-    })
+    } satisfies Database['public']['Tables']['operation_sessions']['Insert']
+    try {
+      await idempotentInsert('operation_sessions', sessionPayload)
+    } catch (error) {
+      // 0113 renamed bookings.delivery_type before the separate
+      // operation_sessions.delivery_method enum. Retry only this known enum
+      // rejection so handover also works until migration 0137 reaches the DB.
+      const legacyPickupEnum = operation === 'Handover' && booking.delivery_type === 'Client Pickup' &&
+        error instanceof Error &&
+        error.message.includes('invalid input value for enum delivery_method: "Client Pickup"')
+      if (!legacyPickupEnum) throw error
+      await idempotentInsert('operation_sessions', {
+        ...sessionPayload,
+        delivery_method: 'Customer Pickup' as DeliveryMethod,
+      })
+    }
   } else {
     // A resumed Handover session re-checks the receiver: the facts from THIS
     // pass are the current ones, so they are written over the earlier pass.
@@ -2118,7 +2135,10 @@ function lineIsTerminal(job: SessionJob, row: LineRow | undefined): boolean {
  * call named: a second collection finishes what the first one left.
  */
 async function linesShortOfTerminal(job: SessionJob, live: readonly BookingLineHead[]): Promise<string[]> {
-  const liveIds = live.map((l) => l.id)
+  // RULING 2026-09-29: non-physical lines have no Return receipt to await.
+  const liveIds = live
+    .filter((line) => job !== 'Return' || !NON_PACKABLE_LINE_TYPES.has(line.line_type))
+    .map((line) => line.id)
   const rows = await readLineRows(job, liveIds)
   return liveIds.filter((id) => !lineIsTerminal(job, rows.get(id)))
 }

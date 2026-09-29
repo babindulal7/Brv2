@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { FooterNote, PageHeader, PageActions } from '../../components/ui/Page'
@@ -343,13 +344,16 @@ function Avatar({ row }: { row: RentalListRow }) {
   )
 }
 
-/** Closes a popover on outside click and on Escape. */
-function useDismiss(open: boolean, close: () => void) {
+/** Closes a popover on outside click and on Escape. `extra` covers a portaled
+ * menu panel, which lives outside `ref` in the DOM but is logically inside. */
+function useDismiss(open: boolean, close: () => void, extra?: React.RefObject<HTMLElement>) {
   const ref = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close()
+      const t = e.target as Node
+      if (extra?.current?.contains(t)) return
+      if (ref.current && !ref.current.contains(t)) close()
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') close()
@@ -360,7 +364,7 @@ function useDismiss(open: boolean, close: () => void) {
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [open, close])
+  }, [open, close, extra])
   return ref
 }
 
@@ -408,6 +412,69 @@ const menuItemStyle = {
   fontFamily: 'inherit',
   textAlign: 'left' as const,
   textDecoration: 'none',
+}
+
+/**
+ * Table menus render inside `DataTableShell`, whose horizontal scroll wrapper
+ * clips overflow on the other axis too — an inline `position: absolute` menu is
+ * cut off on bottom rows and paints under sticky headers. Portaling to
+ * `document.body` with `position: fixed` escapes both: the menu is no longer a
+ * descendant of any clipping ancestor, and `--z-dropdown` puts it above the
+ * table. Position tracks the trigger (re-measured on scroll/resize so it never
+ * detaches), right-aligned to the trigger's right edge.
+ */
+function MenuPortal({
+  anchorRef,
+  menuRef,
+  up,
+  minWidth,
+  children,
+}: {
+  anchorRef: React.RefObject<HTMLElement>
+  menuRef: React.RefObject<HTMLDivElement>
+  up: boolean
+  minWidth: number
+  children: React.ReactNode
+}) {
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  useEffect(() => {
+    const measure = () => {
+      const el = anchorRef.current
+      if (el) setRect(el.getBoundingClientRect())
+    }
+    measure()
+    window.addEventListener('scroll', measure, true)
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
+    }
+  }, [anchorRef])
+  if (!rect) return null
+  const style: React.CSSProperties = up
+    ? {
+        ...menuStyle,
+        position: 'fixed',
+        top: 'auto',
+        bottom: Math.max(8, window.innerHeight - rect.top + 6),
+        right: Math.max(8, window.innerWidth - rect.right),
+        minWidth,
+        zIndex: 'var(--z-dropdown)',
+      }
+    : {
+        ...menuStyle,
+        position: 'fixed',
+        top: rect.bottom + 6,
+        right: Math.max(8, window.innerWidth - rect.right),
+        minWidth,
+        zIndex: 'var(--z-dropdown)',
+      }
+  return createPortal(
+    <div ref={menuRef} role="menu" style={style}>
+      {children}
+    </div>,
+    document.body,
+  )
 }
 
 /**
@@ -547,14 +614,16 @@ function RowOperations({
   const { openOperations } = useOperationsWorkspace()
   const [open, setOpen] = useState(false)
   const [up, setUp] = useState(false)
-  const ref = useDismiss(open, () => setOpen(false))
+  const menuRef = useRef<HTMLDivElement>(null)
+  const ref = useDismiss(open, () => setOpen(false), menuRef)
   const primary = getPrimaryAction(row, openOperations, navigate)
 
   /**
    * The table scrolls horizontally, and CSS resolves the *other* axis to `auto`
-   * alongside it — so that wrapper clips this menu vertically as well. On the
-   * bottom rows a downward menu opens straight into the clip and is cut off, so
-   * it flips upward when there is no room below and there is room above.
+   * alongside it — so that wrapper clips an inline menu vertically as well. The
+   * menu is portaled to `document.body` (`MenuPortal`), which escapes the clip
+   * entirely; the flip below only decides whether the floating panel hangs
+   * below the trigger or above it.
    */
   function toggle() {
     if (!open) {
@@ -627,7 +696,7 @@ function RowOperations({
         </button>
 
         {open && (
-          <div role="menu" style={up ? { ...menuStyle, top: 'auto', bottom: 30 } : menuStyle}>
+          <MenuPortal anchorRef={ref} menuRef={menuRef} up={up} minWidth={226}>
             {onInspect && (
               <button
                 type="button"
@@ -755,7 +824,7 @@ function RowOperations({
                 </button>
               </>
             )}
-          </div>
+          </MenuPortal>
         )}
       </span>
     </div>
@@ -777,7 +846,8 @@ function ColumnMenu({
   toggle: (c: OptionalColumn) => void
 }) {
   const [open, setOpen] = useState(false)
-  const ref = useDismiss(open, () => setOpen(false))
+  const menuRef = useRef<HTMLDivElement>(null)
+  const ref = useDismiss(open, () => setOpen(false), menuRef)
   return (
     <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
       <button
@@ -804,7 +874,7 @@ function ColumnMenu({
         <Icon name="settings" size={15} />
       </button>
       {open && (
-        <div role="menu" style={{ ...menuStyle, minWidth: 190 }}>
+        <MenuPortal anchorRef={ref} menuRef={menuRef} up={false} minWidth={190}>
           <div style={{ padding: '4px 9px 6px', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text2)' }}>
             Columns
           </div>
@@ -821,7 +891,7 @@ function ColumnMenu({
               <span style={{ flex: 1 }}>{c}</span>
             </label>
           ))}
-        </div>
+        </MenuPortal>
       )}
     </span>
   )
@@ -884,6 +954,7 @@ function ColumnMenu({
  */
 export default function RentalsList() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const role: SystemRole = user ? user.role : 'Client'
   const canWriteDesk = canWriteBookingDesk(role)
   const canOperate = canPerformOperations(role)
@@ -1608,6 +1679,11 @@ export default function RentalsList() {
               ),
             ].filter(Boolean)}
             overflow={[
+              {
+                label: 'Productions Hub',
+                icon: 'video',
+                onClick: () => navigate('/rentals/productions'),
+              },
               {
                 label: 'Scan Barcode',
                 icon: 'search',

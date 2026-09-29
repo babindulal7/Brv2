@@ -1,5 +1,5 @@
 import Icon from '../ui/Icon'
-import { useState, useMemo } from 'react'
+import { useRef, useState, useMemo, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../../lib/auth'
 import { useViewport } from '../../lib/device'
@@ -9,6 +9,7 @@ import { useSync } from '../../lib/syncContext'
 import { QuickCreateMenu } from './QuickCreateMenu'
 import { useOptionalWorkspace } from '../../lib/workspaceContext'
 import { InfoTooltip } from '../ui/InfoTooltip'
+import InternalNotesDrawer from '../../modules/notes/InternalNotesDrawer'
 import './shell.css'
 
 export interface Crumb {
@@ -75,7 +76,25 @@ export default function Header({ crumbs, actions }: HeaderProps) {
   const isPhone = vp === 'phone'
   const [profileOpen, setProfileOpen] = useState(false)
   const [showHandover, setShowHandover] = useState(false)
+  const [notesOpen, setNotesOpen] = useState(false)
   const ws = useOptionalWorkspace()
+  const profileBtnRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'n' || e.key === 'N')) {
+        e.preventDefault()
+        setNotesOpen(v => !v)
+      }
+    }
+    const handleOpenNotes = () => setNotesOpen(true)
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('babin:open-notes', handleOpenNotes)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('babin:open-notes', handleOpenNotes)
+    }
+  }, [])
 
   const activeCrumb = crumbs[crumbs.length - 1]?.label || crumbs[0]?.label || ''
 
@@ -371,6 +390,16 @@ export default function Header({ crumbs, actions }: HeaderProps) {
       <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 'var(--sp-sm)', flexShrink: 0, marginLeft: isPhone ? 'auto' : 0 }}>
         {actions}
 
+        <button
+          type="button"
+          onClick={() => setNotesOpen(true)}
+          aria-label="Team internal notes"
+          title="Team internal notes (Alt+N)"
+          style={iconBtn}
+        >
+          <Icon name="message" size={17} />
+        </button>
+
         <QuickCreateMenu role={user?.role} compact={vp !== 'desktop'} />
 
         {isPhone && (
@@ -388,6 +417,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
         {/* Compact User Profile Trigger (Law 15: >= 44x44px hit area across all viewports) */}
         <div style={{ position: 'relative' }}>
           <button
+            ref={profileBtnRef}
             type="button"
             onClick={() => setProfileOpen((v) => !v)}
             /*
@@ -431,7 +461,14 @@ export default function Header({ crumbs, actions }: HeaderProps) {
             <>
               <div
                 style={{ position: 'fixed', inset: 0, zIndex: 90 }}
-                onClick={() => setProfileOpen(false)}
+                onClick={() => {
+                  setProfileOpen(false)
+                  // Scrim clicks land focus on body — hand it back instead of
+                  // stranding it, but never steal a focus that already moved
+                  // somewhere meaningful.
+                  const active = document.activeElement as Element | null
+                  if (!active || active === document.body) profileBtnRef.current?.focus()
+                }}
                 aria-hidden="true"
               />
               <div
@@ -527,6 +564,13 @@ export default function Header({ crumbs, actions }: HeaderProps) {
         onClose={() => setShowHandover(false)}
         userName={user?.name}
         userRole={user?.role}
+      />
+    )}
+
+    {notesOpen && (
+      <InternalNotesDrawer
+        isOpen={notesOpen}
+        onClose={() => setNotesOpen(false)}
       />
     )}
     </>

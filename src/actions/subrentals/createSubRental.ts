@@ -13,6 +13,8 @@ export type CreateSubRentalInput = {
   vendorName?: string;
   /** Item description */
   itemDescription: string;
+  /** Vendor's independent return deadline (YYYY-MM-DD). */
+  returnByDate: string;
   /** Supplier cost in Paisa */
   costPaisa?: number;
   /** Client charge rate in Paisa */
@@ -42,6 +44,16 @@ export const createSubRentalConfig: ActionConfig<CreateSubRentalInput, CreateSub
     if (!input.itemDescription || input.itemDescription.trim().length === 0) {
       throw new Error('Item description is required.');
     }
+    const date = input.returnByDate;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) {
+      throw new Error('Vendor return-by date is required in YYYY-MM-DD format.');
+    }
+    const parsed = new Date(`${date}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
+      throw new Error('Vendor return-by date must be a real calendar date.');
+    }
+    const todayNpt = new Date(Date.now() + 345 * 60_000).toISOString().slice(0, 10);
+    if (date < todayNpt) throw new Error('Vendor return-by date cannot be in the past.');
     if (input.costPaisa !== undefined && (typeof input.costPaisa !== 'number' || input.costPaisa < 0)) {
       throw new Error('Cost amount must be a non-negative number.');
     }
@@ -128,6 +140,8 @@ export const createSubRentalConfig: ActionConfig<CreateSubRentalInput, CreateSub
         client_uuid: actionUuid,
         booking_id: resolvedBooking.id,
         line_type: 'Sub-rental',
+        // RULING 2026-09-29: this deadline does not follow booking extensions.
+        subrental_return_by: input.returnByDate,
         description: input.itemDescription.trim(),
         qty,
         days,

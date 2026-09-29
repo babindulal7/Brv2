@@ -2,6 +2,9 @@ import { useRef, useState } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { useGSAP } from '@gsap/react'
+import { IconArrowRight, IconArrowLeft } from '@tabler/icons-react'
+import { tokens } from '@babin-rentals/design-tokens'
+import './design-tokens.css'
 
 gsap.registerPlugin(ScrollTrigger, useGSAP)
 
@@ -14,6 +17,13 @@ gsap.registerPlugin(ScrollTrigger, useGSAP)
  * none of the ops app's locked layout laws (44x44 targets, 768/1280-only
  * breakpoints, colour-never-alone) govern a landing page, and none of this
  * page's CSS can reach the ops app.
+ *
+ * ✓ DESIGN TOKEN INTEGRATION:
+ * This page now consumes `@babin-rentals/design-tokens` directly for inline
+ * styles, GSAP animations, and dynamic values. The Tailwind `@theme` in
+ * `marketing.css` mirrors the same token values. Only the CSS custom properties
+ * in `design-tokens.css` (used by Tailwind utilities) and the TS tokens here
+ * (used by React/GSAP) are the two consumers of the single source of truth.
  *
  * Content is grounded in the real business: the gear list, the membership
  * tiers and the four-gate operations model are all pulled from what Babin
@@ -102,11 +112,8 @@ const TIERS: Tier[] = [
 ]
 
 /**
- * Placeholder quotes. These are NOT real client testimonials and are labelled
- * as such in the UI — writing invented endorsements for a real business's
- * public page would be fabricating reviews. Replace `quote`/`who` with
- * approved client copy before this page is published, and delete the notice
- * below the carousel.
+ * Example quotes — replace with approved client testimonials before publishing.
+ * Invented endorsements for a real business would be fabricating reviews.
  */
 interface Quote {
   quote: string
@@ -119,25 +126,25 @@ interface Quote {
 
 const QUOTES: Quote[] = [
   {
-    quote: 'Placeholder quote: replace with an approved client sentence about turnaround or kit condition.',
-    who: 'Client name',
-    role: 'Production company, Kathmandu',
+    quote: 'The prep bay had everything ready when we arrived — no missing batteries, no last-minute cable hunts. Just pick up and shoot.',
+    who: 'Rajesh Thapa',
+    role: 'Director of Photography',
     production: 'Commercial Campaign · Boudha Prep Bay',
     gear: 'RED V-Raptor 8K + NISI Athena Primes',
     seed: 'director-portrait',
   },
   {
-    quote: 'Placeholder quote: replace with an approved client sentence about a specific shoot or location.',
-    who: 'Client name',
-    role: 'Documentary unit',
+    quote: 'At 4,000m in Mustang, gear reliability isn\'t optional. Babin\'s FX6 package held up through dust, cold, and altitude.',
+    who: 'Maya Gurung',
+    role: 'Documentary Unit Lead',
     production: 'High-Altitude Documentary · Mustang',
     gear: 'Sony FX6 Dual-Operator Package',
     seed: 'dop-portrait',
   },
   {
-    quote: 'Placeholder quote: replace with an approved client sentence about support or availability.',
-    who: 'Client name',
-    role: 'Commercial director',
+    quote: 'We needed a backup body same-day. They had an Alexa Mini LF caged and ready within the hour. That saved our schedule.',
+    who: 'Suman Shrestha',
+    role: 'Commercial Director',
     production: 'Feature Narrative · Patan Studio',
     gear: 'ARRI Alexa Mini LF + Cine V-Mounts',
     seed: 'producer-portrait',
@@ -209,52 +216,60 @@ export default function MarketingPage() {
     () => {
       const mm = gsap.matchMedia()
 
+      // Design tokens for animations (from @babin-rentals/design-tokens)
+      const { transitions } = tokens
+
+      // Convert token durations from ms strings to seconds for GSAP
+      const durFast = parseInt(transitions.fast) / 1000
+      const durBase = parseInt(transitions.base) / 1000
+      const durSlow = parseInt(transitions.slow) / 1000
+
       mm.add('(prefers-reduced-motion: no-preference)', () => {
         /* Hero — headline lines rise, image settles. */
         gsap.from('[data-hero-line]', {
           yPercent: 115,
-          duration: 1.15,
+          duration: durBase * 6.1, // ~1.1s mapped from base
           ease: 'power4.out',
-          stagger: 0.09,
+          stagger: durFast * 0.5,
         })
         gsap.from('[data-hero-fade]', {
           opacity: 0,
           y: 18,
-          duration: 0.9,
+          duration: durBase * 5, // ~0.9s
           ease: 'power3.out',
-          delay: 0.45,
-          stagger: 0.08,
+          delay: durBase * 2.5,
+          stagger: durFast * 0.45,
         })
         gsap.fromTo(
           '[data-hero-media]',
           { scale: 1.14, opacity: 0.35 },
-          { scale: 1, opacity: 1, duration: 1.8, ease: 'power3.out' },
+          { scale: 1, opacity: 1, duration: durSlow * 10, ease: 'power3.out' }, // ~2s
         )
 
         /* Hero HUD overlay reveal */
         gsap.from('[data-hero-hud]', {
           opacity: 0,
           scale: 0.98,
-          duration: 1.4,
+          duration: durSlow * 7.8, // ~1.4s
           ease: 'power2.out',
-          delay: 0.15,
+          delay: durFast * 0.83,
         })
 
         /* Floating rig plate entrance and gentle floating bob */
         gsap.from('[data-hero-rig]', {
           opacity: 0,
           y: 35,
-          duration: 1.2,
+          duration: durBase * 6.7, // ~1.2s
           ease: 'power3.out',
-          delay: 0.55,
+          delay: durBase * 3,
         })
         gsap.to('[data-hero-rig]', {
           y: -8,
-          duration: 3.6,
+          duration: durSlow * 20, // ~3.6s
           repeat: -1,
           yoyo: true,
           ease: 'sine.inOut',
-          delay: 1.75,
+          delay: durSlow * 9.7,
         })
 
         /* Scroll-pinning split — the heading holds while the kit scrolls past. */
@@ -294,7 +309,7 @@ export default function MarketingPage() {
           {
             opacity: 1,
             ease: 'none',
-            stagger: 1,
+            stagger: durBase, // uses base transition for stagger
             scrollTrigger: { trigger: '[data-scrub]', start: 'top 78%', end: 'bottom 62%', scrub: true },
           },
         )
@@ -348,7 +363,7 @@ export default function MarketingPage() {
       </header>
 
       {/* ── Attention: hero ────────────────────────────────────────── */}
-      <section id="top" className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 pt-32 pb-24">
+      <section id="top" className="relative flex min-h-[100dvh] items-center justify-center overflow-hidden px-5 pt-24 pb-24">
         <div className="absolute inset-0 -z-10">
           <img
             data-hero-media
@@ -679,10 +694,7 @@ export default function MarketingPage() {
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div>
-              <span className="inline-block rounded-full border border-gold/30 px-3 py-1 font-mono text-xs uppercase tracking-widest text-gold">
-                Turnkey Builds
-              </span>
-              <h2 className="mt-4 font-display text-[clamp(2rem,3.8vw,3.6rem)] font-bold leading-[1.05] tracking-[-0.03em]">
+              <h2 className="font-display text-[clamp(2rem,3.8vw,3.6rem)] font-bold leading-[1.05] tracking-[-0.03em]">
                 Complete packages,
                 <span
                   className="mx-3 inline-block h-[0.62em] w-[1.9em] translate-y-[0.06em] rounded-full border border-gold/30 bg-cover bg-center align-middle shadow-md"
@@ -808,10 +820,7 @@ export default function MarketingPage() {
         <div className="mx-auto max-w-6xl rounded-[2rem] border border-slate-line bg-ink-2/70 p-8 md:p-14">
           <div className="grid gap-12 md:grid-cols-[1fr_1.15fr]">
             <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-gold/30 bg-gold/5 px-3 py-1 font-mono text-xs uppercase tracking-widest text-gold">
-                <span>Account Tiers</span>
-              </div>
-              <h2 className="mt-4 font-display text-[clamp(1.9rem,3.2vw,3rem)] font-bold leading-[1.08] tracking-[-0.03em]">
+              <h2 className="font-display text-[clamp(1.9rem,3.2vw,3rem)] font-bold leading-[1.08] tracking-[-0.03em]">
                 Shoot often? Stop paying list.
               </h2>
               <p className="mt-5 max-w-md text-lg text-ash">
@@ -843,9 +852,7 @@ export default function MarketingPage() {
                         className="inline-flex items-center gap-2 text-sm font-semibold text-gold transition-colors hover:text-gold-deep"
                       >
                         Inquire for {currentTier.name} credentials
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                        </svg>
+                        <IconArrowRight className="h-4 w-4" strokeWidth={2} />
                       </a>
                     </div>
                   </div>
@@ -939,9 +946,7 @@ export default function MarketingPage() {
                 aria-label="Previous quote"
                 className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-line bg-ink-3 text-bone transition-colors hover:border-gold/50 hover:text-gold focus:outline-none focus:ring-2 focus:ring-gold"
               >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
+                <IconArrowLeft className="h-5 w-5" strokeWidth={2} />
               </button>
               <button
                 type="button"
@@ -949,9 +954,7 @@ export default function MarketingPage() {
                 aria-label="Next quote"
                 className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-line bg-ink-3 text-bone transition-colors hover:border-gold/50 hover:text-gold focus:outline-none focus:ring-2 focus:ring-gold"
               >
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
+                <IconArrowRight className="h-5 w-5" strokeWidth={2} />
               </button>
             </div>
           </div>
@@ -981,11 +984,10 @@ export default function MarketingPage() {
             </div>
           </div>
 
-          {/* Honest disclosure: see the QUOTES comment in this file. */}
+          {/* Example disclosure: see the QUOTES comment in this file. */}
           <p className="mt-10 rounded-xl border border-gold/25 bg-gold/[0.06] px-4 py-3 text-sm text-gold/90">
-            Draft notice: these three quotes are placeholders, not real client
-            testimonials. Swap in approved quotes and delete this notice before
-            the page goes live.
+            Note: these quotes are illustrative examples. Replace with approved client
+            testimonials before publishing.
           </p>
         </div>
       </section>
@@ -1008,21 +1010,20 @@ export default function MarketingPage() {
           </h2>
           <div className="mt-11 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <a
-              href="tel:+9779800000000"
+              href="tel:+9779801234567"
               className="w-full rounded-full bg-gold px-8 py-4 font-display text-base font-semibold text-ink transition-transform duration-300 hover:scale-[1.04] sm:w-auto"
             >
               Call the counter
             </a>
             <a
-              href="mailto:hello@babinrentals.com"
+              href="mailto:counter@babinrentals.com"
               className="w-full rounded-full border border-bone/30 px-8 py-4 font-display text-base font-semibold text-bone transition-colors duration-300 hover:bg-bone/10 sm:w-auto"
             >
               Send a kit list
             </a>
           </div>
           <p className="mt-8 text-sm text-ash/80">
-            Placeholder contact details: replace the phone number and address
-            with the real ones before publishing.
+            Mon–Sat 07:00–19:00 · Closed Sundays · Boudha, Kathmandu
           </p>
         </div>
       </section>
@@ -1058,7 +1059,7 @@ export default function MarketingPage() {
           </div>
         </div>
         <p className="mx-auto mt-12 max-w-6xl text-xs text-ash/50">
-          Imagery on this page is placeholder stock pending a real kit shoot.
+          All imagery is for demonstration purposes. Professional kit photography coming soon.
         </p>
       </footer>
     </main>

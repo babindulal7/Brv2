@@ -1245,7 +1245,12 @@ export default function HandoverWorkspace({
         // front of them now. Only the RENDERED consequences are suppressed.
         captureError(err, { where: 'HandoverWorkspace.close', bookingId: dispatchedRoute })
         if (!stillHere()) return
-        setDispatchError(formatGateError(err))
+        const message = formatGateError(err)
+        setDispatchError(
+          message.includes('invalid input value for enum delivery_method')
+            ? 'The delivery method was rejected, so this handover was not recorded. Please retry. If it still fails, contact an administrator.'
+            : message,
+        )
         setDispatching(false)
       })
   }

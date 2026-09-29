@@ -52,6 +52,10 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
+export function useOptionalToast() {
+  return useContext(ToastContext)
+}
+
 export function useToast() {
   const ctx = useContext(ToastContext)
   if (!ctx) {

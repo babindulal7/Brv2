@@ -1,11 +1,15 @@
 .operations-v2 { gap: 18px; }
 /* PageHeader typography/padding is locked (Page.tsx) — no page overrides. */
 .operations-v2__topline, .operations-v2__filters, .operations-v2__queues { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* Filters row owns a stacking level so the open date popover paints above
+   the sticky table header and row cells below it. */
+.operations-v2__filters { position: relative; z-index: 30; }
 .operations-v2__topline { justify-content: flex-end; }
 .operations-v2__queues { padding: 14px 0 6px; border-top: 1px solid var(--border); }
 .operations-v2__queue { min-height: 46px; }
 .operations-v2__date-wrap, .operations-v2__more-wrap { position: relative; }
-.operations-v2__popover { position: absolute; z-index: 10; top: calc(100% + 8px); right: 0; width: min(360px, calc(100vw - 32px)); padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow-lg); }
+.operations-v2__date-wrap:has(.operations-v2__popover) { z-index: 31; }
+.operations-v2__popover { position: absolute; z-index: 50; top: calc(100% + 8px); right: 0; width: min(360px, calc(100vw - 32px)); padding: 12px; background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); box-shadow: var(--shadow-lg); }
 .operations-v2__date-popover { left: 0; right: auto; width: 290px; }
 .operations-v2__action-popover { width: auto; min-width: 170px; }
 .operations-v2__action-popover .ui-button { width: 100%; justify-content: flex-start; }

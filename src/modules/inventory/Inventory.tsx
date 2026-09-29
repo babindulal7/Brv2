@@ -1599,6 +1599,13 @@ export default function Inventory() {
             </Button>
           </span>,
         ]}
+        overflow={[
+          {
+            label: 'Warranty Tracker',
+            icon: 'check',
+            onClick: () => navigate('/inventory/warranty'),
+          },
+        ]}
       />
     ) : null;
 

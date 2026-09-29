@@ -11,7 +11,7 @@ import Icon, { type IconName } from './Icon'
  */
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | undefined
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'link' | 'tertiary' | undefined
   size?: 'sm' | 'md' | 'lg' | undefined
   loading?: boolean | undefined
   icon?: ReactNode | IconName | undefined
@@ -60,6 +60,20 @@ function variantStyle(variant: NonNullable<ButtonProps['variant']>): CSSProperti
         color: 'var(--text2)',
         border: '1px solid transparent',
       }
+    case 'link':
+      return {
+        background: 'transparent',
+        color: 'var(--link)',
+        border: 'none',
+        padding: 0,
+        minWidth: 'auto',
+      }
+    case 'tertiary':
+      return {
+        background: 'var(--card2)',
+        color: 'var(--text)',
+        border: '1px solid var(--border)',
+      }
     case 'danger':
       return {
         background: 'var(--btn-danger-bg)',
@@ -84,6 +98,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 }, ref) {
   const sizing = SIZE_STYLES[size]
   const isDisabled = disabled || loading
+  const isLink = variant === 'link'
   const resolvedIcon = typeof icon === 'string' ? <Icon name={icon as IconName} size={sizing.iconSize} /> : icon
   const resolvedIconRight = typeof iconRight === 'string' ? <Icon name={iconRight as IconName} size={sizing.iconSize} /> : iconRight
 
@@ -97,20 +112,18 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontWeight: 600,
+        fontWeight: isLink ? 500 : 600,
         fontFamily: 'inherit',
         whiteSpace: 'nowrap',
         userSelect: 'none',
-        borderRadius: 'var(--r-btn)',
-        transition: 'background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease)',
+        borderRadius: isLink ? 0 : 'var(--r-btn)',
+        transition: 'background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease)',
         cursor: isDisabled ? 'not-allowed' : 'pointer',
-        // Containing block for the loading spinner overlay below.
         position: 'relative',
-        // §5 — disabled is opacity 0.45, never a colour change. Was 0.5.
         opacity: isDisabled ? 0.45 : 1,
         minHeight: sizing.minHeight,
         minWidth: 'var(--control-height, 44px)',
-        padding: sizing.padding,
+        padding: isLink ? 0 : sizing.padding,
         fontSize: sizing.fontSize,
         gap: sizing.gap,
         ...variantStyle(variant),
@@ -147,7 +160,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       )}
       {resolvedIcon && <span className="ui-button__slot" style={{ display: 'inline-flex', flexShrink: 0, opacity: loading ? 0 : 1 }}>{resolvedIcon}</span>}
       {children !== undefined && <span className="ui-button__label" style={{ opacity: loading ? 0 : 1 }}>{children}</span>}
-      {resolvedIconRight && <span className="ui-button__slot ui-button__trailing-bubble" style={{ opacity: loading ? 0 : 1 }}>{resolvedIconRight}</span>}
+      {resolvedIconRight && <span className="ui-button__slot" style={{ display: 'inline-flex', flexShrink: 0, opacity: loading ? 0 : 1 }}>{resolvedIconRight}</span>}
     </button>
   )
 })

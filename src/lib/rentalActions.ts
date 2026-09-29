@@ -14,6 +14,8 @@ export interface RentalPrimaryActionFacts {
   isCancelled?: boolean | undefined
   isClosed?: boolean | undefined
   isOverdue?: boolean | undefined
+  /** A partial return is in flight — the next action continues receiving, not closing. */
+  isPartial?: boolean | undefined
   canCloseRental?: boolean | undefined
   canOperate?: boolean | undefined
   cancelledReason?: string | null | undefined
@@ -66,6 +68,51 @@ export function jobToRoutePath(bookingNo: string, job: JobName): string {
 }
 
 /**
+ * RULING 2026-09-29 (audit §7 unification): this resolver is the single owner
+ * of "what is the next action on this booking". Pre-v2.0 records and loose
+ * callers may still carry the retired 12-stage vocabulary (workflow.ts §1.4),
+ * so the resolver normalizes those aliases to the canonical six itself rather
+ * than letting each surface interpret them a second time. Unknown input falls
+ * through to the View action, never to an invented transition.
+ */
+export type NormalizedBookingStage = BookingStatus | 'Cancelled' | 'Unknown'
+
+export function normalizeBookingStatus(stage: BookingStatus | string | undefined): NormalizedBookingStage {
+  const normalized = (stage ?? '').trim()
+  switch (normalized) {
+    case 'Quote':
+    case 'Draft':
+      return 'Quote'
+    case 'Booked':
+    case 'Confirmed':
+    case 'Preparing':
+    case 'Packing':
+      return 'Booked'
+    case 'Packed':
+    case 'Ready':
+      return 'Packed'
+    case 'On Rent':
+    case 'Out':
+    case 'Picked Up':
+    case 'Partial Return':
+      return 'On Rent'
+    case 'Returned':
+    case 'Inspected':
+    case 'Inspection Complete':
+    case 'Reset Complete':
+    case 'Ready for Rental':
+      return 'Returned'
+    case 'Closed':
+      return 'Closed'
+    case 'Cancelled':
+    case 'Void':
+      return 'Cancelled'
+    default:
+      return 'Unknown'
+  }
+}
+
+/**
  * Universal single source of truth for the next primary lifecycle action on any booking.
  *
  * Consumed by:
@@ -73,7 +120,7 @@ export function jobToRoutePath(bookingNo: string, job: JobName): string {
  * - RentalsList.tsx (Row primary action / Quick action)
  * - OperationsQueues.tsx
  * - Dashboard movement cards
- * - LifecycleProgress.tsx
+ * - LifecycleProgress.tsx (banner verb — presentation only, action is delegated)
  */
 export function getRentalPrimaryAction(
   stage: BookingStatus | string | undefined,
@@ -83,6 +130,7 @@ export function getRentalPrimaryAction(
     isCancelled = false,
     isClosed = false,
     isOverdue = false,
+    isPartial = false,
     canCloseRental = true,
     canOperate = true,
     cancelledReason = null,
@@ -90,8 +138,12 @@ export function getRentalPrimaryAction(
     bookingNo,
   } = facts
 
-  if (isCancelled) {
-    if (stage === 'Quote') {
+  const canonical = normalizeBookingStatus(stage)
+  /** The retired status name itself means a return is in flight (workflow.ts §1.4). */
+  const partial = isPartial || (stage ?? '').trim() === 'Partial Return'
+
+  if (isCancelled || canonical === 'Cancelled') {
+    if (canonical === 'Quote') {
       return {
         label: 'Confirm Booking',
         verb: 'Confirm',
@@ -113,7 +165,7 @@ export function getRentalPrimaryAction(
     }
   }
 
-  if (isClosed || stage === 'Closed') {
+  if (isClosed || canonical === 'Closed') {
     return {
       label: 'Rental Closed',
       verb: 'Closed',
@@ -125,7 +177,7 @@ export function getRentalPrimaryAction(
     }
   }
 
-  switch (stage) {
+  switch (canonical) {
     case 'Quote':
       return {
         label: 'Confirm Booking',
@@ -172,6 +224,19 @@ export function getRentalPrimaryAction(
     case 'On Rent': {
       const disabled = !canOperate || Boolean(operationsUnavailable) || Boolean(cancelledReason)
       const route = bookingNo ? jobToRoutePath(bookingNo, 'Return') : undefined
+      if (partial) {
+        return {
+          label: 'Continue Return',
+          verb: 'Continue Return',
+          icon: 'return_arrow',
+          job: 'Return',
+          route,
+          actionType: 'return',
+          disabled,
+          reason: cancelledReason || operationsUnavailable,
+          isOperable: true,
+        }
+      }
       return {
         label: isOverdue ? 'Receive Overdue Return' : 'Return & Inspect',
         verb: isOverdue ? 'Receive Return' : 'Return',

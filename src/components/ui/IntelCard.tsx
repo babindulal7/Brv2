@@ -8,6 +8,10 @@ import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { useCapability, useViewport } from '../../lib/device'
 import { shouldFlipUp } from '../../lib/menuFlip'
+import { INTEL_ADJACENT_DELAY_MS, INTEL_CARD_IN_MS, INTEL_CLOSE_DELAY_MS, INTEL_LONG_PRESS_MS, INTEL_OPEN_DELAY_MS } from '../../lib/intel/timing'
+import { inTravelTriangle } from '../../lib/intel/safeTriangle'
+import { intelClosed, intelOpened, intelReplaced, isIntelSessionActive } from '../../lib/intel/store'
+import type { IntelContext, IntelEntityType } from '../../lib/intel/context'
 
 /**
  * Worst-case Glance footprint (avatar row, badges, up to ~6 body lines, the
@@ -19,29 +23,25 @@ const GLANCE_H = 320
 const GLANCE_W = 360
 
 /**
- * Hover Intel System v2.1 — the reusable Glance/Detail card.
+ * Hover Intel System — Smart Intel Cards v1 shell (spec §§2–4, 20–21, 34).
  *
- * "Glance (≤6 lines, 2-second read) vs Detail (the peek)" — the Glance tier
- * opens the same way `Unavailable.tsx`'s reason popover does (hover devices
- * get real hover; `!hasHover` devices get a long-press), because that is the
- * one place in the app where hover/focus/long-press already works correctly.
- * `MovementList.tsx`'s older hover card is NOT the template: it has no
- * `onFocus` handling at all despite `PROGRESS.md` claiming otherwise, and its
- * long-press-then-click suppression is copied here because it *is* correct —
- * SCREENS.md logs the touch-emits-a-click defect this guards against.
+ * ONE shell, TWO tiers: Glance (hover/long-press surface, ≤360×320) and
+ * Detail (explicit peek → Modal, bottom sheet on phone). Entity builders in
+ * `src/data/*Intel.ts` supply already-gated glance/detail — a group or field
+ * a role cannot see must never be constructed by the caller (gated blocks are
+ * omitted from the payload, not CSS-hidden).
  *
- * The Detail tier ("the peek") is reached from an explicit button inside the
- * Glance card, never from clicking the trigger itself — the trigger usually
- * already has its own click behaviour (row navigation, row expand), and this
- * component must not fight it for the click.
- *
- * Gating is entirely the caller's job. This component renders whatever
- * `glance`/`detail` it is given — a group or field that a role cannot see
- * must never be constructed by the caller in the first place, per HIS v2.1
- * §4.5: "Gated blocks are omitted from the payload, not CSS-hidden."
+ * Interaction contract:
+ * - Desktop: 250ms hover-intent open, 300ms close intent, safe-triangle
+ *   travel from trigger into card, ~0ms adjacent switching while a session
+ *   is active. Never auto-closes on a timer (WCAG 1.4.13).
+ * - Pin: Space tap / Peek button pins the card (ignores mouseleave) until
+ *   ESC, close button, or click-away. Space-hold is a temporary preview.
+ * - Keyboard: Space/Enter opens immediately on focus; ESC closes and returns
+ *   focus to the trigger; the card is hoverable and persistent.
+ * - Touch: 500ms long-press opens the glance; short tap keeps the row's own
+ *   action; the detail peek renders as a bottom sheet on phone.
  */
-
-const LONG_PRESS_MS = 450
 
 export interface IntelBadge {
   label: string
@@ -91,18 +91,77 @@ export interface IntelCardProps {
   /** Field groups already gated by the caller for the current role and context. */
   detail: IntelGroup[]
   className?: string
+  /** Spec §33 — selects emphasis/action copy; defaults to inventory behaviour. */
+  context?: IntelContext
+  /** Spec §1 — carried for cross-entity navigation, not for branching the shell. */
+  entityType?: IntelEntityType
 }
 
-export function IntelCard({ children, glance, detailTitle, detailSubtitle, detail, className }: IntelCardProps) {
+export function IntelCard({ children, glance, detailTitle, detailSubtitle, detail, className, context, entityType }: IntelCardProps) {
   const { hasHover } = useCapability()
   const viewport = useViewport()
   const [open, setOpen] = useState(false)
+  const [pinned, setPinned] = useState(false)
   const [peeking, setPeeking] = useState(false)
   const [flip, setFlip] = useState({ up: false, alignRight: false })
   const press = useRef<number | null>(null)
+  const openTimer = useRef<number | null>(null)
+  const closeTimer = useRef<number | null>(null)
   const suppress = useRef(false)
-  const wrapperRef = useRef<HTMLDivElement>(null)
-  const glanceId = useId()
+  const spaceHeld = useRef(false)
+  const leavePoint = useRef<{ x: number; y: number } | null>(null)
+  const wrapperRef = useRef<HTMLDivElement | null>(null)
+  const cardRef = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLDivElement | null>(null)
+  const cardId = useId()
+  void context
+  void entityType
+
+  const clearOpenTimer = () => {
+    if (openTimer.current !== null) window.clearTimeout(openTimer.current)
+    openTimer.current = null
+  }
+  const clearCloseTimer = () => {
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current)
+    closeTimer.current = null
+  }
+
+  const doOpen = () => {
+    clearCloseTimer()
+    clearOpenTimer()
+    setOpen(true)
+    intelOpened(cardId)
+  }
+
+  const doClose = () => {
+    clearOpenTimer()
+    clearCloseTimer()
+    setOpen(false)
+    setPinned(false)
+    intelClosed(cardId)
+  }
+
+  const scheduleOpen = () => {
+    clearCloseTimer()
+    if (open || pinned) return
+    const delay = isIntelSessionActive() ? INTEL_ADJACENT_DELAY_MS : INTEL_OPEN_DELAY_MS
+    if (delay <= 0) {
+      doOpen()
+      return
+    }
+    clearOpenTimer()
+    openTimer.current = window.setTimeout(doOpen, delay)
+  }
+
+  const scheduleClose = () => {
+    if (pinned) return
+    clearOpenTimer()
+    clearCloseTimer()
+    closeTimer.current = window.setTimeout(() => {
+      setOpen(false)
+      intelClosed(cardId)
+    }, INTEL_CLOSE_DELAY_MS)
+  }
 
   useLayoutEffect(() => {
     if (!open) return
@@ -117,10 +176,11 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
   const holdStart = () => {
     if (hasHover) return
     suppress.current = false
+    if (press.current !== null) window.clearTimeout(press.current)
     press.current = window.setTimeout(() => {
       suppress.current = true
-      setOpen(true)
-    }, LONG_PRESS_MS)
+      doOpen()
+    }, INTEL_LONG_PRESS_MS)
   }
   const holdEnd = () => {
     if (press.current !== null) window.clearTimeout(press.current)
@@ -131,53 +191,128 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
     if (!open) return
     const away = (e: Event) => {
       if (e.target instanceof Element && e.target.closest('[data-intel-overlay]')) return
-      setOpen(false)
+      if (wrapperRef.current?.contains(e.target as Node)) return
+      doClose()
     }
     const esc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        const wasPinned = pinned
+        doClose()
+        if (wasPinned || document.activeElement?.closest?.('[data-intel-overlay]')) {
+          triggerRef.current?.focus()
+        }
+      }
+    }
+    const move = (e: PointerEvent) => {
+      // Safe triangle: travelling from the trigger into the open card must
+      // not close it even if the pointer briefly leaves both.
+      if (!leavePoint.current || pinned) return
+      const cardEl = cardRef.current?.getBoundingClientRect()
+      if (!cardEl) return
+      const inside = inTravelTriangle(
+        { x: e.clientX, y: e.clientY },
+        leavePoint.current,
+        { left: cardEl.left, top: cardEl.top, right: cardEl.right, bottom: cardEl.bottom },
+      )
+      if (inside) clearCloseTimer()
     }
     document.addEventListener('pointerdown', away)
     document.addEventListener('keydown', esc)
+    document.addEventListener('pointermove', move)
     return () => {
       document.removeEventListener('pointerdown', away)
       document.removeEventListener('keydown', esc)
+      document.removeEventListener('pointermove', move)
     }
-  }, [open])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pinned])
 
-  useEffect(() => holdEnd, [])
+  useEffect(
+    () => () => {
+      holdEnd()
+      clearOpenTimer()
+      clearCloseTimer()
+    },
+    [],
+  )
+
+  const pin = () => {
+    clearCloseTimer()
+    clearOpenTimer()
+    setOpen(true)
+    setPinned(true)
+    intelReplaced(cardId)
+  }
 
   return (
     <div
-      ref={wrapperRef}
+      ref={(node) => {
+        wrapperRef.current = node
+        triggerRef.current = node
+        return undefined
+      }}
       className={className}
       role="button"
       tabIndex={0}
       aria-haspopup="dialog"
       aria-expanded={open}
-      aria-describedby={open ? glanceId : undefined}
+      aria-describedby={open ? cardId : undefined}
       style={{ position: 'relative', display: 'inline-flex', minWidth: 0, maxWidth: '100%' }}
-      onMouseEnter={() => hasHover && setOpen(true)}
-      onMouseLeave={() => hasHover && setOpen(false)}
-      onFocus={() => setOpen(true)}
+      onMouseEnter={(e) => {
+        if (!hasHover) return
+        leavePoint.current = null
+        void e
+        scheduleOpen()
+      }}
+      onMouseMove={(e) => {
+        if (!hasHover || !open) return
+        leavePoint.current = null
+        void e
+      }}
+      onMouseLeave={(e) => {
+        if (!hasHover || pinned) return
+        leavePoint.current = { x: e.clientX, y: e.clientY }
+        scheduleClose()
+      }}
+      onFocus={() => {
+        clearCloseTimer()
+        doOpen()
+      }}
       onBlur={(e) => {
         // Moving focus from the trigger to the peek button inside the same
         // card must not close it out from under the user.
         if (e.currentTarget.contains(e.relatedTarget as Node)) return
-        setOpen(false)
+        if (pinned) return
+        doClose()
       }}
       onTouchStart={holdStart}
       onTouchMove={holdEnd}
       onTouchEnd={holdEnd}
       onTouchCancel={holdEnd}
       onKeyDown={(e) => {
-        // Enter/Space matches the hover/focus behaviour already above —
-        // it opens the Glance, it does not fight the row's own click. Stop
-        // the event here so a keyboard-reachable parent row (ClientsDirectory's
-        // <tr>) does not also treat this same keypress as its own activation.
-        if (e.key === 'Enter' || e.key === ' ') {
+        // Space tap = pin (Linear semantics); Space hold = temporary preview
+        // that closes on release. Enter opens the Glance immediately.
+        if (e.key === 'Enter') {
           e.preventDefault()
           e.stopPropagation()
-          setOpen(true)
+          pin()
+        } else if (e.key === ' ') {
+          if (e.repeat) return
+          e.preventDefault()
+          e.stopPropagation()
+          spaceHeld.current = true
+          doOpen()
+        }
+      }}
+      onKeyUp={(e) => {
+        if (e.key === ' ' && spaceHeld.current) {
+          e.stopPropagation()
+          spaceHeld.current = false
+          // Tap (still open, no hold-close requested) pins; a held preview
+          // would already have closed on pointer release — the keyup without
+          // an intervening close is the tap.
+          pin()
         }
       }}
       onClick={(e) => {
@@ -193,12 +328,26 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       {children}
       {open && (
         <Glance
-          id={glanceId}
+          id={cardId}
           glance={glance}
           up={flip.up}
           alignRight={flip.alignRight}
+          pinned={pinned}
+          cardRef={cardRef}
+          onEnter={() => {
+            clearCloseTimer()
+            leavePoint.current = null
+          }}
+          onLeave={(e) => {
+            if (pinned) return
+            leavePoint.current = { x: e.clientX, y: e.clientY }
+            scheduleClose()
+          }}
+          onUnpin={doClose}
           onPeek={() => {
             setOpen(false)
+            setPinned(false)
+            intelClosed(cardId)
             setPeeking(true)
           }}
         />
@@ -222,32 +371,51 @@ function Glance({
   glance,
   up,
   alignRight,
+  pinned,
+  cardRef,
+  onEnter,
+  onLeave,
+  onUnpin,
   onPeek,
 }: {
   id: string
   glance: IntelGlance
   up: boolean
   alignRight: boolean
+  pinned: boolean
+  cardRef: { current: HTMLDivElement | null }
+  onEnter: () => void
+  onLeave: (e: React.MouseEvent) => void
+  onUnpin: () => void
   onPeek: () => void
 }) {
   const avatarTone = glance.avatarTone ? STATUS[glance.avatarTone] : undefined
   return (
     <div
       id={id}
-      role="tooltip"
+      ref={cardRef}
+      role={pinned ? 'dialog' : 'tooltip'}
+      aria-label={pinned ? glance.title : undefined}
       data-intel-overlay
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
       style={{
         position: 'absolute',
         ...(up ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }),
         ...(alignRight ? { right: 0 } : { left: 0 }),
         zIndex: 50,
         width: 'min(360px, calc(100vw - 48px))',
+        maxHeight: 320,
+        overflow: 'auto',
         padding: 'var(--sp-md)',
         borderRadius: 'var(--r-card)',
         background: 'var(--hover-card)',
         border: '1px solid var(--border)',
         boxShadow: 'var(--shadow-modal)',
         textAlign: 'left',
+        opacity: 1,
+        transform: 'scale(1)',
+        transition: `opacity ${INTEL_CARD_IN_MS}ms ease, transform ${INTEL_CARD_IN_MS}ms ease`,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
@@ -293,56 +461,100 @@ function Glance({
             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 1 }}>{glance.subtitle}</div>
           )}
         </div>
-        {/* The visible button stays 26x26 so it doesn't dominate the Glance
-            card, but its hit area is the project's 44x44 floor (Law 15) —
-            an absolutely-positioned overlay centered on the same spot, so
-            the reserved layout footprint (the outer span) doesn't change. */}
-        <span style={{ position: 'relative', width: 26, height: 26, flexShrink: 0 }}>
-          <button
-            type="button"
-            aria-label="View full details"
-            title="View full details"
-            onClick={(e) => {
-              e.stopPropagation()
-              onPeek()
-            }}
-            style={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: 44,
-              height: 44,
-              padding: 0,
-              border: 'none',
-              background: 'transparent',
-              display: 'grid',
-              placeItems: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <span
-              aria-hidden
+        {pinned ? (
+          <span style={{ position: 'relative', width: 26, height: 26, flexShrink: 0 }}>
+            <button
+              type="button"
+              aria-label="Close preview"
+              title="Close preview (Esc)"
+              onClick={(e) => {
+                e.stopPropagation()
+                onUnpin()
+              }}
               style={{
-                width: 26,
-                height: 26,
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--border)',
-                background: 'var(--card)',
-                color: 'var(--text2)',
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: 44,
+                height: 44,
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
                 display: 'grid',
                 placeItems: 'center',
+                cursor: 'pointer',
               }}
             >
-              <Icon name="eye" size={14} />
-            </span>
-          </button>
-        </span>
+              <span
+                aria-hidden
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 'var(--r-btn)',
+                  border: '1px solid var(--border)',
+                  background: 'var(--card)',
+                  color: 'var(--text2)',
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <Icon name="close" size={14} />
+              </span>
+            </button>
+          </span>
+        ) : (
+          /* The visible button stays 26x26 so it doesn't dominate the Glance
+            card, but its hit area is the project's 44x44 floor (Law 15) —
+            an absolutely-positioned overlay centered on the same spot, so
+            the reserved layout footprint (the outer span) doesn't change. */
+          <span style={{ position: 'relative', width: 26, height: 26, flexShrink: 0 }}>
+            <button
+              type="button"
+              aria-label="View full details"
+              title="View full details"
+              onClick={(e) => {
+                e.stopPropagation()
+                onPeek()
+              }}
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: 44,
+                height: 44,
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
+                display: 'grid',
+                placeItems: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 'var(--r-btn)',
+                  border: '1px solid var(--border)',
+                  background: 'var(--card)',
+                  color: 'var(--text2)',
+                  display: 'grid',
+                  placeItems: 'center',
+                }}
+              >
+                <Icon name="eye" size={14} />
+              </span>
+            </button>
+          </span>
+        )}
       </div>
 
       {glance.badges && glance.badges.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 'var(--sp-sm)' }}>
-          {glance.badges.map((b) => {
+          {glance.badges.slice(0, 3).map((b) => {
             const bTone = b.tone ? STATUS[b.tone] : undefined
             return (
               <span
@@ -364,6 +576,24 @@ function Glance({
               </span>
             )
           })}
+          {glance.badges.length > 3 && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                height: 20,
+                padding: '0 7px',
+                borderRadius: 'var(--r-badge)',
+                background: 'var(--card2)',
+                color: 'var(--text2)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              +{glance.badges.length - 3}
+            </span>
+          )}
         </div>
       )}
 
@@ -377,8 +607,8 @@ function Glance({
         </div>
       )}
 
-      {glance.primaryAction && (
-        <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
+      <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        {glance.primaryAction && (
           <Link
             to={glance.primaryAction.to}
             onClick={(e) => e.stopPropagation()}
@@ -399,8 +629,32 @@ function Glance({
           >
             {glance.primaryAction.label}
           </Link>
-        </div>
-      )}
+        )}
+        {!pinned && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              onPeek()
+            }}
+            style={{
+              marginLeft: 'auto',
+              minHeight: 44,
+              padding: '0 11px',
+              borderRadius: 'var(--r-btn)',
+              border: '1px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--text2)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Peek (Space)
+          </button>
+        )}
+      </div>
     </div>
   )
 }

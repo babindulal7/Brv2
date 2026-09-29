@@ -48,7 +48,13 @@ export function QuickCreateMenu({ role, compact = false }: { role: SystemRole | 
   useEffect(() => {
     if (!open) return
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node) && !triggerRef.current?.contains(event.target as Node)) setOpen(false)
+      if (!menuRef.current?.contains(event.target as Node) && !triggerRef.current?.contains(event.target as Node)) {
+        setOpen(false)
+        // The pointer already moved focus where the user clicked — hand it
+        // back only when dismissal would otherwise strand it on body.
+        const active = document.activeElement as Element | null
+        if (!active || active === document.body) triggerRef.current?.focus()
+      }
     }
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -150,7 +156,7 @@ export function QuickCreateMenu({ role, compact = false }: { role: SystemRole | 
           ref={menuRef}
           id={menuId}
           role="menu"
-          aria-label="Create"
+          aria-label="Create actions"
           onKeyDown={(event) => {
             const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
             const current = items.indexOf(document.activeElement as HTMLButtonElement)

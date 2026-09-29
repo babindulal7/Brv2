@@ -161,17 +161,17 @@ export function BooqableRentalFilterDrawer({
           </div>
         </FilterSection>
 
-        {/* Section 2: Rental Stage / Status Facets */}
-        <FilterSection
-          title="Status"
-          defaultOpen
-          badge={
-            statusFilter.size > 0 ? (
-              <Badge tone="primary" label={`${statusFilter.size} active`} size="sm" />
-            ) : undefined
-          }
-        >
-          <div style={{ display: 'grid', gap: 6 }}>
+        {/* Section 2: Rental Stage / Status Facets — inline chip grid instead of accordion */}
+        <div style={{ marginBottom: 'var(--sp-lg)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-sm)' }}>
+            <h3 style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+              Status
+            </h3>
+            {statusFilter.size > 0 && (
+              <Badge tone="primary" label={`${statusFilter.size} active`} size="sm" variant="square" />
+            )}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {STATUS_ORDER.map((stage) => {
               const isChecked = statusFilter.has(stage)
               const count = stageCounts[stage]
@@ -180,9 +180,9 @@ export function BooqableRentalFilterDrawer({
                 <label
                   key={stage}
                   style={{
-                    display: 'flex',
+                    display: 'inline-flex',
                     alignItems: 'center',
-                    gap: 10,
+                    gap: 8,
                     minHeight: 44,
                     padding: '0 12px',
                     borderRadius: 'var(--r-sm)',
@@ -205,8 +205,8 @@ export function BooqableRentalFilterDrawer({
                       accentColor: 'var(--primary)',
                     }}
                   />
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Badge tone={stage === 'Closed' ? 'neutral' : stage === 'Returned' ? 'in' : 'progress'} label={stage} size="sm" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Badge tone={stage === 'Closed' ? 'neutral' : stage === 'Returned' ? 'in' : 'progress'} label={stage} size="sm" variant="square" />
                   </div>
                   {count !== undefined && count !== null && (
                     <span
@@ -225,7 +225,7 @@ export function BooqableRentalFilterDrawer({
               )
             })}
           </div>
-        </FilterSection>
+        </div>
 
         {/* Section 3: Booqable Date Range Presets */}
         {onChangeDateRange && (

@@ -112,7 +112,7 @@ export default function DashboardMovementPanel({
           emptyIsFiltered={list.isFiltered}
           onClearFilters={onClearFilters}
           noun={noun}
-          skeleton="table"
+          skeleton="movement"
           skeletonRows={3}
           emptyTitle={`No ${noun} ${periodLabel}.`}
           emptyMessage={

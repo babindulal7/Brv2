@@ -1417,7 +1417,7 @@ function PreviewCard({
                 <Icon name={iconFor(g.name)} size={13} style={{ color: 'var(--muted)' }} />
                 <span style={{ fontWeight: 600 }}>{g.name}</span>
                 {notInRate && (
-                  <span style={{ ...subtle, fontStyle: 'italic' }}>
+                  <span style={{ ...subtle, fontStyle: 'italic', lineHeight: '1.5' }}>
                     (not in rate) <NotInRate what={g.name.toLowerCase()} />
                   </span>
                 )}

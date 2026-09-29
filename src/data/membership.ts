@@ -71,13 +71,15 @@ export interface MemberRow {
   creditDefaultPaisa?: Paisa
   /** Lapsed members keep the figure struck through, not deleted. */
   creditWithdrawn?: boolean
+  /** Reliability and return health score (0-100), ported from standalone */
+  healthScore?: number | undefined
 }
 
 export const MEMBERS: MemberRow[] = [
   {
     id: 'M-1',
     name: 'ABC Films Pvt. Ltd.', kind: 'Production Company', initials: 'AB', avatarTone: 'neutral',
-    level: 'Production Alliance', bucket: 'Expiring', statusNote: 'Expiring in 23d',
+    level: 'Production Alliance', bucket: 'Expiring', statusNote: 'Expiring in 23d', healthScore: 94,
     joinAd: '15 Jan 2025', joinBs: '2081-10-02 BS', renewAd: '05 Jan 2027', renewBs: '2083-09-21 BS',
     daysLeft: 23, feePaisa: rupees(80000), savingsPaisa: rupees(62000), savingsNote: '14.8% of Rs 4.2L',
     lifetimePaisa: rupees(420000), bookings: { text: '18 / 20', pct: 90 }, rentals: { text: '2 / 7', pct: 29 },
@@ -86,7 +88,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-2',
     name: 'Hari KC', kind: 'Filmmaker', initials: 'HK', avatarTone: 'primary',
-    level: 'Cinematographer', bucket: 'Expiring', statusNote: 'Expiring in 23d',
+    level: 'Cinematographer', bucket: 'Expiring', statusNote: 'Expiring in 23d', healthScore: 88,
     joinAd: '10 Feb 2026', joinBs: '2083-10-28 BS', renewAd: '05 Jan 2027', renewBs: '2083-09-21 BS',
     daysLeft: 23, feePaisa: rupees(35000), savingsPaisa: rupees(62000), savingsNote: '14.8% of Rs 4.2L',
     lifetimePaisa: rupees(420000), bookings: { text: '7 / 10', pct: 70 }, rentals: { text: '2 / 3', pct: 67 },
@@ -95,7 +97,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-3',
     name: 'Mountain Stories', kind: 'Production Company', initials: 'MS', avatarTone: 'in',
-    level: 'Creator', bucket: 'Expiring', statusNote: 'Expiring in 19d',
+    level: 'Creator', bucket: 'Expiring', statusNote: 'Expiring in 19d', healthScore: 82,
     joinAd: '18 Mar 2026', joinBs: '2083-12-05 BS', renewAd: '18 Mar 2027', renewBs: '2083-12-04 BS',
     daysLeft: 19, feePaisa: rupees(15000), savingsPaisa: rupees(18000), savingsNote: '10.0% of Rs 1.8L',
     lifetimePaisa: rupees(180000), bookings: { text: '7 / 7', pct: 100, capped: true }, rentals: { text: '2 / 2', pct: 100, capped: true },
@@ -104,7 +106,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-4',
     name: 'Oscar College', kind: 'Educational Institution', initials: 'OC', avatarTone: 'neutral',
-    level: 'Academy', bucket: 'Active', statusNote: 'Renews in 157d',
+    level: 'Academy', bucket: 'Active', statusNote: 'Renews in 157d', healthScore: 90,
     joinAd: '05 Jan 2026', joinBs: '2082-09-21 BS', renewAd: '05 Jan 2027', renewBs: '2083-09-21 BS',
     daysLeft: 157, feePaisa: rupees(6000), savingsPaisa: rupees(4200), savingsNote: '10.0% of Rs 42K',
     lifetimePaisa: rupees(42000), bookings: { text: '2 / 3', pct: 67 }, rentals: { text: '1 / 1', pct: 100, capped: true },
@@ -113,7 +115,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-5',
     name: 'Vision Production House', kind: 'Production Company', initials: 'VP', avatarTone: 'danger',
-    level: 'Production Alliance', bucket: 'Lapsed', statusNote: '181 days overdue',
+    level: 'Production Alliance', bucket: 'Lapsed', statusNote: '181 days overdue', healthScore: 42,
     joinAd: '01 Feb 2025', joinBs: '2081-10-19 BS', renewAd: '01 Feb 2026', renewBs: '2082-10-19 BS',
     daysLeft: -181, feePaisa: rupees(80000), savingsPaisa: rupees(165000), savingsNote: '16.8% of Rs 9.8L',
     lifetimePaisa: rupees(980000), bookings: { text: '0 / 20', pct: 0, suspended: true }, rentals: { text: '0 / 7', pct: 0, suspended: true },
@@ -122,7 +124,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-6',
     name: 'Kathmandu Cinema Works', kind: 'Production Company', initials: 'KC', avatarTone: 'progress',
-    level: 'Production Alliance', bucket: 'Active', statusNote: 'Renews in 211d',
+    level: 'Production Alliance', bucket: 'Active', statusNote: 'Renews in 211d', healthScore: 86,
     joinAd: '02 Sep 2026', joinBs: '2083-05-17 BS', renewAd: '26 Feb 2027', renewBs: '2083-11-14 BS',
     daysLeft: 211, feePaisa: rupees(80000), savingsPaisa: rupees(212000), savingsNote: '16.9% of Rs 12.5L',
     lifetimePaisa: rupees(1250000), bookings: { text: '12 / 20', pct: 60 }, rentals: { text: '2 / 7', pct: 29 },
@@ -131,7 +133,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-7',
     name: 'Himalayan Mountain Media', kind: 'Broadcaster', initials: 'HM', avatarTone: 'out',
-    level: 'Elite', bucket: 'Active', statusNote: 'Renews in 289d',
+    level: 'Elite', bucket: 'Active', statusNote: 'Renews in 289d', healthScore: 98,
     joinAd: '14 May 2023', joinBs: '2080-01-31 BS', renewAd: '15 May 2027', renewBs: '2084-02-01 BS',
     daysLeft: 289, feePaisa: rupees(150000), savingsPaisa: rupees(486000), savingsNote: '18.0% of Rs 27L',
     lifetimePaisa: rupees(2700000), bookings: { text: '9 / ∞', pct: 30 }, rentals: { text: '3 / ∞', pct: 22 },
@@ -140,7 +142,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-8',
     name: 'Red Dot Films', kind: 'Production Company', initials: 'RD', avatarTone: 'out',
-    level: 'Elite', bucket: 'Active', statusNote: 'Renews in 96d',
+    level: 'Elite', bucket: 'Active', statusNote: 'Renews in 96d', healthScore: 95,
     joinAd: '04 Nov 2023', joinBs: '2080-07-18 BS', renewAd: '04 Nov 2026', renewBs: '2083-07-18 BS',
     daysLeft: 96, feePaisa: rupees(150000), savingsPaisa: rupees(392000), savingsNote: '17.4% of Rs 22.5L',
     lifetimePaisa: rupees(2250000), bookings: { text: '7 / ∞', pct: 24 }, rentals: { text: '2 / ∞', pct: 15 },
@@ -149,7 +151,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-9',
     name: 'ICIMOD Communications', kind: 'NGO', initials: 'IC', avatarTone: 'primary',
-    level: 'Production Alliance', bucket: 'Grace', statusNote: 'In grace — 12d left',
+    level: 'Production Alliance', bucket: 'Grace', statusNote: 'In grace — 12d left', healthScore: 64,
     joinAd: '20 Jul 2022', joinBs: '2079-04-04 BS', renewAd: '08 Jul 2026', renewBs: '2083-03-24 BS',
     daysLeft: -12, feePaisa: rupees(80000), savingsPaisa: rupees(96000), savingsNote: '14.2% of Rs 6.8L',
     lifetimePaisa: rupees(680000), bookings: { text: '5 / 20', pct: 25 }, rentals: { text: '1 / 7', pct: 14 },
@@ -158,7 +160,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-10',
     name: 'Nepal Tourism Board', kind: 'Government', initials: 'NT', avatarTone: 'progress',
-    level: 'Production Alliance', bucket: 'Active', statusNote: 'Renews in 134d',
+    level: 'Production Alliance', bucket: 'Active', statusNote: 'Renews in 134d', healthScore: 92,
     joinAd: '12 Dec 2026', joinBs: '2083-08-27 BS', renewAd: '12 Dec 2026', renewBs: '2083-08-27 BS',
     daysLeft: 134, feePaisa: rupees(80000), savingsPaisa: rupees(74000), savingsNote: '13.1% of Rs 5.6L',
     lifetimePaisa: rupees(560000), bookings: { text: '3 / 20', pct: 15 }, rentals: { text: '0 / 7', pct: 0 },
@@ -167,7 +169,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-11',
     name: 'Bikram Rai', kind: 'Freelance DoP', initials: 'BR', avatarTone: 'primary',
-    level: 'Cinematographer', bucket: 'Active', statusNote: 'Renews in 178d',
+    level: 'Cinematographer', bucket: 'Active', statusNote: 'Renews in 178d', healthScore: 89,
     joinAd: '25 Jan 2026', joinBs: '2083-10-11 BS', renewAd: '25 Jan 2027', renewBs: '2083-10-11 BS',
     daysLeft: 178, feePaisa: rupees(35000), savingsPaisa: rupees(41000), savingsNote: '12.4% of Rs 3.3L',
     lifetimePaisa: rupees(330000), bookings: { text: '6 / 10', pct: 60 }, rentals: { text: '1 / 3', pct: 33 },
@@ -176,7 +178,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-12',
     name: 'Sushil Lama Visuals', kind: 'Freelancer', initials: 'SL', avatarTone: 'in',
-    level: 'Creator', bucket: 'Grace', statusNote: 'In grace — 4d left',
+    level: 'Creator', bucket: 'Grace', statusNote: 'In grace — 4d left', healthScore: 58,
     joinAd: '16 Jun 2023', joinBs: '2080-03-01 BS', renewAd: '16 Jun 2026', renewBs: '2083-03-01 BS',
     daysLeft: -26, feePaisa: rupees(15000), savingsPaisa: rupees(11000), savingsNote: '10.2% of Rs 1.1L',
     lifetimePaisa: rupees(108000), bookings: { text: '4 / 7', pct: 57 }, rentals: { text: '1 / 2', pct: 50 },
@@ -185,7 +187,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-13',
     name: 'Apex College Media Club', kind: 'Educational Institution', initials: 'AC', avatarTone: 'neutral',
-    level: 'Academy', bucket: 'Active', statusNote: 'Renews in 243d',
+    level: 'Academy', bucket: 'Active', statusNote: 'Renews in 243d', healthScore: 84,
     joinAd: '01 Apr 2026', joinBs: '2082-12-19 BS', renewAd: '01 Apr 2027', renewBs: '2083-12-18 BS',
     daysLeft: 243, feePaisa: rupees(6000), savingsPaisa: rupees(3100), savingsNote: '10.0% of Rs 31K',
     lifetimePaisa: rupees(31000), bookings: { text: '1 / 3', pct: 33 }, rentals: { text: '0 / 1', pct: 0 },
@@ -194,7 +196,7 @@ export const MEMBERS: MemberRow[] = [
   {
     id: 'M-14',
     name: 'Kathmandu University', kind: 'Educational Institution', initials: 'KU', avatarTone: 'neutral',
-    level: 'Academy', bucket: 'Active', statusNote: 'Renews in 61d',
+    level: 'Academy', bucket: 'Active', statusNote: 'Renews in 61d', healthScore: 91,
     joinAd: '30 Sep 2025', joinBs: '2082-06-14 BS', renewAd: '30 Sep 2026', renewBs: '2083-06-14 BS',
     daysLeft: 61, feePaisa: rupees(6000), savingsPaisa: rupees(9200), savingsNote: '10.0% of Rs 92K',
     lifetimePaisa: rupees(92000), bookings: { text: '3 / 3', pct: 100, capped: true }, rentals: { text: '1 / 1', pct: 100, capped: true },

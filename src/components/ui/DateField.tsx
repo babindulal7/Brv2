@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
 import Icon from './Icon'
 import { TouchTarget } from './TouchTarget'
@@ -139,7 +140,7 @@ const iconBtnStyle: CSSProperties = {
 
 const popoverStyle: CSSProperties = {
   position: 'absolute',
-  zIndex: 40,
+  zIndex: 'var(--z-dropdown)',
   top: 'calc(100% + 6px)',
   padding: '16px',
   background: 'var(--card, #ffffff)',
@@ -979,13 +980,70 @@ export function DateField({
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const buttonRef = useRef<HTMLButtonElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const panelAdjusted = useRef(false)
+  /* Floating position of the portaled calendar. Measured from the field on
+     open and re-measured on scroll/resize so it tracks. */
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  const measurePanel = () => {
+    // Zero-size anchor: the inner CalendarPopover keeps its own absolute
+    // `top: calc(100% + 6px)` + left/right positioning, which now resolves
+    // against this fixed point instead of the clipping field wrapper.
+    const el = rootRef.current
+    if (!el) return
+    panelAdjusted.current = false
+    const r = el.getBoundingClientRect()
+    // Panel width is min(360px, 100vw-24px) per popoverStyle. The inner panel
+    // keeps its own absolute left:0 / right:0 anchoring against this
+    // zero-size point, so: left-anchored needs the point clamped by width,
+    // right-anchored needs just the trigger's right edge (the panel extends
+    // left from it) unless that would run off the left edge.
+    const panelW = Math.min(360, window.innerWidth - 24)
+    const left = align === 'right' && r.right - panelW >= 8
+      ? r.right
+      : Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - panelW - 8))
+    setPanelPos({ top: r.bottom, left, width: 0 })
+  }
+
+  useEffect(() => {
+    if (!open) {
+      panelAdjusted.current = false
+      return
+    }
+    measurePanel()
+    window.addEventListener('scroll', measurePanel, true)
+    window.addEventListener('resize', measurePanel)
+    return () => {
+      window.removeEventListener('scroll', measurePanel, true)
+      window.removeEventListener('resize', measurePanel)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  /* After the panel lands, pull it up if it runs past the viewport bottom —
+     a trigger near the fold would otherwise open its calendar off-screen. */
+  useLayoutEffect(() => {
+    if (!open || !panelPos || panelAdjusted.current) return
+    const panel = panelRef.current?.firstElementChild as HTMLElement | null
+    if (!panel) return
+    const overflow = panel.getBoundingClientRect().bottom - window.innerHeight + 8
+    if (overflow > 0) {
+      panelAdjusted.current = true
+      setPanelPos((p) => (p ? { ...p, top: Math.max(8, p.top - overflow) } : p))
+    }
+  }, [open, panelPos])
 
   useEffect(() => setText(displayDate(value)), [value])
 
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node | null)) setOpen(false)
+      const target = e.target as Node | null
+      // The open calendar is portaled to document.body — a pointer inside it
+      // is logically inside, even though it is outside `rootRef` in the DOM.
+      if (panelRef.current?.contains(target)) return
+      if (!rootRef.current?.contains(target)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -1092,8 +1150,9 @@ export function DateField({
         </span>
       )}
 
-      {open && (
-        <CalendarPopover
+      {open && panelPos && createPortal(
+        <div ref={panelRef} style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, width: 0, height: 0, zIndex: 'var(--z-dropdown)' }}>
+          <CalendarPopover
           value={value}
           clearable={clearable}
           align={align}
@@ -1115,7 +1174,9 @@ export function DateField({
             setOpen(false)
             buttonRef.current?.focus()
           }}
-        />
+          />
+        </div>,
+        document.body,
       )}
     </div>
   )

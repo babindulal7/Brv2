@@ -814,7 +814,7 @@ export default function EvidenceWorkspace() {
                                 <div className="identifier" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{p.product.serial}</div>
                               </>
                             ) : (
-                              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4, fontStyle: 'italic' }}>No product resolved</div>
+                              <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 4, fontStyle: 'italic', lineHeight: '1.5' }}>No product resolved</div>
                             )}
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
                               <span style={{ display: 'inline-flex', alignItems: 'center', height: 19, padding: '0 7px', borderRadius: 5, background: TONE[st].bg, color: TONE[st].fg, fontSize: 'var(--t-meta)', fontWeight: 700 }}>

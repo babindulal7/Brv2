@@ -669,7 +669,7 @@ export default function StockCheck({ embedded = false }: { embedded?: boolean } 
         <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>scanned {formatAdDateTime(it.scannedAtAd)}</div>
       )}
       {it.discrepancyNotes && (
-        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontStyle: 'italic' }}>{it.discrepancyNotes}</div>
+        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontStyle: 'italic', lineHeight: '1.5' }}>{it.discrepancyNotes}</div>
       )}
     </>
   )

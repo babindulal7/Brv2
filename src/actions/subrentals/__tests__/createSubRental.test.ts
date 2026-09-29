@@ -103,6 +103,13 @@ describe('createSubRental', () => {
   });
 
   describe('validation', () => {
+    it('requires a real, current or future vendor return-by date', () => {
+      const base = { itemDescription: 'ARRI Alexa', returnByDate: '2099-01-01' };
+      expect(() => createSubRentalConfig.validate!({ ...base, returnByDate: '' })).toThrow(/return-by date is required/);
+      expect(() => createSubRentalConfig.validate!({ ...base, returnByDate: '2099-02-30' })).toThrow(/real calendar date/);
+      expect(() => createSubRentalConfig.validate!({ ...base, returnByDate: '2020-01-01' })).toThrow(/past/);
+      expect(() => createSubRentalConfig.validate!(base)).not.toThrow();
+    });
     it('throws when itemDescription is empty or missing', () => {
       expect(() =>
         createSubRentalConfig.validate!({ itemDescription: '' } as CreateSubRentalInput)
@@ -115,23 +122,23 @@ describe('createSubRental', () => {
 
     it('throws when costPaisa is negative', () => {
       expect(() =>
-        createSubRentalConfig.validate!({ itemDescription: 'ARRI Alexa', costPaisa: -100 })
+        createSubRentalConfig.validate!({ itemDescription: 'ARRI Alexa', returnByDate: '2099-01-01', costPaisa: -100 })
       ).toThrow(/Cost amount must be a non-negative number/);
     });
 
     it('throws when chargePaisa is negative', () => {
       expect(() =>
-        createSubRentalConfig.validate!({ itemDescription: 'ARRI Alexa', chargePaisa: -100 })
+        createSubRentalConfig.validate!({ itemDescription: 'ARRI Alexa', returnByDate: '2099-01-01', chargePaisa: -100 })
       ).toThrow(/Client charge amount must be a non-negative number/);
     });
 
     it('throws when days or qty is less than 1', () => {
       expect(() =>
-        createSubRentalConfig.validate!({ itemDescription: 'ARRI Alexa', days: 0 })
+        createSubRentalConfig.validate!({ itemDescription: 'ARRI Alexa', returnByDate: '2099-01-01', days: 0 })
       ).toThrow(/Days must be greater than or equal to 1/);
 
       expect(() =>
-        createSubRentalConfig.validate!({ itemDescription: 'ARRI Alexa', qty: 0 })
+        createSubRentalConfig.validate!({ itemDescription: 'ARRI Alexa', returnByDate: '2099-01-01', qty: 0 })
       ).toThrow(/Quantity must be greater than or equal to 1/);
     });
   });
@@ -140,6 +147,7 @@ describe('createSubRental', () => {
     it('creates a standalone sub-rental reference without booking', async () => {
       const input: CreateSubRentalInput = {
         itemDescription: 'Sony FX9 Package',
+        returnByDate: '2099-01-01',
         costPaisa: 3500000,
         vendorName: 'External Rental Studio',
       };
@@ -165,6 +173,7 @@ describe('createSubRental', () => {
     it('creates sub-rental attached to a booking with booking_lines insertion', async () => {
       const input: CreateSubRentalInput = {
         bookingId: 'BK-2026-0001',
+        returnByDate: '2099-01-01',
         vendorId: 'SUP-001',
         vendorName: 'Cine Gear Nepal',
         itemDescription: 'ARRI Alexa Mini Body',
@@ -188,6 +197,7 @@ describe('createSubRental', () => {
         client_uuid: 'subrental-line-uuid-1',
         booking_id: '11111111-1111-4111-8111-111111111111',
         line_type: 'Sub-rental',
+        subrental_return_by: '2099-01-01',
         description: 'ARRI Alexa Mini Body',
         qty: 1,
         days: 3,

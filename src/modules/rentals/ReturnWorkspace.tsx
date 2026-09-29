@@ -34,6 +34,7 @@ import { deliveryTypeLabel } from '../../lib/format'
 import { formatGateError } from '../../lib/gates'
 import { clearFloorScan, loadFloorScan, saveFloorScan } from '../../lib/floorScanStorage'
 import { rentalDaysBetween } from '../../lib/rentalDays'
+import { NON_PACKABLE_LINE_TYPES } from '../../lib/bookingLineTypes'
 import {
   playScanSuccess,
   playScanError,
@@ -240,9 +241,8 @@ interface Mark {
 }
 
 /**
- * Flatten the booking's lines into checklist rows — the same shape
- * `PackingWorkspace.buildRows` builds, minus the bundle tree (Return has no
- * left rail; the list is the whole triage surface).
+ * Flatten the booking's lines into checklist rows. The group tag is rendered
+ * inline because Return has no separate bundle rail.
  */
 function buildRows(floor: FloorBooking): ReturnRow[] {
   const lineById = new Map(floor.lines.map((l) => [l.id, l]))
@@ -254,6 +254,7 @@ function buildRows(floor: FloorBooking): ReturnRow[] {
 
   const rows: ReturnRow[] = []
   for (const line of floor.lines) {
+    if (NON_PACKABLE_LINE_TYPES.has(line.lineType)) continue
     const name = line.productName ?? line.description ?? `${line.lineType} line`
     if (line.unitsPresence === 'present' && line.units.length > 0) {
       line.units.forEach((u, i) => {
@@ -795,11 +796,20 @@ export default function ReturnWorkspace({
       rows.filter((r) => {
         const s = r.alreadyReturned ? 'Returned' : (marks[r.key]?.state ?? 'Outstanding')
         if (filter !== 'All' && s !== filter) return false
-        if (query && !`${r.name} ${r.serial ?? ''}`.toLowerCase().includes(query.toLowerCase())) return false
+        if (query && !`${r.group} ${r.name} ${r.serial ?? ''}`.toLowerCase().includes(query.toLowerCase())) return false
         return true
       }),
     [rows, marks, filter, query],
   )
+  const groupedVisible = useMemo(() => {
+    const groups = new Map<string, ReturnRow[]>()
+    for (const row of visible) {
+      const groupRows = groups.get(row.group) ?? []
+      groupRows.push(row)
+      groups.set(row.group, groupRows)
+    }
+    return [...groups.values()].flat()
+  }, [visible])
 
   /* ── mark helpers ────────────────────────────────────────────────────── */
   const markReturned = (key: string) =>
@@ -1548,13 +1558,18 @@ export default function ReturnWorkspace({
                     /* Shell rule: tables become card rows below 768. One card
                        per row: serial + status + full-width triage buttons. */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', padding: 'var(--sp-sm)' }}>
-                      {visible.map((r) => {
+                      {groupedVisible.map((r, i) => {
                         const s = stateOf(r)
                         const mark = marks[r.key]
                         const tone = STATUS[ROW_TONE[s]]
                         return (
-                          <article
-                            key={r.key}
+                          <Fragment key={r.key}>
+                            {(i === 0 || groupedVisible[i - 1]?.group !== r.group) && (
+                              <div style={{ padding: '10px 12px', background: 'var(--card2)', border: '1px solid var(--border)', borderRadius: 'var(--r-btn)', fontWeight: 700, color: 'var(--text)' }}>
+                                <Icon name="package" size={16} /> {r.group}
+                              </div>
+                            )}
+                            <article
                             className={`floor-card-item ${s === 'Returned' ? 'is-packed' : s === 'Not Returned' ? 'is-missing' : ''}`}
                             style={{ opacity: r.alreadyReturned ? 0.75 : 1 }}
                           >
@@ -1668,7 +1683,8 @@ export default function ReturnWorkspace({
                                 received {formatAdDateTime(mark.returnedAtIso)}
                               </span>
                             )}
-                          </article>
+                            </article>
+                          </Fragment>
                         )
                       })}
                       {visible.length === 0 && (
@@ -1690,13 +1706,20 @@ export default function ReturnWorkspace({
                           </tr>
                         </thead>
                         <tbody>
-                          {visible.map((r, i) => {
+                          {groupedVisible.map((r, i) => {
                             const s = stateOf(r)
                             const mark = marks[r.key]
                             const tone = STATUS[ROW_TONE[s]]
                             const damaged = mark?.state === 'Returned' && (mark.condition === 'Damaged' || mark.condition === 'Lost')
                             return (
                               <Fragment key={r.key}>
+                                {(i === 0 || groupedVisible[i - 1]?.group !== r.group) && (
+                                  <tr style={{ background: 'var(--card2)' }}>
+                                    <th colSpan={8} scope="rowgroup" style={{ ...th, height: 44, color: 'var(--text)' }}>
+                                      <Icon name="package" size={16} /> {r.group}
+                                    </th>
+                                  </tr>
+                                )}
                                 <tr
                                   className={`floor-table-row ${s === 'Returned' ? 'is-packed' : s === 'Not Returned' ? 'is-missing' : ''}`}
                                   style={{ borderBottom: damaged ? undefined : '1px solid var(--border)', opacity: r.alreadyReturned ? 0.75 : 1 }}

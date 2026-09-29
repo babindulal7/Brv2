@@ -23,7 +23,8 @@
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@babin-rentals/design-tokens": ["./packages/design-tokens/src"]
     }
   },
   "include": ["src"],

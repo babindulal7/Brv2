@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { type ReactNode, createContext, useContext, useState, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -8,6 +8,15 @@ import { ErrorBanner } from '../../components/ui/StateViews'
 import { StickyFloorBar } from './StickyFloorBar'
 import { useViewport } from '../../lib/device'
 import type { BookingStatus, JobName } from '../../lib/workflow'
+
+interface WorkspaceActions {
+  canComplete: boolean
+  dispatching: boolean
+  complete: () => void
+  isDirty: boolean
+  error?: string | null
+  label?: string
+}
 
 export interface RentalOperationShellProps {
   bookingNo: string
@@ -35,6 +44,17 @@ export interface RentalOperationShellProps {
   }
   onBack?: (() => void) | undefined
   onScan?: (() => void) | undefined
+  /**
+   * RULING 2026-09-29 (audit §8): one host owns the footer.
+   * When embedded in OperationsShell modal, the modal owns it (showFooter=false).
+   * When rendered as a page, the shell owns it (showFooter=true, default).
+   */
+  showFooter?: boolean
+  /**
+   * Called by workspace when it has completion state ready.
+   * The shell uses this to enable/disable its footer primary button.
+   */
+  onRegisterActions?: (actions: WorkspaceActions) => void
   children: ReactNode
 }
 
@@ -45,6 +65,20 @@ const JOB_TITLES: Record<JobName, string> = {
   Handover: 'Equipment Handover',
   Return: 'Return & Inspection',
   Reset: 'Cleaning & Reset',
+}
+
+interface ShellContextValue {
+  registerActions: (actions: WorkspaceActions) => void
+}
+
+const ShellContext = createContext<ShellContextValue | null>(null)
+
+function useOperationShell() {
+  const ctx = useContext(ShellContext)
+  if (!ctx) {
+    return { registerActions: () => {} }
+  }
+  return ctx
 }
 
 export function RentalOperationShell({
@@ -62,11 +96,14 @@ export function RentalOperationShell({
   primary,
   onBack,
   onScan,
+  showFooter = true,
+  onRegisterActions,
   children,
 }: RentalOperationShellProps) {
   const navigate = useNavigate()
   const viewport = useViewport()
   const isPhone = viewport === 'phone'
+  const [actions, setActions] = useState<WorkspaceActions | null>(null)
 
   const handleBack = () => {
     if (onBack) {
@@ -76,10 +113,24 @@ export function RentalOperationShell({
     }
   }
 
+  const handleRegisterActions = useCallback(
+    (a: WorkspaceActions) => {
+      setActions(a)
+      onRegisterActions?.(a)
+    },
+    [onRegisterActions],
+  )
+
   const currentJobIndex = JOB_ORDER.indexOf(job)
 
+  const ctxValue = useMemo(
+    () => ({ registerActions: handleRegisterActions }),
+    [handleRegisterActions],
+  )
+
   return (
-    <div className="rental-operation-shell" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <ShellContext.Provider value={ctxValue}>
+      <div className="rental-operation-shell" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       {/* ── Context & Navigation Header ── */}
       <PageHeader
         leading={
@@ -227,6 +278,59 @@ export function RentalOperationShell({
       {/* ── Main Workspace Content ── */}
       <div className="operation-workspace-body">{children}</div>
 
+      {/* ── Desktop Footer (owned by shell, not workspace) ── */}
+      {showFooter !== false && !isPhone && (
+        <div
+          className="operation-workspace-footer"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 'var(--sp-md)',
+            padding: '12px 16px',
+            background: 'var(--card)',
+            borderRadius: 'var(--r-card)',
+            border: '1px solid var(--border)',
+            flexWrap: 'wrap',
+          }}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleBack}
+            aria-label={`Back to booking ${bookingNo}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            <Icon name="chevron_left" size={15} />
+            <span>Back</span>
+          </Button>
+          {progress && (
+            <span
+              style={{
+                fontSize: 'var(--t-meta)',
+                color: 'var(--text2)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              {progress.current} / {progress.total} items
+              {progress.label && <span>· {progress.label}</span>}
+              {progress.complete && <span style={{ color: 'var(--st-success-fg)' }}>✓ Complete</span>}
+            </span>
+          )}
+          <Button
+            variant="primary"
+            onClick={actions?.complete ?? primary.onClick}
+            disabled={primary.disabled || primary.loading || !actions?.canComplete || actions?.dispatching}
+            icon={primary.icon ?? 'check'}
+            style={{ fontWeight: 600, minWidth: 160 }}
+          >
+            {actions?.dispatching ? 'Recording…' : primary.label}
+          </Button>
+        </div>
+      )}
+
       {/* ── Mobile Sticky Action Bar ── */}
       {isPhone && progress && (
         <StickyFloorBar
@@ -238,16 +342,17 @@ export function RentalOperationShell({
           }}
           onScan={onScan ?? (() => {})}
           primaryAction={{
-            label: primary.loading ? 'Recording…' : primary.label,
-            onClick: primary.onClick,
-            disabled: primary.disabled,
-            loading: primary.loading,
+            label: actions?.dispatching ? 'Recording…' : primary.label,
+            onClick: actions?.complete ?? primary.onClick,
+            disabled: primary.disabled || !actions?.canComplete || actions?.dispatching,
+            loading: primary.loading || actions?.dispatching,
             icon: primary.icon,
           }}
         />
       )}
     </div>
-  )
+  </ShellContext.Provider>
+)
 }
-
 export default RentalOperationShell
+export { useOperationShell, type WorkspaceActions, StickyFloorBar }

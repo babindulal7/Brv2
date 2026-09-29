@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../ui/Icon'
 import { useTheme } from '../../lib/theme'
@@ -21,6 +22,54 @@ const ROW_H = 44
 
 /** How long a press must be held before the icon rail speaks its label. */
 const LONG_PRESS_MS = 450
+
+/** Rail tooltip timing — calm, not jumpy and not browser-slow. */
+const TOOLTIP_OPEN_DELAY_MS = 120
+const TOOLTIP_CLOSE_DELAY_MS = 75
+/** Gap between the rail and the floating tooltip. */
+const TOOLTIP_GAP = 10
+/** Minimum distance kept from the viewport top/bottom edges. */
+const TOOLTIP_EDGE_MARGIN = 24
+
+/**
+ * The single collapsed-rail tooltip. Portaled to `document.body` so no
+ * sidebar overflow rule can clip it, `position: fixed` against the hovered
+ * row's rect, `pointer-events: none` so the cursor can never touch it (which
+ * is what used to flicker it), clamped into the viewport for bottom rows.
+ * One instance exists at a time — `NavList` owns the only `hint` state.
+ */
+function RailTooltip({ label, anchorRight, anchorCy }: { label: string; anchorRight: number; anchorCy: number }) {
+  const top = Math.min(Math.max(anchorCy, TOOLTIP_EDGE_MARGIN), Math.max(TOOLTIP_EDGE_MARGIN, window.innerHeight - TOOLTIP_EDGE_MARGIN))
+  return createPortal(
+    <span
+      role="tooltip"
+      style={{
+        position: 'fixed',
+        left: anchorRight + TOOLTIP_GAP,
+        top,
+        transform: 'translateY(-50%)',
+        padding: '6px 10px',
+        borderRadius: 'var(--r-sm)',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-modal)',
+        color: 'var(--text)',
+        fontSize: 'var(--t-meta)',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+        width: 'max-content',
+        maxWidth: 'calc(100vw - 96px)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        pointerEvents: 'none',
+        zIndex: 'var(--z-dropdown)',
+      }}
+    >
+      {label}
+    </span>,
+    document.body,
+  )
+}
 
 interface SidebarProps {
   /** Current pathname (with query) — decides which single row is active. */
@@ -224,12 +273,15 @@ function NavList({
   rail: boolean
 }) {
   const navigate = useNavigate()
-  const [hint, setHint] = useState<{ label: string; top: number } | null>(null)
+  const [hint, setHint] = useState<{ label: string; anchorRight: number; anchorCy: number } | null>(null)
   const isMoreActive = moreSections.some((m) => m.to === activeTo)
   const [moreOpen, setMoreOpen] = useState(isMoreActive)
   const [moreFlyoutTop, setMoreFlyoutTop] = useState<number>(0)
   const pressTimer = useRef<number | null>(null)
+  const showTimer = useRef<number | null>(null)
+  const hideTimer = useRef<number | null>(null)
   const moreRef = useRef<HTMLDivElement>(null)
+  const moreFlyoutRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (isMoreActive && !rail) setMoreOpen(true)
@@ -242,10 +294,23 @@ function NavList({
     }
   }
 
+  const clearTooltipTimers = () => {
+    if (showTimer.current !== null) {
+      window.clearTimeout(showTimer.current)
+      showTimer.current = null
+    }
+    if (hideTimer.current !== null) {
+      window.clearTimeout(hideTimer.current)
+      hideTimer.current = null
+    }
+  }
+
   useEffect(() => clearPress, [])
+  useEffect(() => clearTooltipTimers, [])
   /* A rail that expands mid-hover must not leave its tooltip behind. */
   useEffect(() => {
     if (!rail) {
+      clearTooltipTimers()
       setHint(null)
       if (rail) setMoreOpen(false)
     }
@@ -269,9 +334,44 @@ function NavList({
     }
   }, [rail, moreOpen])
 
+  /* Keep the rail flyout fully inside the viewport. The anchor is the More
+     button's vertical center, which sits near the bottom of the rail — without
+     clamping, translateY(-50%) pushes half the flyout under the page footer
+     where it reads as "hidden behind" the content. Measured, not estimated:
+     the item count varies by role. Same 24px edge margin as RailTooltip. */
+  useLayoutEffect(() => {
+    if (!rail || !moreOpen) return
+    const el = moreFlyoutRef.current
+    if (!el) return
+    const half = el.offsetHeight / 2
+    const min = half + TOOLTIP_EDGE_MARGIN
+    const max = window.innerHeight - half - TOOLTIP_EDGE_MARGIN
+    if (max < min) return
+    setMoreFlyoutTop((t) => {
+      const clamped = Math.min(Math.max(t, min), max)
+      return clamped === t ? t : clamped
+    })
+  }, [rail, moreOpen, moreFlyoutTop])
+
+  /* Immediate — touch long-press. Hover/focus go through the delayed pair
+     below so rapid travel never stacks tooltips. */
   const show = (el: HTMLElement, label: string) => {
+    clearTooltipTimers()
     const r = el.getBoundingClientRect()
-    setHint({ label, top: r.top + r.height / 2 })
+    // Anchor to the rail edge, not the row: rows sit inside the nav's 8px
+    // padding, so row.right would eat most of the tooltip gap.
+    const railRight = el.closest('aside')?.getBoundingClientRect().right ?? r.right
+    setHint({ label, anchorRight: railRight, anchorCy: r.top + r.height / 2 })
+  }
+
+  const scheduleShow = (el: HTMLElement, label: string) => {
+    clearTooltipTimers()
+    showTimer.current = window.setTimeout(() => show(el, label), TOOLTIP_OPEN_DELAY_MS)
+  }
+
+  const scheduleHide = () => {
+    clearTooltipTimers()
+    hideTimer.current = window.setTimeout(() => setHint(null), TOOLTIP_CLOSE_DELAY_MS)
   }
 
   return (
@@ -281,7 +381,7 @@ function NavList({
         style={{ flex: 1, overflowY: 'auto', padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}
       >
         {groups.map((group, groupIdx) => (
-          <div key={group.id} data-nav-group={group.title} aria-label={group.title} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <div key={group.id} data-nav-group={group.title} role="group" aria-label={group.title} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
             {groupIdx > 0 && (
               <div
                 aria-hidden
@@ -308,20 +408,25 @@ function NavList({
                   <Link
                     to={s.to}
                     aria-current={on ? 'page' : undefined}
-                    title={rail ? s.label : undefined}
+                    /* No native `title`: the rail renders one custom tooltip
+                       (RailTooltip, portaled). A title here would fire the
+                       browser tooltip as a duplicate. The accessible name
+                       comes from aria-label in rail, visible text otherwise. */
+                    aria-label={s.label}
                     onMouseEnter={(e) => {
-                      if (rail) show(e.currentTarget, s.label)
-                      else {
+                      if (rail) {
+                        scheduleShow(e.currentTarget, s.label)
+                        if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                      } else {
                         if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
                         e.currentTarget.style.transform = 'translateX(2px)'
                       }
                     }}
                     onMouseLeave={(e) => {
-                      setHint(null)
-                      if (!rail) {
-                        if (!on) e.currentTarget.style.background = 'transparent'
-                        e.currentTarget.style.transform = 'none'
-                      }
+                      if (rail) scheduleHide()
+                      else setHint(null)
+                      if (!on) e.currentTarget.style.background = 'transparent'
+                      if (!rail) e.currentTarget.style.transform = 'none'
                     }}
                     onPointerDown={(e) => {
                       if (!rail || e.pointerType === 'mouse') return
@@ -331,15 +436,24 @@ function NavList({
                     }}
                     onPointerUp={() => {
                       clearPress()
+                      clearTooltipTimers()
                       setHint(null)
                     }}
                     onPointerCancel={() => {
                       clearPress()
+                      clearTooltipTimers()
                       setHint(null)
                     }}
-                    onBlur={() => setHint(null)}
+                    onBlur={(e) => {
+                      if (rail) scheduleHide()
+                      else setHint(null)
+                      if (rail && !on) e.currentTarget.style.background = 'transparent'
+                    }}
                     onFocus={(e) => {
-                      if (rail) show(e.currentTarget, s.label)
+                      if (rail) {
+                        scheduleShow(e.currentTarget, s.label)
+                        if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                      }
                     }}
                     style={{
                       display: 'flex',
@@ -435,14 +549,19 @@ function NavList({
                 aria-label="More"
                 aria-expanded={moreOpen}
                 aria-haspopup="menu"
-                title="More"
                 onClick={(e) => {
                   const r = e.currentTarget.getBoundingClientRect()
                   setMoreFlyoutTop(r.top + r.height / 2)
                   setMoreOpen((v) => !v)
                 }}
-                onMouseEnter={(e) => show(e.currentTarget, 'More')}
-                onMouseLeave={() => setHint(null)}
+                onMouseEnter={(e) => {
+                  scheduleShow(e.currentTarget, 'More')
+                  if (!isMoreActive) e.currentTarget.style.background = 'var(--hover-sidebar)'
+                }}
+                onMouseLeave={(e) => {
+                  scheduleHide()
+                  if (!isMoreActive) e.currentTarget.style.background = 'transparent'
+                }}
                 onPointerDown={(e) => {
                   if (e.pointerType === 'mouse') return
                   const el = e.currentTarget
@@ -493,6 +612,7 @@ function NavList({
 
               {moreOpen && (
                 <div
+                  ref={moreFlyoutRef}
                   role="menu"
                   aria-label="More modules"
                   style={{
@@ -508,8 +628,10 @@ function NavList({
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 2,
-                    zIndex: 75,
+                    zIndex: 'var(--z-dropdown)',
                     minWidth: 160,
+                    maxHeight: 'calc(100vh - 48px)',
+                    overflowY: 'auto',
                   }}
                 >
                   {moreSections.map((m) => {
@@ -682,28 +804,7 @@ function NavList({
       </nav>
 
       {rail && hint && (
-        <span
-          role="tooltip"
-          style={{
-            position: 'fixed',
-            left: `calc(${RAIL_W} + 6px)`,
-            top: hint.top,
-            transform: 'translateY(-50%)',
-            padding: '6px 10px',
-            borderRadius: 'var(--r-sm)',
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            boxShadow: 'var(--shadow-modal)',
-            color: 'var(--text)',
-            fontSize: 'var(--t-meta)',
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-            pointerEvents: 'none',
-            zIndex: 70,
-          }}
-        >
-          {hint.label}
-        </span>
+        <RailTooltip label={hint.label} anchorRight={hint.anchorRight} anchorCy={hint.anchorCy} />
       )}
     </>
   )

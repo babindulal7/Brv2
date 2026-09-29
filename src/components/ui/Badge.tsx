@@ -65,6 +65,7 @@ export interface BadgeProps {
   tone?: 'neutral' | 'primary' | 'progress' | 'out' | 'in' | 'danger' | 'dim' | 'ext' | 'warning'
   icon?: React.ReactNode
   size?: 'sm' | 'md'
+  variant?: 'pill' | 'square' | 'flag'
   className?: string
 }
 
@@ -75,6 +76,7 @@ export const Badge: React.FC<BadgeProps> = ({
   tone,
   icon,
   size = 'md',
+  variant = 'pill',
   className = '',
 }) => {
   // Resolve tone, label, icon from status / flag if provided
@@ -166,6 +168,15 @@ export const Badge: React.FC<BadgeProps> = ({
   const compact = size === 'sm'
   const isLiveActive = status === 'On Rent' || flag === 'Overdue' || flag === 'Due Soon'
 
+  // Variant-specific geometry
+  const variantRadius = variant === 'pill' ? 'var(--r-badge)' : variant === 'square' ? 'var(--r-sm)' : 'var(--r-xs)'
+  const variantPadding = variant === 'flag' ? '4px 8px' : compact ? '4px 8px' : shape.padding
+  const variantGap = variant === 'flag' ? 'var(--sp-xs)' : compact ? 'var(--sp-xs)' : 6
+  const variantFontWeight = variant === 'flag' ? 600 : shape.fontWeight
+  const variantTextTransform = variant === 'flag' ? 'none' : (isExt ? 'none' : STATUS_BLOCK.textTransform)
+  const variantLetterSpacing = variant === 'flag' ? '0.02em' : shape.letterSpacing
+  const variantFontSize = compact ? '10.5px' : shape.fontSize
+
   return (
     <span
       className={className || undefined}
@@ -177,13 +188,13 @@ export const Badge: React.FC<BadgeProps> = ({
         background: tokens.bg,
         color: tokens.fg,
         border: isExt ? `1px solid ${tokens.border}` : '1px solid transparent',
-        borderRadius: shape.borderRadius,
-        fontWeight: shape.fontWeight,
-        letterSpacing: shape.letterSpacing,
-        ...(isExt ? {} : { textTransform: STATUS_BLOCK.textTransform }),
-        fontSize: compact ? '10.5px' : shape.fontSize,
-        padding: compact ? '4px 8px' : shape.padding,
-        gap: compact ? 'var(--sp-xs)' : 6,
+        borderRadius: isExt ? shape.borderRadius : variantRadius,
+        fontWeight: variantFontWeight,
+        letterSpacing: variantLetterSpacing,
+        ...(isExt ? {} : { textTransform: variantTextTransform }),
+        fontSize: variantFontSize,
+        padding: variantPadding,
+        gap: variantGap,
         lineHeight: 1.1,
       }}
     >

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from '../../components/ui/Icon'
 import { PageHeader, PageActions } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
@@ -14,6 +15,7 @@ import { useViewport } from '../../lib/device'
 import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 import type { BookingStatus } from '../../lib/workflow'
 import RawDashboardMovementPanel from './DashboardMovementPanel'
+import ShiftHandoverPanel from './ShiftHandoverPanel'
 import './dashboard.css'
 
 const DashboardMovementPanel = RawDashboardMovementPanel as React.ComponentType<
@@ -155,6 +157,92 @@ function formatMasterDispatchDate(filter: DateFilter, today: string, lang: 'en' 
   return dual
 }
 
+/**
+ * Dashboard calendars used to render inline (`position: absolute`) inside the
+ * page header and the movement-panel headers. Ancestors there sit under
+ * transformed parents (`.animate-entrance` keeps a set transform), and a
+ * non-none transform makes an ancestor a stacking context — so an open
+ * calendar painted UNDER the panels below it. Portaling to `document.body`
+ * with `position: fixed` escapes every ancestor context; `--z-dropdown` keeps
+ * it above panels and tables. Position tracks the trigger (re-measured on
+ * scroll/resize). On phone widths the stylesheet turns `.dashboard-calendar`
+ * into a bottom sheet, so only the stacking is overridden there.
+ */
+function CalendarPortal({
+  triggerRef,
+  dialogRef,
+  id,
+  label,
+  children,
+}: {
+  triggerRef: React.RefObject<HTMLButtonElement>
+  dialogRef: React.RefObject<HTMLDivElement>
+  id: string
+  label: string
+  children: React.ReactNode
+}) {
+  const viewport = useViewport()
+  const [rect, setRect] = useState<DOMRect | null>(null)
+  const focused = useRef(false)
+  const adjusted = useRef(false)
+  useEffect(() => {
+    const measure = () => {
+      const el = triggerRef.current
+      if (!el) return
+      adjusted.current = false
+      setRect(el.getBoundingClientRect())
+    }
+    measure()
+    window.addEventListener('scroll', measure, true)
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('scroll', measure, true)
+      window.removeEventListener('resize', measure)
+    }
+  }, [triggerRef])
+  // The panel renders one beat after the trigger opens (rect starts null),
+  // so the opener's focus effect fires before the dialog exists — focus here,
+  // when the portaled panel actually lands in the document.
+  useEffect(() => {
+    if (rect && !focused.current) {
+      focused.current = true
+      dialogRef.current?.focus()
+    }
+  }, [rect, dialogRef])
+  // Pull the panel up when it would run past the viewport bottom — a card
+  // filter near the fold would otherwise open its calendar off-screen.
+  useLayoutEffect(() => {
+    if (!rect || viewport === 'phone' || adjusted.current) return
+    const panel = dialogRef.current
+    if (!panel) return
+    const overflow = panel.getBoundingClientRect().bottom - window.innerHeight + 8
+    if (overflow > 0) {
+      adjusted.current = true
+      const el = triggerRef.current
+      if (el) {
+        const r = el.getBoundingClientRect()
+        setRect(new DOMRect(r.x, Math.max(8, r.bottom + 10 - overflow), r.width, r.height))
+      }
+    }
+  }, [rect, viewport, dialogRef, triggerRef])
+  if (!rect) return null
+  const style: React.CSSProperties =
+    viewport === 'phone'
+      ? { zIndex: 'var(--z-dropdown)' }
+      : {
+          position: 'fixed',
+          top: rect.bottom + 10,
+          right: Math.max(12, window.innerWidth - rect.right),
+          zIndex: 'var(--z-dropdown)',
+        }
+  return createPortal(
+    <div id={id} className="dashboard-calendar" role="dialog" aria-label={label} tabIndex={-1} ref={dialogRef} style={style}>
+      {children}
+    </div>,
+    document.body,
+  )
+}
+
 function DateFilterControl({
   noun,
   filter,
@@ -189,9 +277,19 @@ function DateFilterControl({
   useEffect(() => {
     if (!open) return
     const closeAway = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) {
+      // The open calendar is portaled to document.body — a pointer inside it
+      // is logically inside, even though it is outside `root` in the DOM.
+      const target = event.target as Node
+      if (dialog.current?.contains(target)) return
+      if (!root.current?.contains(target)) {
         setOpen(false)
         setRangeStart(null)
+        // Pointer dismissal only returns focus when it would otherwise strand
+        // it on body — if focus already moved somewhere meaningful, don't steal it.
+        const active = document.activeElement as Element | null
+        if (!active || active === document.body || dialog.current?.contains(active)) {
+          trigger.current?.focus()
+        }
       }
     }
     const closeEscape = (event: KeyboardEvent) => {
@@ -262,7 +360,11 @@ function DateFilterControl({
       className="dashboard-date-filter"
       ref={root}
       onBlur={(event) => {
-        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) {
+        // The open calendar is portaled to document.body, so focus moving
+        // into it looks like focus leaving this wrapper — not a dismissal.
+        const next = event.relatedTarget as Node | null
+        if (next && (event.currentTarget.contains(next) || dialog.current?.contains(next))) return
+        if (event.relatedTarget) {
           setOpen(false)
           setRangeStart(null)
         }
@@ -296,7 +398,7 @@ function DateFilterControl({
       </button>
 
       {open && (
-        <div id={`${noun}-date-dialog`} className="dashboard-calendar" role="dialog" aria-label={dialogLabel} tabIndex={-1} ref={dialog}>
+        <CalendarPortal triggerRef={trigger} dialogRef={dialog} id={`${noun}-date-dialog`} label={dialogLabel}>
           <div className="dashboard-calendar__quick" role="group" aria-label="Quick date filters">
             {QUICK_PERIODS.map((period) => (
               <button
@@ -350,7 +452,7 @@ function DateFilterControl({
             {rangeStart && <button type="button" onClick={useSingleDay}>Use {compactDate(rangeStart)}</button>}
             <button type="button" className="dashboard-calendar__close" onClick={close}>Close</button>
           </div>
-        </div>
+        </CalendarPortal>
       )}
     </div>
   )
@@ -393,9 +495,19 @@ function MasterDispatchDateControl({
   useEffect(() => {
     if (!open) return
     const closeAway = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) {
+      // The open calendar is portaled to document.body — a pointer inside it
+      // is logically inside, even though it is outside `root` in the DOM.
+      const target = event.target as Node
+      if (dialog.current?.contains(target)) return
+      if (!root.current?.contains(target)) {
         setOpen(false)
         setRangeStart(null)
+        // Pointer dismissal only returns focus when it would otherwise strand
+        // it on body — if focus already moved somewhere meaningful, don't steal it.
+        const active = document.activeElement as Element | null
+        if (!active || active === document.body || dialog.current?.contains(active)) {
+          trigger.current?.focus()
+        }
       }
     }
     const closeEscape = (event: KeyboardEvent) => {
@@ -466,7 +578,10 @@ function MasterDispatchDateControl({
       role="group"
       aria-label="Master dispatch date"
       onBlur={(event) => {
-        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) {
+        // Portaled calendar — same note as the pickup/return filter above.
+        const next = event.relatedTarget as Node | null
+        if (next && (event.currentTarget.contains(next) || dialog.current?.contains(next))) return
+        if (event.relatedTarget) {
           setOpen(false)
           setRangeStart(null)
         }
@@ -534,6 +649,7 @@ function MasterDispatchDateControl({
         title="Open calendar (📅)"
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={open ? 'dispatch-date-dialog' : undefined}
         onClick={() => {
           setRangeStart(null)
           if (!open) setMonth(new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
@@ -544,7 +660,7 @@ function MasterDispatchDateControl({
       </button>
 
       {open && (
-        <div id="dispatch-date-dialog" className="dashboard-calendar" role="dialog" aria-label="Dispatch date filter" tabIndex={-1} ref={dialog}>
+        <CalendarPortal triggerRef={trigger} dialogRef={dialog} id="dispatch-date-dialog" label="Dispatch date filter">
           <div className="dashboard-calendar__quick" role="group" aria-label="Quick date filters">
             {QUICK_PERIODS.map((period) => (
               <button key={period} type="button" aria-pressed={filter.kind === 'quick' && filter.period === period} onClick={() => selectQuick(period)}>
@@ -588,7 +704,7 @@ function MasterDispatchDateControl({
               {lang === 'ne' ? 'बन्द गर्नुहोस्' : 'Close'}
             </button>
           </div>
-        </div>
+        </CalendarPortal>
       )}
     </div>
   )
@@ -919,6 +1035,7 @@ export default function Today() {
           />
         )}
       </div>
+      <ShiftHandoverPanel />
     </PageShell>
   )
 }

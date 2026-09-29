@@ -139,11 +139,15 @@ const writes = vi.hoisted(() => {
      * or the table's own RLS. It is the only way to reach the PK-05 path.
      */
     refuseInsertOn: null as string | null,
+    legacyPickupEnum: false,
+    rejectedPickupInserts: 0,
   }
   function reset(): void {
     state.ops = []
     state.seq = 0
     state.refuseInsertOn = null
+    state.legacyPickupEnum = false
+    state.rejectedPickupInserts = 0
   }
   return { state, reset }
 })
@@ -151,6 +155,10 @@ const writes = vi.hoisted(() => {
 vi.mock('../../../lib/dataAccess', () => ({
   generateClientUuid: () => `gen-${String(++writes.state.seq).padStart(4, '0')}`,
   idempotentInsert: async (table: string, payload: Record<string, unknown>) => {
+    if (table === 'operation_sessions' && writes.state.legacyPickupEnum && payload['delivery_method'] === 'Client Pickup') {
+      writes.state.rejectedPickupInserts += 1
+      throw new Error('[DataAccess] Insert failed on operation_sessions: invalid input value for enum delivery_method: "Client Pickup"')
+    }
     if (writes.state.refuseInsertOn === table) {
       throw new Error(`[DataAccess] Insert failed on ${table}: Gate Check Failure (simulated).`)
     }
@@ -736,6 +744,58 @@ describe('Handover', () => {
     const session = insertsOn('operation_sessions')[0]?.payload
     expect(session?.['operation']).toBe('Handover')
     expect(session?.['delivery_method']).toBe('Babin Delivery')
+  })
+
+  it('retries Client Pickup with the legacy session enum only when that enum rejects it', async () => {
+    db.state.responses['bookings'] = [
+      [{ ...bookingAt('Packed'), delivery_type: 'Client Pickup' }],
+      [bookingAt('On Rent')],
+    ]
+    db.state.responses['handover_lines'] = [
+      [],
+      [
+        { id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' },
+        { id: 'hl-2', booking_line_id: LINE_B, state: 'Picked Up' },
+      ],
+    ]
+    writes.state.legacyPickupEnum = true
+
+    await handoverRental({
+      bookingId: 'B-715',
+      lines: [
+        { bookingLineId: LINE_A, unitIds: ['u1', 'u2'] },
+        { bookingLineId: LINE_B, unitIds: ['u3'] },
+      ],
+    }, OWNER)
+
+    expect(writes.state.rejectedPickupInserts).toBe(1)
+    expect(insertsOn('operation_sessions')).toHaveLength(1)
+    expect(insertsOn('operation_sessions')[0]?.payload['delivery_method']).toBe('Customer Pickup')
+  })
+
+  it('writes Client Pickup directly when the session enum accepts it', async () => {
+    db.state.responses['bookings'] = [
+      [{ ...bookingAt('Packed'), delivery_type: 'Client Pickup' }],
+      [bookingAt('On Rent')],
+    ]
+    db.state.responses['handover_lines'] = [
+      [],
+      [
+        { id: 'hl-1', booking_line_id: LINE_A, state: 'Picked Up' },
+        { id: 'hl-2', booking_line_id: LINE_B, state: 'Picked Up' },
+      ],
+    ]
+
+    await handoverRental({
+      bookingId: 'B-715',
+      lines: [
+        { bookingLineId: LINE_A, unitIds: ['u1', 'u2'] },
+        { bookingLineId: LINE_B, unitIds: ['u3'] },
+      ],
+    }, OWNER)
+
+    expect(writes.state.rejectedPickupInserts).toBe(0)
+    expect(insertsOn('operation_sessions')[0]?.payload['delivery_method']).toBe('Client Pickup')
   })
 
   it('marks movements Picked Up, one row per scanned unit, with its serial', async () => {

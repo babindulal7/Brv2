@@ -46,6 +46,7 @@ export function CreateSubRentalModal({
   const [itemName, setItemName] = useState('')
   const [vendorCost, setVendorCost] = useState<number>(0)
   const [clientCharge, setClientCharge] = useState<number>(0)
+  const [returnByDate, setReturnByDate] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,6 +57,10 @@ export function CreateSubRentalModal({
     if (e) e.preventDefault()
     if (!itemName.trim() || !vendor.trim()) {
       setError('Vendor and Item Name are required.')
+      return
+    }
+    if (!returnByDate) {
+      setError('Vendor return-by date is required.')
       return
     }
     if (!Number.isFinite(vendorCost) || vendorCost <= 0 || !Number.isFinite(clientCharge) || clientCharge <= 0) {
@@ -108,6 +113,7 @@ export function CreateSubRentalModal({
           bookingId,
           vendorName: vendor.trim(),
           itemDescription: itemName.trim(),
+          returnByDate,
           costPaisa: rupees(vendorCost),
           chargePaisa: rupees(clientCharge),
         },
@@ -220,6 +226,20 @@ export function CreateSubRentalModal({
               }}
             />
           </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label htmlFor="subrental-return-by" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+            Vendor Return-By Date <span style={{ color: 'var(--danger)' }}>*</span>
+          </label>
+          <input
+            id="subrental-return-by"
+            type="date"
+            required
+            value={returnByDate}
+            onChange={(e) => setReturnByDate(e.target.value)}
+            style={{ minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)', fontSize: 'var(--t-meta)' }}
+          />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>

@@ -10,6 +10,10 @@ import { isMoneySurface, getToolsStatus } from '../../lib/queries/tools'
 import DepreciationCalculator from './DepreciationCalculator'
 import PricingCalculator from './PricingCalculator'
 import CineTools from '../settings/Tools'
+import LateFeeCalculator from './LateFeeCalculator'
+import QrGenerator from './QrGeneratorModal'
+import BundleQuickBuilder from './BundleQuickBuilder'
+import CouponsManager from './CouponsManager'
 
 /**
  * **Tools — Integrated Workbench**
@@ -20,7 +24,7 @@ import CineTools from '../settings/Tools'
  * No external links or shortcut bounces to standalone pages.
  */
 
-export type ToolsTab = 'overview' | 'depreciation' | 'pricing' | 'cinematography'
+export type ToolsTab = 'overview' | 'depreciation' | 'pricing' | 'cinematography' | 'latefee' | 'qr' | 'bundle' | 'coupons'
 
 interface ToolCard {
   label: string
@@ -60,6 +64,46 @@ const GROUPS: ToolGroup[] = [
     ],
   },
   {
+    heading: 'Commercial Utilities',
+    desktopColumns: 2,
+    cards: [
+      {
+        label: 'Late Fee',
+        hint: 'Overtime returns past 6:00 AM cutoff + 25% surcharge',
+        icon: 'timer',
+        tab: 'latefee',
+        to: '/tools/latefee',
+      },
+      {
+        label: 'Coupons & Promos',
+        hint: 'Active promo codes, 25% cap rule & sandbox simulator',
+        icon: 'receipt',
+        tab: 'coupons',
+        to: '/tools/coupons',
+      },
+    ],
+  },
+  {
+    heading: 'Equipment & Package Utilities',
+    desktopColumns: 2,
+    cards: [
+      {
+        label: 'QR & Barcode Generator',
+        hint: 'Serialized gear asset tags and printable barcode labels',
+        icon: 'barcode',
+        tab: 'qr',
+        to: '/tools/qr',
+      },
+      {
+        label: 'Bundle Quick-Builder',
+        hint: 'Create kit packages with combined day-rates & discounts',
+        icon: 'box',
+        tab: 'bundle',
+        to: '/tools/bundle',
+      },
+    ],
+  },
+  {
     heading: 'Cinematography suite',
     desktopColumns: 2,
     note: '15 categories of camera, lens, exposure, timecode and power calculators.',
@@ -94,7 +138,7 @@ export default function ToolsLanding() {
   }, [])
 
   const currentTab = (params.get('tab') ?? 'overview') as ToolsTab
-  const activeTab: ToolsTab = ['overview', 'depreciation', 'pricing', 'cinematography'].includes(currentTab)
+  const activeTab: ToolsTab = ['overview', 'depreciation', 'pricing', 'cinematography', 'latefee', 'qr', 'bundle', 'coupons'].includes(currentTab)
     ? currentTab
     : 'overview'
 
@@ -111,8 +155,12 @@ export default function ToolsLanding() {
       ? [
           { key: 'depreciation' as const, label: 'Depreciation', icon: 'chart' as const, money: true },
           { key: 'pricing' as const, label: 'Pricing', icon: 'dollar' as const, money: true },
+          { key: 'latefee' as const, label: 'Late Fee', icon: 'timer' as const },
         ]
       : []),
+    { key: 'coupons' as const, label: 'Coupons & Promos', icon: 'receipt' as const },
+    { key: 'qr' as const, label: 'QR & Barcodes', icon: 'barcode' as const },
+    { key: 'bundle' as const, label: 'Bundle Builder', icon: 'box' as const },
     { key: 'cinematography', label: 'Cinematography Suite', icon: 'camera' },
   ]
 
@@ -261,6 +309,10 @@ export default function ToolsLanding() {
 
       {activeTab === 'depreciation' && money && <DepreciationCalculator embedded />}
       {activeTab === 'pricing' && money && <PricingCalculator embedded />}
+      {activeTab === 'latefee' && <LateFeeCalculator />}
+      {activeTab === 'coupons' && <CouponsManager />}
+      {activeTab === 'qr' && <QrGenerator />}
+      {activeTab === 'bundle' && <BundleQuickBuilder />}
       {activeTab === 'cinematography' && <CineTools embedded />}
 
       <FooterNote extra={['All calculators run locally within Tools without navigating away']} />

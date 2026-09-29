@@ -92,6 +92,10 @@
 /* ─── Unified Master Dispatch Date Control ────────────────────────────────── */
 .dashboard-master-date-control {
   position: relative;
+  /* The dispatch calendar drops over the movement panels below, which are
+     positioned with their own z-index — without this the popup can paint
+     under them. */
+  z-index: 60;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -1762,13 +1766,23 @@
 }
 
 .movement-panel {
+  position: relative;
+  z-index: 1;
   min-width: 0;
-  overflow: hidden;
+  /* overflow must stay visible: the date-filter calendar pops out of the
+     header and over the rows. Clipping moved to __body below so bottom
+     corners stay rounded without cutting the dropdown. */
+  overflow: visible;
   border: 1px solid var(--w10, var(--border));
   border-radius: var(--r-card, 12px);
   background: var(--surface-card, var(--card));
   box-shadow: var(--shadow-sm);
   transition: box-shadow var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+/* An open calendar must paint above the neighbouring panel. */
+.movement-panel:focus-within {
+  z-index: 20;
 }
 
 /* Left side: Outgoing Pickups */
@@ -1862,7 +1876,7 @@
 .movement-panel__filter {
   margin-left: auto;
   position: relative;
-  z-index: 4;
+  z-index: 30;
 }
 
 .movement-panel--outgoing .dashboard-date-filter__calendar {
@@ -1918,7 +1932,10 @@
 
 .movement-panel__body {
   min-width: 0;
-  overflow-x: visible;
+  /* Bottom-corner rounding lives here now that the panel itself is
+     overflow:visible for the date-filter dropdown. */
+  overflow: clip;
+  border-radius: 0 0 var(--r-card, 12px) var(--r-card, 12px);
 }
 
 /* ─── Self-Contained Movement Cards (Zero Horizontal Overflow) ─────────── */

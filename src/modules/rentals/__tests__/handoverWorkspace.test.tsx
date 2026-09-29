@@ -367,6 +367,21 @@ describe('HO-14 — one booking’s dispatch never speaks for another', () => {
     expect(text()).toContain('This handover was not recorded')
     expect(text()).toContain('Gate Check Failure: B-901 did not move')
   })
+
+  it('shows a readable delivery error without exposing the database enum', async () => {
+    await mount()
+    await passAllGates()
+    await click(button('Complete Handover'))
+
+    await act(async () => {
+      settleDispatch?.reject(new Error('[DataAccess] Insert failed on operation_sessions: invalid input value for enum delivery_method: "Client Pickup"'))
+      await Promise.resolve()
+    })
+    await flush()
+
+    expect(text()).toContain('The delivery method was rejected')
+    expect(text()).not.toContain('invalid input value for enum')
+  })
 })
 
 /* ── HO-14b ──────────────────────────────────────────────────────────────── */

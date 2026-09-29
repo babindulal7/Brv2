@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ToastProvider } from '../../../components/ui/Toast'
 
 vi.mock('../../../lib/queries/useList', () => ({
   useList: () => ({
@@ -34,7 +35,7 @@ async function mount() {
   document.body.appendChild(container)
   root = createRoot(container)
   await act(async () => {
-    root.render(<MemoryRouter initialEntries={['/dashboard']}><Today /></MemoryRouter>)
+    root.render(<MemoryRouter initialEntries={['/dashboard']}><ToastProvider><Today /></ToastProvider></MemoryRouter>)
   })
 }
 
@@ -99,7 +100,9 @@ describe('focused pickup and return dashboard', () => {
     expect(returns?.textContent).toContain('Today')
 
     await act(async () => pickup?.click())
-    const tomorrow = buttons().find((button) => button.textContent === 'Tomorrow')
+    // The open calendar is portaled to document.body, outside the mount
+    // container — query it in the document, not the container.
+    const tomorrow = [...document.querySelectorAll<HTMLButtonElement>('#pickup-date-dialog button')].find((button) => button.textContent === 'Tomorrow')
     await act(async () => tomorrow?.click())
 
     expect(buttonByLabel('Choose pickup date filter')?.textContent).toContain('Tomorrow')
@@ -122,11 +125,11 @@ describe('focused pickup and return dashboard', () => {
     const pickup = buttonByLabel('Choose pickup date filter')!
     await act(async () => pickup.click())
     expect(document.activeElement?.getAttribute('role')).toBe('dialog')
-    await act(async () => buttons().find((button) => button.textContent === 'Tomorrow')!.click())
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('#pickup-date-dialog button')].find((button) => button.textContent === 'Tomorrow')!.click())
     expect(document.activeElement).toBe(pickup)
     await act(async () => pickup.click())
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.querySelector('#pickup-date-dialog')).toBeNull()
     expect(document.activeElement).toBe(pickup)
   })
 

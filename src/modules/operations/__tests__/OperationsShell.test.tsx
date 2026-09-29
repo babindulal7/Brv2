@@ -8,6 +8,7 @@ import type { WorkspaceActions } from '../OperationsShell'
 ;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
 let dirty = false
+let mockError: string | null = null
 
 type MockProps = {
   bookingNo?: string
@@ -23,9 +24,10 @@ function MockWorkspace({ bookingNo, onConfirmSuccess, onRegisterActions }: MockP
       isDirty: dirty,
       label: 'Confirm Action',
       complete: () => onConfirmSuccess?.(),
+      error: mockError,
     })
   }, [onConfirmSuccess, onRegisterActions])
-  return <div>Workspace for {bookingNo}</div>
+  return <div>Workspace for {bookingNo}{mockError && <div role="alert">{mockError}</div>}</div>
 }
 
 let mockStage = 'Booked'
@@ -97,6 +99,7 @@ async function mount(
 
 beforeEach(() => {
   dirty = false
+  mockError = null
 })
 
 afterEach(async () => {
@@ -105,6 +108,12 @@ afterEach(async () => {
 })
 
 describe('Task 5 — Operations popup navigation and state', () => {
+  it('shows a workspace error once, without repeating it in the modal footer', async () => {
+    mockError = 'Handover could not be recorded'
+    await mount(vi.fn(), 'Packed', 'Handover')
+    expect([...container.querySelectorAll('[role="alert"]')].filter((el) => el.textContent === mockError)).toHaveLength(1)
+  })
+
   it('Packing shows Close (left) and Confirm Packing & Next (right)', async () => {
     await mount(vi.fn(), 'Booked', 'Pack')
     const buttons = [...container.querySelectorAll('button')]

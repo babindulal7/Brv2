@@ -275,6 +275,7 @@ export function AddItemPanel({
   const [overrideUnit, setOverrideUnit] = useState<EquipmentResult | null>(null)
   const [availability, setAvailability] = useState<AvailabilityLevel | 'any'>('any')
   const [sort, setSort] = useState<SortKey>('recommended')
+  const [showAllResults, setShowAllResults] = useState(false)
   const [activeIndex, setActiveIndex] = useState(0)
   const [preview, setPreview] = useState<BundleRecord | null>(null)
 
@@ -300,7 +301,19 @@ export function AddItemPanel({
     [bookingWindow, query, tab, category, availability, sort, minQueryChars, existing, equipment, bundles],
   )
 
-  const options = useMemo(() => flatten(outcome.groups), [outcome.groups])
+  const previewResults = query.trim() === '' && category === null && availability === 'any' && !showAllResults
+  const visibleGroups = useMemo(() => {
+    if (!previewResults) return outcome.groups
+    let remaining = 8
+    return outcome.groups
+      .map((group) => {
+        const results = group.results.slice(0, remaining)
+        remaining -= results.length
+        return { ...group, results }
+      })
+      .filter((group) => group.results.length > 0 || group.kind === 'service')
+  }, [outcome.groups, previewResults])
+  const options = useMemo(() => flatten(visibleGroups), [visibleGroups])
 
   // Clamp the cursor whenever the result set changes under it.
   useEffect(() => {
@@ -841,7 +854,7 @@ export function AddItemPanel({
               aria-label="Catalogue results"
               style={{ listStyle: 'none', margin: 0, padding: 0 }}
             >
-              {outcome.groups.map((g) => (
+              {visibleGroups.map((g) => (
                 <li key={g.kind} role="presentation">
                   <div
                     role="presentation"
@@ -929,6 +942,12 @@ export function AddItemPanel({
                 </li>
               ))}
             </ul>
+
+            {previewResults && outcome.total > 8 && (
+              <button type="button" onClick={() => setShowAllResults(true)} style={{ width: '100%', padding: '12px', border: 0, borderTop: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--link)', fontWeight: 700, cursor: 'pointer' }}>
+                Show all {outcome.total} results
+              </button>
+            )}
 
             {options.length === 0 && tab !== 'services' && (
               <EmptyResults

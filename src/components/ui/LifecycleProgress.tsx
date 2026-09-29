@@ -1,5 +1,9 @@
 import Icon from './Icon'
 import type { BookingStatus } from '../../lib/workflow'
+import {
+  getRentalPrimaryAction,
+  type RentalPrimaryAction,
+} from '../../lib/rentalActions'
 
 export type LifecycleStage =
   | 'Created'
@@ -27,23 +31,36 @@ export interface UniversalNextAction {
   badgeTone: 'neutral' | 'info' | 'active' | 'success' | 'warning' | 'danger'
   currentStage: LifecycleStage
   stageIndex: number // 0-based
+  /**
+   * RULING 2026-09-29 (audit §7 unification): the offered action itself.
+   * Always the output of `getRentalPrimaryAction` — this component owns the
+   * progress-track presentation only, never the lifecycle decision.
+   */
+  action: RentalPrimaryAction
+}
+
+interface BannerPresentation {
+  stageLabel: string
+  nextActionLabel: string
+  badgeTone: UniversalNextAction['badgeTone']
+  currentStage: LifecycleStage
+  stageIndex: number
 }
 
 /**
- * Derives current lifecycle stage and next required operational action
- * based on booking status per Spec §17 & §18.
+ * Progress-track presentation per booking status (Spec §17 & §18).
+ * Presentation only — the offered action is delegated to the single resolver.
  */
-export function getUniversalNextAction(
+function bannerPresentation(
   status: BookingStatus | string | undefined,
-  meta?: { isOverdue?: boolean; isPartial?: boolean; uncheckedCount?: number }
-): UniversalNextAction {
+  meta?: { isOverdue?: boolean; isPartial?: boolean; uncheckedCount?: number },
+): BannerPresentation {
   const normalized = (status ?? 'Draft').trim()
 
   if (meta?.isOverdue) {
     return {
       stageLabel: 'OVERDUE',
       nextActionLabel: 'Receive Overdue Return',
-      primaryVerb: 'Receive Return',
       badgeTone: 'danger',
       currentStage: 'Return',
       stageIndex: 3,
@@ -54,7 +71,6 @@ export function getUniversalNextAction(
     return {
       stageLabel: 'PARTIAL RETURN',
       nextActionLabel: 'Continue Outstanding Return',
-      primaryVerb: 'Continue Return',
       badgeTone: 'warning',
       currentStage: 'Return',
       stageIndex: 3,
@@ -66,7 +82,6 @@ export function getUniversalNextAction(
       return {
         stageLabel: 'DRAFT',
         nextActionLabel: 'Confirm Rental',
-        primaryVerb: 'Confirm Rental',
         badgeTone: 'neutral',
         currentStage: 'Created',
         stageIndex: 0,
@@ -76,7 +91,6 @@ export function getUniversalNextAction(
       return {
         stageLabel: 'CONFIRMED',
         nextActionLabel: 'Prepare Equipment',
-        primaryVerb: 'Start Preparation',
         badgeTone: 'info',
         currentStage: 'Prepare',
         stageIndex: 1,
@@ -86,7 +100,6 @@ export function getUniversalNextAction(
       return {
         stageLabel: 'PREPARING',
         nextActionLabel: 'Continue Preparation',
-        primaryVerb: 'Continue Preparation',
         badgeTone: 'active',
         currentStage: 'Prepare',
         stageIndex: 1,
@@ -96,7 +109,6 @@ export function getUniversalNextAction(
       return {
         stageLabel: 'READY',
         nextActionLabel: 'Start Handover',
-        primaryVerb: 'Start Handover',
         badgeTone: 'success',
         currentStage: 'Handover',
         stageIndex: 2,
@@ -107,7 +119,6 @@ export function getUniversalNextAction(
       return {
         stageLabel: 'OUT',
         nextActionLabel: 'Receive Return',
-        primaryVerb: 'Receive Return',
         badgeTone: 'active',
         currentStage: 'Return',
         stageIndex: 3,
@@ -116,7 +127,6 @@ export function getUniversalNextAction(
       return {
         stageLabel: 'RETURNED',
         nextActionLabel: 'Inspect Equipment',
-        primaryVerb: 'Start Inspection',
         badgeTone: 'warning',
         currentStage: 'Inspect',
         stageIndex: 4,
@@ -126,7 +136,6 @@ export function getUniversalNextAction(
       return {
         stageLabel: 'INSPECTION COMPLETE',
         nextActionLabel: 'Clean & Reset',
-        primaryVerb: 'Complete Reset',
         badgeTone: 'active',
         currentStage: 'Reset',
         stageIndex: 5,
@@ -136,7 +145,6 @@ export function getUniversalNextAction(
       return {
         stageLabel: 'RESET COMPLETE',
         nextActionLabel: 'Close Rental',
-        primaryVerb: 'Close Rental',
         badgeTone: 'success',
         currentStage: 'Closed',
         stageIndex: 6,
@@ -145,7 +153,6 @@ export function getUniversalNextAction(
       return {
         stageLabel: 'CLOSED',
         nextActionLabel: 'All lifecycle actions completed',
-        primaryVerb: 'View Booking',
         badgeTone: 'neutral',
         currentStage: 'Closed',
         stageIndex: 6,
@@ -155,7 +162,6 @@ export function getUniversalNextAction(
       return {
         stageLabel: 'CANCELLED',
         nextActionLabel: 'Rental cancelled',
-        primaryVerb: 'View Details',
         badgeTone: 'danger',
         currentStage: 'Created',
         stageIndex: 0,
@@ -164,11 +170,35 @@ export function getUniversalNextAction(
       return {
         stageLabel: normalized.toUpperCase(),
         nextActionLabel: 'Review Operations',
-        primaryVerb: 'Open Booking',
         badgeTone: 'neutral',
         currentStage: 'Created',
         stageIndex: 0,
       }
+  }
+}
+
+/**
+ * RULING 2026-09-29 (audit §7 unification): the banner's offered action is
+ * delegated to `getRentalPrimaryAction`. The progress track (stage labels,
+ * tones, indices) stays presentational here; the verb and the transition
+ * target (`action.job` / `action.route`) come from the single resolver, so no
+ * surface can offer the same transition under a second name.
+ */
+export function getUniversalNextAction(
+  status: BookingStatus | string | undefined,
+  meta?: { isOverdue?: boolean; isPartial?: boolean; uncheckedCount?: number }
+): UniversalNextAction {
+  const presentation = bannerPresentation(status, meta)
+  const normalized = (status ?? 'Draft').trim()
+  const action = getRentalPrimaryAction(status, {
+    isOverdue: meta?.isOverdue,
+    isPartial: meta?.isPartial ?? normalized === 'Partial Return',
+    bookingNo: undefined,
+  })
+  return {
+    ...presentation,
+    primaryVerb: action.label,
+    action,
   }
 }
 

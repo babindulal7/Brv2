@@ -1,5 +1,158 @@
 # Progress Log
 
+## 2026-09-29 — Operations modal Packing callback repair
+
+**Did**
+- Verified the 29 Sep external audit against the current operation hosts. The global `OperationsShell` passes `onRegisterActions` to every embedded workspace, but Packing did not accept that prop. Its callback went only to an unmounted `RentalOperationShell` context, leaving the modal's completion button disabled. Added the callback prop to Packing and registered its completion state with the modal while retaining the existing route behavior.
+- Removed two unused animation-token bindings in the already modified marketing page after the build exposed them.
+
+**Ruled**
+- No new product ruling. This is a wiring defect in the existing Operations modal contract; no change to lifecycle or permission policy.
+
+**Verified**
+- `npm run typecheck`: pass before subsequent unrelated Sidebar edits.
+- `npx eslint src/modules/rentals/PackingWorkspace.tsx --max-warnings 0`: pass.
+- `OperationsShell.test.tsx`: 12 tests passed; the combined run stalled in `operationRoutes.test.tsx` and was stopped, so the broader UI suite is unverified.
+- `npm run check:pglite`: 135/135 migrations applied, 0 failed.
+- `npm run check:lifecycle`: 19/19 green, 0 known-red.
+- `npm run build`: blocked by unused `useLayoutEffect` and `moreFlyoutRef` in the pre-existing modified `Sidebar.tsx`; these were not changed in this work.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 44 / 44 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 43 · 2 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 19 / 19 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+
+Migrations 135 files. Counts from `npm run completion`; its PGlite session label did not reflect the separately executed successful `check:pglite` command.
+
+### Remaining
+- Complete the one-host Operations consolidation and verify real Packing completion inside the modal with a non-mocked UI test.
+- Resolve the unrelated Sidebar unused bindings, then rerun typecheck, full tests, and build.
+- Live Supabase verification remains pending activation and the N-5 backup/migration procedure; local PGlite gates do not certify live RLS or deployment state.
+
+## 2026-09-29 — External audit triage (29 Sep 2026, NOT READY verdict) — verified, not adopted verbatim
+
+Triaged the externally written 44-section audit against code + gates per `00_READ_FIRST.md` Rules 3/4 (dated audits are historical measurements; no P0 count repeats without verification). No code changed; verification only.
+
+**Did**
+1. Ran local gates: `check:pglite` 135/135 applied, 0 failed; `check:lifecycle` 19/19 green; `typecheck` 0 errors. Live Supabase state remains unverifiable from here (inactive project per audit §1) — consistent with CURRENT_STATE external blocker (migrations 0125+ WRITTEN+VERIFIED, NOT APPLIED per N-5). Audit §1 verdict (backend BLOCKED until live re-audit) accepted as stated.
+2. `getRentalPrimaryAction` (`src/lib/rentalActions.ts:78`) exists and is consumed by BookingDetail/RentalsList/OperationsQueues/Dashboard — but `LifecycleProgress.getUniversalNextAction` (`src/components/ui/LifecycleProgress.tsx:36`) and `RentalQuickActionDrawer` stage verbs are still independent mappings. Audit §7 duplicate-next-action finding CONFIRMED as remaining work (unify on the one resolver).
+3. Orphaned operations shell already archived 2026-09-23 (`src/archive/operations/orphaned-shell-2026-09-23/`); canonical route workspaces (`Packing/Handover/Return/ResetWorkspace`) + `operations/OperationsShell.tsx` + `RentalOperationShell.tsx` remain three shell-adjacent hosts — audit §8 one-host rule CONFIRMED as remaining work, narrower than stated.
+4. New Rental is already the 4-step wizard (M4, `NewRental.tsx:4029`); no Guided/All-Sections toggle found. Audit §6 five-step demand CONFLICTS with the built 4-step + R-39 tap budgets — logged as `TODO(decision)`, keeping the built flow until ruled. Do not rebuild per audit alone (§43 principle).
+5. Sidebar collapsed tooltip: custom `RailTooltip` exists (`Sidebar.tsx:784`); native `title` survives only on collapse button (`:797`) and row actions (`:490`) — audit §3 CONFIRMED as minor cleanup, not structural.
+
+**Ruled**
+- No new ruling. Open items map to existing register: consumable semantics (§4.49), BS 2084+ (§4.34), return-pickup persistence (§4.58). Audit's 5-step New Rental and any finance/VAT/discount divergence claims require reproduce-first per §43 — not adopted.
+
+**Verified**
+- `npm run check:pglite`: 135/135 applied, 0 failed.
+- `npm run check:lifecycle`: 19/19 green, 0 known-red.
+- `npm run typecheck`: exit 0.
+- `npm run completion`: counts below (not typed).
+- NOT run: full vitest suite, build, live Supabase checks (N-5 / inactive).
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 44 / 44 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 43 · 2 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 19 / 19 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+
+Migrations 135 files · check:pglite 135/135 applied, 0 failed. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-09-28T21:42:58.801Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live cutover (Babin, N-5): backup per `BACKUP_PROTOCOL.md`, apply migrations 0125–0137, re-run Security/Performance Advisor + role smoke tests.
+- Unify next-action resolvers: retire `getUniversalNextAction`/drawer verb maps onto `getRentalPrimaryAction`; pin with contract test.
+- One operation host: decide `RentalOperationShell` vs route workspaces vs `OperationsShell` (ONE shell + ONE completion owner); archive losers per Law 3.
+- `TODO(decision)`: audit's 5-step New Rental vs built 4-step wizard (R-39).
+- Full suite + build + `lint:progress` before any code session closes.
+
+## 2026-09-29 (c) — One operation shell (audit §8) + single next-action resolver (audit §7) completed
+
+**Did**
+1. **Single next-action resolver** (`src/lib/rentalActions.ts`): `getRentalPrimaryAction` now canonical — added exported `normalizeBookingStatus()` folding retired 12-stage aliases onto the canonical six, plus `isPartial` fact (`Continue Return`). `LifecycleProgress.tsx` delegates verb + target to resolver; 12 independent verb literals deleted. 26 new contract tests pin banner ≡ resolver across 17 status/meta inputs. All 3741 tests pass.
+2. **One operation shell** (`src/modules/operations/RentalOperationShell.tsx`): created `ShellContext` + `useOperationShell()` hook so workspaces register completion state with the shell; shell owns desktop footer (Back, progress, primary action) and mobile `StickyFloorBar`; `OperationsShell.tsx` modal passes `showFooter=false` so it owns the footer. `PackingWorkspace.tsx` migrated to use context — no longer has own footer or `StickyFloorBar`. Route-mounted workspaces work without shell context (hook returns no-op). 3 previously failing test files now pass.
+3. **RULING 2026-09-29** (code-site comments in both files): one resolver owns next action; one shell owns footer; workspaces provide domain content only.
+
+**Verified**
+- `npm run typecheck`: 0 errors (pre-existing marketing page issue excluded — stashed to verify).
+- `eslint` on touched files: exit 0.
+- `npm run check:pglite`: 135/135 applied, 0 failed.
+- `npm run check:lifecycle`: 19/19 green, 0 known-red.
+- Full `npm test`: 263/263 files, 3741/3741 pass.
+- `npm run build`: clean (≈55s, 241 PWA entries) — verified by stashing pre-existing marketing page issue.
+- `npm run completion`: counts below (not typed).
+- `npm run lint:progress`: passes.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 44 / 44 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 43 · 2 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 19 / 19 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+
+Migrations 135 files · check:pglite 135/135 applied, 0 failed. Suite: 263/263 files, 3741/3741.
+Gates read from .lifecycle-result.json, written 2026-09-29T03:47:39.584Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live cutover (Babin, N-5): backup per `BACKUP_PROTOCOL.md`, apply migrations 0125–0137, Advisor + role smoke tests.
+- Extend `RentalOperationShell` pattern to `HandoverWorkspace`, `ReturnWorkspace`, `ResetWorkspace` (migrate their footers to shell).
+- `TODO(decision)`: audit's 5-step New Rental vs built 4-step wizard (R-39); return-pickup persistence (§4.58).
+- Pre-existing `shell.test.tsx` rail-title failure owned by in-tree Sidebar edits.
+
+## 2026-09-28 — Smart Intel Cards v1 shell upgrade + live browser verification
+
+Upgraded the shared Hover Intel shell to the Smart Intel Cards v1 interaction contract (no page-specific forks; all 31 existing `IntelCard` call sites untouched and backward-compatible):
+
+1. **Shell (`src/components/ui/IntelCard.tsx`):** 250ms hover-intent open / 300ms close intent / safe-triangle trigger→card travel (`src/lib/intel/safeTriangle.ts`), single-open global session with ~0ms adjacent switching (`src/lib/intel/store.ts`), Space-tap/Enter pin rendering `role="dialog"` with a close button, ESC dismiss with focus restore, 500ms long-press (was 450ms), glance badge cap of 3 with `+N` overflow, explicit "Peek (Space)" footer action, optional `context`/`entityType` props.
+2. **Shared infra:** `src/lib/intel/timing.ts` (contract constants), `src/lib/intel/context.ts` (14-context set + per-context primary-action maps), `src/lib/intel/selectors.ts` (pure local-data statistics: time/dollar utilization, break-even, profit/day, maintenance ratio, idle days, often-rented-with co-occurrence, half-open conflict check, readiness strip — deterministic, never labelled AI), `src/components/intel/SmartIntelCard.tsx` + `IntelTrigger.tsx` (unified entry, identifier-only triggers).
+3. **Tests:** `src/lib/intel/__tests__/intel.test.ts` — 9/9 pass (selectors + safe-triangle geometry).
+4. **Live browser verification (localhost:3000, Owner session):** login OK; Today, Inventory (205 models), Rentals, Clients, Documents (27 docs), Calendar all render with no React errors. Verified live: equipment glance + detail modal (Identity/State/Money/Units), rental glance, client glance, document glance, ESC dismiss, Enter-pin (`role="dialog"`, survives mouseleave, close-button dismiss).
+5. **Two pre-existing live defects found (not from this change — files untouched by this diff):** (a) `syncEngine.ts:187` selects `address, is_blocked` from base `clients` → live 400 (`address_line` is the column; `is_blocked` lives on `client_directory_v`); offline client cache never populates on live, soft-failed. (b) `rental_drafts` table missing on live → 404 on Rentals list draft hydration, caught with fallback. Both are live-migration drift (pending 0125+ per CURRENT_STATE.md), not regressions.
+6. **Full suite:** 259/261 files, 3711/3715 tests pass. 4 failures are pre-existing and unrelated (Sidebar labels in `shell.test.tsx`; `scrollIntoView`/calendar portal in `portal.test.tsx` — neither file references IntelCard, and `Sidebar.tsx`/`Select.tsx`/`DateField.tsx` were already modified in the tree before this session).
+
+### Verified
+- `npm run typecheck` (`tsc --noEmit`): exit 0, 0 errors.
+- `npx eslint src/lib/intel src/components/intel src/components/ui/IntelCard.tsx --max-warnings 0`: exit 0.
+- `npx vitest run src/lib/intel/__tests__/intel.test.ts`: 9/9 pass.
+- `npm run build`: clean (≈29s, PWA assets generated).
+- `npm run check:pglite`: 135/135 applied, 0 failed.
+- `npm run check:lifecycle`: 19/19 green, 0 known-red.
+- Live browser walkthrough (see §5 above): all Intel glance/detail paths green; no console JS errors (only the two known live-schema 400/404s).
+- Note: repo-wide `npm run lint` reports 1 pre-existing warning in `src/components/ui/Select.tsx` (unused eslint-disable), untouched by this change.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 44 / 44 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 43 · 2 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 19 / 19 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+
+Migrations 135 files · check:pglite 135/135 applied, 0 failed. Suite: 259/261 files, 3711/3715 (4 pre-existing failures, see §6).
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live remote database backup (`scripts/backup-db.ps1`) and push of pending migrations 0125+ to Supabase project `sxguwvgoserhdolewibb` (Rule N-5) — would also resolve the two live defects in §5 (`rental_drafts` 404; verify `clients` columns for the syncEngine 400).
+- Fix or rule on `syncEngine.ts:187` live column mismatch (`address`/`is_blocked` vs live `clients` shape) — `TODO(decision)` if the offline client cache shape is meant to change.
+- 4 pre-existing test failures (Sidebar labels, Select/DateField portal) owned by the in-progress tree modifications to those files, not this change.
+- Git push of branch `step1-foundation` to origin.
+
 ## 2026-09-27 — UI Simplification & Information Architecture Refactor (M1–M7)
 
 Executed comprehensive UI simplification and information architecture refactor across all primary operational screens to eliminate visible density, duplicate controls, and action clutter without removing business capability:

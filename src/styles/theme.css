@@ -8,6 +8,14 @@
 
    Light = clean · professional · enterprise · spacious
    Dark  = cinematic · premium · OLED friendly · long working hours
+
+   ⚠ TYPE SYSTEM DIVERGENCE:
+   The marketing page (`src/marketing/MarketingPage.tsx`) uses Tailwind CSS
+   (utility classes) while this app uses CSS custom properties + inline styles.
+   They share ONLY the brand gold (`#d96518` / `--brand`). All other tokens
+   (spacing, type scale, radii, shadows, breakpoints) are duplicated and
+   must be kept in sync manually. A future unification should extract
+   design tokens to a shared package (e.g., `@babin-rentals/design-tokens`).
    ========================================================================== */
 
 /*
@@ -19,6 +27,10 @@
   change; this only establishes the scale for future/adopted use. Chosen so
   none of the five values collide with any literal already in live use, and
   ordered so each named tier paints above the one before it.
+
+  ENFORCEMENT: Use CSS variables (--z-*) only. Hardcoded z-index literals
+  in component styles are a lint error (see eslint.config.js).
+  Migration: replace `zIndex: 50` → `zIndex: 'var(--z-dropdown)'`, etc.
 */
 :root {
   --z-dropdown: 1100;    /* menus, popovers, comboboxes */
@@ -495,7 +507,8 @@
   /* §3.3 / §7.3 - the law is the HIT AREA, not the paint. */
   --tap: 44px;
   --row-min-h: 56px;
-  --icon-stroke: 1.6;
+  --icon-stroke: 1.5;
+  --icon-stroke-fill: 2.0;
 
   /* ══ §4 status blocks — ALL SOLID ═══════════════════════════════════════
      v4.1 killed the solid-vs-outline fill rule: every status is a solid block
@@ -1067,6 +1080,7 @@ h3,
   font-family: var(--font-display);
   font-weight: 700;
   letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
 /* §4.3.2 — "tabular-nums is not optional. Without it a column of money does

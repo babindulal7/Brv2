@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Icon from '../ui/Icon'
 import type { BrowserMultiFormatReader } from '@zxing/browser'
 import type { IScannerControls } from '@zxing/browser'
@@ -69,6 +69,7 @@ export default function ScannerFab() {
   const handleScanRef = useRef<(code: string) => void>(() => {})
   
   const panel = useRef<HTMLDivElement>(null)
+  const fabRef = useRef<HTMLButtonElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const codeReader = useRef<BrowserMultiFormatReader | null>(null)
@@ -77,6 +78,15 @@ export default function ScannerFab() {
   const lastScanRef = useRef<{ code: string; time: number } | null>(null)
 
   // 1. Keyboard Wedge Shortcut & Esc/Outside Click
+  /* Return focus to the FAB when dismissal would otherwise strand it on
+     body (Escape, scrim) — but never steal it when the pointer dismissal
+     already moved focus somewhere meaningful. */
+  const refocusFab = useCallback(() => {
+    const active = document.activeElement as Element | null
+    if (!active || active === document.body || panel.current?.contains(active)) {
+      fabRef.current?.focus()
+    }
+  }, [])
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
@@ -84,11 +94,15 @@ export default function ScannerFab() {
         setOpen(true)
         setTimeout(() => inputRef.current?.focus(), 50)
       }
-      if (open && e.key === 'Escape') setOpen(false)
+      if (open && e.key === 'Escape') {
+        setOpen(false)
+        refocusFab()
+      }
     }
     const away = (e: Event) => {
       if (open && e.target instanceof Element && !e.target.closest('[data-scanner]')) {
         setOpen(false)
+        refocusFab()
       }
     }
     /* The phone bar's centre Scan slot — same panel, not a second scanner. */
@@ -101,7 +115,7 @@ export default function ScannerFab() {
       document.removeEventListener('pointerdown', away)
       window.removeEventListener(SCANNER_TOGGLE_EVENT, external)
     }
-  }, [open])
+  }, [open, refocusFab])
 
   // 2. Camera Mount/Unmount (ZXing Web Fallback)
   /*
@@ -317,7 +331,10 @@ export default function ScannerFab() {
       {phone && open && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 0 }}
-          onClick={() => setOpen(false)}
+          onClick={() => {
+            setOpen(false)
+            refocusFab()
+          }}
           aria-hidden="true"
         />
       )}
@@ -362,7 +379,10 @@ export default function ScannerFab() {
             <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>Scanner</div>
             <button
               type="button"
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false)
+                refocusFab()
+              }}
               aria-label="Close scanner"
               style={{
                 background: 'none',
@@ -475,6 +495,7 @@ export default function ScannerFab() {
               ref={inputRef}
               type="text"
               placeholder="Type code or use wedge scanner..."
+              aria-label="Type code manually or use wedge scanner"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleScan(e.currentTarget.value)
               }}
@@ -524,6 +545,7 @@ export default function ScannerFab() {
 
       {!phone && (
         <button
+          ref={fabRef}
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-label="Scanner"

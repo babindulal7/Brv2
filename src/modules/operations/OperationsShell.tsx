@@ -262,20 +262,6 @@ export default function OperationsShell({
               gap: 8,
             }}
           >
-            {actions?.error && (
-              <div
-                role="alert"
-                style={{
-                  color: 'var(--danger-text)',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 600,
-                  textAlign: 'right',
-                  padding: '4px 0',
-                }}
-              >
-                {actions.error}
-              </div>
-            )}
             <div
               style={{
                 width: '100%',

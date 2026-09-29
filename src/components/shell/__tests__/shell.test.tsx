@@ -94,14 +94,14 @@ describe('Sidebar — Law 13, width decides', () => {
     expect(container.querySelector('[aria-label="Expand navigation"]')).not.toBeNull()
   })
 
-  it('still speaks each primary label in the rail — title on every row', async () => {
+  it('still speaks each primary label in the rail — aria-label on every row', async () => {
     viewport = 'tablet'
     collapsedPref = true
     await mount(<Sidebar active="/dashboard" />)
-    const titles = [...container.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.getAttribute('title'))
-    expect(titles).toContain('Rentals')
-    expect(titles).toContain('Operations')
-    expect(titles.every((t) => t !== null && t.length > 0)).toBe(true)
+    const labels = [...container.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.getAttribute('aria-label'))
+    expect(labels).toContain('Rentals')
+    expect(labels).toContain('Operations')
+    expect(labels.every((l) => l !== null && l.length > 0)).toBe(true)
   })
 
   it('honours an expanded navigation preference on tablet', async () => {

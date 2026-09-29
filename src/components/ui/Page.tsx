@@ -362,7 +362,7 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
                 {k.note ? (
                   <span style={{ color: 'var(--muted)' }}>{k.note}</span>
                 ) : isZero && k.zeroExplanation ? (
-                  <span style={{ color: 'var(--muted)', fontStyle: 'italic' }}>{k.zeroExplanation}</span>
+                  <span style={{ color: 'var(--muted)', fontStyle: 'italic', lineHeight: '1.5' }}>{k.zeroExplanation}</span>
                 ) : null}
               </div>
             )}

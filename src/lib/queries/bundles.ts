@@ -131,6 +131,10 @@ const BUNDLE_COLUMNS =
   'id, bundle_code, name, description, daily_rate, weekly_rate, is_active, category_id, ' +
   'category:inventory_categories ( name ), ' +
   'items:bundle_items ( id, product_id, quantity, days, is_mandatory, sort_order, is_active )'
+const LEGACY_BUNDLE_COLUMNS =
+  'id, bundle_code, name, description, daily_rate, weekly_rate, is_active, category_id, ' +
+  'category:inventory_categories ( name ), ' +
+  'items:bundle_items ( id, product_id, quantity, days, is_mandatory, sort_order )'
 
 export interface ListBundlesOptions {
   /**
@@ -175,18 +179,25 @@ const BUNDLE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
  * `is_active = false`.
  */
 export async function listBundlesWithItems(opts: ListBundlesOptions = {}): Promise<BundleWithItems[]> {
-  let query = supabase.from('bundles_v').select(BUNDLE_COLUMNS)
-  /* Law 3 — an inactive bundle is retained, never deleted, so it is filtered
-     here rather than expected to be absent. `includeArchived` lifts the filter
-     for the Bundles pane, which has a shelf for exactly these. */
-  if (opts.includeArchived !== true) query = query.eq('is_active', true)
-  if (opts.bundleRef !== undefined) {
-    query = query.eq(BUNDLE_UUID_RE.test(opts.bundleRef) ? 'id' : 'bundle_code', opts.bundleRef)
+  const readBundles = async (columns: string) => {
+    let query = supabase.from('bundles_v').select(columns)
+    /* Law 3 — an inactive bundle is retained, never deleted, so it is filtered
+       here rather than expected to be absent. */
+    if (opts.includeArchived !== true) query = query.eq('is_active', true)
+    if (opts.bundleRef !== undefined) {
+      query = query.eq(BUNDLE_UUID_RE.test(opts.bundleRef) ? 'id' : 'bundle_code', opts.bundleRef)
+    }
+    return await query.order('name', { ascending: true }).limit(opts.limit ?? 200)
   }
 
-  const { data, error } = await query
-    .order('name', { ascending: true })
-    .limit(opts.limit ?? 200)
+  let result = await readBundles(BUNDLE_COLUMNS)
+  // 0134 added soft-deactivation to bundle_items. Older connected databases
+  // have no such column, so every existing component is active by definition.
+  // Retry only that missing-column error; all other read failures stay visible.
+  if (result.error && /column bundle_items(?:_\d+)?\.is_active does not exist/.test(result.error.message)) {
+    result = await readBundles(LEGACY_BUNDLE_COLUMNS)
+  }
+  const { data, error } = result
 
   if (error) throw new Error(`listBundlesWithItems failed: ${error.message}`)
 
@@ -313,4 +324,3 @@ export {
 } from '../../data/bundles'
 export { bundleGlance, bundleDetailGroups } from '../../data/bundleIntel'
 export type { BundleRecord, BundleState, BundleLine, BundleFacts } from '../../data/bundles'
-

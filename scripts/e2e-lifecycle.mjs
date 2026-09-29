@@ -649,7 +649,7 @@ const STEPS = [
         const handoverSessionId = crypto.randomUUID()
         await q(
           `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
-           values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', 'Customer Pickup', $3, $3)`,
+           values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', 'Client Pickup', $3, $3)`,
           [handoverSessionId, bookingIds.a, U.Warehouse],
         )
 
@@ -980,7 +980,7 @@ const STEPS = [
           const handoverSessId = crypto.randomUUID()
           await q(
             `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
-             values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', 'Customer Pickup', $3, $3)`,
+             values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', 'Client Pickup', $3, $3)`,
             [handoverSessId, bookingIds.c, U.Warehouse],
           )
           await q(

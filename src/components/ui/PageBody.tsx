@@ -114,7 +114,7 @@ export interface PageBodyProps {
    */
   restrictedRequiredRole?: string
   /** Shape of the skeleton, so it resembles what is arriving. */
-  skeleton?: 'card' | 'table' | 'kpi'
+  skeleton?: 'card' | 'table' | 'kpi' | 'movement'
   /** Skeleton row count. Honoured by `skeleton="table"` only — see limitation 2. */
   skeletonRows?: number
   /** Empty-state overrides. Defaults are derived from `noun`. */
