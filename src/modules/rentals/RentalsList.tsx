@@ -38,6 +38,7 @@ import { supabase } from '../../lib/supabase'
 import { useViewport } from '../../lib/device'
 import { gateContext } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
+import { ClientIntelFromId } from '../../components/intel/ClientIntelFromId'
 import {
   listBookings,
   OPERATIONS,
@@ -60,6 +61,7 @@ import {
 import { useList, type ListQueryResult } from '../../lib/queries/useList'
 import { useFilters } from '../../lib/queries/useFilters'
 import type { ListFilters } from '../../lib/queries/listQuery'
+import { PROJECT_TYPES, displayProjectType } from '../../lib/projectTypes'
 import { LoadingSkeleton } from '../../components/ui/StateViews'
 import { listActiveDrafts, type RentalDraftRecord } from '../../actions/rentals/saveDraft'
 const NewRental = lazy(() => import('./NewRental'))
@@ -197,6 +199,9 @@ function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
     monogram: (clientName.trim()[0] || 'D').toUpperCase(),
     avatarTone: 'neutral',
     project: data.project || 'Untitled Draft',
+    /* Drafts carry the type as `kind` (+`kindOther`); same display rule. */
+    projectTypeDisplay: displayProjectType(data.kind || null, data.kindOther ?? ''),
+    projectTypeValue: data.kind || null,
     pickupLocation: data.pickupLocation || null,
     returnLocation: data.returnLocation || null,
     itemCount: data.lines?.reduce((sum, l) => sum + (l.qty || 1), 0) ?? 0,
@@ -1010,14 +1015,17 @@ export default function RentalsList() {
    */
   const urlSchema = useMemo(
     () => ({
-      chips: ['stage'],
+      chips: ['stage', 'project_type'],
       dateColumn: 'pickup_at',
+      /* Sort round-trips so a shared/bookmarked type-sorted view keeps its
+         order; the screen still defaults to pickup_at (see listFilters). */
+      sortColumns: ['pickup_at', 'project_type'],
       /* `sub` is §11.1's chip. An extra rather than a chip group for the same
-         reason `quick` is one: there is no `sub_rental` column to put in an
-         `in ()`, because the fact is line-level and the booking-level answer is
-         derived (`data/rentals.ts`'s `subRentalBookingIds`). It rides the URL so
-         a refresh keeps it and "the sub-rented bookings out this week" is a
-         link (§18). */
+      reason `quick` is one: there is no `sub_rental` column to put in an
+      `in ()`, because the fact is line-level and the booking-level answer is
+      derived (`data/rentals.ts`'s `subRentalBookingIds`). It rides the URL so
+      a refresh keeps it and "the sub-rented bookings out this week" is a
+      link (§18). */
       extras: ['quick', 'sub'],
       pageSize: perPage,
       /* A query string is user input in the most literal sense — a bookmark
@@ -1026,13 +1034,18 @@ export default function RentalsList() {
          dropped at the parser, so the badge, the chip row and the query all
          agree it is not a filter. Validating it only on the way to
          `rentalsQuery` would leave the first two counting it. */
-      allow: { stage: ['Draft', ...STATUS_ORDER], quick: Object.keys(CHIP_MEANS), sub: ['on'] },
+      allow: {
+        stage: ['Draft', ...STATUS_ORDER],
+        project_type: [...PROJECT_TYPES],
+        quick: Object.keys(CHIP_MEANS),
+        sub: ['on'],
+      },
     }),
     [perPage],
   )
   const f = useFilters({
     url: urlSchema,
-    labels: { stage: 'Stage', quick: 'Quick filter', sub: 'Sub-Rental', pickup_at: 'Pickup' },
+    labels: { stage: 'Stage', project_type: 'Project Type', quick: 'Quick filter', sub: 'Sub-Rental', pickup_at: 'Pickup' },
   })
   const page = f.page
   const setPage = f.setPage
@@ -1154,6 +1167,20 @@ export default function RentalsList() {
   )
   const statusFilter = useMemo(() => new Set(statuses), [statuses])
 
+  /* Project Type facet — a plain chip group on the real `project_type` column
+     (unlike `quick`/`sub`, which are derived and ride extras). Multi-select ORs
+     inside the group via the generic `.in()` in `applyListFilters`; the URL
+     carries repeated `?project_type=` keys (§34). Keyed on '|' like statusKey —
+     no project type contains it. */
+  const projectTypeKey = (f.filters.chips?.project_type ?? []).join('|')
+  const projectTypeFilter = useMemo(
+    () => new Set(projectTypeKey ? projectTypeKey.split('|') : []),
+    [projectTypeKey],
+  )
+  function toggleProjectType(t: string) {
+    f.toggleChip('project_type', t)
+  }
+
   const from = f.filters.dateRange?.fromAd ?? ''
   const to = f.filters.dateRange?.toAd ?? ''
 
@@ -1267,9 +1294,19 @@ export default function RentalsList() {
           (d) =>
             (d.data.bookingNo && d.data.bookingNo.toLowerCase().includes(q)) ||
             (d.data.project && d.data.project.toLowerCase().includes(q)) ||
+            (d.data.kind && d.data.kind.toLowerCase().includes(q)) ||
+            (d.data.kindOther && d.data.kindOther.toLowerCase().includes(q)) ||
             (d.data.clientName && d.data.clientName.toLowerCase().includes(q)) ||
             (d.data.selectedClientId && d.data.selectedClientId.toLowerCase().includes(q)),
         )
+      }
+
+      // 1b. Project Type facet — drafts carry the answer as `kind`, so they
+      // are narrowed client-side while bookings narrow server-side. A draft
+      // with no kind never matches a selected type.
+      const wantedTypes = filters.chips?.project_type ?? []
+      if (wantedTypes.length > 0) {
+        filteredDrafts = filteredDrafts.filter((d) => wantedTypes.includes(d.data.kind))
       }
 
       // 2. Date range filter (pickup date)
@@ -1376,8 +1413,14 @@ export default function RentalsList() {
   )
 
   /* Server-side paging. `withCount: true` is what makes "Showing X to Y of Z"
-     a count of the whole matching set rather than of the page in hand. */
-  const listFilters: ListFilters = { ...query.filters, page: { index: page - 1, size: perPage } }
+     a count of the whole matching set rather than of the page in hand. The
+     operator's sort (default pickup_at, set by the toolbar control) rides
+     along — `rentalsQuery` does not carry it, so it is merged here. */
+  const listFilters: ListFilters = {
+    ...query.filters,
+    ...(f.filters.sort ? { sort: f.filters.sort } : {}),
+    page: { index: page - 1, size: perPage },
+  }
   const list = useList<RentalListRow>(fetchRentals, listFilters, { isFilteredOverride: isFiltered })
 
   const total = list.total
@@ -1469,6 +1512,10 @@ export default function RentalsList() {
     'Booking ID',
     'Created Date',
     'Client / Project',
+    /* Project Type sits beside Client (§10: who + what-for read together).
+       Fixed, not optional (§13) — the table scrolls horizontally at narrow
+       widths rather than dropping a high-priority column. */
+    'Project Type',
     ...(show('Items') ? ['Items'] : []),
     ...(show('Pickup') ? ['Pickup'] : []),
     ...(show('Return') ? ['Return'] : []),
@@ -1524,6 +1571,7 @@ export default function RentalsList() {
       'Created Date',
       'Client',
       'Project',
+      'Project Type',
       'Status',
       'Pickup Date',
       'Return Date',
@@ -1535,6 +1583,7 @@ export default function RentalsList() {
       `"${r.createdOn || ''}"`,
       `"${(r.client || '').replace(/"/g, '""')}"`,
       `"${(r.project || '').replace(/"/g, '""')}"`,
+      `"${(r.projectTypeDisplay || '').replace(/"/g, '""')}"`,
       `"${r.status}"`,
       `"${r.pickup?.date || ''}"`,
       `"${r.ret?.date || ''}"`,
@@ -1709,6 +1758,8 @@ export default function RentalsList() {
             onClearAll={clearFilters}
             statusFilter={statusFilter}
             onToggleStatus={toggleStatus}
+            projectTypeFilter={projectTypeFilter}
+            onToggleProjectType={toggleProjectType}
             quickFilter={chip}
             onSelectQuickFilter={pickChip}
             dateRange={{ from, to }}
@@ -1724,7 +1775,7 @@ export default function RentalsList() {
       <FilterBar
         search={f.filters.search ?? ''}
         onSearchChange={(val) => f.setSearch(val)}
-        searchPlaceholder="Search booking number or project"
+        searchPlaceholder="Search booking, project, or type"
         searchAriaLabel="Search rentals"
         onToggleDrawer={() => setFiltersOpen((open) => !open)}
         isDrawerOpen={filtersOpen}
@@ -1735,16 +1786,52 @@ export default function RentalsList() {
         groupAriaLabel="Filter by operational view"
         rightSlot={
           tabular && (
-            <SegmentedControl
-              size="sm"
-              ariaLabel="List view"
-              options={[
-                { id: 'Table', label: 'Table', icon: 'checklist' },
-                { id: 'Cards', label: 'Cards', icon: 'queues' },
-              ]}
-              value={view === 'Cards' ? 'Cards' : 'Table'}
-              onChange={(next) => setView(next as 'Table' | 'Cards')}
-            />
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              {/* Spec §19 — the list's only sort control. Pickup is the default;
+                  the type sorts are opt-in and round-trip in the URL (§34). */}
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
+                Sort
+                <select
+                  aria-label="Sort rentals"
+                  value={
+                    f.filters.sort?.column === 'project_type'
+                      ? (f.filters.sort.ascending === false ? 'project_type:desc' : 'project_type:asc')
+                      : 'pickup_at:asc'
+                  }
+                  onChange={(e) => {
+                    const [column, dir] = e.target.value.split(':')
+                    if (column === 'project_type') f.setSort('project_type', dir !== 'desc')
+                    else f.setSort('pickup_at', true)
+                  }}
+                  style={{
+                    minHeight: 36,
+                    padding: '0 8px',
+                    borderRadius: 'var(--r-btn)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--card)',
+                    color: 'var(--text)',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: 600,
+                    fontFamily: 'inherit',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="pickup_at:asc">Pickup date</option>
+                  <option value="project_type:asc">Project Type A → Z</option>
+                  <option value="project_type:desc">Project Type Z → A</option>
+                </select>
+              </label>
+              <SegmentedControl
+                size="sm"
+                ariaLabel="List view"
+                options={[
+                  { id: 'Table', label: 'Table', icon: 'checklist' },
+                  { id: 'Cards', label: 'Cards', icon: 'queues' },
+                ]}
+                value={view === 'Cards' ? 'Cards' : 'Table'}
+                onChange={(next) => setView(next as 'Table' | 'Cards')}
+              />
+            </span>
           )
         }
       >
@@ -1978,11 +2065,15 @@ export default function RentalsList() {
                         />
                         <Avatar row={r} />
                         <span style={{ minWidth: 0, flex: 1 }}>
-                          <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
-                            {r.client}
-                          </span>
+                          <ClientIntelFromId clientId={r.clientId} name={r.client} context="rental-list" gateContext={gctx} actionContext={user ? { userId: user.id, role: user.role } : null}>
+                            <span style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>{r.client}</span>
+                          </ClientIntelFromId>
                           <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 1 }}>
                             {r.project ?? '—'}
+                          </span>
+                          {/* Spec §15 — type directly under client/project name. */}
+                          <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 1 }}>
+                            {r.projectTypeDisplay}
                           </span>
                         </span>
                         {/* §8.3 — omitted, never shown blank. `totalAmount` is
@@ -2006,8 +2097,14 @@ export default function RentalsList() {
                           detail={detail}
                           detailTitle={r.bookingNo}
                           detailSubtitle={`${r.client} · ${r.status}`}
+                          entityType="rental"
+                          entityId={r.id}
+                          context="rental-list"
+                          gateContext={gctx}
+                          actionContext={user ? { userId: user.id, role: user.role } : null}
                         >
                           <Link
+                            data-intel-identifier
                             to={(r.status as string) === 'Draft' ? `/rentals?action=new&draft=${r.id}` : `/rentals/${r.bookingNo}`}
                             className="identifier"
                             style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--link)', textDecoration: 'none' }}
@@ -2184,9 +2281,15 @@ export default function RentalsList() {
                               detail={detail}
                               detailTitle={r.bookingNo}
                               detailSubtitle={`${r.client} · ${r.status}`}
+                              entityType="rental"
+                              entityId={r.id}
+                              context="rental-list"
+                              gateContext={gctx}
+                              actionContext={user ? { userId: user.id, role: user.role } : null}
                             >
                               {/* Booking Detail exists, so this is a real link. */}
                               <Link
+                                data-intel-identifier
                                 to={(r.status as string) === 'Draft' ? `/rentals?action=new&draft=${r.id}` : `/rentals/${r.bookingNo}`}
                                 className="identifier"
                                 style={{
@@ -2227,6 +2330,7 @@ export default function RentalsList() {
                             <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                               <Avatar row={r} />
                               <span style={{ minWidth: 0 }}>
+                                <ClientIntelFromId clientId={r.clientId} name={r.client} context="rental-list" gateContext={gctx} actionContext={user ? { userId: user.id, role: user.role } : null}>
                                 <Link
                                   to={`/clients/${r.clientId}`}
                                   style={{
@@ -2239,6 +2343,7 @@ export default function RentalsList() {
                                 >
                                   {r.client}
                                 </Link>
+                                </ClientIntelFromId>
                                 {/* `project` is nullable (0002:28). A null
                                     renders as an explicit non-value — never
                                     as a kit name, which is what this cell
@@ -2267,6 +2372,28 @@ export default function RentalsList() {
                                   {r.pickupLocation ?? '—'}
                                 </span>
                               </span>
+                            </span>
+                          </td>
+
+                          <td style={td}>
+                            {/* Project Type — neutral muted text (§11), never
+                                stronger than a status pill (§3). Constrained
+                                width with ellipsis + native tooltip (§12). */}
+                            <span
+                              title={r.projectTypeDisplay}
+                              style={{
+                                display: 'block',
+                                fontSize: 'var(--t-meta)',
+                                fontWeight: 500,
+                                color: 'var(--text2)',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                minWidth: 150,
+                                maxWidth: 220,
+                              }}
+                            >
+                              {r.projectTypeDisplay}
                             </span>
                           </td>
 
@@ -2648,5 +2775,3 @@ const stickyTd = {
   background: 'var(--card)',
   boxShadow: 'inset 1px 0 0 var(--border)',
 }
-
-

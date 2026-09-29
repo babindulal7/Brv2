@@ -23,6 +23,20 @@ create policy stock_adjustments_select on stock_adjustments for select to authen
 revoke all on stock_adjustments from public, anon, authenticated;
 grant select on stock_adjustments to authenticated;
 
+create or replace function public.reject_direct_bulk_quantity_update()
+returns trigger language plpgsql set search_path = public, pg_temp as $$
+begin
+  if current_user = 'authenticated' and NEW.total_quantity is distinct from OLD.total_quantity then
+    raise exception 'GATE:gate.stock_adjust.rpc_required|Use the audited stock adjustment action to change quantity.' using errcode = 'P0001';
+  end if;
+  return NEW;
+end;
+$$;
+
+create trigger products_bulk_quantity_rpc_only
+before update of total_quantity on products
+for each row execute function public.reject_direct_bulk_quantity_update();
+
 create or replace function public.adjust_stock(
   p_product_id uuid,
   p_delta integer,

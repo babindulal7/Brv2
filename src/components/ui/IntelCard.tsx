@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from './Icon'
@@ -10,8 +11,13 @@ import { useCapability, useViewport } from '../../lib/device'
 import { shouldFlipUp } from '../../lib/menuFlip'
 import { INTEL_ADJACENT_DELAY_MS, INTEL_CARD_IN_MS, INTEL_CLOSE_DELAY_MS, INTEL_LONG_PRESS_MS, INTEL_OPEN_DELAY_MS } from '../../lib/intel/timing'
 import { inTravelTriangle } from '../../lib/intel/safeTriangle'
-import { intelClosed, intelOpened, intelReplaced, isIntelSessionActive } from '../../lib/intel/store'
+import { intelClosed, intelOpened, intelReplaced, isIntelSessionActive, useIntelSession } from '../../lib/intel/store'
+import type { IntelNavigationEntry } from '../../lib/intel/store'
 import type { IntelContext, IntelEntityType } from '../../lib/intel/context'
+import type { GateContext } from '../../lib/fieldGating'
+import type { ActionContext } from '../../actions/core'
+import { IntelDetailExtras } from '../intel/IntelDetailExtras'
+import { loadIntelGlanceFields } from '../../lib/queries/intelExtras'
 
 /**
  * Worst-case Glance footprint (avatar row, badges, up to ~6 body lines, the
@@ -95,27 +101,49 @@ export interface IntelCardProps {
   context?: IntelContext
   /** Spec §1 — carried for cross-entity navigation, not for branching the shell. */
   entityType?: IntelEntityType
+  entityId?: string
+  gateContext?: GateContext
+  actionContext?: ActionContext | null
+  onOpen?: () => void
 }
 
-export function IntelCard({ children, glance, detailTitle, detailSubtitle, detail, className, context, entityType }: IntelCardProps) {
-  const { hasHover } = useCapability()
+export function IntelCard({ children, glance, detailTitle, detailSubtitle, detail, className, context, entityType, entityId, gateContext, actionContext, onOpen }: IntelCardProps) {
+  const { hasHover, coarsePointer, reducedMotion } = useCapability()
   const viewport = useViewport()
+  const session = useIntelSession()
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [peeking, setPeeking] = useState(false)
+  const [extraLines, setExtraLines] = useState<string[]>([])
   const [flip, setFlip] = useState({ up: false, alignRight: false })
+  /* Fixed anchor point for the portaled Glance overlay (see below). */
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
   const press = useRef<number | null>(null)
   const openTimer = useRef<number | null>(null)
   const closeTimer = useRef<number | null>(null)
   const suppress = useRef(false)
   const spaceHeld = useRef(false)
+  const spaceHeldLong = useRef(false)
+  const spaceTimer = useRef<number | null>(null)
   const leavePoint = useRef<{ x: number; y: number } | null>(null)
+  const hoverOnIdentifier = useRef(false)
   const wrapperRef = useRef<HTMLDivElement | null>(null)
   const cardRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLDivElement | null>(null)
   const cardId = useId()
-  void context
-  void entityType
+  const entry: IntelNavigationEntry | undefined = context && entityType && entityId
+    ? { context, entityType, entityId }
+    : undefined
+
+  useEffect(() => {
+    if (!open || !entityType || !entityId || !gateContext) return
+    let cancelled = false
+    setExtraLines([])
+    void loadIntelGlanceFields(entityType, entityId, gateContext).then((lines) => {
+      if (!cancelled) setExtraLines(lines)
+    })
+    return () => { cancelled = true }
+  }, [open, entityType, entityId, gateContext])
 
   const clearOpenTimer = () => {
     if (openTimer.current !== null) window.clearTimeout(openTimer.current)
@@ -130,7 +158,8 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
     clearCloseTimer()
     clearOpenTimer()
     setOpen(true)
-    intelOpened(cardId)
+    onOpen?.()
+    intelOpened(cardId, entry, 'hover', triggerRef.current)
   }
 
   const doClose = () => {
@@ -163,14 +192,39 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
     }, INTEL_CLOSE_DELAY_MS)
   }
 
+  const pointerAtIdentifier = (target: EventTarget | null): boolean => {
+    const wrapper = wrapperRef.current
+    if (!wrapper || !(target instanceof Element)) return false
+    const identifier = wrapper.querySelector('[data-intel-identifier]')
+    return identifier ? Boolean(target.closest('[data-intel-identifier]')) : true
+  }
+
+  const measureAnchor = () => {
+    const r = wrapperRef.current?.getBoundingClientRect()
+    if (!r) return
+    const up = shouldFlipUp(r, GLANCE_H)
+    const alignRight = r.left + GLANCE_W > window.innerWidth - 12
+    setFlip({ up, alignRight })
+    setAnchor({ x: alignRight ? r.right : r.left, y: up ? r.top : r.bottom })
+  }
+
   useLayoutEffect(() => {
+    if (!open) {
+      setAnchor(null)
+      return
+    }
+    measureAnchor()
+  }, [open])
+
+  /* Re-track the trigger while open so scrolling never detaches the card. */
+  useEffect(() => {
     if (!open) return
-    const anchor = wrapperRef.current?.getBoundingClientRect()
-    if (!anchor) return
-    setFlip({
-      up: shouldFlipUp(anchor, GLANCE_H),
-      alignRight: anchor.left + GLANCE_W > window.innerWidth - 12,
-    })
+    window.addEventListener('scroll', measureAnchor, true)
+    window.addEventListener('resize', measureAnchor)
+    return () => {
+      window.removeEventListener('scroll', measureAnchor, true)
+      window.removeEventListener('resize', measureAnchor)
+    }
   }, [open])
 
   const holdStart = () => {
@@ -179,13 +233,28 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
     if (press.current !== null) window.clearTimeout(press.current)
     press.current = window.setTimeout(() => {
       suppress.current = true
-      doOpen()
+      clearOpenTimer()
+      clearCloseTimer()
+      setOpen(false)
+      setPeeking(true)
+      onOpen?.()
+      intelReplaced(cardId, entry, 'bottom-sheet', triggerRef.current)
     }, INTEL_LONG_PRESS_MS)
   }
   const holdEnd = () => {
     if (press.current !== null) window.clearTimeout(press.current)
     press.current = null
   }
+
+  useEffect(() => {
+    if (session.openId === cardId || session.openId === null) return
+    setOpen(false)
+    setPinned(false)
+    setPeeking(false)
+    clearOpenTimer()
+    clearCloseTimer()
+    // A different identifier owns the singleton overlay now.
+  }, [session.openId, cardId])
 
   useEffect(() => {
     if (!open) return
@@ -216,6 +285,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
         { left: cardEl.left, top: cardEl.top, right: cardEl.right, bottom: cardEl.bottom },
       )
       if (inside) clearCloseTimer()
+      else if (!wrapperRef.current?.contains(e.target as Node)) scheduleClose()
     }
     document.addEventListener('pointerdown', away)
     document.addEventListener('keydown', esc)
@@ -233,6 +303,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       holdEnd()
       clearOpenTimer()
       clearCloseTimer()
+      if (spaceTimer.current !== null) window.clearTimeout(spaceTimer.current)
     },
     [],
   )
@@ -241,8 +312,9 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
     clearCloseTimer()
     clearOpenTimer()
     setOpen(true)
+    onOpen?.()
     setPinned(true)
-    intelReplaced(cardId)
+    intelReplaced(cardId, entry, 'pinned', triggerRef.current)
   }
 
   return (
@@ -254,6 +326,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       }}
       className={className}
       role="button"
+      data-intel-row
       tabIndex={0}
       aria-haspopup="dialog"
       aria-expanded={open}
@@ -262,27 +335,37 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       onMouseEnter={(e) => {
         if (!hasHover) return
         leavePoint.current = null
-        void e
-        scheduleOpen()
+        hoverOnIdentifier.current = pointerAtIdentifier(e.target)
+        if (hoverOnIdentifier.current) scheduleOpen()
       }}
       onMouseMove={(e) => {
-        if (!hasHover || !open) return
-        leavePoint.current = null
-        void e
+        if (!hasHover) return
+        if (e.target instanceof Element && e.target.closest('[data-intel-overlay]')) return
+        const atIdentifier = pointerAtIdentifier(e.target)
+        if (atIdentifier !== hoverOnIdentifier.current) {
+          hoverOnIdentifier.current = atIdentifier
+          if (atIdentifier) scheduleOpen()
+          else scheduleClose()
+        }
+        if (atIdentifier && open) leavePoint.current = null
       }}
       onMouseLeave={(e) => {
         if (!hasHover || pinned) return
+        hoverOnIdentifier.current = false
         leavePoint.current = { x: e.clientX, y: e.clientY }
         scheduleClose()
       }}
-      onFocus={() => {
+      onFocus={(e) => {
+        if (e.target !== e.currentTarget) return
         clearCloseTimer()
         doOpen()
       }}
       onBlur={(e) => {
         // Moving focus from the trigger to the peek button inside the same
-        // card must not close it out from under the user.
+        // card must not close it out from under the user. The open card is
+        // portaled to document.body, so also allow focus moving into it.
         if (e.currentTarget.contains(e.relatedTarget as Node)) return
+        if (cardRef.current?.contains(e.relatedTarget as Node)) return
         if (pinned) return
         doClose()
       }}
@@ -291,6 +374,18 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       onTouchEnd={holdEnd}
       onTouchCancel={holdEnd}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          const root = e.currentTarget.closest('table, [role="listbox"], .client-grid-container, .inventory-card-grid, .rental-dashboard__panels')
+          const peers = Array.from((root ?? document).querySelectorAll<HTMLElement>('[data-intel-row]'))
+          const index = peers.indexOf(e.currentTarget)
+          const next = peers[index + (e.key === 'ArrowDown' ? 1 : -1)]
+          if (next) {
+            e.preventDefault()
+            next.focus()
+          }
+          return
+        }
         // Space tap = pin (Linear semantics); Space hold = temporary preview
         // that closes on release. Enter opens the Glance immediately.
         if (e.key === 'Enter') {
@@ -302,17 +397,20 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
           e.preventDefault()
           e.stopPropagation()
           spaceHeld.current = true
+          spaceHeldLong.current = false
+          spaceTimer.current = window.setTimeout(() => { spaceHeldLong.current = true }, INTEL_LONG_PRESS_MS)
           doOpen()
         }
       }}
       onKeyUp={(e) => {
+        if (e.target !== e.currentTarget) return
         if (e.key === ' ' && spaceHeld.current) {
           e.stopPropagation()
           spaceHeld.current = false
-          // Tap (still open, no hold-close requested) pins; a held preview
-          // would already have closed on pointer release — the keyup without
-          // an intervening close is the tap.
-          pin()
+          if (spaceTimer.current !== null) window.clearTimeout(spaceTimer.current)
+          spaceTimer.current = null
+          if (spaceHeldLong.current) doClose()
+          else pin()
         }
       }}
       onClick={(e) => {
@@ -326,13 +424,23 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       }}
     >
       {children}
-      {open && (
-        <Glance
+      {/* The Glance hover card is portaled to document.body: its triggers live
+          inside table cells and scroll containers (DataTableShell,
+          movement panels) whose overflow would otherwise clip it, and under
+          sticky headers/transformed ancestors whose stacking would bury it.
+          The zero-size fixed anchor preserves the existing up/down + left/right
+          flip geometry — it resolves against this point instead of the cell. */}
+      {open && anchor && createPortal(
+        <div
+          style={{ position: 'fixed', top: anchor.y, left: anchor.x, width: 0, height: 0, zIndex: 'var(--z-dropdown)' }}
+        >
+          <Glance
           id={cardId}
-          glance={glance}
+          glance={extraLines.length > 0 ? { ...glance, lines: [...(glance.lines ?? []), ...extraLines].slice(0, 5) } : glance}
           up={flip.up}
           alignRight={flip.alignRight}
           pinned={pinned}
+          reducedMotion={reducedMotion}
           cardRef={cardRef}
           onEnter={() => {
             clearCloseTimer()
@@ -347,20 +455,34 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
           onPeek={() => {
             setOpen(false)
             setPinned(false)
-            intelClosed(cardId)
             setPeeking(true)
+            intelReplaced(cardId, entry, viewport === 'desktop' && !coarsePointer ? 'side-peek' : 'bottom-sheet', triggerRef.current)
           }}
-        />
+          />
+        </div>,
+        document.body,
       )}
       <Modal
         isOpen={peeking}
-        onClose={() => setPeeking(false)}
+        onClose={() => { setPeeking(false); intelClosed(cardId) }}
         title={detailTitle}
         size="lg"
-        sheet={viewport === 'phone'}
+        sheet={viewport !== 'desktop' || coarsePointer}
+        sidePeek={viewport === 'desktop' && !coarsePointer}
+        swipeDismiss={viewport !== 'desktop' || coarsePointer}
+        peekHeight
         {...(detailSubtitle !== undefined ? { subtitle: detailSubtitle } : {})}
       >
         <DetailGroups groups={detail} />
+        {peeking && entityType && entityId && context && gateContext && (
+          <IntelDetailExtras
+            entityType={entityType}
+            entityId={entityId}
+            context={context}
+            gateContext={gateContext}
+            actionContext={actionContext ?? null}
+          />
+        )}
       </Modal>
     </div>
   )
@@ -372,6 +494,7 @@ function Glance({
   up,
   alignRight,
   pinned,
+  reducedMotion,
   cardRef,
   onEnter,
   onLeave,
@@ -383,6 +506,7 @@ function Glance({
   up: boolean
   alignRight: boolean
   pinned: boolean
+  reducedMotion: boolean
   cardRef: { current: HTMLDivElement | null }
   onEnter: () => void
   onLeave: (e: React.MouseEvent) => void
@@ -415,7 +539,7 @@ function Glance({
         textAlign: 'left',
         opacity: 1,
         transform: 'scale(1)',
-        transition: `opacity ${INTEL_CARD_IN_MS}ms ease, transform ${INTEL_CARD_IN_MS}ms ease`,
+        transition: reducedMotion ? 'none' : `opacity ${INTEL_CARD_IN_MS}ms ease, transform ${INTEL_CARD_IN_MS}ms ease`,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
@@ -630,8 +754,7 @@ function Glance({
             {glance.primaryAction.label}
           </Link>
         )}
-        {!pinned && (
-          <button
+        <button
             type="button"
             onClick={(e) => {
               e.stopPropagation()
@@ -653,7 +776,6 @@ function Glance({
           >
             Peek (Space)
           </button>
-        )}
       </div>
     </div>
   )

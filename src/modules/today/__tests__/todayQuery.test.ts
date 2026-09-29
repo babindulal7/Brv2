@@ -81,6 +81,8 @@ function raw(over: Partial<Raw> = {}): Raw {
     clientId: 'c-abc',
     clientName: 'ABC Films',
     project: 'Daraz Dashain TVC',
+    projectType: 'Commercial / Advertisement',
+    projectTypeOther: null,
     stage: 'Packed',
     // 03:15Z + 05:45 = 09:00 in Kathmandu.
     pickupAtAd: '2026-07-31T03:15:00.000Z',

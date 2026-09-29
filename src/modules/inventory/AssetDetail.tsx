@@ -9,6 +9,7 @@ import { EditableRows } from '../../components/ui/EditableRows'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { canAdjustStock } from '../../lib/rbac'
 import { gateContext, canViewUtilization } from '../../lib/fieldGating'
 import { useEditMode } from '../../lib/edit/useEditMode'
 import type { FieldSpec } from '../../lib/edit/useEditMode'
@@ -35,6 +36,7 @@ import {
 import { Badge } from '../../components/ui/Badge'
 import { ServiceDueBadge } from '../../components/ui/ServiceDueBadge'
 import { ServicePlanCard } from './components/ServicePlanCard'
+import { AdjustStockModal } from './AdjustStockModal'
 import { readServiceDue } from '../../lib/queries/serviceDue'
 import type { ServiceRow } from '../../lib/serviceDue'
 import './inventory.css'
@@ -310,6 +312,7 @@ export default function AssetDetail() {
   const utilization = canViewUtilization(gctx)
 
   const [activeTab, setActiveTab] = useState<AssetTab>('Units')
+  const [adjustingStock, setAdjustingStock] = useState(false)
   /* Spec 7.5 — TABLET: bands clamp to 3; PHONE: 2, tables become card rows.
      Same clamp `KpiStrip` applies (Page.tsx). */
   const viewport = useViewport()
@@ -619,6 +622,14 @@ export default function AssetDetail() {
       {/* Tab 1: Units */}
       {activeTab === 'Units' && (
         <Card title="Fleet Units & Serial Records">
+          {!serialised && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+              <span>Recorded bulk quantity: <strong className="figure">{product.totalQuantity}</strong></span>
+              {user && canAdjustStock(user.role) && (
+                <Button variant="secondary" onClick={() => setAdjustingStock(true)}>Adjust Stock</Button>
+              )}
+            </div>
+          )}
           {units.length === 0 ? (
             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
               {serialised
@@ -1053,6 +1064,15 @@ export default function AssetDetail() {
             </div>
           </div>
         </div>
+      )}
+      {adjustingStock && !serialised && (
+        <AdjustStockModal
+          productId={product.id}
+          productName={product.name}
+          currentQuantity={product.totalQuantity}
+          onClose={() => setAdjustingStock(false)}
+          onAdjusted={detail.refetch}
+        />
       )}
       </div>
     </PageShell>

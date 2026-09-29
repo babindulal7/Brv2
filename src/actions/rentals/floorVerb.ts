@@ -687,6 +687,13 @@ interface BookingLineHead {
   id: string
   qty: number
   line_type: string
+  product_id: string | null
+  /**
+   * Joined `products.tracking_mode`, flattened off the embed. Null when the
+   * line names no product — which is never Consumable, so such a line stays
+   * fail-closed (still awaited) exactly like the 0141 gate's coalesce.
+   */
+  tracking_mode: string | null
 }
 
 async function readBooking(bookingRef: string): Promise<BookingHead> {
@@ -704,14 +711,30 @@ async function readBooking(bookingRef: string): Promise<BookingHead> {
 
 /** Live lines only — `voided_at` is Law 3's terminal state, and a voided line is not packed. */
 async function readBookingLines(bookingId: string): Promise<BookingLineHead[]> {
+  /* The products embed carries tracking_mode only — never rate, discount,
+     supplier_cost or markup (Law 6: this verb runs on floor screens). */
   const { data, error } = await supabase
     .from('booking_lines')
-    .select('id, qty, line_type')
+    .select('id, qty, line_type, product_id, products ( tracking_mode )')
     .eq('booking_id', bookingId)
     .is('voided_at', null)
 
   if (error) throw new Error(`Could not read the lines of booking ${bookingId}: ${error.message}`)
-  return (data ?? []) as BookingLineHead[]
+  return (
+    (data ?? []) as unknown as Array<{
+      id: string
+      qty: number
+      line_type: string
+      product_id: string | null
+      products: { tracking_mode: string | null } | Array<{ tracking_mode: string | null }> | null
+    }>
+  ).map((l) => ({
+    id: l.id,
+    qty: l.qty,
+    line_type: l.line_type,
+    product_id: l.product_id,
+    tracking_mode: (Array.isArray(l.products) ? l.products[0] : l.products)?.tracking_mode ?? null,
+  }))
 }
 
 /** One existing row of this verb's line table, as terminality and the writers need it. */
@@ -2135,9 +2158,17 @@ function lineIsTerminal(job: SessionJob, row: LineRow | undefined): boolean {
  * call named: a second collection finishes what the first one left.
  */
 async function linesShortOfTerminal(job: SessionJob, live: readonly BookingLineHead[]): Promise<string[]> {
-  // RULING 2026-09-29: non-physical lines have no Return receipt to await.
+  /* RULING 2026-09-29: non-physical lines have no Return receipt to await.
+     0141 (Option A, OPEN_DECISIONS.md #4): Consumable-tracked lines are
+     consumed at Handover and never come back, so they are not awaited either.
+     tracking_mode is null when the line names no product — null is not
+     Consumable, so such a line stays awaited (fail-closed, like the gate). */
   const liveIds = live
-    .filter((line) => job !== 'Return' || !NON_PACKABLE_LINE_TYPES.has(line.line_type))
+    .filter(
+      (line) =>
+        job !== 'Return' ||
+        (!NON_PACKABLE_LINE_TYPES.has(line.line_type) && line.tracking_mode !== 'Consumable'),
+    )
     .map((line) => line.id)
   const rows = await readLineRows(job, liveIds)
   return liveIds.filter((id) => !lineIsTerminal(job, rows.get(id)))

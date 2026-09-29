@@ -467,6 +467,8 @@ const ROW: BookingListRow = {
   clientId: 'c0ffee00-1111-4222-8333-444455556666',
   clientName: 'Mountain Stories',
   project: 'FX3 Documentary',
+  projectType: 'Documentary',
+  projectTypeOther: null,
   stage: 'Booked',
   // 03:15Z is 09:00 in Kathmandu (+05:45).
   pickupAtAd: '2026-08-14T03:15:00.000Z',

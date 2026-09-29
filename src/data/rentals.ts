@@ -4,6 +4,7 @@ import type { BookingStatus, Flag } from '../lib/workflow'
 import { rupees, formatMoney } from '../lib/money'
 import type { Paisa } from '../lib/money'
 import { formatAd } from '../lib/bs'
+import { displayProjectType } from '../lib/projectTypes'
 import { clockPad, deliveryTypeLabel } from '../lib/format'
 import { canViewMoneyField } from '../lib/fieldGating'
 import type { GateContext } from '../lib/fieldGating'
@@ -960,6 +961,15 @@ export interface RentalListRow {
   avatarTone: StatusKey
   /** `bookings.project`, nullable (0002:28). Renders as an explicit non-value. */
   project: string | null
+  /**
+   * `bookings.project_type` + `project_type_other` (0144) — the ALREADY-DISPLAYED
+   * answer, resolved once here so no screen re-derives it. `Other` renders its
+   * custom text; anything unlisted or null renders the unset dash. Neutral by
+   * construction: color stays reserved for operational state (spec §3).
+   */
+  projectTypeDisplay: string
+  /** The raw stored type, for filtering/sorting by the controlled value. */
+  projectTypeValue: string | null
   /** `bookings.pickup_location`, nullable free text — never the branch name. */
   pickupLocation: string | null
   /** `bookings.return_location`, nullable. */
@@ -1085,6 +1095,8 @@ export function toRentalListRow(
     monogram: monogramOf(row.clientName),
     avatarTone: avatarToneFor(row.clientId),
     project: row.project,
+    projectTypeDisplay: displayProjectType(row.projectType, row.projectTypeOther),
+    projectTypeValue: row.projectType,
     pickupLocation: row.pickupLocation,
     returnLocation: row.returnLocation,
     itemCount: row.itemCount,
@@ -1170,6 +1182,9 @@ export function withSubRental(row: RentalListRow, subRentedBookingIds: ReadonlyS
  */
 export function rentalGlance(row: RentalListRow, gctx: GateContext): IntelGlance {
   const lines = [
+    /* Project Type sits under the client/project subtitle (spec §20) — one
+       neutral line, never a status-colored badge (spec §3). */
+    row.projectTypeDisplay,
     `Pickup ${row.pickup.date} · ${row.pickup.time}`,
     `Return ${row.ret.date} · ${row.ret.time}`,
     `${row.itemCount} item${row.itemCount === 1 ? '' : 's'}`,
@@ -1203,6 +1218,8 @@ export function rentalDetailGroups(row: RentalListRow, gctx: GateContext): Intel
     fields: [
       { label: 'Client', value: row.client, trigger: { label: 'Open', to: `/clients/${row.clientId}` } },
       { label: 'Project', value: row.project ?? '—' },
+      /* Spec §21 — name and kind stay separate fields, never combined. */
+      { label: 'Project type', value: row.projectTypeDisplay },
       { label: 'Pickup', value: `${row.pickup.date} · ${row.pickup.time}` },
       { label: 'Pickup location', value: row.pickupLocation ?? '—' },
       { label: 'Return', value: `${row.ret.date} · ${row.ret.time}` },

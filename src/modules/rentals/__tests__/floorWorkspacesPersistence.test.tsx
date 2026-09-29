@@ -217,6 +217,7 @@ describe('Floor Workspaces State Persistence (AUD-018)', () => {
       await flush()
 
       expect(document.body.textContent).toContain('Restored in-progress return session from this device.')
+      expect(document.body.querySelector('th[scope="rowgroup"]')?.textContent).toContain('Sony FX3')
 
       // Check that returning person name was restored
       const nameInput = document.body.querySelector('input[placeholder*="person returning" i]') as HTMLInputElement | null

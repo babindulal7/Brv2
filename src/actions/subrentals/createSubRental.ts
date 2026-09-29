@@ -174,6 +174,7 @@ export const createSubRentalConfig: ActionConfig<CreateSubRentalInput, CreateSub
           vendorId: input.vendorId,
           vendorName: input.vendorName,
           itemDescription: input.itemDescription.trim(),
+          returnByDate: input.returnByDate,
           costPaisa: input.costPaisa,
           chargePaisa: input.chargePaisa,
           timestamp: now,

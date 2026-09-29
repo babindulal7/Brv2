@@ -11,6 +11,8 @@ function row(pickup: string, ret: string): RentalListRow {
     monogram: 'HF',
     avatarTone: 'primary',
     project: 'Documentary',
+    projectTypeDisplay: 'Documentary',
+    projectTypeValue: 'Documentary',
     pickupLocation: null,
     returnLocation: null,
     itemCount: 1,

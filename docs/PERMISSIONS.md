@@ -147,7 +147,7 @@ Staff never see the Client Portal as themselves; a Coordinator opening it uses "
 | **W3** | Warehouse · Technician | Full return triage (scan-in, OK/Flag, Damage photo, Missing note, condition). Enters damage description/evidence/severity — **no cost field**. Deductions and refund figures not rendered. |
 | **W4** | Warehouse · Technician | Raise a case, add evidence and notes. Cannot set disposition, cost or close. |
 | **W5** | Warehouse | List and detail without money; row action = the next floor verb only. No cancel, extend, edit dates. |
-| **W6** | Warehouse | Add equipment (Quick Add name + serial), edit identity/units/location/condition-at-intake, print labels, move rack/shelf/case. **Purchase and Pricing sections not rendered.** No retire. |
+| **W6** | Warehouse | Add equipment (Quick Add name + serial), edit identity/units/location/condition-at-intake, print labels, move rack/shelf/case. **Purchase and Pricing sections not rendered.** No retire or bulk stock adjustment. |
 | **W7** | Warehouse | Sees bundle contents and per-model availability; rates and savings hidden; cannot edit bundles. |
 | **W8** | Warehouse | Create a maintenance job (item → Maintenance, blocks availability). Cannot approve cost or clear. |
 | **W9** | Warehouse · Technician | Draft a purchase request; cannot approve. |
@@ -266,6 +266,7 @@ model**. Nothing is stored: `product_units_service_v` derives it at read time.
 | `bundle.manage` | M+ | ⭐ Coordinator I-a | ○ (createBundle) |
 | `stockcheck.run` | M+ · Floor | Unverified never auto-Missing; "Confirm missing" opens a case | ○ |
 | `stockcheck.confirm_missing` | M+ · Warehouse | | ○ |
+| `inventory.stock_adjust` | Owner · Admin · Manager | `adjust_stock()` enforces role, actor, non-zero signed delta, reason ≥10, non-negative result, idempotent `client_uuid`; `stock_adjustments` is append-only | ✓ |
 
 ### 4.5 Clients
 
@@ -422,7 +423,10 @@ Known hole to keep closed: **`security_deposits` was readable by money-blind ses
 | `gate.handover.units_unhanded` | Packed unit without handover line | nobody | — | yes | Stage 1 (0115) |
 | `gate.handover.agreement_unsigned` | Agreement unsigned at handover | nobody | — | yes | Stage 1 (0115) |
 | `gate.return.session_missing` | On Rent → Returned with no return session | nobody | — | yes | Stage 1 (0115) |
-| `gate.return.units_unaccounted` | On-rent unit with no return line | nobody | — | yes | Stage 1 (0115) |
+| `gate.return.units_unaccounted` | On-rent unit with no return line | nobody | — | yes | Stage 1 (0115; non-physical exempt 0139, Consumable exempt 0141) |
+| `gate.handover.consumable_product_missing` | Consumable line whose product row is missing at Handover | nobody | — | no (movement refused, handover held) | 0142 |
+| `gate.stock_adjust.role` | Bulk stock adjustment by lower role | Owner · Admin · Manager | ≥10 chars | append-only `stock_adjustments` row | 0140; RULINGS-2026-09-29 |
+| `gate.stock_adjust.negative_result` | Adjustment would make product quantity negative | nobody | — | refused | 0140 |
 | `gate.close.no_invoice` | Returned → Closed with no invoice | nobody | — | yes | Stage 1 (0116) |
 | `gate.close.invoice_unsettled` | Returned → Closed with unsettled invoice | nobody | — | yes | Stage 1 (0116) |
 | `gate.close.deposit_unresolved` | Returned → Closed with unresolved deposit | nobody | — | yes | Stage 1 (0116) |

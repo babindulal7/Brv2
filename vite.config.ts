@@ -123,7 +123,10 @@ export default defineConfig({
     }
   },
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+      '@babin-rentals/design-tokens': path.resolve(__dirname, './packages/design-tokens/src/index.ts'),
+    },
   },
   server: {
     port: process.env['PORT'] ? Number(process.env['PORT']) : 3000,

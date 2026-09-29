@@ -111,6 +111,7 @@ export const EVENT_TYPES = {
   CASE_RESOLVED: 'case.resolved',
   DISCREPANCY_FLAGGED: 'operations.discrepancy_flagged',
   STOCK_RECONCILED: 'inventory.stock_reconciled',
+  STOCK_ADJUSTED: 'inventory.stock_adjusted',
   PURCHASE_REQUEST_UPDATED: 'inventory.purchase_request_updated',
   TRANSFER_UPDATED: 'inventory.transfer_updated',
   

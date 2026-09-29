@@ -38,10 +38,12 @@ import {
   canCloseRental,
 } from '../../lib/rbac'
 import { IntelCard } from '../../components/ui/IntelCard'
+import { ClientIntelFromId } from '../../components/intel/ClientIntelFromId'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, grouped, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { formatAdDateTime, toBs, formatBs } from '../../lib/bs'
+import { displayProjectType } from '../../lib/projectTypes'
 import { ExtendRentalModal } from './modals/ExtendRentalModal'
 import { AssignCrewModal } from './modals/AssignCrewModal'
 import { BookingCrewList } from './BookingCrewList'
@@ -1497,10 +1499,14 @@ export default function BookingDetail() {
     const list: ReturnSettlementDamageItem[] = []
     const floorLines = floor?.lines ?? []
     floorLines.forEach((l) => {
-      l.units.forEach((u) => {
+      l.units.forEach((u, uIdx) => {
         if (u.damaged || u.unitState === 'Missing' || u.unitState === 'Damaged') {
+          /* Stable key: avoid Math.random() which causes remounts on every
+             floor refetch when a unit has neither id nor serial. Use the
+             unit's index within its line as a deterministic fallback. */
+          const unitKey = u.id ?? u.serial ?? `u${uIdx}`
           list.push({
-            key: `${l.id}-${u.id || u.serial || Math.random().toString(36).slice(2)}`,
+            key: `${l.id}-${unitKey}`,
             name: l.productName ?? 'Equipment Line',
             serial: u.serial ?? null,
             condition: u.damaged || u.unitState === 'Damaged' ? 'Damaged / Needs Repair' : 'Missing / Not Returned',
@@ -1863,6 +1869,11 @@ export default function BookingDetail() {
             </div>
           }
           title={booking.clientName ? `${booking.bookingNo} · ${booking.clientName}` : booking.bookingNo}
+          description={
+            booking.project || booking.projectType
+              ? `${booking.project ?? 'Untitled project'} · ${displayProjectType(booking.projectType, booking.projectTypeOther)}`
+              : undefined
+          }
           actions={
             <PageActions
             extra={
@@ -2179,9 +2190,11 @@ export default function BookingDetail() {
                   {
                     label: 'Client',
                     value: booking.clientId ? (
-                      <Link to={`/clients/${booking.clientId}`} style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600 }}>
-                        {booking.clientName}
-                      </Link>
+                      <ClientIntelFromId clientId={booking.clientId} name={booking.clientName} context="rental-detail" gateContext={gctx} actionContext={user ? { userId: user.id, role: user.role } : null}>
+                        <Link to={`/clients/${booking.clientId}`} style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600 }}>
+                          {booking.clientName}
+                        </Link>
+                      </ClientIntelFromId>
                     ) : (
                       booking.clientName
                     ),
@@ -2196,6 +2209,7 @@ export default function BookingDetail() {
                           : 'Not recorded',
                   },
                   { label: 'Project', value: booking.project ?? 'Not recorded' },
+                  { label: 'Project Type', value: displayProjectType(booking.projectType, booking.projectTypeOther) },
                   { label: 'Pickup Location', value: booking.pickupLocation ?? 'Not recorded' },
                   { label: 'Return Location', value: booking.returnLocation ?? 'Not recorded' },
                 ]}

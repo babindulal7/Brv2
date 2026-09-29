@@ -1,6 +1,6 @@
 -- RULING 2026-09-29: non-physical lines need no Return receipt.
 -- =============================================================================
--- Migration 0135: Zero-Value Rental Close Override (OPEN_DECISIONS.md §4.51)
+-- Migration 0139: Return gate exemption for non-physical booking lines.
 --
 -- Law 1: The database is the law.
 -- Close gate requires a settled booking. For genuine zero-value / sponsored /
@@ -8,7 +8,7 @@
 -- rental by providing an audited override reason of at least 10 characters.
 -- General staff (Coordinator, Technician, Accounts) cannot waive this gate.
 -- The override writes an immutable entry into audit_events.
--- Based directly on 0131_close_gate_pending_damage.sql.
+-- Full transition function copied from 0135; only the Return predicate changes.
 -- =============================================================================
 
 begin;
@@ -375,7 +375,7 @@ end;
 $$;
 
 comment on function apply_booking_stage_transition is
-  'Stage 1 (0116, extended 0131, 0135): Evaluates stage gates including the close gate — invoice exists '
+  'Stage 1 (0116, extended 0131, 0135, 0139): Evaluates stage gates including the close gate — invoice exists '
   '(or Owner/Admin zero-value override with reason >= 10 chars), invoices settled, deposit resolved, '
   'no open cases, no live reservations, no damage finding pending approval — enforces invariants and updates stage.';
 

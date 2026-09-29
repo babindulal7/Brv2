@@ -1,5 +1,156 @@
 # Progress Log
 
+## 2026-09-29 — Smart Intel Cards v1 core workflow release (local build)
+
+**Did**
+1. Added three separate horizontal design references under `docs/design/smart-intel-v1/` and a role, context, entity, and mode preview in the conversation. The equipment reference uses neutral category glyphs rather than fabricated asset photography.
+2. Extended the shared Intel session and card: single active entity, rapid adjacent switching, hover intent, safe pointer travel, keyboard row navigation, Space pin, Escape focus return, and touch long press to a Detail sheet. Detail opens as a desktop side peek or tablet/phone bottom sheet. Hover is limited to identifier labels in the core lists.
+3. Connected equipment, client, and rental Intel to Inventory, Clients, Rentals, New Rental selected client/equipment lines, and Dashboard movements. Rental Detail links the client identifier to client Intel. New Rental equipment facts use its booking-window availability verdict; cards do not perform custody transitions.
+4. Wrote migration 0143 for `all_staff`/`operations`/`management` note visibility, classified custom field definitions and append-only values, RLS, idempotency keys, archival, and audit triggers. Existing booking notes default to `all_staff`. Added Detail read/write surfaces; field and note reads are gated by RLS and then filtered for the current role before entering the card payload. New writes require a confirmed online database response.
+5. Extended lifecycle verification with L22: all nine roles are checked against booking/client note visibility and operational/personal/financial value reads, including financial-value absence for money-blind roles.
+
+**Ruled**
+- Followed the requested first-release scope and existing permission matrix. A warning remains informational; only existing action and RPC gates can advance a rental. No new commercial policy, predictive state, or risk score was introduced.
+- Migration 0143 is **WRITTEN and VERIFIED locally, NOT APPLIED** to live Supabase. The connected app currently reports the missing live schema in Detail and offers Retry without claiming that notes or fields are empty.
+
+**Verified**
+- `npm run typecheck`: green. Focused Intel, note-action, and Dashboard tests: 25/25. The full `npm test` and a two-worker retry each advanced through many files but failed to complete because a worker stalled; the retry also caught a stale Dashboard link expectation, which was corrected and passed in the focused rerun. Full-suite status remains unverified.
+- `npm run check:pglite`: 141/141 migrations applied locally. `npm run check:lifecycle`: 22/22 green, including L22. `npm run build`, `npm run lint`, and `npm run check:contrast` (54/54): green.
+- Drove the connected desktop app read-only: Space opened rental and equipment Glance, Escape restored focus, and Peek opened rental Detail. The new live schema has deliberately not been applied, so live note and field persistence is not production-verified.
+- `npm run completion -- --migrations` produced the block below.
+
+### Completion
+
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 46 / 46 (100%) | +1 |
+| Real data | DB-only · mixed · seed · none / 45 | 42 · 3 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 40 / 40 (100%) | +0 |
+| Lifecycle | steps green / total | 22 / 22 (100%) | +1 |
+| Overall | mean of five | ≈ 99% | -1 |
+
+Migrations 141 files · check:pglite 141/141 applied, 0 failed. Suite: not run by the completion command; standalone full-suite attempts stalled as recorded above.
+Gates read from .lifecycle-result.json, written 2026-09-29T11:24:57.362Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Babin applies 0143 to live Supabase only after `BACKUP_PROTOCOL.md`; then verify authenticated role reads/writes, audit rows, and archived-note behavior on the live stack. This task does not apply migrations to production (N-5).
+- Finish hands-on tablet/phone pointer and sheet checks, and isolate the pre-existing full-suite worker hang.
+- Cross-entity links currently route to the linked record and retain the browser back path. In-card replacement with visible navigation history remains to be completed.
+
+
+## 2026-09-29 — Consumable Return exemption + Handover deduction (Trial 13 gaps #3-consumable, #5)
+
+Built on the spec addendum's assumed Option A (OPEN_DECISIONS.md #4), paired as the spec requires: the exemption without the deduction would silently break stock counts.
+
+**Did**
+1. Migration 0141 exempts Consumable-tracked products from the Return receipt gate. The line_type filter alone misses every consumable — there is no `Sale` in `booking_line_type`, a sale line is an Equipment/Accessory line whose product is `tracking_mode = 'Consumable'` — so the gate now left-joins `products` and requires `coalesce(p.tracking_mode, 'Serialised') <> 'Consumable'` (null-product physical lines stay fail-closed). Full function body copied from 0139; only gate 4 changed.
+2. Migration 0142 deducts consumable stock at Handover: `consumable_stock_movements` (one-per-line UNIQUE = the re-run guard), `deduct_consumable_stock_on_handover()` AFTER INSERT trigger on `to_stage = 'On Rent'`, clamped at zero (refusing would block a completed handover over a predating undercount; Managers correct via `adjust_stock()`), Manager+ select RLS, 0112-style post-condition check. Runs SECURITY DEFINER, so 0140's direct-update guard (which only refuses `current_user = 'authenticated'`) does not block it — documented in the migration header.
+3. App path agrees with the gate: `floorVerb.ts` `BookingLineHead` carries `tracking_mode` (money-safe select, Law 6 scanner still clean) and Return terminality skips Consumables; `ReturnWorkspace.tsx` `buildRows()` skips them. Null tracking stays awaited/listed everywhere (fail-closed).
+4. Lifecycle L21 (+ `CONSUMABLE_PRODUCT` seed at 10 tapes, window W.e): 2 holds at Booked, movement `qty 2 / before 10 / after 8` at On Rent, narrow refusal while the camera is unreceipted, Returned on the serialised receipt alone, holds 0, no Missing case, duplicate-movement probe refused by the UNIQUE (probed as owner — RLS has no INSERT policy by design, so a staff-role probe stops at the wrong refusal).
+5. Verb unit test: a Consumable line with no return row does not appear in `stageHeldBy` (0141).
+6. Docs: OPEN_DECISIONS.md #4 marked resolved-as-A with the veto window stated; PERMISSIONS.md gate table carries the 0141 exemption and `gate.handover.consumable_product_missing`.
+
+**Ruled**
+- Option A per the addendum's stated assumption; 0141+0142 ship as an inseparable pair. A consumable-only booking now has no triage rows (existing empty state) — it joins the §4.59 open question; no auto-advance invented.
+- `RULINGS-2026-09-29.md` ruling #3 ("do not change Consumable semantics") is superseded by this entry — that file needs reconciliation (see Remaining).
+
+**Verified**
+- `npm run typecheck`: exit 0. Targeted: 157/157 pass (floorVerbs 71 incl. the new 0141 test, subrental 7, core 79). Broader: inventory+rentals+lib 1359/1359 across 80 files; e2e tiers 38/38.
+- `npm run check:pglite`: 140/140 applied, 0 failed. `npm run check:lifecycle`: 21/21 green (new L21). `npm run build`: exit 0. `npm run check:contrast`: 54/54. ESLint on changed files: exit 0.
+- Full `npm test` hangs without a summary (pre-existing: the prior 29-Sep entry reports the same hang before these changes), so full-suite status is unverified.
+- `npm run completion`: counts below, copied from the command output.
+- Migrations 0141–0142 are **WRITTEN and VERIFIED locally; NOT APPLIED to production** (N-5), same as 0138–0140.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 45 / 45 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 43 · 2 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 40 / 40 (100%) | +0 |
+| Lifecycle | steps green / total | 21 / 21 (100%) | +1 |
+| Overall | mean of five | ≈ 100% | +0 |
+
+Migrations 140 files · check:pglite 140/140 applied, 0 failed. Full suite hangs pre-existing; targeted + tier runs above passed.
+Gates read from .lifecycle-result.json, written 2026-09-29T04:42:57.313Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Babin: after backup, apply 0138–0142 to live Supabase (N-5). Veto window open until then: flipping #4 to Option B replaces 0141/0142 (both unapplied) with a quantity-credit flow and keeps consumables IN Return.
+- Reconcile `RULINGS-2026-09-29.md` ruling #3 with the Option A build (parallel session's file; left untouched).
+- `TODO(decision)` §4.59 now covers consumable-only bookings too: no triage rows, no Return session entry — automatic Handover completion vs a named no-equipment action.
+- Full-suite hang: isolate which file never settles (reproduces without these changes).
+- 0138 CHECK is NOT VALID: obtain real return-by dates for existing Sub-rental lines and validate after backfill.
+
+
+## 2026-09-29 — Booqable Trial 13 Gaps addendum
+
+**Did**
+1. Return now groups rows under inline bundle headings on desktop and phone; group-name search includes children. The dispatch payload is unchanged.
+2. Migration 0138 adds operator-entered `subrental_return_by` for new Sub-rental lines; the action validates real, non-past dates in Nepal time and the modal requires the field. The deadline stays independent of booking extensions. The CHECK is `NOT VALID` so unknown historical vendor dates are never fabricated; new or updated rows are checked.
+3. Migration 0139 excludes Service, Sub-rental and Manual item lines from the Return receipt gate. Packing and Return share one line-type set, and the floor action's terminality check agrees with the database.
+4. Migration 0140 adds product-wide, reasoned, signed stock adjustments with an append-only audit row, atomic RPC, retry key, role/actor checks, and direct quantity-update refusal. Added the action, permission, event, and Asset Detail modal for Quantity/Consumable products.
+
+**Ruled**
+- Provisional build-time choices are logged in `RULINGS-2026-09-29.md`: independent vendor date, non-physical Return exemption, product-wide stock, and Owner/Admin/Manager adjustment authority. This addendum did not decide consumable depletion; separate 0141–0142 work appeared in the shared tree. `TODO(decision)` §4.59 records the remaining non-physical floor path.
+
+**Verified**
+- `npm run typecheck`: exit 0. Targeted action/floor tests: 156/156 pass; Return workspace rendering/persistence: 2/2 pass.
+- `npm run check:pglite`: 140/140 migrations applied, 0 failed. `npm run check:lifecycle`: 21/21 green, including stock RPC permissions, idempotency, serialised refusal, negative floor, and direct-update refusal. The shared workspace gained separate 0141–0142 consumable migrations during this work; the current chain and lifecycle include them. Migrations 0138–0140 are **WRITTEN and VERIFIED locally; NOT APPLIED to production** (N-5).
+- `npm run check:contrast`: 54/54 pass. Targeted ESLint: exit 0. Full `npm test` and a retry with `--maxWorkers=2` advanced through many files, then a worker consumed CPU without a final summary; both were stopped, so suite status is unverified.
+- `npm run build`: exit 0 after adding the local design-token alias to Vite; the marketing entry now resolves its workspace package. Mock Return workspace B-864 visibly showed inline item group headers and child rows.
+- `npm run completion`: counts below, copied from the command output.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 45 / 45 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 43 · 2 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 40 / 40 (100%) | +0 |
+| Lifecycle | steps green / total | 21 / 21 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+
+Migrations 140 files · check:pglite 140/140 applied, 0 failed. Full suite did not finish; targeted tests above passed.
+Gates read from .lifecycle-result.json, written 2026-09-29T04:42:57.313Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Finish a clean full-suite run; the earlier run did not produce a final summary.
+- Babin: after backup, apply the pending migrations to live Supabase; obtain real return-by dates for existing Sub-rental lines and validate the 0138 CHECK after backfill. Re-run role and stock smoke tests on live (N-5).
+- `TODO(decision)` §4.59: the current Pack/Handover floor flow can still hold bookings containing non-physical lines before Return; a non-physical-only booking also lacks a Return session path. Separate 0141–0142 consumable work now appears in the shared tree.
+
+
+## 2026-09-29 — Collapsed-nav More flyout hidden behind page content (fix)
+
+The collapsed icon rail's "More" (⋮) flyout rendered underneath tables/cards on content-heavy pages. Three stacked causes, all in `src/components/shell/Sidebar.tsx` (my diff only; the file's larger uncommitted RailTooltip rework predates this session):
+
+1. **z-index below the theme scale:** flyout used hardcoded `zIndex: 75`; the locked scale starts at `--z-dropdown: 1100`. → `var(--z-dropdown)`.
+2. **No viewport clamping:** `top` anchored at the More button's center near the rail bottom pushed half the flyout under the footer. Added a `useLayoutEffect` that measures the flyout and clamps `moreFlyoutTop` to a 24px edge margin (same margin as `RailTooltip`), plus `maxHeight: calc(100vh - 48px)` + scroll backstop.
+3. **Sidebar-subtree trapping:** even at z-9000 the flyout hit-tested below static table cells, so no z-index could win. Portaled the flyout to `document.body` (the file's own `RailTooltip` pattern) and exempted it in the click-away handler so item clicks still navigate (verified: Tools link → `/tools`, flyout closes).
+- Live-verified on `/inventory` (collapsed rail): flyout parent `BODY`, hit-test index 0 at its center (was 8th), fully in viewport with 187px bottom margin.
+- `typecheck` clean, `eslint Sidebar.tsx` clean, `shell.test.tsx` 29/29 pass.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 44 / 44 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 43 · 2 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 39 / 39 (100%) | +0 |
+| Lifecycle | steps green / total | 19 / 19 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+
+Migrations 135 files. Suite: shell 29/29; full-suite deltas none (no engine/data changes).
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live remote database backup (`scripts/backup-db.ps1`) and push of pending migrations 0125+ to Supabase project `sxguwvgoserhdolewibb` (Rule N-5).
+- Fix or rule on `syncEngine.ts:187` live column mismatch and the pre-existing test failures (see prior entries).
+- Git push of branch `step1-foundation` to origin.
+
 ## 2026-09-29 — Operations modal Packing callback repair
 
 **Did**

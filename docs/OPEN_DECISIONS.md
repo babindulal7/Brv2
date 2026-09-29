@@ -1,7 +1,7 @@
 # Babin Rentals OS — Open Decisions Register
 
 **Status:** Authoritative Active Decision Register  
-**Last Reconciled:** 23 September 2026
+**Last Reconciled:** 29 September 2026
 
 *Note: All decisions resolved by rulings R-00 through R-43 or verified in `PROGRESS.md` (e.g. damage resolution, fail-closed transitions, atomic booking creation, same-day rentals, 13% VAT) have been removed from this register.*
 
@@ -34,7 +34,7 @@
 - **Proposed Options:**
   - Option A: Treat consumables as non-returnable expense lines that auto-resolve upon Handover.
   - Option B: Track returned unused bulk quantity and credit the difference.
-- **Current Status:** Open operations ruling.
+- **Current Status:** Resolved as Option A (29 Sep 2026, spec addendum Trial 13 gaps #3/#5): Consumable-tracked lines are exempt from the Return receipt gate (0141, verb + workspace agree) and deplete `products.total_quantity` automatically at Handover into append-only `consumable_stock_movements` (0142). WRITTEN + VERIFIED locally, NOT APPLIED to production — Babin may still flip to Option B before the production apply, which would replace 0141/0142.
 
 ---
 
@@ -42,3 +42,10 @@
 - **Question:** Provision of official month lengths for BS 2084 and beyond.
 - **Context:** `src/lib/bs.ts` currently anchors BS 2083. Expanding to 2084+ requires the official publication of the Nepal Calendar Determination Committee to prevent date calculation errors on VAT invoices.
 - **Current Status:** Blocked externally on official committee data.
+
+---
+
+## 6. Non-physical floor transitions and completion (§4.59)
+- **Question:** How should Service, Sub-rental and Manual item lines resolve during Pack/Handover, and how should a booking with no physical lines reach Returned?
+- **Context:** Migration 0139 exempts those line types from Return receipts, while Pack/Handover still require line records in parts of the floor flow. The current Return action also requires a triaged row and a return session.
+- **Current Status:** `TODO(decision)` — define non-physical Pack/Handover handling and choose automatic Handover completion or a named no-equipment completion action; never fabricate physical movement or a return receipt.

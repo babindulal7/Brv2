@@ -2,6 +2,7 @@ import { createAction, type ActionConfig, type ActionContext } from '../core'
 import { EVENT_TYPES } from '../../events/eventBus'
 import { supabase } from '../../lib/supabase'
 import { newClientUuid } from '../../lib/supabase'
+import { validateProjectType } from '../../lib/projectTypes'
 import type { CrewRoleDb } from '../../types/database'
 
 /**
@@ -228,6 +229,12 @@ export type CreateRentalInput = {
   branchId: string
   contactId?: string | null
   project?: string | null
+  /**
+   * Structured project type (`src/lib/projectTypes.ts`). NULL while a Draft —
+   * Confirm refuses it instead. `projectTypeOther` only with 'Other'.
+   */
+  projectType?: string | null
+  projectTypeOther?: string | null
   /** AD/UTC, full ISO instant carrying an offset (Law 7). */
   pickupAt: string
   returnAt: string
@@ -338,6 +345,13 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
         'The idempotency key is present but empty. Pass the key minted where the operator pressed the button, ' +
           'or omit it — an empty string is neither. Nothing was sent.',
       )
+    }
+
+    /* Project Type rides the same allow-list the database enforces (0144).
+       NULL passes here — Drafts may omit it; Confirm refuses it instead. */
+    const projectTypeCheck = validateProjectType(input.projectType, input.projectTypeOther)
+    if (!projectTypeCheck.valid) {
+      throw new Error(`${projectTypeCheck.message ?? 'Select a project type from the list.'} Nothing was sent.`)
     }
 
     /*
@@ -470,6 +484,8 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
       client_id: input.clientId,
       contact_id: input.contactId ?? null,
       project: input.project ?? null,
+      project_type: input.projectType ?? null,
+      project_type_other: input.projectTypeOther ?? null,
       pickup_at: input.pickupAt,
       return_at: input.returnAt,
       delivery_type: input.deliveryType,

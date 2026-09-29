@@ -12,9 +12,12 @@ import type { ReactNode } from 'react'
 import { IntelCard } from '../ui/IntelCard'
 import type { IntelGlance, IntelGroup } from '../ui/IntelCard'
 import type { IntelContext, IntelEntityType, IntelMode } from '../../lib/intel/context'
+import type { GateContext } from '../../lib/fieldGating'
+import type { ActionContext } from '../../actions/core'
 
 export interface SmartIntelCardProps {
   entityType: IntelEntityType
+  entityId: string
   context: IntelContext
   mode?: IntelMode
   glance: IntelGlance
@@ -23,10 +26,13 @@ export interface SmartIntelCardProps {
   detailSubtitle?: string
   children: ReactNode
   className?: string
+  gateContext?: GateContext
+  actionContext?: ActionContext | null
 }
 
 export function SmartIntelCard({
   entityType,
+  entityId,
   context,
   mode,
   glance,
@@ -35,6 +41,8 @@ export function SmartIntelCard({
   detailSubtitle,
   children,
   className,
+  gateContext,
+  actionContext,
 }: SmartIntelCardProps) {
   void mode
   return (
@@ -46,6 +54,9 @@ export function SmartIntelCard({
       {...(className !== undefined ? { className } : {})}
       context={context}
       entityType={entityType}
+      entityId={entityId}
+      {...(gateContext ? { gateContext } : {})}
+      {...(actionContext !== undefined ? { actionContext } : {})}
     >
       {children}
     </IntelCard>

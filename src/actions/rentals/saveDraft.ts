@@ -12,6 +12,8 @@ export interface RentalDraftData {
   clientName?: string | undefined
   project: string
   kind: string
+  /** Custom project-type description; only meaningful when kind is 'Other'. */
+  kindOther: string
   govId: string
   pickup: string
   pickupTime: string

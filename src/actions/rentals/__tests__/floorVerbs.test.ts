@@ -1037,6 +1037,24 @@ describe('Return', () => {
     expect(result.damageFindings).toBe(0)
   })
 
+  it('does not await a Consumable-tracked line with no return row (0141)', async () => {
+    db.state.responses['booking_lines'] = [
+      [
+        { id: LINE_A, qty: 1, line_type: 'Equipment', product_id: 'p-a', products: null },
+        { id: LINE_B, qty: 2, line_type: 'Equipment', product_id: 'p-b', products: { tracking_mode: 'Consumable' } },
+      ],
+    ]
+    db.state.responses['return_lines'] = [[], [{ id: 'rl-1', booking_line_id: LINE_A, state: 'Returned' }]]
+
+    const result = await completeReturn(
+      { rentalId: 'B-715', lines: [{ bookingLineId: LINE_A, unitIds: ['u1'], condition: 'Good' }] },
+      OWNER,
+    )
+    // The gaffer tape has no return row and is not named in stageHeldBy: it
+    // was consumed at Handover (0142) and the Return gate agrees (0141).
+    expect(result.stageHeldBy).toEqual([])
+  })
+
   it('refuses a damage finding with no description — that is a NOT NULL column, not a form rule', async () => {
     await expect(
       completeReturn(

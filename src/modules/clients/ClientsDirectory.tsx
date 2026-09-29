@@ -1650,6 +1650,11 @@ export function ClientsDirectory({
                         detail={detail}
                         detailTitle={client.name}
                         detailSubtitle={`${client.id} · ${client.clientType}`}
+                        entityType="client"
+                        entityId={client.dbId ?? ''}
+                        context="client-list"
+                        gateContext={gctx}
+                        actionContext={user ? { userId: user.id, role: user.role } : null}
                       >
                         <div className="client-card-header">
                           <span
@@ -1666,7 +1671,7 @@ export function ClientsDirectory({
                             {client.name.slice(0, 2).toUpperCase()}
                           </span>
                           <span className="client-card-meta">
-                            <span className="client-card-name">
+                            <span className="client-card-name" data-intel-identifier>
                               {client.name}
                             </span>
                             <span className="client-card-sub">
@@ -1821,6 +1826,11 @@ export function ClientsDirectory({
                               detail={detail}
                               detailTitle={client.name}
                               detailSubtitle={`${client.id} · ${client.clientType}`}
+                              entityType="client"
+                              entityId={client.dbId ?? ''}
+                              context="client-list"
+                              gateContext={gctx}
+                              actionContext={user ? { userId: user.id, role: user.role } : null}
                             >
                               <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                                 <span
@@ -1847,7 +1857,7 @@ export function ClientsDirectory({
                                 </span>
                                 <span style={{ minWidth: 0 }}>
                                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                                    <span data-intel-identifier style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
                                       {client.name}
                                     </span>
                                     {client.isVip && <Tone text="VIP" entity />}

@@ -68,6 +68,9 @@ export interface ModalProps {
   footer?: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
   sheet?: boolean
+  sidePeek?: boolean
+  swipeDismiss?: boolean
+  peekHeight?: boolean
   portal?: boolean
 }
 
@@ -88,6 +91,9 @@ export function Modal({
   footer,
   size = 'md',
   sheet = false,
+  sidePeek = false,
+  swipeDismiss = false,
+  peekHeight = false,
   portal,
 }: ModalProps) {
   // Keeps the modal mounted for a beat after isOpen flips to false so the
@@ -108,6 +114,7 @@ export function Modal({
   const surfaceRef = useRef<HTMLDivElement>(null)
   const openerRef = useRef<HTMLElement | null>(null)
   const titleId = useId()
+  const touchStartY = useRef<number | null>(null)
 
   useEffect(() => {
     const id = stackId.current!
@@ -195,9 +202,9 @@ export function Modal({
   const viewport = useViewport()
   const phone = viewport === 'phone'
   const tablet = viewport === 'tablet'
-  const maxWidth = phone ? (sheet ? '100%' : 'calc(100% - 24px)') : tablet && sheet ? '60vw' : SIZE_MAX_WIDTH[size]
-  const surfaceMaxHeight = phone ? '85dvh' : sheet ? '85dvh' : size === 'full' ? '92dvh' : '85dvh'
-  const surfaceRadius = phone ? (sheet ? '16px 16px 0 0' : 16) : sheet ? '16px 16px 0 0' : 16
+  const maxWidth = sidePeek ? 480 : phone ? (sheet ? '100%' : 'calc(100% - 24px)') : tablet && sheet ? '60vw' : SIZE_MAX_WIDTH[size]
+  const surfaceMaxHeight = sidePeek ? '100dvh' : peekHeight ? '70dvh' : phone ? '85dvh' : sheet ? '85dvh' : size === 'full' ? '92dvh' : '85dvh'
+  const surfaceRadius = sidePeek ? '16px 0 0 16px' : phone ? (sheet ? '16px 16px 0 0' : 16) : sheet ? '16px 16px 0 0' : 16
 
   // After every hook: `useViewport` is one, so the early return cannot precede it.
   if (!shouldRender) return null
@@ -215,9 +222,9 @@ export function Modal({
            they painted OVER an open modal. Toasts sit at --z-system, above. */
         zIndex: 'var(--z-modal)' as unknown as number,
         display: 'flex',
-        alignItems: sheet ? 'flex-end' : 'center',
-        justifyContent: 'center',
-        padding: sheet ? 0 : 'var(--sp-md)',
+        alignItems: sidePeek ? 'stretch' : sheet ? 'flex-end' : 'center',
+        justifyContent: sidePeek ? 'flex-end' : 'center',
+        padding: sheet || sidePeek ? 0 : 'var(--sp-md)',
         background: 'var(--scrim)',
         opacity: isOpen ? 1 : 0,
         transition: 'opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -251,12 +258,18 @@ export function Modal({
           boxShadow: 'var(--shadow-modal)',
           overflow: 'hidden',
           opacity: isOpen ? 1 : 0,
-          transform: isOpen ? 'scale(1) translateY(0)' : 'scale(0.96) translateY(8px)',
+          transform: isOpen ? 'translate(0, 0)' : sidePeek ? 'translateX(12px)' : 'translateY(8px)',
           transition: 'opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
         {/* Header */}
         <div
+          onTouchStart={swipeDismiss ? (event) => { touchStartY.current = event.touches[0]?.clientY ?? null } : undefined}
+          onTouchEnd={swipeDismiss ? (event) => {
+            const endY = event.changedTouches[0]?.clientY
+            if (touchStartY.current !== null && endY !== undefined && endY - touchStartY.current > 80) onClose()
+            touchStartY.current = null
+          } : undefined}
           style={{
             display: 'flex',
             alignItems: 'flex-start',
@@ -267,6 +280,7 @@ export function Modal({
             flexShrink: 0,
           }}
         >
+          {sheet && swipeDismiss && <span aria-hidden="true" style={{ position: 'absolute', top: 6, left: 'calc(50% - 18px)', width: 36, height: 4, borderRadius: 2, background: 'var(--border2)' }} />}
           <div style={{ minWidth: 0 }}>
             {title && (
               <h2

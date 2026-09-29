@@ -20,6 +20,7 @@ import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
 import { NPT_OFFSET_STRING } from '../../lib/operationalDay'
 import { rentalDaysBetween } from '../../lib/rentalDays'
 import { validateDiscount } from '../../lib/discount'
+import { PROJECT_TYPES, isProjectType, validateProjectType } from '../../lib/projectTypes'
 import { getSetting } from '../../lib/settingsStore'
 import {
   calculatePricingPipeline,
@@ -57,6 +58,9 @@ import { listCrewMembers, CREW_ROSTER, searchRoster, type CrewMember, type CrewR
 import { useAuth } from '../../lib/auth'
 import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { clientGlance, clientDetailGroups } from '../../data/clientIntel'
+import { newRentalEquipmentGlance, newRentalEquipmentDetail } from '../../data/newRentalEquipmentIntel'
 import {
   AddClientModal,
   AddItemPanel,
@@ -65,6 +69,7 @@ import {
   ClientHistoryDrawer,
   ClientQuickView,
   DateTimeField,
+  DatePresets,
   DraftEmailModal,
   clientHealth,
 } from './booking'
@@ -1771,6 +1776,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
      visible, and only the summary + Confirm move into the sticky bar. A
      collapsed handle hid the blocking notices, which Law 12 forbids. */
   /** redesign v1 §5 — which document the draft-email modal is composing for; null = closed. */
+  /* §5 draft-email — the "Send Quote" split button was removed (NR-12).
+     The modal is kept for future wiring when an email backend exists.
+     Currently disabled; leaving the state avoids a breaking refactor of the
+     DraftEmailModal call site below. */
   const [emailDraftDoc, setEmailDraftDoc] = useState<string | null>(null)
 
   /* A new booking starts EMPTY (see the note further down). These used to be
@@ -1778,6 +1787,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
      made every fresh draft look priced and dated before anyone touched it. */
   const [project, setProject] = useState('')
   const [kind, setKind] = useState('')
+  /** Custom description, only meaningful while `kind` is 'Other' (spec §7). */
+  const [kindOther, setKindOther] = useState('')
   /**
    * The Government ID / PAN box, seeded from the selected client's `pan`
    * (`clients.pan_vat`, read by `queries/clients.ts`).
@@ -2233,6 +2244,23 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const depositReceivedPaisa = rupees(0) as Paisa
   const depositPendingPaisa = depositRequiredPaisa
 
+  /* ── Quick pricing hints for date presets ──
+     Uses the current per-day rate from the pricing engine to estimate
+     cost for common durations (1, 3, 7 days). This is a preview only —
+     the real pricing recalculates when dates actually change. */
+  const pricingHints = useMemo(() => {
+    const hints: Record<number, Paisa> = {}
+    // Base daily rate from current pricing (equipment + crew + transport per day)
+    const days = rentalDaysBetween(pickup, ret) ?? 1
+    if (days > 0 && pricing.rentalTotalPaisa > 0) {
+      const dailyRate = Math.round(pricing.rentalTotalPaisa / days)
+      for (const d of [1, 3, 7]) {
+        hints[d] = (dailyRate * d) as Paisa
+      }
+    }
+    return hints
+  }, [pricing.rentalTotalPaisa, pickup, ret])
+
   /* ── §12 alerts. Critical blocks Confirm; Warning blocks Handover. ─────── */
   /**
    * §03 / §8.5 — a real conflict, for the booking's own dates.
@@ -2291,6 +2319,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         ]
       : []),
     ...(!client ? [{ text: 'No client selected', severity: 'Critical' as const, action: 'Select Client' }] : []),
+    /* Project Type is required to confirm (spec §6) but optional on a Draft —
+       the booking is created first as a Quote, and Confirm refuses it. */
+    ...(kind.trim() === ''
+      ? [{ text: 'Select a project type before confirming this rental.', severity: 'Critical' as const, action: 'Open Client & Dates' }]
+      : []),
     ...(client && govId.trim().length === 0 ? [{ text: 'Missing client ID or PAN', severity: 'Critical' as const, action: 'Edit Client' }] : []),
     ...(client && (client.isBlocked || client.onStop)
       ? [
@@ -2687,6 +2720,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       clientName: client?.name,
       project,
       kind,
+      kindOther,
       govId,
       pickup,
       pickupTime,
@@ -2736,7 +2770,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       ...(draftBookingNo ? { bookingNo: draftBookingNo } : {}),
     }),
     [
-      selectedClientId, client, draftClientDbId, project, kind, govId, pickup, pickupTime, ret, returnTime, deliveryType,
+      selectedClientId, client, draftClientDbId, project, kind, kindOther, govId, pickup, pickupTime, ret, returnTime, deliveryType,
       pickupLocation, returnLocation, specialInstructions, lines, crew, deliveryChargePaisa, fuelChargePaisa,
       vehicle, numberPlate, driverContact, returnPickupType, returnPickupAddress, returnPickupTime, returnPickupChargePaisa,
       discountPct, vatOn, vatRatePercent, advancePaisa, draftBookingNo,
@@ -2806,7 +2840,10 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         setSelectedClientId(data.selectedClientId)
         setDraftClientDbId(data.clientDbId)
         setProject(data.project)
-        setKind(data.kind)
+        /* Legacy drafts stored free-text `kind`; only allow-listed values
+           survive the restore — anything else would fail validation on save. */
+        setKind(isProjectType(data.kind) ? data.kind : '')
+        setKindOther(data.kindOther ?? '')
         setGovId(data.govId)
         setPickup(data.pickup)
         setPickupTime(data.pickupTime)
@@ -3071,6 +3108,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             clientId: clientDbId,
             branchId,
             project: project.trim() ? project.replace(/^'|'$/g, '') : null,
+            projectType: kind.trim() !== '' ? kind : null,
+            projectTypeOther: kind === 'Other' && kindOther.trim() !== '' ? kindOther.trim() : null,
             ...(draftBookingNo ? { bookingNo: draftBookingNo } : {}),
             /* Law 7 — the stored instant is AD/UTC; the pickers hold local
                wall-clock, so they are combined and sent as a full ISO string.
@@ -3446,6 +3485,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       // effect was closing a dialog that was not open. Selection happens in the
       // Client section, so that is where it goes.
       if (action === 'Select Client') jumpToSection('section-0')
+      /* Project Type lives in the same Client & Schedule section. */
+      if (action === 'Open Client & Dates') jumpToSection('section-0')
       if (action === 'Open Dates') jumpToSection('section-1')
       /* NR-10 — both equipment refusals settle in the Equipment section: one
          wants a first item added, the other wants a sample row removed and
@@ -3609,6 +3650,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     menuItems?: Array<{ label: string; icon: IconName; onClick: () => void }>,
   ) => {
     const pill = linePill(l)
+    const intelRow = l.productId ? liveEquipment?.find((candidate) => candidate.productKey === l.productId) : undefined
     return (
       <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
         {/* §36 — item name strong, serial small and secondary underneath it.
@@ -3621,10 +3663,28 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 └
               </span>
             )}
-            <span style={{ fontSize: child ? 'var(--t-meta)' : 'var(--t-ui)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.25 }}>
-              {child && <span style={srOnly}>Part of {groupLabel}: </span>}
-              {l.name}
-            </span>
+            {intelRow && l.productId ? (
+              <IntelCard
+                glance={newRentalEquipmentGlance(intelRow)}
+                detail={newRentalEquipmentDetail(intelRow)}
+                detailTitle={l.name}
+                entityType="equipment"
+                entityId={l.productId}
+                context="new-rental"
+                gateContext={gctx}
+                actionContext={user ? { userId: user.id, role: user.role } : null}
+              >
+                <span data-intel-identifier className="identifier" style={{ fontSize: child ? 'var(--t-meta)' : 'var(--t-ui)', fontWeight: 600, color: 'var(--link)', lineHeight: 1.25 }}>
+                  {child && <span style={srOnly}>Part of {groupLabel}: </span>}
+                  {l.name}
+                </span>
+              </IntelCard>
+            ) : (
+              <span style={{ fontSize: child ? 'var(--t-meta)' : 'var(--t-ui)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.25 }}>
+                {child && <span style={srOnly}>Part of {groupLabel}: </span>}
+                {l.name}
+              </span>
+            )}
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1, fontSize: 'var(--t-th)', color: 'var(--text2)', flexWrap: 'wrap' }}>
             {l.lineType === 'Service' || l.lineType === 'Manual item' ? (
@@ -4194,6 +4254,22 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                       )
                     }
                   />
+                  {client?.dbId && (
+                    <div style={{ marginTop: 8 }}>
+                      <IntelCard
+                        glance={clientGlance(client, gctx)}
+                        detail={clientDetailGroups(client, gctx)}
+                        detailTitle={client.name}
+                        entityType="client"
+                        entityId={client.dbId}
+                        context="new-rental"
+                        gateContext={gctx}
+                        actionContext={user ? { userId: user.id, role: user.role } : null}
+                      >
+                        <span className="identifier" style={{ color: 'var(--link)', fontWeight: 600 }}>{client.name}</span>
+                      </IntelCard>
+                    </div>
+                  )}
                 </div>
                 {/* §10 — the combobox's own "Create New Client" row is still
                     there; it and the slot control open the same modal. */}
@@ -4243,9 +4319,41 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               <Field label="Project">
                 <Input value={project} onChange={(e) => setProject(e.target.value)} style={inputStyle} />
               </Field>
-              <Field label="Project Type">
-                <Input value={kind} onChange={(e) => setKind(e.target.value)} style={inputStyle} />
+              <Field
+                label="Project Type"
+                error={
+                  kind.trim() !== ''
+                    ? (validateProjectType(kind, kindOther).message ?? undefined)
+                    : undefined
+                }
+              >
+                <Select
+                  aria-label="Project type"
+                  value={kind}
+                  placeholder="Select project type"
+                  options={PROJECT_TYPES.map((t) => ({ value: t, label: t }))}
+                  onChange={(e) => {
+                    const next = e.target.value
+                    setKind(next)
+                    /* A custom description belongs to Other only — leaving a
+                       stale one behind would fail validation on save. */
+                    if (next !== 'Other') setKindOther('')
+                  }}
+                  style={inputStyle}
+                />
               </Field>
+              {kind === 'Other' && (
+                <div style={{ gridColumn: isPhone ? 'auto' : '1 / -1' }}>
+                  <Field label="Specify Project Type">
+                    <Input
+                      value={kindOther}
+                      onChange={(e) => setKindOther(e.target.value)}
+                      placeholder="e.g. Live Theatre Production"
+                      style={inputStyle}
+                    />
+                  </Field>
+                </div>
+              )}
               <div style={{ gridColumn: isPhone ? 'auto' : '1 / -1' }}>
                 <Field
                   label="Government ID / PAN"
@@ -4316,6 +4424,18 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 ))}
               </div>
             </details>
+
+            {/* Quick date presets — one-tap common rental durations */}
+            <DatePresets
+              outDate={pickup}
+              onPick={(out, ret) => {
+                setPickup(out)
+                setRet(ret)
+              }}
+              minReturnDate={pickup}
+              priceHints={pricingHints}
+              disabled={currentStep > 0}
+            />
 
             <div className="new-rental-period-fields" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 11, alignItems: 'start' }}>
               {/* `DateTimeField` renders its own label and its own BS line, so

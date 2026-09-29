@@ -130,6 +130,34 @@ describe('the RPC call itself', () => {
     expect(p['booking_no']).toBe('1052')
   })
 
+  it('passes project_type through, defaulting both keys to null', async () => {
+    await run()
+    const p = (rpc.state.calls[0]?.args as { p_payload: Record<string, unknown> }).p_payload
+    expect(p['project_type']).toBeNull()
+    expect(p['project_type_other']).toBeNull()
+  })
+
+  it('passes a Documentary type and an Other description', async () => {
+    await run({ projectType: 'Documentary' })
+    const p = (rpc.state.calls[0]?.args as { p_payload: Record<string, unknown> }).p_payload
+    expect(p['project_type']).toBe('Documentary')
+    await run({ projectType: 'Other', projectTypeOther: 'Live Theatre' })
+    const q = (rpc.state.calls[1]?.args as { p_payload: Record<string, unknown> }).p_payload
+    expect(q['project_type']).toBe('Other')
+    expect(q['project_type_other']).toBe('Live Theatre')
+  })
+
+  it('refuses a value outside the allow-list before anything is sent', async () => {
+    await expect(run({ projectType: 'doc shoot' })).rejects.toThrow(/Select a project type from the list/)
+    expect(rpc.state.calls).toHaveLength(0)
+  })
+
+  it('refuses Other without its description, and a description without Other', async () => {
+    await expect(run({ projectType: 'Other', projectTypeOther: '' })).rejects.toThrow(/Describe the project type/)
+    await expect(run({ projectType: 'Wedding', projectTypeOther: 'Beach' })).rejects.toThrow(/only used with Other/)
+    expect(rpc.state.calls).toHaveLength(0)
+  })
+
   it('sends days and qty per line, unaltered — no pricing happens here', async () => {
     await run()
     const p = (rpc.state.calls[0]?.args as { p_payload: { lines: Array<Record<string, unknown>> } }).p_payload

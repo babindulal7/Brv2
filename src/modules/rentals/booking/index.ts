@@ -126,6 +126,10 @@ export type { BundlePreviewProps } from './BundlePreview'
 export { DateTimeField, parseDateInput, parseTimeInput } from './DateTimeField'
 export type { DateTimeFieldProps } from './DateTimeField'
 
+/* Quick date presets for New Rental — one-tap common durations. */
+export { DatePresets, DEFAULT_PRESETS, usePricingHints } from './DatePresets'
+export type { DatePreset, DatePresetsProps } from './DatePresets'
+
 /* redesign v1 §5 — draft-only email composer. Comms are never auto-sent
    (21 Jul lock). No email backend exists in this build, so the send control
    is Unavailable with the named reason below — the draft is reviewable and

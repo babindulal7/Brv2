@@ -97,6 +97,7 @@ const U = {
 }
 const SERIAL_PRODUCT = '00000000-0000-4000-8000-00000000f001'
 const QTY_PRODUCT = '00000000-0000-4000-8000-00000000f002'
+const CONSUMABLE_PRODUCT = '00000000-0000-4000-8000-00000000f003'
 const UNITS = [
   '00000000-0000-4000-8000-00000000f101',
   '00000000-0000-4000-8000-00000000f102',
@@ -111,6 +112,7 @@ const W = {
   /* #901 · 11-13 Sep — overlaps a */ b: ['2099-09-11T04:00:00Z', '2099-09-13T04:00:00Z'],
   /* #902 · 12-14 Sep — same-day turnaround with a */ c: ['2099-09-12T04:00:00Z', '2099-09-14T04:00:00Z'],
   /* the quantity probes */ d: ['2099-10-01T04:00:00Z', '2099-10-03T04:00:00Z'],
+  /* the consumable probe: clear of every other window */ e: ['2099-11-01T04:00:00Z', '2099-11-03T04:00:00Z'],
 }
 
 let BRANCH = null
@@ -292,15 +294,17 @@ async function seed() {
     [OTHER_CLIENT, BRANCH, U.Owner, await one("select next_document_number('booking')")],
   )
 
-  /* One Serialised product with three units, and one Quantity product with a
-     stock of three. The 0047 corpus is 56 products and ALL Serialised, while
-     production is 204 and ALL Quantity — so a script that borrowed the corpus
-     would exercise the GiST exclusion and never the capacity ceiling, which is
-     the half that matters on live. Both are seeded here. */
+  /* One Serialised product with three units, one Quantity product with a
+     stock of three, and one Consumable product with a stock of ten. The 0047
+     corpus is 56 products and ALL Serialised, while production is 204 and ALL
+     Quantity — so a script that borrowed the corpus would exercise the GiST
+     exclusion and never the capacity ceiling, which is the half that matters
+     on live. Both are seeded here. The consumable is seeded for L21. */
   await q(
     `insert into products (id, client_uuid, asset_code, name, category_id, brand, tracking_mode, total_quantity, daily_rate, created_by)
      values ($1, gen_random_uuid(), $5, 'Lifecycle Serialised Camera', $4, 'Lifecycle', 'Serialised', 3, 3500, $3),
-            ($2, gen_random_uuid(), $6, 'Lifecycle Bulk Cable',        $4, 'Lifecycle', 'Quantity',   3, 250,  $3)
+            ($2, gen_random_uuid(), $6, 'Lifecycle Bulk Cable',        $4, 'Lifecycle', 'Quantity',   3, 250,  $3),
+            ($7, gen_random_uuid(), $8, 'Lifecycle Gaffer Tape',       $4, 'Lifecycle', 'Consumable', 10, 150, $3)
      on conflict (id) do nothing`,
     [
       SERIAL_PRODUCT,
@@ -308,6 +312,8 @@ async function seed() {
       U.Owner,
       CATEGORY,
       await one("select next_document_number('equipment')"),
+      await one("select next_document_number('equipment')"),
+      CONSUMABLE_PRODUCT,
       await one("select next_document_number('equipment')"),
     ],
   )
@@ -1519,6 +1525,257 @@ const STEPS = [
             /remaining reversible amount|exceeds/i,
           )
         })
+      })
+    },
+  },
+  {
+    id: 'L20',
+    title: 'Bulk stock adjustment is atomic, idempotent, reasoned, and Manager-only',
+    expect: 'green',
+    async run() {
+      await undone(async () => {
+        const refusesInProbe = async (what, sql, params, matcher) => {
+          await db.exec('savepoint stock_probe;')
+          try {
+            await refuses(what, sql, params, matcher)
+          } finally {
+            await db.exec('rollback to savepoint stock_probe; release savepoint stock_probe;')
+          }
+        }
+        const key = '00000000-0000-4000-8000-00000000a140'
+        await as('Manager', async () => {
+          await q("select set_config('request.jwt.claim.sub', $1, true)", [U.Manager])
+          const before = await one('select total_quantity from products where id = $1', [QTY_PRODUCT])
+          const first = await q(
+            'select * from adjust_stock($1, 2, $2, $3, $4)',
+            [QTY_PRODUCT, 'Found two extra units during count', U.Manager, key],
+          )
+          assertEq(first.rows[0].quantity_before, before, 'adjustment records prior quantity')
+          assertEq(first.rows[0].quantity_after, before + 2, 'adjustment records new quantity')
+          await q('select * from adjust_stock($1, 2, $2, $3, $4)',
+            [QTY_PRODUCT, 'Found two extra units during count', U.Manager, key])
+          assertEq(await one('select total_quantity from products where id = $1', [QTY_PRODUCT]), before + 2,
+            'retry does not apply the delta twice')
+          await refusesInProbe('stock below zero', 'select * from adjust_stock($1, -999, $2, $3, gen_random_uuid())',
+            [QTY_PRODUCT, 'Physical count found missing stock', U.Manager], /below zero/i)
+          await refusesInProbe('serialised bulk adjustment', 'select * from adjust_stock($1, 1, $2, $3, gen_random_uuid())',
+            [SERIAL_PRODUCT, 'Physical count found an extra unit', U.Manager], /Serialised products/i)
+          await refusesInProbe('direct quantity update', 'update products set total_quantity = total_quantity + 1 where id = $1',
+            [QTY_PRODUCT], /audited stock adjustment action/i)
+        })
+        await as('Warehouse', async () => {
+          await q("select set_config('request.jwt.claim.sub', $1, true)", [U.Warehouse])
+          await refusesInProbe('Warehouse stock adjustment', 'select * from adjust_stock($1, 1, $2, $3, gen_random_uuid())',
+            [QTY_PRODUCT, 'Physical count found an extra unit', U.Warehouse], /Only Owner, Admin, or Manager/i)
+        })
+      })
+    },
+  },
+  {
+    id: 'L21',
+    title: 'A consumable line deducts stock at Handover and needs no return receipt (0141/0142)',
+    expect: 'green',
+    async run() {
+      await as('Coordinator', async () => {
+        await createBooking({
+          key: 'cons',
+          window: W.e,
+          actor: 'Coordinator',
+          lines: [
+            {
+              productId: SERIAL_PRODUCT,
+              description: 'Consumable-probe camera',
+              qty: 1,
+              days: 2,
+              rate: 3500,
+              units: [UNITS[2]],
+            },
+            {
+              productId: CONSUMABLE_PRODUCT,
+              description: 'Lifecycle Gaffer Tape',
+              qty: 2,
+              days: 2,
+              rate: 150,
+            },
+          ],
+        })
+        await transition('cons', 'Quote', 'Booked', 'Coordinator')
+      })
+      assertEq(await liveHolds('cons'), 2, 'the consumable line holds quantity like any non-serialised line')
+
+      await as('Warehouse', async () => {
+        const packingSessionId = crypto.randomUUID()
+        await q(
+          `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
+           values ($1, gen_random_uuid(), $2, 'Packing', 1, 'In Progress', $3, $3)`,
+          [packingSessionId, bookingIds.cons, U.Warehouse],
+        )
+        await q(
+          `insert into session_line_movements (client_uuid, session_id, booking_line_id, unit_id, serial, qty, moved_at, created_by)
+           values (gen_random_uuid(), $1, (select id from booking_lines where booking_id = $2 and product_id = $3), $4, 'LCSN-003', 1, now(), $5)`,
+          [packingSessionId, bookingIds.cons, SERIAL_PRODUCT, UNITS[2], U.Warehouse],
+        )
+        await transition('cons', 'Booked', 'Packed', 'Warehouse')
+
+        const handoverSessionId = crypto.randomUUID()
+        await q(
+          `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
+           values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', 'Client Pickup', $3, $3)`,
+          [handoverSessionId, bookingIds.cons, U.Warehouse],
+        )
+        // Handover still receipts every line including the consumable — the
+        // exemption is Return-only.
+        for (const [productId, qty] of [[SERIAL_PRODUCT, 1], [CONSUMABLE_PRODUCT, 2]]) {
+          await q(
+            `insert into handover_lines (client_uuid, booking_line_id, state, qty_required, first_session_id, completed_session_id, created_by)
+             values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 and product_id = $2), 'Picked Up', $3, $4, $4, $5)`,
+            [bookingIds.cons, productId, qty, handoverSessionId, U.Warehouse],
+          )
+        }
+        await q(
+          `insert into signatures (client_uuid, session_id, signature_role, signer_name, signed_at, device, is_required, created_by)
+           values (gen_random_uuid(), $1, 'Receiver', 'Lifecycle Client Signer', now(), 'iPad-1', true, $2)`,
+          [handoverSessionId, U.Warehouse],
+        )
+        await transition('cons', 'Packed', 'On Rent', 'Warehouse')
+      })
+
+      assertEq(await stageOf('cons'), 'On Rent', 'handover completed with the consumable line aboard')
+
+      // 0142: the Handover deducted 2 tapes from the shelf of 10.
+      await asOwnerOfTheDatabase(async () => {
+        const movement = (
+          await q(
+            `select qty, quantity_before, quantity_after
+               from consumable_stock_movements
+              where booking_id = $1`,
+            [bookingIds.cons],
+          )
+        ).rows[0]
+        assert(movement !== undefined, 'no consumable movement was recorded at Handover')
+        assertEq(movement.qty, 2, 'movement qty')
+        assertEq(movement.quantity_before, 10, 'movement quantity_before')
+        assertEq(movement.quantity_after, 8, 'movement quantity_after')
+        assertEq(
+          await one('select total_quantity from products where id = $1', [CONSUMABLE_PRODUCT]),
+          8,
+          'the shelf count moved exactly once',
+        )
+      })
+
+      await as('Warehouse', async () => {
+        // The camera comes back in this session's books.
+        await q(
+          `update booking_line_units
+              set returned_at = now(), condition = 'Good'
+            where asset_id = $1
+              and booking_line_id in (select id from booking_lines where booking_id = $2)`,
+          [UNITS[2], bookingIds.cons],
+        )
+        const returnSessionId = crypto.randomUUID()
+        await q(
+          `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
+           values ($1, gen_random_uuid(), $2, 'Return', 1, 'In Progress', $3, $3)`,
+          [returnSessionId, bookingIds.cons, U.Warehouse],
+        )
+
+        // The exemption is narrow: the serialised line still needs its receipt.
+        await refuses(
+          'moving to Returned with the camera unreceipted',
+          `insert into booking_stage_transitions
+             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
+           values (gen_random_uuid(), $1, $2, 'On Rent', 'Returned', $3, 'Warehouse', now())`,
+          [bookingIds.cons, BRANCH, U.Warehouse],
+          /gate\.return\.units_unaccounted/,
+        )
+
+        await q(
+          `insert into return_lines (client_uuid, booking_line_id, state, qty_expected, session_id, returned_at, created_by)
+           values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 and product_id = $2), 'Returned', 1, $3, now(), $4)`,
+          [bookingIds.cons, SERIAL_PRODUCT, returnSessionId, U.Warehouse],
+        )
+
+        // 0141: no return line for the gaffer tape, and the move is accepted.
+        await transition('cons', 'On Rent', 'Returned', 'Warehouse')
+      })
+
+      assertEq(await stageOf('cons'), 'Returned', 'the booking returned without a consumable receipt')
+      assertEq(await liveHolds('cons'), 0, 'every hold released, quantity holds included (R-26)')
+      assertEq(
+        await one(
+          "select count(*) from cases where linked_booking_id = $1 and type = 'Missing'",
+          [bookingIds.cons],
+        ),
+        0,
+        'the consumed line opens no Missing case',
+      )
+
+      // The one-per-line UNIQUE is the re-run guard, not a bare not-exists.
+      // As owner: RLS has no INSERT policy on this table by design (only the
+      // trigger writes), so the probe must bypass RLS to reach the constraint.
+      await undone(async () => {
+        await asOwnerOfTheDatabase(async () => {
+          await refuses(
+            'a second deduction for the same booking line',
+            `insert into consumable_stock_movements
+               (client_uuid, booking_id, booking_line_id, product_id, qty, quantity_before, quantity_after, created_by)
+             values (gen_random_uuid(), $1,
+               (select id from booking_lines where booking_id = $1 and product_id = $2),
+               $2, 2, 8, 6, $3)`,
+            [bookingIds.cons, CONSUMABLE_PRODUCT, U.Warehouse],
+            /duplicate|unique/i,
+          )
+        })
+      })
+    },
+  },
+  {
+    id: 'L22',
+    title: 'Smart Intel note visibility and classified values are filtered by RLS for every role',
+    expect: 'green',
+    run: async () => {
+      await undone(async () => {
+        await asOwnerOfTheDatabase(async () => {
+          for (const visibility of ['all_staff', 'operations', 'management']) {
+            await q(
+              `insert into intel_entity_notes (client_uuid, entity_type, client_id, body, visibility, created_by)
+               values (gen_random_uuid(), 'client', $1, $2, $3, $4)`,
+              [CLIENT, `Intel ${visibility}`, visibility, U.Owner],
+            )
+            await q(
+              `insert into booking_notes (client_uuid, booking_id, note_type, body, visibility, created_by)
+               values (gen_random_uuid(), $1, 'Internal', $2, $3, $4)`,
+              [bookingIds.a, `Intel ${visibility}`, visibility, U.Owner],
+            )
+          }
+          for (const classification of ['operational', 'personal', 'financial']) {
+            const definitionId = crypto.randomUUID()
+            await q(
+              `insert into intel_field_definitions
+                 (id, client_uuid, entity_type, field_key, label, classification, high_priority, created_by)
+               values ($1, gen_random_uuid(), 'client', $2, $3, $4, true, $5)`,
+              [definitionId, `lifecycle_${classification}`, `Lifecycle ${classification}`, classification, U.Owner],
+            )
+            await q(
+              `insert into intel_field_values
+                 (client_uuid, definition_id, client_id, value_text, created_by)
+               values (gen_random_uuid(), $1, $2, $3, $4)`,
+              [definitionId, CLIENT, `SECRET_${classification}`, U.Owner],
+            )
+          }
+        })
+        for (const role of Object.keys(U)) {
+          const noteCount = ['Owner', 'Admin', 'Manager'].includes(role) ? 3 : role === 'Accounts' ? 1 : role === 'Client' ? 0 : 2
+          const fieldCount = ['Owner', 'Admin', 'Manager', 'Accounts'].includes(role) ? 3 : role === 'Coordinator' ? 2 : role === 'Client' ? 0 : 1
+          await as(role, async () => {
+            assertEq(await one('select count(*) from intel_entity_notes where client_id = $1', [CLIENT]), noteCount, `${role} client note visibility`)
+            assertEq(await one('select count(*) from booking_notes where booking_id = $1 and body like $2', [bookingIds.a, 'Intel %']), noteCount, `${role} booking note visibility`)
+            assertEq(await one('select count(*) from intel_field_values where client_id = $1', [CLIENT]), fieldCount, `${role} classified field visibility`)
+            if (!['Owner', 'Admin', 'Manager', 'Accounts'].includes(role)) {
+              assertEq(await one("select count(*) from intel_field_values where value_text = 'SECRET_financial'"), 0, `${role} financial payload absence`)
+            }
+          })
+        }
       })
     },
   },

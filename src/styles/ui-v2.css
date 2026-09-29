@@ -26,8 +26,8 @@
   border: 1px solid var(--border);
 }
 .surface-card__header { background: var(--surface); }
-.ui-button { transition: transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
-.ui-button:active:not(:disabled) { transform: translateY(1px) scale(0.98); }
+.ui-button { transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
+.ui-button:active:not(:disabled) { filter: brightness(0.96); }
 .ui-button--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--brand) 92%, var(--brand-ink)) !important; box-shadow: var(--shadow-primary-glow), var(--specular-rim); }
 .ui-button--link:hover:not(:disabled) { text-decoration: underline; }
 .ui-button--link:active:not(:disabled) { transform: none; opacity: 0.7; }
@@ -56,11 +56,12 @@ input[type='search']::-webkit-search-results-decoration {
   -webkit-appearance: none;
 }
 
-/* Tactile Press Physics for Interactive Elements */
+/* Tactile Press Physics for Interactive Elements — brightness only, never a
+   translate/scale, so pressing a button cannot shift surrounding layout. */
 .press:active:not(:disabled),
 [data-pressable='true']:active {
-  transform: translateY(1px) scale(0.985);
-  transition: transform 60ms cubic-bezier(0.16, 1, 0.3, 1);
+  filter: brightness(0.96);
+  transition: filter 60ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ui-button__slot { display: inline-flex; flex-shrink: 0; }
@@ -78,7 +79,7 @@ input[type='search']::-webkit-search-results-decoration {
   margin-right: -4px;
   margin-left: 4px;
   background: rgba(255, 255, 255, 0.2);
-  transition: transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  transition: background-color var(--dur-fast) var(--ease);
   flex-shrink: 0;
 }
 .ui-button--secondary .ui-button__trailing-bubble,
@@ -87,7 +88,7 @@ input[type='search']::-webkit-search-results-decoration {
   background: var(--surface-2);
 }
 .ui-button:hover:not(:disabled) .ui-button__trailing-bubble {
-  transform: translate(1.5px, -1px);
+  background: rgba(255, 255, 255, 0.28);
 }
 
 /* Machined Double-Bezel (Doppelrand) Architecture */
@@ -188,7 +189,7 @@ input[type='search']::-webkit-search-results-decoration {
   .surface-card.lift:hover, .card.interactive:hover,
   .card[data-interactive='true']:hover {
     background: var(--hover-card);
-    transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    transition: background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -591,13 +592,13 @@ input[type='search']::-webkit-search-results-decoration {
   background: var(--brand, #2456d6);
   color: #ffffff;
   cursor: pointer;
-  transition: transform 0.1s ease, filter 0.15s ease;
+  transition: filter 0.15s ease;
 }
 .next-action-banner__action:hover {
   filter: brightness(1.08);
 }
 .next-action-banner__action:active {
-  transform: translateY(1px);
+  filter: brightness(0.96);
 }
 
 /* ─── Responsive Table Card Transforms & Touch Targets (< 768px) ─── */

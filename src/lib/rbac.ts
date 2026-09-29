@@ -235,6 +235,11 @@ export function canEditServicePlan(role: SystemRole): boolean {
   return role === 'Owner' || role === 'Admin' || role === 'Manager'
 }
 
+/** RULING 2026-09-29: product-wide bulk stock corrections require Manager+. */
+export function canAdjustStock(role: SystemRole): boolean {
+  return role === 'Owner' || role === 'Admin' || role === 'Manager'
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
  * The remaining capability rules — ruled 16 Aug 2026, same method as the four
  * above. Derivation table: `CAPABILITY_MAPPING_2026-08-16.md` §4.

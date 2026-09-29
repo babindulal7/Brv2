@@ -290,7 +290,13 @@ describe('Header — R1 simplification & abnormal sync gating', () => {
     viewport = 'desktop'
     syncMockState = { status: 'synced', syncStatus: 'synced', pendingCount: 0, error: null, triggerSync: vi.fn() }
     await mount(<Header crumbs={[{ label: 'Dashboard' }]} />)
-    expect(container.querySelector('.header-sync-control')).toBeNull()
+    /* Layout-stable slot: always mounted so its appearance can never push the
+       search box sideways, but invisible + unfocusable when healthy. */
+    const slot = container.querySelector<HTMLElement>('.header-sync-context')
+    expect(slot).not.toBeNull()
+    expect(slot?.style.visibility).toBe('hidden')
+    expect(slot?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('.header-sync-control')?.getAttribute('tabindex')).toBe('-1')
   })
 
   it('renders sync badge in abnormal state (syncing) with Law 15 touch target (>= 44x44px)', async () => {
@@ -301,7 +307,8 @@ describe('Header — R1 simplification & abnormal sync gating', () => {
     expect(syncBadge).not.toBeNull()
     expect(syncBadge?.textContent).toContain('Syncing…')
     expect(syncBadge?.style.minHeight).toBe('44px')
-    expect(syncBadge?.style.minWidth).toBe('44px')
+    expect(parseInt(syncBadge?.style.minWidth ?? '0', 10)).toBeGreaterThanOrEqual(44)
+    expect(container.querySelector<HTMLElement>('.header-sync-context')?.style.visibility).toBe('visible')
   })
 
   it('renders sync badge in abnormal state (pending mutations queued)', async () => {

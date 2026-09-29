@@ -64,6 +64,7 @@ export type AddBookingNoteInput = {
   bookingId: string
   noteType: 'Booking' | 'Internal'
   body: string
+  visibility?: 'all_staff' | 'operations' | 'management'
   /** **Law 8** — minted where the operator pressed the button, reused across retries. */
   clientUuid?: string | undefined
 }
@@ -82,6 +83,7 @@ type NoteInsert = {
   booking_id: string
   note_type: 'Booking' | 'Internal'
   body: string
+  visibility?: 'all_staff' | 'operations' | 'management'
   created_by: string
 }
 
@@ -109,12 +111,18 @@ export const addBookingNoteConfig: ActionConfig<AddBookingNoteInput, AddBookingN
       // here with a sentence instead of at the row with a constraint name.
       throw new Error('Write the note before saving it — an empty note records nothing.')
     }
+    if (input.visibility && !['all_staff', 'operations', 'management'].includes(input.visibility)) {
+      throw new Error('Choose a valid note visibility.')
+    }
     if (!input.clientUuid || input.clientUuid.trim() === '') {
       throw new Error('This note carries no idempotency key, so a retry could write it twice. Nothing was sent.')
     }
   },
 
   execute: async (input, ctx: ActionContext) => {
+    if (input.visibility === 'management' && !['Owner', 'Admin', 'Manager'].includes(ctx.role)) {
+      throw new Error('Management notes require Owner, Admin, or Manager access.')
+    }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       throw new Error(
         'This device is offline. The note was not queued — save it when you are back online so the ' +
@@ -127,6 +135,7 @@ export const addBookingNoteConfig: ActionConfig<AddBookingNoteInput, AddBookingN
       booking_id: input.bookingId,
       note_type: input.noteType,
       body: input.body.trim(),
+      ...(input.visibility ? { visibility: input.visibility } : {}),
       created_by: ctx.userId,
     }
 

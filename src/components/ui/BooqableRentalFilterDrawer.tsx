@@ -7,6 +7,7 @@ import { Unavailable } from './Unavailable'
 import { STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import type { ChipKey } from '../../lib/queries/bookings'
+import { PROJECT_TYPES } from '../../lib/projectTypes'
 import { DateRangePresets } from './DateRangePresets'
 
 export interface BooqableRentalFilterDrawerProps {
@@ -21,6 +22,9 @@ export interface BooqableRentalFilterDrawerProps {
   /** Stage facet */
   statusFilter: Set<BookingStatus>
   onToggleStatus: (status: BookingStatus) => void
+  /** Project Type facet — neutral chips, never status-colored (spec §3) */
+  projectTypeFilter: Set<string>
+  onToggleProjectType: (projectType: string) => void
   /** Quick filter preset */
   quickFilter: ChipKey
   onSelectQuickFilter: (chip: ChipKey) => void
@@ -63,6 +67,8 @@ export function BooqableRentalFilterDrawer({
   onClearAll,
   statusFilter,
   onToggleStatus,
+  projectTypeFilter,
+  onToggleProjectType,
   quickFilter,
   onSelectQuickFilter,
   dateRange,
@@ -221,6 +227,63 @@ export function BooqableRentalFilterDrawer({
                       {count}
                     </span>
                   )}
+                </label>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Section 2b: Project Type facet — checkbox grid mirroring Status, but
+            deliberately badge-less and neutral: the type is not an operational
+            state, so it never borrows a status tone (spec §3). */}
+        <div style={{ marginBottom: 'var(--sp-lg)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-sm)' }}>
+            <h3 style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>
+              Project Type
+            </h3>
+            {projectTypeFilter.size > 0 && (
+              <Badge tone="primary" label={`${projectTypeFilter.size} active`} size="sm" variant="square" />
+            )}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {PROJECT_TYPES.map((type) => {
+              const isChecked = projectTypeFilter.has(type)
+
+              return (
+                <label
+                  key={type}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    minHeight: 44,
+                    padding: '0 12px',
+                    borderRadius: 'var(--r-sm)',
+                    border: `1px solid ${isChecked ? 'var(--primary)' : 'var(--border)'}`,
+                    background: isChecked ? 'var(--hover-card)' : 'transparent',
+                    cursor: 'pointer',
+                    outline: 'none',
+                    fontSize: 'var(--t-meta)',
+                    fontWeight: isChecked ? 600 : 500,
+                    color: 'var(--text2)',
+                    whiteSpace: 'nowrap',
+                  }}
+                  onFocus={(e) => { e.currentTarget.style.outline = '2px solid var(--input-focus)'; e.currentTarget.style.outlineOffset = '2px'; }}
+                  onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => onToggleProjectType(type)}
+                    aria-label={`Filter by project type ${type}`}
+                    style={{
+                      width: 16,
+                      height: 16,
+                      flexShrink: 0,
+                      accentColor: 'var(--primary)',
+                    }}
+                  />
+                  {type}
                 </label>
               )
             })}

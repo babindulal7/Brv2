@@ -654,6 +654,10 @@ export interface Database {
           delivery_address: string | null
           project_title: string | null
           shoot_type: string | null
+          /** 0144 — controlled project-type list; NULL for legacy rows and Drafts. */
+          project_type: string | null
+          /** 0144 — custom description, only when project_type is 'Other'. */
+          project_type_other: string | null
           location: string | null
           notes: string | null
           created_at: string
@@ -678,6 +682,10 @@ export interface Database {
           delivery_address?: string | null
           project_title?: string | null
           shoot_type?: string | null
+          /** 0144 — controlled project-type list; NULL for legacy rows and Drafts. */
+          project_type?: string | null
+          /** 0144 — custom description, only when project_type is 'Other'. */
+          project_type_other?: string | null
           location?: string | null
           notes?: string | null
           created_at?: string

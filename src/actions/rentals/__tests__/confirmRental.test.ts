@@ -238,6 +238,7 @@ function bookingAt(stage: string): Record<string, unknown> {
     stage,
     cancelled_at: null,
     closed_at: null,
+    project_type: 'Documentary',
   }
 }
 
@@ -442,6 +443,20 @@ describe('the refusals that precede every write', () => {
     db.state.responses['bookings'] = [[bookingAt('Quote')]]
     db.state.responses['booking_lines'] = [[]]
     await expect(confirm({ id: 'B-715' })).rejects.toThrow(/no live lines/)
+    expect(writes.state.ops).toHaveLength(0)
+  })
+
+  it('refuses a Quote with no project type — the type is required to confirm', async () => {
+    db.state.responses['bookings'] = [[{ ...bookingAt('Quote'), project_type: null }]]
+    await expect(confirm({ id: 'B-715' })).rejects.toThrow(/Select a project type before confirming/)
+    expect(writes.state.ops).toHaveLength(0)
+  })
+
+  it('refuses a Quote whose project-type key predates 0144 — missing is missing', async () => {
+    const { project_type: _dropped, ...legacy } = bookingAt('Quote')
+    void _dropped
+    db.state.responses['bookings'] = [[legacy]]
+    await expect(confirm({ id: 'B-715' })).rejects.toThrow(/Select a project type before confirming/)
     expect(writes.state.ops).toHaveLength(0)
   })
 

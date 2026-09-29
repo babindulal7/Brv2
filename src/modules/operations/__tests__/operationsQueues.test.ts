@@ -275,6 +275,8 @@ const ROW: BookingListRow = {
   clientId: 'c0ffee00-1111-4222-8333-444455556666',
   clientName: 'Himalaya Films',
   project: 'FX3 Documentary',
+  projectType: 'Documentary',
+  projectTypeOther: null,
   stage: 'Booked',
   pickupAtAd: '2026-08-14T03:15:00.000Z',
   returnAtAd: '2026-08-18T10:30:00.000Z',

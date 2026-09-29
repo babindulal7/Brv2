@@ -965,18 +965,16 @@ body {
   /* Border removed per design audit: cards use background color for elevation */
   border: none;
   border-radius: var(--r-card);
-  transition: transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  transition: box-shadow var(--dur) var(--ease), background-color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .card.interactive:hover,
   .card[data-interactive='true']:hover {
-    transform: translateY(-2px);
     box-shadow: var(--shadow-lg);
   }
   .card--bordered.interactive:hover,
   .card--bordered[data-interactive='true']:hover {
-    transform: translateY(-2px);
     box-shadow: var(--shadow-lg);
   }
 }
@@ -1229,7 +1227,9 @@ td,
   }
 }
 
-/* ── Tactile Interactive Transitions & Click Compression ── */
+/* ── Tactile Interactive Transitions & Click Compression ──
+   Feedback is colour/brightness only — never a translate or scale, so a
+   pressed button cannot push its neighbours or read as "moving". */
 button,
 a.btn,
 [role="button"],
@@ -1237,14 +1237,14 @@ input[type="button"],
 input[type="submit"] {
   font-family: inherit;
   cursor: pointer;
-  transition: var(--transition);
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 
 button:active:not(:disabled),
 .press:active:not(:disabled),
 a.btn:active,
 [role="button"]:active:not([aria-disabled="true"]) {
-  transform: scale(0.97);
+  filter: brightness(0.96);
 }
 
 /* ── Smooth Form Inputs with Glow Focus Rings ── */
@@ -1269,27 +1269,28 @@ textarea:focus {
   border: 1px solid var(--border);
 }
 
-/* ── Card Levitation & Micro-Elevation ── */
+/* ── Card Levitation & Micro-Elevation ──
+   Hover feedback is shadow/border only — a card that lifts with translateY
+   moves every sibling below it, which reads as page jitter. */
 .card,
 section[id] {
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+  transition: box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, background-color 0.2s ease;
 }
 
 .lift {
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+  transition: box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, background-color 0.2s ease;
 }
 .lift:hover,
 .card-interactive:hover {
-  transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
   border-color: var(--lift-accent, var(--border2));
 }
 
 .press {
-  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: filter 0.12s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.12s ease;
 }
 .press:active:not(:disabled) {
-  transform: scale(0.97);
+  filter: brightness(0.96);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1442,14 +1443,12 @@ p {
 }
 
 .ui-button {
-  will-change: transform;
   -webkit-tap-highlight-color: transparent;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .ui-button:hover:not(:disabled) {
     filter: brightness(1.06);
-    transform: translateY(-1px);
   }
 
   .ui-button--primary:hover:not(:disabled) {

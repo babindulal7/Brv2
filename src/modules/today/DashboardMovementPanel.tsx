@@ -5,6 +5,11 @@ import { PageBody } from '../../components/ui/PageBody'
 import { businessDayAd, has, timeOf, type MovementRow } from '../../lib/queries/today'
 import type { ListResult } from '../../lib/queries/useList'
 import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
+import { useAuth } from '../../lib/auth'
+import { gateContext } from '../../lib/fieldGating'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { movementGlance, movementDetail } from '../../data/movementIntel'
+import { ClientIntelFromId } from '../../components/intel/ClientIntelFromId'
 import type { BookingStatus, JobName } from '../../lib/workflow'
 
 interface DashboardMovementPanelProps {
@@ -58,6 +63,8 @@ export default function DashboardMovementPanel({
   compactEmpty = false,
 }: DashboardMovementPanelProps) {
   const { openOperations } = useOperationsWorkspace()
+  const { user } = useAuth()
+  const intelGate = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
   const count = list.loading || list.error ? '—' : String(list.total ?? list.rows.length)
   const noun = side === 'outgoing' ? 'pickups' : 'returns'
   const panelSubtitle = compactEmpty ? `No ${noun} ${periodLabel}.` : subtitle
@@ -182,7 +189,8 @@ export default function DashboardMovementPanel({
                     }`}
                     aria-label={`${row.bookingNo}, ${row.client}, ${displayTime}`}
                   >
-                    <Link className="movement-card__client-link" to={`/rentals/${row.bookingNo}`}>
+                    <ClientIntelFromId clientId={row.clientId} name={row.client} context="dashboard" gateContext={intelGate} actionContext={user ? { userId: user.id, role: user.role } : null}>
+                    <Link className="movement-card__client-link" to={`/clients/${row.clientId}`}>
                       <span className="movement-card__avatar" aria-hidden="true">
                         {row.monogram || (row.client ? row.client.slice(0, 2).toUpperCase() : 'BK')}
                       </span>
@@ -194,11 +202,24 @@ export default function DashboardMovementPanel({
                         </span>
                       </span>
                     </Link>
+                    </ClientIntelFromId>
 
-                    <Link className="movement-card__booking-link" to={`/rentals/${row.bookingNo}`}>
+                    <div className="movement-card__booking-link">
                       <span className="movement-card__record-label">Booking</span>
-                      <strong className="movement-card__number identifier">{row.bookingNo}</strong>
-                    </Link>
+                      <IntelCard
+                        glance={movementGlance(row, side)}
+                        detail={movementDetail(row)}
+                        detailTitle={row.bookingNo}
+                        detailSubtitle={`${row.client} · ${row.status}`}
+                        entityType="rental"
+                        entityId={row.id}
+                        context="dashboard"
+                        gateContext={intelGate}
+                        actionContext={user ? { userId: user.id, role: user.role } : null}
+                      >
+                        <Link to={`/rentals/${row.bookingNo}`}><strong className="movement-card__number identifier">{row.bookingNo}</strong></Link>
+                      </IntelCard>
+                    </div>
 
                     <div className="movement-card__schedule movement-card__schedule--pickup">
                       <span>Pickup</span>

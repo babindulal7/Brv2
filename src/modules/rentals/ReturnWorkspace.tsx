@@ -255,6 +255,12 @@ function buildRows(floor: FloorBooking): ReturnRow[] {
   const rows: ReturnRow[] = []
   for (const line of floor.lines) {
     if (NON_PACKABLE_LINE_TYPES.has(line.lineType)) continue
+    /* RULING 2026-09-29 (Option A, OPEN_DECISIONS.md #4; gate 0141):
+       Consumable-tracked lines are consumed at Handover (0142) and never come
+       back, so they are not triaged here — same exemption the Return gate and
+       the floor verb apply. trackingMode arrives null when the line names no
+       product; null is not Consumable, so such a line stays listed. */
+    if (line.trackingMode === 'Consumable') continue
     const name = line.productName ?? line.description ?? `${line.lineType} line`
     if (line.unitsPresence === 'present' && line.units.length > 0) {
       line.units.forEach((u, i) => {

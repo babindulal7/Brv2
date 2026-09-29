@@ -22,6 +22,7 @@ import { useAuth } from '../../lib/auth'
 import { useTabularLayout, useViewport } from '../../lib/device'
 import { canViewMoneyField, gateContext } from '../../lib/fieldGating'
 import type { GateContext } from '../../lib/fieldGating'
+import type { SystemRole } from '../../types/database'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { Bundles } from './Bundles'
 import { Maintenance } from './Maintenance'
@@ -544,6 +545,7 @@ function ParentRowView({
   row,
   money,
   gctx,
+  actionContext,
   density,
   columns,
   checked,
@@ -554,6 +556,7 @@ function ParentRowView({
   row: InventoryListRow
   money: boolean
   gctx: GateContext
+  actionContext: { userId: string; role: SystemRole } | null
   density: Density
   columns: number
   checked: boolean
@@ -622,11 +625,12 @@ function ParentRowView({
           )}
         </td>
         <td style={td}>
-          <IntelCard glance={glance} detail={detail} detailTitle={row.name} detailSubtitle={category}>
+          <IntelCard glance={glance} detail={detail} detailTitle={row.name} detailSubtitle={category} entityType="equipment" entityId={row.id} context="inventory" gateContext={gctx} actionContext={actionContext}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <Thumb category={category} />
               <span style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
                 <Link
+                  data-intel-identifier
                   to={`/inventory/${encodeURIComponent(row.assetCode)}`}
                   onClick={(e) => e.stopPropagation()}
                   style={{ fontWeight: 600, color: 'var(--text)', textDecoration: 'none' }}
@@ -771,6 +775,8 @@ function ParentCardView({
   row,
   glance,
   detail,
+  gctx,
+  actionContext,
   money,
   checked,
   onToggle,
@@ -778,6 +784,8 @@ function ParentCardView({
   row: InventoryListRow
   glance: ReturnType<typeof inventoryGlance>
   detail: ReturnType<typeof inventoryDetailGroups>
+  gctx: GateContext
+  actionContext: { userId: string; role: SystemRole } | null
   money: boolean
   checked: boolean
   onToggle: () => void
@@ -800,9 +808,10 @@ function ParentCardView({
           style={{ accentColor: 'var(--nav-active-accent)', marginTop: 'var(--sp-xs)', flexShrink: 0, width: 18, height: 18 }}
         />
         <Thumb category={category} />
-        <IntelCard glance={glance} detail={detail} detailTitle={row.name} detailSubtitle={category}>
+        <IntelCard glance={glance} detail={detail} detailTitle={row.name} detailSubtitle={category} entityType="equipment" entityId={row.id} context="inventory" gateContext={gctx} actionContext={actionContext}>
           <span style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', minWidth: 0 }}>
             <Link
+              data-intel-identifier
               to={`/inventory/${encodeURIComponent(row.assetCode)}`}
               style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', textDecoration: 'none' }}
             >
@@ -2053,6 +2062,8 @@ export default function Inventory() {
                         row={p}
                         glance={glance}
                         detail={detail}
+                        gctx={gctx}
+                        actionContext={user ? { userId: user.id, role: user.role } : null}
                         money={money}
                         checked={selected.has(p.id)}
                         onToggle={() => toggleRow(p.id)}
@@ -2063,11 +2074,11 @@ export default function Inventory() {
                   <div className="inventory-desktop-grid">
                     {rowsWithIntel.map(({ row: p, glance, detail }) => (
                       <article key={p.id} className="inventory-grid-item">
-                        <IntelCard glance={glance} detail={detail} detailTitle={p.name} detailSubtitle={p.category ?? '—'}>
+                        <IntelCard glance={glance} detail={detail} detailTitle={p.name} detailSubtitle={p.category ?? '—'} entityType="equipment" entityId={p.id} context="inventory" gateContext={gctx} actionContext={user ? { userId: user.id, role: user.role } : null}>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                             <Thumb category={p.category ?? '—'} size={38} />
                             <span style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                              <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{p.name}</span>
+                              <span data-intel-identifier style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{p.name}</span>
                               <CategoryChip category={p.category ?? '—'} />
                             </span>
                           </span>
@@ -2171,6 +2182,7 @@ export default function Inventory() {
                             row={p}
                             money={money}
                             gctx={gctx}
+                            actionContext={user ? { userId: user.id, role: user.role } : null}
                             density={density}
                             columns={tableColumns}
                             checked={selected.has(p.id)}

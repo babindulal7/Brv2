@@ -272,6 +272,8 @@ interface BookingHead {
   stage: BookingStatus
   cancelled_at: string | null
   closed_at: string | null
+  /** 0144 — NULL for legacy rows and Drafts; Confirm refuses it (spec §6). */
+  project_type: string | null
 }
 
 /**
@@ -284,7 +286,7 @@ async function readBooking(ref: string): Promise<BookingHead> {
   const column = UUID_RE.test(ref) ? 'id' : 'booking_no'
   const { data, error } = await supabase
     .from('bookings')
-    .select('id, booking_no, branch_id, client_id, stage, cancelled_at, closed_at')
+    .select('id, booking_no, branch_id, client_id, stage, cancelled_at, closed_at, project_type')
     .eq(column, ref)
     .maybeSingle()
 
@@ -415,6 +417,18 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
       throw new Error(
         `Confirm moves a booking from ${CONFIRM_FROM} to the next stage; ${booking.booking_no} is at ` +
           `${booking.stage}. Nothing was written. If this is a repeat submit, the first one already landed.`,
+      )
+    }
+
+    /* Project Type is required to confirm (spec §6) but optional on a Draft —
+       the booking is created first as a Quote without one. The New Rental
+       screen states this before the press; this is the enforcement for every
+       other caller, in the fail-closed direction. `?? ''` because rows that
+       predate 0144 (and mock corpus rows) carry no key at all. */
+    if ((booking.project_type ?? '').trim() === '') {
+      throw new Error(
+        `Select a project type before confirming this rental. ${booking.booking_no} has none recorded — ` +
+          'open it, set the type, and confirm again. Nothing was confirmed.',
       )
     }
 

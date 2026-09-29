@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from '../../../components/ui/Icon'
 import { TouchTarget } from '../../../components/ui/TouchTarget'
 import {
@@ -74,6 +75,52 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
   const [calendarOpen, setCalendarOpen] = useState(false)
   const [timeListOpen, setTimeListOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const panelAdjusted = useRef(false)
+  /* Floating position of the portaled popups. The New Rental sections clip
+     overflow (`new-rental-section-card`), so inline absolute popups get cut —
+     the portal wrapper is a viewport-positioned box matching the field, and
+     the inner absolute panels resolve against it. */
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  const measurePanel = () => {
+    const el = rootRef.current
+    if (!el) return
+    panelAdjusted.current = false
+    const r = el.getBoundingClientRect()
+    const panelW = Math.min(360, window.innerWidth - 24)
+    setPanelPos({
+      top: r.bottom,
+      left: Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - panelW - 8)),
+      width: Math.max(r.width, 120),
+    })
+  }
+
+  useEffect(() => {
+    if (!calendarOpen && !timeListOpen) {
+      panelAdjusted.current = false
+      return
+    }
+    measurePanel()
+    window.addEventListener('scroll', measurePanel, true)
+    window.addEventListener('resize', measurePanel)
+    return () => {
+      window.removeEventListener('scroll', measurePanel, true)
+      window.removeEventListener('resize', measurePanel)
+    }
+  }, [calendarOpen, timeListOpen])
+
+  /* Pull up when the panel would run past the viewport bottom. */
+  useLayoutEffect(() => {
+    if ((!calendarOpen && !timeListOpen) || !panelPos || panelAdjusted.current) return
+    const panel = panelRef.current?.firstElementChild as HTMLElement | null
+    if (!panel) return
+    const overflow = panel.getBoundingClientRect().bottom - window.innerHeight + 8
+    if (overflow > 0) {
+      panelAdjusted.current = true
+      setPanelPos((p) => (p ? { ...p, top: Math.max(8, p.top - overflow) } : p))
+    }
+  }, [calendarOpen, timeListOpen, panelPos])
 
   useEffect(() => setDateText(displayDate(dateValue)), [dateValue])
   useEffect(() => setTimeText(timeValue), [timeValue])
@@ -81,7 +128,11 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
   useEffect(() => {
     if (!calendarOpen && !timeListOpen) return
     const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node | null)) {
+      const target = e.target as Node | null
+      // Popups are portaled to document.body — a pointer inside them is
+      // logically inside, even though outside `rootRef` in the DOM.
+      if (panelRef.current?.contains(target)) return
+      if (!rootRef.current?.contains(target)) {
         setCalendarOpen(false)
         setTimeListOpen(false)
       }
@@ -138,18 +189,14 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
           onKeyDown={(e) => {
             if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
           }}
+          onClick={() => {
+            // Tapping the date box opens the calendar — the icon is a second
+            // way in, not the only one.
+            setTimeListOpen(false)
+            setCalendarOpen(true)
+          }}
           aria-label={`${label} date`}
           style={{ flex: '1 1 auto', minWidth: 0, border: 'none', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
-        />
-        <input
-          value={timeText}
-          onChange={(e) => setTimeText(e.target.value)}
-          onBlur={(e) => commitTime(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-          }}
-          aria-label={`${label} time`}
-          style={{ width: 46, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', textAlign: 'center', paddingLeft: 7 }}
         />
         <button
           type="button"
@@ -166,6 +213,16 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
           <TouchTarget axis="y" />
           <Icon name="calendar_event" size={15} />
         </button>
+        <input
+          value={timeText}
+          onChange={(e) => setTimeText(e.target.value)}
+          onBlur={(e) => commitTime(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          }}
+          aria-label={`${label} time`}
+          style={{ width: 46, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', textAlign: 'center', paddingLeft: 7 }}
+        />
         <button
           type="button"
           className="press"
@@ -184,17 +241,22 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
       </div>
       {error && <span role="alert" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--danger-text)', marginTop: 3 }}>{error}</span>}
 
-      {calendarOpen && (
+      {(calendarOpen || timeListOpen) && panelPos && createPortal(
+        <div ref={panelRef} style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, width: panelPos.width, height: 0, zIndex: 'var(--z-dropdown)' }}>
+          {calendarOpen && (
         <CalendarPopover
           value={dateValue}
           onSelect={(v) => {
             onDateChange(v)
             setCalendarOpen(false)
+            // Chained flow: once the day is set, the time list opens on its
+            // own so the operator never hunts for the second picker.
+            setTimeListOpen(true)
           }}
           onDismiss={() => setCalendarOpen(false)}
         />
-      )}
-      {timeListOpen && (
+          )}
+          {timeListOpen && (
         <TimeListPopover
           value={timeValue}
           onSelect={(v) => {
@@ -202,6 +264,9 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
             setTimeListOpen(false)
           }}
         />
+          )}
+        </div>,
+        document.body,
       )}
     </div>
   )

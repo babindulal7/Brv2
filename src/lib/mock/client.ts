@@ -21,6 +21,7 @@
 
 import { createBuilder, type EngineHooks, type PgError, type Row, type Store } from './engine'
 import { buildStore, clientDirectory, VIEW_OF } from './corpus'
+import { PROJECT_TYPES } from '../projectTypes'
 
 const OVERLAY_KEY = 'babin.mock.overlay.v1'
 const SESSION_KEY = 'babin.mock.session.v1'
@@ -355,6 +356,36 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
     return { data: null, error: { code: '23502', message: 'create_booking: created_by is required; there is no system actor', details: '', hint: '' } }
   }
 
+  /* 0144 — project-type validation, mirroring the RPC allow-list so mock and
+     Postgres refuse the same payloads. NULL is accepted (Drafts). */
+  const projectType =
+    typeof payload['project_type'] === 'string' && payload['project_type'].trim() !== ''
+      ? payload['project_type'].trim()
+      : null
+  const projectTypeOther =
+    typeof payload['project_type_other'] === 'string' && payload['project_type_other'].trim() !== ''
+      ? payload['project_type_other'].trim()
+      : null
+  const ALLOWED_PROJECT_TYPES: readonly string[] = PROJECT_TYPES
+  if (projectType !== null && !ALLOWED_PROJECT_TYPES.includes(projectType)) {
+    return {
+      data: null,
+      error: { code: '23502', message: `create_booking: project_type "${projectType}" is not an allowed value. Nothing was created.`, details: '', hint: '' },
+    }
+  }
+  if (projectTypeOther !== null && projectType !== 'Other') {
+    return {
+      data: null,
+      error: { code: '23502', message: 'create_booking: project_type_other is only used with project_type Other. Nothing was created.', details: '', hint: '' },
+    }
+  }
+  if (projectType === 'Other' && projectTypeOther === null) {
+    return {
+      data: null,
+      error: { code: '23502', message: 'create_booking: project_type Other requires project_type_other. Nothing was created.', details: '', hint: '' },
+    }
+  }
+
   // Law 8 replay check, before any write and before the counter moves.
   const existing = (store['bookings'] ?? []).find((r) => r['client_uuid'] === clientUuid)
   if (existing) {
@@ -381,6 +412,8 @@ function createBooking(payload: Record<string, unknown>): { data: Row | null; er
     client_id: payload['client_id'] ?? null,
     contact_id: payload['contact_id'] ?? null,
     project: payload['project'] ?? null,
+    project_type: projectType,
+    project_type_other: projectTypeOther,
     stage: 'Quote',
     pickup_at: payload['pickup_at'] ?? null,
     return_at: payload['return_at'] ?? null,

@@ -60,6 +60,14 @@ export interface BookingListRow {
   clientId: string
   clientName: string
   project: string | null
+  /**
+   * `bookings.project_type` — the controlled production kind (0144,
+   * `src/lib/projectTypes.ts`). NULL for legacy rows and Drafts; renders as
+   * an em dash, never backfilled. NOT money, NOT PII — every role may read it.
+   */
+  projectType: string | null
+  /** `bookings.project_type_other` — custom text, only when type is 'Other'. */
+  projectTypeOther: string | null
   stage: BookingStageDb
   pickupAtAd: string
   returnAtAd: string
@@ -268,7 +276,7 @@ export interface BookingListRow {
  * the `withDeposit` treatment below.
  */
 const BASE_COLUMNS =
-  'id, booking_no, client_id, project, stage, pickup_at, return_at, actual_return_at, ' +
+  'id, booking_no, client_id, project, project_type, project_type_other, stage, pickup_at, return_at, actual_return_at, ' +
   'delivery_type, pickup_location, return_location, quote_expires_at, ' +
   'cancelled_at, closed_at, created_at, ' +
   'clients ( name ), booking_lines ( id, qty )'
@@ -286,6 +294,8 @@ interface RawBookingRow {
   booking_no: string
   client_id: string
   project: string | null
+  project_type: string | null
+  project_type_other: string | null
   stage: BookingStageDb
   pickup_at: string
   return_at: string
@@ -346,6 +356,8 @@ function toRow(r: RawBookingRow): BookingListRow {
     // that hides it.
     clientName: r.clients?.name ?? '(client not joined)',
     project: r.project,
+    projectType: r.project_type,
+    projectTypeOther: r.project_type_other,
     stage: r.stage,
     pickupAtAd: r.pickup_at,
     returnAtAd: r.return_at,
@@ -378,7 +390,7 @@ function toRow(r: RawBookingRow): BookingListRow {
 }
 
 /**
- * The columns a free-text search covers. Both exist on `bookings` (0002:29, 23).
+ * The columns a free-text search covers. All exist on `bookings`.
  *
  * Client name is deliberately NOT searched. Matching it needs a second `or`
  * scoped with `{ referencedTable: 'clients' }` plus `clients!inner(name)` so the
@@ -386,8 +398,11 @@ function toRow(r: RawBookingRow): BookingListRow {
  * unscoped `or` and has no way to express that. Stated here so the next reader
  * does not assume typing a client's name into the Rentals search box works; it
  * silently returns nothing today.
+ *
+ * `project_type` and `project_type_other` joined the list with 0144: typing
+ * "documentary" (or an Other description like "theatre") finds those bookings.
  */
-const SEARCH_COLUMNS = ['booking_no', 'project'] as const
+const SEARCH_COLUMNS = ['booking_no', 'project', 'project_type', 'project_type_other'] as const
 
 export interface BookingListOptions extends ListFilters {
   /** Ask for the total matching count. Costs an extra planner pass, so it is opt-in. */

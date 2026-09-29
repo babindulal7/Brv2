@@ -158,6 +158,7 @@ describe('createAction — fails closed', () => {
         | 'Technician'
         | 'Driver'
         | 'Client',
+      isOnline?: boolean,
     ) => {
       const execute = vi.fn(async () => ({ result: { ok: true }, events: [] }))
       const action = createAction({
@@ -167,7 +168,7 @@ describe('createAction — fails closed', () => {
         validate: () => {},
         execute,
       })
-      return { run: () => action({}, { userId: 'u-1', role }), execute }
+      return { run: () => action({}, { userId: 'u-1', role, ...(isOnline === undefined ? {} : { isOnline }) }), execute }
     }
 
     const DESK = [
@@ -192,6 +193,16 @@ describe('createAction — fails closed', () => {
       'evidence.review',
     ]
     const TRIAGE = ['case.resolve', 'crew.assign', 'purchase.approve']
+
+    it.each(['Owner', 'Admin', 'Manager'] as const)('allows %s to adjust bulk stock', async (role) => {
+      await expect(probe('inventory.stock_adjust', role, true).run()).resolves.toEqual({ ok: true })
+    })
+
+    it.each(['Coordinator', 'Warehouse', 'Technician', 'Accounts', 'Driver', 'Client'] as const)(
+      'refuses %s a bulk stock adjustment', async (role) => {
+        await expect(probe('inventory.stock_adjust', role).run()).rejects.toBeInstanceOf(ActionPermissionError)
+      },
+    )
 
     it.each([...DESK, ...FLOOR, ...TRIAGE, 'client.merge'])(
       'resolves %s for Owner instead of denying it',

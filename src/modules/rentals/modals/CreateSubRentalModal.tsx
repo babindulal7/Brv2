@@ -82,32 +82,8 @@ export function CreateSubRentalModal({
     setError(null)
 
     try {
-      /*
-       * The real dispatch, replacing the screen-level `DomainEvents.emit`.
-       * `createSubRental` is still a stub (`implemented` unset in
-       * `actions/subrentals/createSubRental.ts`), so `createAction` refuses it
-       * before validate/execute/events and the operator reads "CREATE_SUBRENTAL
-       * is not connected to the database yet, so nothing was saved."
-       * `onSuccess` — and therefore the "Sub-Rental Created" toast — is
-       * unreachable on that path.
-       *
-       * The emit is NOT repeated here: `createAction` emits `SUBRENTAL_CREATED`
-       * itself after `execute` returns. Events follow the write; a screen-level
-       * emit would double-count the moment the action lands.
-       *
-       * `vendorId` is deliberately not sent. `CreateSubRentalInput.vendorId` is
-       * an id, this field is a typed vendor NAME, and there is no vendor master
-       * in this build to resolve one against — passing the name as an id would
-       * be exactly the fabricated-identity defect this pass removes. Omitted,
-       * not guessed.
-       *
-       * ⚠ `CreateSubRentalInput` has no client-charge field, so the charge and
-       * the margin below reach nothing — the figure that is supposed to land on
-       * the client's invoice stops at this screen. Harmless while the action
-       * refuses; whoever sets `implemented: true` must widen the input FIRST,
-       * or this modal will report a sub-rental whose client charge was never
-       * billed. Left un-widened because `src/actions/` is not this pass's file.
-       */
+      /* The action writes the booking line and emits SUBRENTAL_CREATED only after
+         persistence. Vendor text is not passed as a supplier UUID. */
       await createSubRental(
         {
           bookingId,

@@ -199,6 +199,8 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
     // RULING 2026-09-08 (R-28): the preventive-service plan is set by Owner/Admin/Manager.
     case 'inventory.edit_service_plan':
       return rbac.canEditServicePlan(ctx.role);
+    case 'inventory.stock_adjust':
+      return online && rbac.canAdjustStock(ctx.role);
     /*
      * ── Ruled 16 Aug 2026 — the remaining 24, same method as the four above ──
      *

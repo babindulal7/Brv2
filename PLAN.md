@@ -618,6 +618,17 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.59 ⬅ OPEN — non-physical lines across floor transitions
+
+`TODO(decision)` (29 Sep 2026): 0139 exempts Service, Sub-rental and Manual item
+lines from the Return receipt gate, but the Pack/Handover floor action and
+Handover database gate can still demand records for these lines before Return.
+A booking containing only these lines also has no row to triage and cannot open
+a Return session through the current floor action. Decide how non-physical
+lines resolve at Pack/Handover, then whether Handover automatically advances a
+no-equipment booking from On Rent to Returned or a distinct completion action
+records that transition. Do not fabricate physical movement or return receipts.
+
 ## 4.58 ⬅ OPEN ×1 — where do the New Rental return-pickup fields get written?
 
 Raised 23 Sep 2026 while fixing the return-pickup select (its `<option>`s carried no `value`,

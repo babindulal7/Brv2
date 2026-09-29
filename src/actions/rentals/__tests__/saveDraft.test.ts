@@ -15,6 +15,7 @@ const completeDraft = (overrides: Partial<RentalDraftData> = {}): RentalDraftDat
   clientDbId: '66666666-6666-4666-8666-666666666666',
   project: 'Mountain campaign',
   kind: 'Commercial',
+  kindOther: '',
   govId: '123456789',
   pickup: '2026-09-20', pickupTime: '09:15', returnDate: '2026-09-23', returnTime: '18:45',
   deliveryType: 'Babin Delivery',

@@ -322,9 +322,13 @@ function NavList({
       if (e.key === 'Escape') setMoreOpen(false)
     }
     const onClickAway = (e: MouseEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
-        setMoreOpen(false)
-      }
+      const t = e.target as Node
+      /* The flyout is portaled to document.body (same as RailTooltip), so it
+         is never inside moreRef — exempt it explicitly, otherwise the
+         mousedown that starts a flyout-item click would unmount the flyout
+         before mouseup/click land and navigation would break. */
+      if (moreRef.current?.contains(t) || moreFlyoutRef.current?.contains(t)) return
+      setMoreOpen(false)
     }
     window.addEventListener('keydown', onEscape)
     window.addEventListener('mousedown', onClickAway)
@@ -416,17 +420,13 @@ function NavList({
                     onMouseEnter={(e) => {
                       if (rail) {
                         scheduleShow(e.currentTarget, s.label)
-                        if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
-                      } else {
-                        if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
-                        e.currentTarget.style.transform = 'translateX(2px)'
                       }
+                      if (!on) e.currentTarget.style.background = 'var(--hover-sidebar)'
                     }}
                     onMouseLeave={(e) => {
                       if (rail) scheduleHide()
                       else setHint(null)
                       if (!on) e.currentTarget.style.background = 'transparent'
-                      if (!rail) e.currentTarget.style.transform = 'none'
                     }}
                     onPointerDown={(e) => {
                       if (!rail || e.pointerType === 'mouse') return
@@ -475,7 +475,7 @@ function NavList({
                       position: 'relative',
                       cursor: 'pointer',
                       transition:
-                        'transform var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease)',
+                        'background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease)',
                     }}
                   >
                     {on && (
@@ -610,7 +610,7 @@ function NavList({
                 />
               </button>
 
-              {moreOpen && (
+              {moreOpen && createPortal(
                 <div
                   ref={moreFlyoutRef}
                   role="menu"
@@ -663,7 +663,8 @@ function NavList({
                       </Link>
                     )
                   })}
-                </div>
+                </div>,
+                document.body,
               )}
             </div>
           ) : (

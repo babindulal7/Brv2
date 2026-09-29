@@ -1133,7 +1133,11 @@ function WorkspaceContent({
             ? `var(--page-padding) var(--page-padding) calc(${hasElevatedStickyBar ? '88px' : '24px'} + ${BAR_BOX})`
             : 'var(--page-padding)',
           overflowY: 'auto',
-          overflowX: 'hidden'
+          overflowX: 'hidden',
+          /* Reserve the scrollbar gutter so a page with a scrollbar and a
+             page without one keep the identical content width — otherwise
+             centered header content and page columns shift on navigation. */
+          scrollbarGutter: 'stable',
         }}
       >
         <div className="workspace-page-actions" ref={setHeaderActionsElement} />

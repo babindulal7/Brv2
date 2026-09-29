@@ -141,9 +141,15 @@ export default function Header({ crumbs, actions }: HeaderProps) {
     <header
       className="app-global-header"
       style={{
-        display: 'flex',
+        display: 'grid',
+        /* Three stable columns: left crumbs / centered search / right chrome.
+           A flex row centers the search in the REMAINING space, so every page
+           with a different crumb length shifts the search box sideways. Grid
+           1fr/auto/1fr keeps the search truly centered no matter what the
+           current page's breadcrumb reads. */
+        gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
         alignItems: 'center',
-        gap: isPhone ? 'var(--sp-xs)' : 'var(--sp-md)',
+        columnGap: isPhone ? 'var(--sp-xs)' : 'var(--sp-md)',
         padding: isPhone ? '6px 12px' : '6px 20px',
         /* Reads the token rather than setting the height, so `--header-h` and
            this element cannot disagree. Everything that sticks BELOW the header
@@ -174,8 +180,9 @@ export default function Header({ crumbs, actions }: HeaderProps) {
           alignItems: 'center',
           gap: 6,
           minWidth: 0,
-          flex: isPhone ? '1 1 auto' : '0 1 auto',
-          maxWidth: isPhone ? undefined : '32%',
+          width: '100%',
+          justifySelf: 'start',
+          overflow: 'hidden',
         }}
       >
         <nav aria-label="Breadcrumb" style={{ minWidth: 0, overflow: 'hidden' }}>
@@ -200,7 +207,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                 </span>
               )
               return (
-                <li key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                <li key={`${i}-${c.label}`} style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, flexShrink: 0 }}>
                   {i > 0 && <Icon name="chevron_right" size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
                   {c.to && !last ? (
                     <Link to={c.to} style={{ textDecoration: 'none', color: 'inherit', display: 'inline-flex', minWidth: 0 }}>
@@ -214,19 +221,22 @@ export default function Header({ crumbs, actions }: HeaderProps) {
             })}
           </ol>
         </nav>
-        {effectiveInfo && (
+        {/* The info slot is always mounted so pages with and without a page
+            description keep the identical breadcrumb width — otherwise the
+            icon appearing/disappearing shifts the search box on navigation. */}
+        <span style={{ display: 'inline-flex', flexShrink: 0, visibility: effectiveInfo ? 'visible' : 'hidden' }} aria-hidden={effectiveInfo ? undefined : true}>
           <InfoTooltip
-            content={effectiveInfo}
+            content={effectiveInfo ?? 'Page info'}
             size={14}
             label={activeCrumb ? `${activeCrumb} info` : 'Page info'}
             style={{ flexShrink: 0 }}
           />
-        )}
+        </span>
       </div>
 
       {/* On desktop and tablet, center search input + clock + sync status */}
       {!isPhone && (
-        <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0, gap: 'var(--sp-md)' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0, width: '100%', justifySelf: 'center', gap: 'var(--sp-sm)' }}>
           <button
             type="button"
             onClick={() => openCommandPalette()}
@@ -235,8 +245,8 @@ export default function Header({ crumbs, actions }: HeaderProps) {
               display: 'flex',
               alignItems: 'center',
               gap: 'var(--sp-sm)',
-              width: '100%',
-              maxWidth: 440,
+              width: 'min(440px, 100%)',
+              flexShrink: 1,
               minWidth: 0,
               minHeight: 44,
               padding: '0 14px',
@@ -246,15 +256,13 @@ export default function Header({ crumbs, actions }: HeaderProps) {
               boxShadow: 'var(--specular-rim), 0 1px 3px rgba(0, 0, 0, 0.04)',
               cursor: 'pointer',
               textAlign: 'left',
-              transition: 'transform var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease)',
+              transition: 'border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease)',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.borderColor = 'var(--input-focus)'
-              e.currentTarget.style.transform = 'translateY(-1px)'
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.borderColor = 'var(--input-border)'
-              e.currentTarget.style.transform = 'translateY(0)'
             }}
           >
             <Icon name="search" size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
@@ -291,19 +299,36 @@ export default function Header({ crumbs, actions }: HeaderProps) {
             )}
           </button>
 
-          {/* Outbox Sync Status Badge — shown ONLY in abnormal states (syncing, offline, error, or queued mutations) */}
-          {isAbnormalSync && (
-            <div className="header-sync-context" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <button
+          {/* Outbox sync badge slot is always mounted so its appearance can
+              never push the search box or the right chrome sideways. When the
+              connection is healthy the slot stays invisible but keeps its
+              width; it is removed from tab order and the a11y tree. */}
+          <div
+            className="header-sync-context"
+            aria-hidden={isAbnormalSync ? undefined : true}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexShrink: 0,
+              minWidth: 104,
+              justifyContent: 'flex-start',
+              visibility: isAbnormalSync ? 'visible' : 'hidden',
+            }}
+          >
+            <button
                 className="header-sync-control tap"
                 type="button"
+                tabIndex={isAbnormalSync ? 0 : -1}
                 onClick={() => triggerSync()}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
                   minHeight: 44,
-                  minWidth: 44,
+                  minWidth: 96,
+                  justifyContent: 'center',
+                  whiteSpace: 'nowrap',
                   padding: '4px 11px',
                   borderRadius: 999,
                   background:
@@ -383,11 +408,10 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                 </span>
               </button>
             </div>
-          )}
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 'var(--sp-sm)', flexShrink: 0, marginLeft: isPhone ? 'auto' : 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: isPhone ? 6 : 'var(--sp-sm)', flexShrink: 0, justifySelf: 'end', minWidth: 0 }}>
         {actions}
 
         <button
