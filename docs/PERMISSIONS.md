@@ -202,6 +202,7 @@ Ladder shorthand: `M+` = Owner · Admin · Manager. `C+` = M+ · Coordinator. `F
 | `rental.confirm` | C+ · Warehouse | `booking_stage_transitions_insert` — and, since R-26, that same INSERT writes the booking's `inventory_reservations` rows (`0100`, trigger, SECURITY INVOKER). The five roles this policy admits are exactly the five `inventory_reservations_all` admits, so confirming and holding are one permission and one transaction. | ✓ |
 | `rental.discount` | C+ (Coordinator included) | `booking_discounts_money_blind` refuses Floor. **Ungated in amount** (31 Aug): no cap, no reason, no approver. | ○ split from `rental.create` |
 | `rental.extend` | C+ | invoice update in place; blocked on collision with next booking (system, not role) | ✓ |
+| `rental.update_project` | C+ · Warehouse (UI offers edit to C+; floor views) | narrow `project_type`/`project_type_other` text edit via `updateBookingProject`; audited old→new; 0102 money trigger untouched | ○ |
 | `rental.cancel` (before Packed) | C+ | stage-transition policy; cancellation fee tiers from Settings | ✓ |
 | `rental.cancel` (Packed or later) | M+ | reason ≥10 chars, audited | ✓ (same string; stage checked in engine) |
 | `rental.override_overbooking` | M+ | releases the **losing** reservation (`released_at` + `override_records` row + reason ≥10 chars) and re-runs the transition; the GiST constraint is never disabled and never `deferrable` (R-26, 8 Sep) | ○ |

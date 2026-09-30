@@ -218,6 +218,12 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
     case 'rental.draft':
     case 'rental.cancel':
     case 'rental.extend':
+    // `rental.update_project` (0144) mirrors `bookings_update` (0018) — the
+    // desk five. The action writes two non-money text columns only (the 0102
+    // trigger guards numeric money columns), and the screens offer the control
+    // to Coordinator+ while floor roles view the type (UI grants less — the
+    // safe direction, same as `rental.close` below).
+    case 'rental.update_project':
     case 'client.update':
     case 'inventory.reserve':
     case 'document.create':
