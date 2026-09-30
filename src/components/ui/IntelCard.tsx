@@ -5,34 +5,29 @@ import { Link } from 'react-router-dom'
 import Icon from './Icon'
 import type { IconName } from './Icon'
 import { Modal } from './Modal'
-import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
-import { useCapability, useViewport } from '../../lib/device'
-import { shouldFlipUp } from '../../lib/menuFlip'
+import { useCapability } from '../../lib/device'
 import { INTEL_ADJACENT_DELAY_MS, INTEL_CARD_IN_MS, INTEL_CLOSE_DELAY_MS, INTEL_LONG_PRESS_MS, INTEL_OPEN_DELAY_MS } from '../../lib/intel/timing'
 import { inTravelTriangle } from '../../lib/intel/safeTriangle'
-import { intelClosed, intelOpened, intelReplaced, isIntelSessionActive, useIntelSession } from '../../lib/intel/store'
+import { intelClosed, intelNavigateBack, intelOpened, intelReplaced, isIntelSessionActive, useIntelSession } from '../../lib/intel/store'
 import type { IntelNavigationEntry } from '../../lib/intel/store'
 import type { IntelContext, IntelEntityType } from '../../lib/intel/context'
 import type { GateContext } from '../../lib/fieldGating'
 import type { ActionContext } from '../../actions/core'
 import { IntelDetailExtras } from '../intel/IntelDetailExtras'
-import { loadIntelGlanceFields } from '../../lib/queries/intelExtras'
+import { isLinkedIntelPath, loadLinkedIntel, type LinkedIntelDetail } from '../../data/linkedIntel'
+import { IntelTabbedDetail } from '../intel/IntelTabbedDetail'
 
 /**
- * Worst-case Glance footprint (avatar row, badges, up to ~6 body lines, the
- * primary-action footer) and its CSS-capped width — used to decide whether
- * the card would clip against the viewport before it's actually painted.
- * LP-03: "hover-intel card goes off-screen" near the top/left/right edges.
+ * The full tabbed card is clamped to the viewport at the identifier anchor.
  */
-const GLANCE_H = 320
-const GLANCE_W = 360
+const editableIntelType = (type: IntelEntityType | undefined): type is 'client' | 'equipment' | 'rental' => type === 'client' || type === 'equipment' || type === 'rental'
 
 /**
- * Hover Intel System — Smart Intel Cards v1 shell (spec §§2–4, 20–21, 34).
+ * Hover Intel System — shared identifier preview shell.
  *
- * ONE shell, TWO tiers: Glance (hover/long-press surface, ≤360×320) and
- * Detail (explicit peek → Modal, bottom sheet on phone). Entity builders in
+ * Desktop hover and focus show the full tabbed card directly; touch long press
+ * shows the same body in a bottom sheet. Entity builders in
  * `src/data/*Intel.ts` supply already-gated glance/detail — a group or field
  * a role cannot see must never be constructed by the caller (gated blocks are
  * omitted from the payload, not CSS-hidden).
@@ -41,12 +36,11 @@ const GLANCE_W = 360
  * - Desktop: 250ms hover-intent open, 300ms close intent, safe-triangle
  *   travel from trigger into card, ~0ms adjacent switching while a session
  *   is active. Never auto-closes on a timer (WCAG 1.4.13).
- * - Pin: Space tap / Peek button pins the card (ignores mouseleave) until
+ * - Pin: Space tap or interacting with the card pins it until
  *   ESC, close button, or click-away. Space-hold is a temporary preview.
  * - Keyboard: Space/Enter opens immediately on focus; ESC closes and returns
  *   focus to the trigger; the card is hoverable and persistent.
- * - Touch: 500ms long-press opens the glance; short tap keeps the row's own
- *   action; the detail peek renders as a bottom sheet on phone.
+ * - Touch: 500ms long-press opens a bottom sheet; short tap keeps the row's own action.
  */
 
 export interface IntelBadge {
@@ -108,15 +102,16 @@ export interface IntelCardProps {
 }
 
 export function IntelCard({ children, glance, detailTitle, detailSubtitle, detail, className, context, entityType, entityId, gateContext, actionContext, onOpen }: IntelCardProps) {
-  const { hasHover, coarsePointer, reducedMotion } = useCapability()
-  const viewport = useViewport()
+  const { hasHover, reducedMotion } = useCapability()
   const session = useIntelSession()
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
-  const [peeking, setPeeking] = useState(false)
-  const [extraLines, setExtraLines] = useState<string[]>([])
-  const [flip, setFlip] = useState({ up: false, alignRight: false })
-  /* Fixed anchor point for the portaled Glance overlay (see below). */
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [linkedStack, setLinkedStack] = useState<LinkedIntelDetail[]>([])
+  const [linkError, setLinkError] = useState<string | null>(null)
+  const [linkLoading, setLinkLoading] = useState(false)
+  const linkRequest = useRef(0)
+  /* Fixed viewport position for the portaled card. */
   const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null)
   const press = useRef<number | null>(null)
   const openTimer = useRef<number | null>(null)
@@ -134,16 +129,6 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
   const entry: IntelNavigationEntry | undefined = context && entityType && entityId
     ? { context, entityType, entityId }
     : undefined
-
-  useEffect(() => {
-    if (!open || !entityType || !entityId || !gateContext) return
-    let cancelled = false
-    setExtraLines([])
-    void loadIntelGlanceFields(entityType, entityId, gateContext).then((lines) => {
-      if (!cancelled) setExtraLines(lines)
-    })
-    return () => { cancelled = true }
-  }, [open, entityType, entityId, gateContext])
 
   const clearOpenTimer = () => {
     if (openTimer.current !== null) window.clearTimeout(openTimer.current)
@@ -167,12 +152,40 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
     clearCloseTimer()
     setOpen(false)
     setPinned(false)
+    setSheetOpen(false)
+    setLinkedStack([])
+    linkRequest.current += 1
     intelClosed(cardId)
+  }
+
+  const linkedTop = linkedStack[linkedStack.length - 1]
+  const goBack = () => {
+    setLinkedStack((current) => current.slice(0, -1))
+    setLinkError(null)
+    linkRequest.current += 1
+    setLinkLoading(false)
+    intelNavigateBack(cardId)
+  }
+  const followLink = (path: string) => {
+    if (!gateContext || !context || !isLinkedIntelPath(path)) return
+    const request = ++linkRequest.current
+    setLinkLoading(true)
+    setLinkError(null)
+    void loadLinkedIntel(path, gateContext).then((next) => {
+      if (linkRequest.current !== request) return
+      setLinkedStack((current) => [...current, next])
+      intelReplaced(cardId, { entityType: next.entityType, entityId: next.entityId, context }, sheetOpen ? 'bottom-sheet' : 'pinned', triggerRef.current)
+    }).catch((reason: unknown) => {
+      if (linkRequest.current !== request) return
+      setLinkError(reason instanceof Error ? reason.message : 'Linked record unavailable')
+    }).finally(() => {
+      if (linkRequest.current === request) setLinkLoading(false)
+    })
   }
 
   const scheduleOpen = () => {
     clearCloseTimer()
-    if (open || pinned) return
+    if (open || pinned || sheetOpen) return
     const delay = isIntelSessionActive() ? INTEL_ADJACENT_DELAY_MS : INTEL_OPEN_DELAY_MS
     if (delay <= 0) {
       doOpen()
@@ -202,10 +215,15 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
   const measureAnchor = () => {
     const r = wrapperRef.current?.getBoundingClientRect()
     if (!r) return
-    const up = shouldFlipUp(r, GLANCE_H)
-    const alignRight = r.left + GLANCE_W > window.innerWidth - 12
-    setFlip({ up, alignRight })
-    setAnchor({ x: alignRight ? r.right : r.left, y: up ? r.top : r.bottom })
+    const width = Math.min(480, window.innerWidth - 24)
+    const height = Math.min(560, window.innerHeight - 24)
+    const below = window.innerHeight - r.bottom
+    const above = r.top
+    const y = below >= height + 6 || below >= above ? r.bottom + 6 : r.top - height - 6
+    setAnchor({
+      x: Math.max(12, Math.min(r.left, window.innerWidth - width - 12)),
+      y: Math.max(12, Math.min(y, window.innerHeight - height - 12)),
+    })
   }
 
   useLayoutEffect(() => {
@@ -236,7 +254,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       clearOpenTimer()
       clearCloseTimer()
       setOpen(false)
-      setPeeking(true)
+      setSheetOpen(true)
       onOpen?.()
       intelReplaced(cardId, entry, 'bottom-sheet', triggerRef.current)
     }, INTEL_LONG_PRESS_MS)
@@ -250,7 +268,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
     if (session.openId === cardId || session.openId === null) return
     setOpen(false)
     setPinned(false)
-    setPeeking(false)
+    setSheetOpen(false)
     clearOpenTimer()
     clearCloseTimer()
     // A different identifier owns the singleton overlay now.
@@ -266,6 +284,10 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
     const esc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
+        if (linkedStack.length > 0) {
+          goBack()
+          return
+        }
         const wasPinned = pinned
         doClose()
         if (wasPinned || document.activeElement?.closest?.('[data-intel-overlay]')) {
@@ -296,7 +318,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       document.removeEventListener('pointermove', move)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, pinned])
+  }, [open, pinned, linkedStack.length])
 
   useEffect(
     () => () => {
@@ -329,7 +351,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       data-intel-row
       tabIndex={0}
       aria-haspopup="dialog"
-      aria-expanded={open}
+      aria-expanded={open || sheetOpen}
       aria-describedby={open ? cardId : undefined}
       style={{ position: 'relative', display: 'inline-flex', minWidth: 0, maxWidth: '100%' }}
       onMouseEnter={(e) => {
@@ -357,13 +379,14 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       }}
       onFocus={(e) => {
         if (e.target !== e.currentTarget) return
+        if (sheetOpen) return
         clearCloseTimer()
         doOpen()
       }}
       onBlur={(e) => {
-        // Moving focus from the trigger to the peek button inside the same
-        // card must not close it out from under the user. The open card is
-        // portaled to document.body, so also allow focus moving into it.
+        // The touch sheet is portaled outside the trigger wrapper.
+        if (sheetOpen) return
+        // The card is portaled to document.body, so allow focus moving into it.
         if (e.currentTarget.contains(e.relatedTarget as Node)) return
         if (cardRef.current?.contains(e.relatedTarget as Node)) return
         if (pinned) return
@@ -386,8 +409,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
           }
           return
         }
-        // Space tap = pin (Linear semantics); Space hold = temporary preview
-        // that closes on release. Enter opens the Glance immediately.
+        // Space tap pins; Space hold shows a temporary card. Enter opens it.
         if (e.key === 'Enter') {
           e.preventDefault()
           e.stopPropagation()
@@ -424,24 +446,26 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
       }}
     >
       {children}
-      {/* The Glance hover card is portaled to document.body: its triggers live
-          inside table cells and scroll containers (DataTableShell,
-          movement panels) whose overflow would otherwise clip it, and under
-          sticky headers/transformed ancestors whose stacking would bury it.
-          The zero-size fixed anchor preserves the existing up/down + left/right
-          flip geometry — it resolves against this point instead of the cell. */}
+      {/* Portaling keeps the card visible above table cells, scroll containers,
+          and sticky headers. Its fixed position is clamped to the viewport. */}
       {open && anchor && createPortal(
         <div
-          style={{ position: 'fixed', top: anchor.y, left: anchor.x, width: 0, height: 0, zIndex: 'var(--z-dropdown)' }}
+          style={{ position: 'fixed', top: anchor.y, left: anchor.x, zIndex: 'var(--z-dropdown)' }}
         >
-          <Glance
+          <DirectIntelCard
           id={cardId}
-          glance={extraLines.length > 0 ? { ...glance, lines: [...(glance.lines ?? []), ...extraLines].slice(0, 5) } : glance}
-          up={flip.up}
-          alignRight={flip.alignRight}
-          pinned={pinned}
+          glance={linkedTop ? {
+            ...glance,
+            title: linkedTop.title,
+            subtitle: linkedTop.subtitle,
+            primaryAction: {
+              label: linkedTop.entityType === 'client' ? 'Open client' : linkedTop.entityType === 'equipment' ? 'Open equipment' : 'Open booking',
+              to: `/${linkedTop.entityType === 'client' ? 'clients' : linkedTop.entityType === 'equipment' ? 'inventory' : 'rentals'}/${encodeURIComponent(linkedTop.entityId)}`,
+            },
+          } : glance}
           reducedMotion={reducedMotion}
           cardRef={cardRef}
+          onFocus={() => setPinned(true)}
           onEnter={() => {
             clearCloseTimer()
             leavePoint.current = null
@@ -451,33 +475,68 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
             leavePoint.current = { x: e.clientX, y: e.clientY }
             scheduleClose()
           }}
-          onUnpin={doClose}
-          onPeek={() => {
-            setOpen(false)
-            setPinned(false)
-            setPeeking(true)
-            intelReplaced(cardId, entry, viewport === 'desktop' && !coarsePointer ? 'side-peek' : 'bottom-sheet', triggerRef.current)
-          }}
+          onClose={doClose}
+          content={
+            <>
+              {linkedStack.length > 0 ? <button type="button" onClick={goBack} style={{ minHeight: 44, border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer' }}>← Back</button> : null}
+              {linkLoading ? <p role="status">Loading linked record…</p> : null}
+              {linkError ? <p role="alert">{linkError}</p> : null}
+              <IntelTabbedDetail
+                key={`${linkedTop?.entityType ?? entityType ?? 'none'}:${linkedTop?.entityId ?? entityId ?? 'none'}`}
+                entityType={linkedTop?.entityType ?? entityType}
+                entityId={linkedTop?.entityId ?? entityId}
+                context={context}
+                gateContext={gateContext}
+                onFollow={followLink}
+                fallback={<DetailGroups groups={linkedTop?.groups ?? detail} onFollow={followLink} />}
+              />
+              {editableIntelType(linkedTop?.entityType ?? entityType) && (linkedTop?.entityId ?? entityId) && context && gateContext && (
+                <details style={{ marginTop: 12, borderTop: '1px solid var(--border)' }}>
+                  <summary style={{ minHeight: 44, display: 'flex', alignItems: 'center', color: 'var(--link)', cursor: 'pointer', fontWeight: 600 }}>Notes and custom fields</summary>
+                  <IntelDetailExtras
+                    entityType={(linkedTop?.entityType ?? entityType) as 'client' | 'equipment' | 'rental'}
+                    entityId={(linkedTop?.entityId ?? entityId)!}
+                    context={context}
+                    gateContext={gateContext}
+                    actionContext={actionContext ?? null}
+                  />
+                </details>
+              )}
+            </>
+          }
           />
         </div>,
         document.body,
       )}
       <Modal
-        isOpen={peeking}
-        onClose={() => { setPeeking(false); intelClosed(cardId) }}
-        title={detailTitle}
+        isOpen={sheetOpen}
+        onClose={doClose}
+        onEscape={() => {
+          if (linkedStack.length > 0) goBack()
+          else doClose()
+        }}
+        title={linkedTop?.title ?? detailTitle}
         size="lg"
-        sheet={viewport !== 'desktop' || coarsePointer}
-        sidePeek={viewport === 'desktop' && !coarsePointer}
-        swipeDismiss={viewport !== 'desktop' || coarsePointer}
-        peekHeight
-        {...(detailSubtitle !== undefined ? { subtitle: detailSubtitle } : {})}
+        sheet
+        swipeDismiss
+        {...((linkedTop?.subtitle ?? detailSubtitle) !== undefined ? { subtitle: linkedTop?.subtitle ?? detailSubtitle } : {})}
       >
-        <DetailGroups groups={detail} />
-        {peeking && entityType && entityId && context && gateContext && (
+        {linkedStack.length > 0 ? <button type="button" onClick={goBack} style={{ minHeight: 44, border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer' }}>← Back</button> : null}
+        {linkLoading ? <p role="status">Loading linked record…</p> : null}
+        {linkError ? <p role="alert">{linkError}</p> : null}
+        <IntelTabbedDetail
+          key={`${linkedTop?.entityType ?? entityType ?? 'none'}:${linkedTop?.entityId ?? entityId ?? 'none'}`}
+          entityType={linkedTop?.entityType ?? entityType}
+          entityId={linkedTop?.entityId ?? entityId}
+          context={context}
+          gateContext={gateContext}
+          onFollow={followLink}
+          fallback={<DetailGroups groups={linkedTop?.groups ?? detail} onFollow={followLink} />}
+        />
+        {sheetOpen && editableIntelType(linkedTop?.entityType ?? entityType) && (linkedTop?.entityId ?? entityId) && context && gateContext && (
           <IntelDetailExtras
-            entityType={entityType}
-            entityId={entityId}
+            entityType={(linkedTop?.entityType ?? entityType) as 'client' | 'equipment' | 'rental'}
+            entityId={(linkedTop?.entityId ?? entityId)!}
             context={context}
             gateContext={gateContext}
             actionContext={actionContext ?? null}
@@ -488,300 +547,50 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
   )
 }
 
-function Glance({
-  id,
-  glance,
-  up,
-  alignRight,
-  pinned,
-  reducedMotion,
-  cardRef,
-  onEnter,
-  onLeave,
-  onUnpin,
-  onPeek,
-}: {
+function DirectIntelCard({ id, glance, content, reducedMotion, cardRef, onFocus, onEnter, onLeave, onClose }: {
   id: string
   glance: IntelGlance
-  up: boolean
-  alignRight: boolean
-  pinned: boolean
+  content: ReactNode
   reducedMotion: boolean
   cardRef: { current: HTMLDivElement | null }
+  onFocus: () => void
   onEnter: () => void
   onLeave: (e: React.MouseEvent) => void
-  onUnpin: () => void
-  onPeek: () => void
+  onClose: () => void
 }) {
-  const avatarTone = glance.avatarTone ? STATUS[glance.avatarTone] : undefined
   return (
     <div
       id={id}
       ref={cardRef}
-      role={pinned ? 'dialog' : 'tooltip'}
-      aria-label={pinned ? glance.title : undefined}
+      role="dialog"
+      aria-label={`${glance.title} Intel`}
       data-intel-overlay
+      onFocusCapture={onFocus}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
       style={{
-        position: 'absolute',
-        ...(up ? { bottom: 'calc(100% + 6px)' } : { top: 'calc(100% + 6px)' }),
-        ...(alignRight ? { right: 0 } : { left: 0 }),
-        zIndex: 50,
-        width: 'min(360px, calc(100vw - 48px))',
-        maxHeight: 320,
+        width: 'min(480px, calc(100vw - 24px))',
+        maxHeight: 'min(560px, calc(100dvh - 24px))',
         overflow: 'auto',
-        padding: 'var(--sp-md)',
         borderRadius: 'var(--r-card)',
         background: 'var(--hover-card)',
         border: '1px solid var(--border)',
         boxShadow: 'var(--shadow-modal)',
+        color: 'var(--text)',
         textAlign: 'left',
-        opacity: 1,
-        transform: 'scale(1)',
-        transition: reducedMotion ? 'none' : `opacity ${INTEL_CARD_IN_MS}ms ease, transform ${INTEL_CARD_IN_MS}ms ease`,
+        transition: reducedMotion ? 'none' : `opacity ${INTEL_CARD_IN_MS}ms ease`,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
-        <div
-          aria-hidden
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 'var(--r-badge)',
-            flexShrink: 0,
-            background: avatarTone?.bg ?? 'var(--st-primary-bg)',
-            color: avatarTone?.fg ?? 'var(--st-primary-fg)',
-            display: 'grid',
-            placeItems: 'center',
-            fontSize: 'var(--t-meta)',
-            fontWeight: 700,
-          }}
-        >
-          {glance.avatarIcon ? <Icon name={glance.avatarIcon} size={16} /> : glance.avatarLabel}
-        </div>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span
-              style={{
-                fontSize: 'var(--t-ui)',
-                fontWeight: 700,
-                color: 'var(--text)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {glance.title}
-            </span>
-            {glance.statusDot && (
-              <span
-                aria-hidden
-                style={{ width: 7, height: 7, borderRadius: 'var(--r-badge)', background: STATUS[glance.statusDot].fg, flexShrink: 0 }}
-              />
-            )}
-          </div>
-          {glance.subtitle && (
-            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 1 }}>{glance.subtitle}</div>
-          )}
-        </div>
-        {pinned ? (
-          <span style={{ position: 'relative', width: 26, height: 26, flexShrink: 0 }}>
-            <button
-              type="button"
-              aria-label="Close preview"
-              title="Close preview (Esc)"
-              onClick={(e) => {
-                e.stopPropagation()
-                onUnpin()
-              }}
-              style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: 44,
-                height: 44,
-                padding: 0,
-                border: 'none',
-                background: 'transparent',
-                display: 'grid',
-                placeItems: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <span
-                aria-hidden
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: 'var(--r-btn)',
-                  border: '1px solid var(--border)',
-                  background: 'var(--card)',
-                  color: 'var(--text2)',
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
-                <Icon name="close" size={14} />
-              </span>
-            </button>
-          </span>
-        ) : (
-          /* The visible button stays 26x26 so it doesn't dominate the Glance
-            card, but its hit area is the project's 44x44 floor (Law 15) —
-            an absolutely-positioned overlay centered on the same spot, so
-            the reserved layout footprint (the outer span) doesn't change. */
-          <span style={{ position: 'relative', width: 26, height: 26, flexShrink: 0 }}>
-            <button
-              type="button"
-              aria-label="View full details"
-              title="View full details"
-              onClick={(e) => {
-                e.stopPropagation()
-                onPeek()
-              }}
-              style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: 44,
-                height: 44,
-                padding: 0,
-                border: 'none',
-                background: 'transparent',
-                display: 'grid',
-                placeItems: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <span
-                aria-hidden
-                style={{
-                  width: 26,
-                  height: 26,
-                  borderRadius: 'var(--r-btn)',
-                  border: '1px solid var(--border)',
-                  background: 'var(--card)',
-                  color: 'var(--text2)',
-                  display: 'grid',
-                  placeItems: 'center',
-                }}
-              >
-                <Icon name="eye" size={14} />
-              </span>
-            </button>
-          </span>
-        )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+        <strong style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--t-ui)' }}>{glance.title}</strong>
+        <button type="button" aria-label="Close Intel" onClick={onClose} style={{ width: 44, height: 44, display: 'grid', placeItems: 'center', border: 'none', borderRadius: 'var(--r-btn)', background: 'var(--card2)', color: 'var(--text)', cursor: 'pointer' }}><Icon name="close" size={18} /></button>
       </div>
-
-      {glance.badges && glance.badges.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 'var(--sp-sm)' }}>
-          {glance.badges.slice(0, 3).map((b) => {
-            const bTone = b.tone ? STATUS[b.tone] : undefined
-            return (
-              <span
-                key={b.label}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  height: 20,
-                  padding: '0 7px',
-                  borderRadius: 'var(--r-badge)',
-                  background: bTone?.bg ?? 'var(--card2)',
-                  color: bTone?.fg ?? 'var(--text2)',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 600,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {b.label}
-              </span>
-            )
-          })}
-          {glance.badges.length > 3 && (
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                height: 20,
-                padding: '0 7px',
-                borderRadius: 'var(--r-badge)',
-                background: 'var(--card2)',
-                color: 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              +{glance.badges.length - 3}
-            </span>
-          )}
-        </div>
-      )}
-
-      {glance.lines && glance.lines.length > 0 && (
-        <div style={{ marginTop: 'var(--sp-sm)', display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {glance.lines.map((l, i) => (
-            <div key={i} style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.4 }}>
-              {l}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        {glance.primaryAction && (
-          <Link
-            to={glance.primaryAction.to}
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              // Law 15 — 44×44 at every width, the same rule the peek button
-              // above this one already carries.
-              minHeight: 44,
-              padding: '0 11px',
-              borderRadius: 'var(--r-btn)',
-              background: 'var(--btn-primary-bg)',
-              color: 'var(--btn-primary-fg)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
-            {glance.primaryAction.label}
-          </Link>
-        )}
-        <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              onPeek()
-            }}
-            style={{
-              marginLeft: 'auto',
-              minHeight: 44,
-              padding: '0 11px',
-              borderRadius: 'var(--r-btn)',
-              border: '1px solid var(--border)',
-              background: 'transparent',
-              color: 'var(--text2)',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Peek (Space)
-          </button>
-      </div>
+      <div style={{ padding: '0 12px 12px' }}>{content}</div>
+      {glance.primaryAction ? <div style={{ borderTop: '1px solid var(--border)', padding: '8px 12px' }}><Link to={glance.primaryAction.to} onClick={(e) => e.stopPropagation()} style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', padding: '0 12px', borderRadius: 'var(--r-btn)', color: 'var(--btn-primary-fg)', background: 'var(--btn-primary-bg)', textDecoration: 'none', fontWeight: 600 }}>{glance.primaryAction.label}</Link></div> : null}
     </div>
   )
 }
-
-function DetailGroups({ groups }: { groups: IntelGroup[] }) {
+function DetailGroups({ groups, onFollow }: { groups: IntelGroup[]; onFollow?: (path: string) => void }) {
   if (groups.length === 0) {
     return <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Nothing to show for this role.</div>
   }
@@ -807,7 +616,12 @@ function DetailGroups({ groups }: { groups: IntelGroup[] }) {
                 <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{f.label}</div>
                 <div style={{ fontSize: 'var(--t-ui)', color: 'var(--text)', marginTop: 2, lineHeight: 1.4 }}>
                   {f.trigger ? (
-                    <Link to={f.trigger.to} style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600 }}>
+                    <Link to={f.trigger.to} onClick={(event) => {
+                      if (onFollow && isLinkedIntelPath(f.trigger!.to)) {
+                        event.preventDefault()
+                        onFollow(f.trigger!.to)
+                      }
+                    }} style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600 }}>
                       {f.value}
                     </Link>
                   ) : (

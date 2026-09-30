@@ -10,18 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HOVER_DIMS, HOVER_TIMING } from '../../lib/smartHover'
 import { canViewMoney } from '../../lib/rbac'
-
-let sessionActive = false
-let sessionTimer: ReturnType<typeof setTimeout> | null = null
-
-function markSessionActive(): void {
-  sessionActive = true
-  if (sessionTimer !== null) clearTimeout(sessionTimer)
-  sessionTimer = setTimeout(() => {
-    sessionActive = false
-    sessionTimer = null
-  }, 1500)
-}
+import { isIntelSessionActive } from '../../lib/intel/store'
 
 export function useHoverIntent(input: { onOpen: () => void; onClose: () => void; disabled?: boolean }) {
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -40,11 +29,10 @@ export function useHoverIntent(input: { onOpen: () => void; onClose: () => void;
   const handleTriggerEnter = useCallback(() => {
     if (input.disabled === true) return
     if (closeTimer.current !== null) clearTimeout(closeTimer.current)
-    const delay = sessionActive ? HOVER_TIMING.siblingMs : HOVER_TIMING.openMs
+    const delay = isIntelSessionActive() ? HOVER_TIMING.siblingMs : HOVER_TIMING.openMs
     if (openTimer.current !== null) clearTimeout(openTimer.current)
     openTimer.current = setTimeout(() => {
       input.onOpen()
-      markSessionActive()
     }, delay)
   }, [input])
 

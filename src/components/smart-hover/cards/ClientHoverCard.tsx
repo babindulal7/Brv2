@@ -19,11 +19,13 @@ export function ClientHoverCard({
   canViewFinance,
   defaultTab,
   onAction,
+  onOpenRental,
 }: {
   preview: ClientPreview
   canViewFinance: boolean
   defaultTab: string
-  onAction: (id: string) => void
+  onAction?: (id: string) => void
+  onOpenRental?: (rentalNo: string) => void
 }) {
   const [tab, setTab] = useState(defaultTab)
   const tone = accountTone({ restricted: preview.restricted, overdue: (preview.payments?.summary.overduePaisa ?? 0) > 0 })
@@ -67,12 +69,12 @@ export function ClientHoverCard({
       />
       <div role="tabpanel">
         {tab === 'info' ? <InfoTab preview={preview} canViewFinance={canViewFinance} /> : null}
-        {tab === 'current' ? <CurrentTab preview={preview} /> : null}
+        {tab === 'current' ? <CurrentTab preview={preview} onOpenRental={onOpenRental} /> : null}
         {tab === 'history' ? (
           <ul style={{ margin: 0, padding: 0 }}>
             {preview.history.map((h) => (
               <li key={h.rentalId} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
-                <strong>#{h.rentalNo}</strong> · {h.stage} · {h.itemCount} items
+                {onOpenRental ? <button type="button" onClick={() => onOpenRental(h.rentalNo)} style={{ minHeight: 'var(--tap)', border: 0, background: 'none', color: 'var(--link)', cursor: 'pointer' }}>#{h.rentalNo}</button> : <strong>#{h.rentalNo}</strong>} · {h.stage} · {h.itemCount} items
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>{h.pickupAt} → {h.returnAt}</div>
               </li>
             ))}
@@ -86,10 +88,10 @@ export function ClientHoverCard({
               <ul style={{ margin: 0, padding: 0 }}>
                 {sortTxNewestFirst(preview.payments.history).slice(0, 5).map((t) => <PaymentTransactionRow key={t.id} t={t} />)}
               </ul>
-              <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('view_ledger')}>View full ledger</button>
+              {onAction ? <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('view_ledger')}>View full ledger</button> : null}
             </div>
           ) : (
-            <ClearanceBlock paymentClear={preview.clearance?.paymentClear ?? false} depositClear={preview.clearance?.depositClear ?? false} />
+            <ClearanceBlock paymentClear={preview.clearance?.paymentClear ?? null} depositClear={preview.clearance?.depositClear ?? null} />
           )
         ) : null}
         {tab === 'notes' ? (
@@ -102,7 +104,7 @@ export function ClientHoverCard({
                 </li>
               ))}
             </ul>
-            <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('add_note')}>+ Add note</button>
+            {onAction ? <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('add_note')}>+ Add note</button> : null}
           </div>
         ) : null}
       </div>
@@ -129,13 +131,13 @@ function InfoTab({ preview, canViewFinance }: { preview: ClientPreview; canViewF
   )
 }
 
-function CurrentTab({ preview }: { preview: ClientPreview }) {
+function CurrentTab({ preview, onOpenRental }: { preview: ClientPreview; onOpenRental?: ((rentalNo: string) => void) | undefined }) {
   if (preview.current.length === 0) return <p style={{ fontSize: 13, color: 'var(--muted)' }}>No active or upcoming rentals.</p>
   return (
     <ul style={{ margin: 0, padding: 0 }}>
       {preview.current.map((r) => (
         <li key={r.rentalId} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
-          <strong>#{r.rentalNo}</strong> · {r.stage} · {r.itemCount} items
+          {onOpenRental ? <button type="button" onClick={() => onOpenRental(r.rentalNo)} style={{ minHeight: 'var(--tap)', border: 0, background: 'none', color: 'var(--link)', cursor: 'pointer' }}>#{r.rentalNo}</button> : <strong>#{r.rentalNo}</strong>} · {r.stage} · {r.itemCount} items
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>{r.pickupAt} → {r.returnAt}</div>
           {r.packing ? <div style={{ fontSize: 12 }}>Packing {r.packing.packed} / {r.packing.total}</div> : null}
           {r.paymentClear !== undefined ? <div style={{ fontSize: 12 }}>{r.paymentClear ? 'Payment cleared' : 'Payment pending'}</div> : null}

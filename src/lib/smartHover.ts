@@ -108,26 +108,37 @@ export function packingProgress(items: readonly PackingLine[]): PackingProgress 
 /* ── §34/§64 · handover readiness (separate from packing) ────────────────── */
 
 export interface RentalReadiness {
-  equipmentReady: boolean
-  packingReady: boolean
-  paymentReady: boolean
-  depositReady: boolean
-  contractReady: boolean
-  clientAllowed: boolean
+  equipmentReady: boolean | null
+  packingReady: boolean | null
+  paymentReady: boolean | null
+  depositReady: boolean | null
+  contractReady: boolean | null
+  clientAllowed: boolean | null
 }
 
-export function handoverBlockedReason(r: RentalReadiness): string | null {
-  if (!r.equipmentReady) return 'Equipment not fully reserved'
-  if (!r.packingReady) return 'Packing incomplete'
-  if (!r.paymentReady) return 'Payment requirement not met'
-  if (!r.depositReady) return 'Security deposit missing'
-  if (!r.contractReady) return 'Contract not signed'
-  if (!r.clientAllowed) return 'Client restricted — new rental confirmation blocked'
+/**
+ * Which gate is named first when handover cannot proceed. Gates evaluate in
+ * operational order, not severity — the operator fixes the first blocker.
+ *
+ * `includeMoneyGates: false` is the money-blind rendering (§22/§68): a role
+ * that cannot see amounts must not be told "payment required" from figures it
+ * was never given. The loader still computes the booleans conservatively, but
+ * the card skips asserting them and renders those rows as role-omitted.
+ */
+export function handoverBlockedReason(r: RentalReadiness, opts?: { includeMoneyGates?: boolean | undefined }): string | null {
+  const includeMoney = opts?.includeMoneyGates !== false
+  if (r.equipmentReady === false) return 'Equipment not fully reserved'
+  if (r.packingReady === false) return 'Packing incomplete'
+  if (includeMoney && r.paymentReady === false) return 'Payment requirement not met'
+  if (includeMoney && r.depositReady === false) return 'Security deposit missing'
+  if (r.contractReady === false) return 'Contract not signed'
+  if (r.clientAllowed === false) return 'Client restricted — new rental confirmation blocked'
+  if (r.equipmentReady === null || r.packingReady === null || r.contractReady === null || r.clientAllowed === null || (includeMoney && (r.paymentReady === null || r.depositReady === null))) return 'Readiness verification unavailable'
   return null
 }
 
-export function isHandoverReady(r: RentalReadiness): boolean {
-  return handoverBlockedReason(r) === null
+export function isHandoverReady(r: RentalReadiness, opts?: { includeMoneyGates?: boolean | undefined }): boolean {
+  return handoverBlockedReason(r, opts) === null
 }
 
 /* ── §19–§21, §43–§46 · ledger-derived payments ──────────────────────────── */
@@ -149,6 +160,7 @@ export type PaymentTxStatus =
   | 'pending'
   | 'completed'
   | 'failed'
+  | 'cancelled'
   | 'refunded'
   | 'partially_refunded'
   | 'voided'
@@ -157,16 +169,17 @@ export interface PaymentTransaction {
   id: string
   clientId: string
   rentalId?: string
+  rentalNo?: string
   invoiceId?: string
   type: PaymentTxType
   status: PaymentTxStatus
-  method: 'cash' | 'bank_transfer' | 'card' | 'qr' | 'cheque' | 'credit' | 'other'
+  method?: 'cash' | 'bank_transfer' | 'card' | 'qr' | 'cheque' | 'credit' | 'other'
   /** Integer paisa. Law: never float. */
   amountPaisa: number
   reference?: string
   paidAt?: string
   createdAt: string
-  createdBy: string
+  createdBy?: string
 }
 
 export type PaymentState = 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | 'OVERPAID' | 'REFUND_DUE' | 'REFUNDED' | 'PAYMENT_OVERDUE'
@@ -351,6 +364,16 @@ export interface ActionInput {
   packingStatus?: PackingStatus | undefined
   restricted?: boolean | undefined
   overdue?: boolean | undefined
+  /**
+   * Verbs the mount can actually perform. Workspace verbs (mark_packed,
+   * assign_serial, …) need their owning page's handler; a foreign mount
+   * passes the navigate-grade subset and the engine falls the primary back
+   * to the next supported verb instead of showing a dead button.
+   */
+  supported?: ReadonlySet<HoverActionId> | undefined
+  /** Call / email appear only when the preview carries a reachable contact. */
+  hasPhone?: boolean | undefined
+  hasEmail?: boolean | undefined
 }
 
 const FLOOR_PACK: ReadonlySet<SystemRole> = new Set(['Owner', 'Admin', 'Manager', 'Coordinator', 'Warehouse'])
@@ -361,6 +384,38 @@ export const ACTION_NEEDS_MONEY: ReadonlySet<HoverActionId> = new Set([
   'record_deposit',
   'refund_deposit',
   'view_ledger',
+])
+
+/**
+ * Verbs a foreign mount can perform without its owning workspace: every one
+ * routes (workspace, record, ledger, slip) or opens a system handler
+ * (tel:/mailto:). Workspace verbs — select/add/assign/swap/mark/verify/
+ * repair — need the owning page's state and must be passed explicitly by a
+ * mount that owns them, never assumed.
+ */
+export const NAVIGATE_GRADE_ACTIONS: ReadonlySet<HoverActionId> = new Set([
+  'new_rental',
+  'open_entity',
+  'start_packing',
+  'continue_packing',
+  'handover',
+  'receive_return',
+  'inspect',
+  'close_rental',
+  'resolve_requirements',
+  'record_payment',
+  'request_payment',
+  'record_deposit',
+  'refund_deposit',
+  'open_invoice',
+  'view_ledger',
+  'add_note',
+  'call_client',
+  'email_client',
+  'view_timeline',
+  'view_documents',
+  'print_packing_slip',
+  'review_account',
 ])
 
 function rentalPrimary(input: ActionInput): HoverActionId | null {
@@ -380,18 +435,28 @@ function rentalPrimary(input: ActionInput): HoverActionId | null {
   return null
 }
 
-function filterByCapability(actions: HoverActions, role: SystemRole): HoverActions {
+function filterByCapability(actions: HoverActions, input: ActionInput): HoverActions {
   const allowed = (a: HoverActionId | null): HoverActionId | null => {
     if (a === null) return null
-    if (ACTION_NEEDS_MONEY.has(a) && !MONEY_ROLES.has(role)) return null
-    if ((a === 'start_packing' || a === 'continue_packing' || a === 'mark_packed' || a === 'mark_all_ready') && !FLOOR_PACK.has(role)) return null
-    if ((a === 'handover' || a === 'verify_handover') && !(FLOOR_PACK.has(role))) return null
+    if (input.supported !== undefined && !input.supported.has(a)) return null
+    if (ACTION_NEEDS_MONEY.has(a) && !MONEY_ROLES.has(input.role)) return null
+    if ((a === 'start_packing' || a === 'continue_packing' || a === 'mark_packed' || a === 'mark_all_ready') && !FLOOR_PACK.has(input.role)) return null
+    if ((a === 'handover' || a === 'verify_handover') && !(FLOOR_PACK.has(input.role))) return null
+    if (a === 'call_client' && input.hasPhone === false) return null
+    if (a === 'email_client' && input.hasEmail === false) return null
     return a
   }
+  // Fallback chain: keep preference order, drop disallowed, dedupe. A foreign
+  // mount without a workspace handler degrades to Open, never to a dead verb.
+  const ordered = [actions.primary, actions.secondary, ...actions.overflow]
+    .map(allowed)
+    .filter((a): a is HoverActionId => a !== null)
+  const deduped = [...new Set(ordered)]
+  const [primary, secondary, ...overflow] = deduped
   return {
-    primary: allowed(actions.primary),
-    secondary: allowed(actions.secondary),
-    overflow: actions.overflow.filter((a) => allowed(a) !== null),
+    primary: primary ?? null,
+    secondary: secondary ?? null,
+    overflow,
   }
 }
 
@@ -438,7 +503,7 @@ export function getHoverActions(input: ActionInput): HoverActions {
       break
     }
   }
-  const filtered = filterByCapability(raw, input.role)
+  const filtered = filterByCapability(raw, input)
   // §52: max 2 visible + overflow. Overflow keeps capability-filtered remainder.
   return { primary: filtered.primary, secondary: filtered.secondary, overflow: filtered.overflow.slice(0, 6) }
 }

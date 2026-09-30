@@ -14,8 +14,10 @@ import type { GateContext } from '../../lib/fieldGating'
 import { loadIntelExtras, type IntelCustomFieldRow, type IntelNoteRow, type IntelNoteVisibility, type IntelFieldClass } from '../../lib/queries/intelExtras'
 import { newClientUuid } from '../../lib/supabase'
 
+type EditableIntelType = Extract<IntelEntityType, 'client' | 'equipment' | 'rental'>
+
 interface Props {
-  entityType: IntelEntityType
+  entityType: EditableIntelType
   entityId: string
   context: IntelContext
   gateContext: GateContext
@@ -60,7 +62,7 @@ export function IntelDetailExtras({ entityType, entityId, context, gateContext, 
   useEffect(() => { void reload() }, [reload])
 
   const saveNote = async () => {
-    if (!actionContext || !body.trim() || saving || entityType === 'document') return
+    if (!actionContext || !body.trim() || saving) return
     setSaving(true)
     setError(null)
     const clientUuid = noteKey.current ?? (noteKey.current = newClientUuid())
@@ -83,7 +85,7 @@ export function IntelDetailExtras({ entityType, entityId, context, gateContext, 
   }
 
   const createField = async () => {
-    if (!actionContext || entityType === 'document' || saving) return
+    if (!actionContext || saving) return
     setSaving(true)
     setError(null)
     const clientUuid = configKey.current ?? (configKey.current = newClientUuid())
@@ -101,7 +103,6 @@ export function IntelDetailExtras({ entityType, entityId, context, gateContext, 
     }
   }
 
-  if (entityType === 'document') return null
   return (
     <div aria-label={`${entityType} Intel details`} style={{ display: 'grid', gap: 18, marginTop: 20 }}>
       {error && <div role="alert" style={{ color: 'var(--danger-text)' }}>{error} <button type="button" onClick={() => void reload()} style={{ minHeight: 44 }}>Retry</button></div>}
@@ -161,7 +162,7 @@ export function IntelDetailExtras({ entityType, entityId, context, gateContext, 
 
 function IntelFieldValue({ field, entityType, entityId, actionContext, onSaved }: {
   field: IntelCustomFieldRow
-  entityType: Exclude<IntelEntityType, 'document'>
+  entityType: EditableIntelType
   entityId: string
   actionContext: ActionContext | null
   onSaved: () => Promise<void>

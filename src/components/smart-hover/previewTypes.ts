@@ -6,6 +6,7 @@
  */
 
 import type { PackingLine, PackingStatus, PaymentTransaction, RentalPaymentSummary, RentalReadiness } from '../../lib/smartHover'
+import type { Paisa } from '../../lib/money'
 
 export interface ClientPreview {
   id: string
@@ -28,9 +29,9 @@ export interface ClientPreview {
     paymentClear?: boolean | undefined
   }>
   history: Array<{ rentalId: string; rentalNo: string; stage: string; pickupAt: string; returnAt: string; itemCount: number }>
-  payments?: { summary: { outstandingPaisa: number; depositsHeldPaisa: number; overduePaisa: number }; history: PaymentTransaction[] } | undefined
+  payments?: { summary: { outstandingPaisa: number; depositsHeldPaisa: number; overduePaisa?: number }; history: PaymentTransaction[] } | undefined
   /** Money-blind: operational clearance only, no amounts (§22). */
-  clearance?: { paymentClear: boolean; depositClear: boolean } | undefined
+  clearance?: { paymentClear: boolean | null; depositClear: boolean | null } | undefined
   finance?: { revenuePaisa: number; avgPaisa: number; outstandingPaisa: number; creditLimitPaisa: number } | undefined
   notes: Array<{ id: string; at: string; by: string; text: string }>
 }
@@ -42,6 +43,7 @@ export interface EquipmentPreview {
   serial?: string | undefined
   statusLabel: string
   external?: boolean | undefined
+  relationsLoaded?: boolean | undefined
   current: Array<{
     rentalId: string
     rentalNo: string
@@ -66,12 +68,12 @@ export interface RentalPreview {
   clientId: string
   pickupAt: string
   returnAt: string
-  rentalDays: number
+  rentalDays: number | null
   readiness: RentalReadiness
   equipment: Array<{ label: string; qty: number; packed?: boolean | undefined }>
   packing: { status: PackingStatus; lines: PackingLine[]; updatedAt?: string | undefined; updatedBy?: string | undefined }
-  payments?: { summary: RentalPaymentSummary; history: PaymentTransaction[] } | undefined
-  clearance?: { paymentClear: boolean; depositClear: boolean } | undefined
+  payments?: { summary: RentalPaymentSummary; history: PaymentTransaction[]; depositHeldVerified?: boolean } | undefined
+  clearance?: { paymentClear: boolean | null; depositClear: boolean | null } | undefined
   notes: Array<{ id: string; at: string; by: string; text: string }>
 }
 
@@ -88,8 +90,23 @@ export interface InvoicePreview {
   paidPaisa?: number | undefined
   duePaisa?: number | undefined
   state?: string | undefined
-  handoverClear?: boolean | undefined
+  handoverClear?: boolean | null | undefined
   recent: PaymentTransaction[]
 }
 
-export type AnyPreview = ClientPreview | EquipmentPreview | RentalPreview | InvoicePreview
+export interface PaymentPreview {
+  id: string
+  paymentNo: string
+  bookingNo: string
+  clientId: string
+  clientName: string
+  invoiceNo: string | null
+  amountPaisa: Paisa
+  type: string
+  status: string
+  method: string | null
+  paidAt: string
+  reference: string | null
+}
+
+export type AnyPreview = ClientPreview | EquipmentPreview | RentalPreview | InvoicePreview | PaymentPreview

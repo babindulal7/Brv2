@@ -271,8 +271,7 @@ export function clientDetailGroups(client: ClientRecord, gctx: GateContext): Int
   }
   if (moneyScope(gctx) === 'full') {
     moneyFields.push(
-      { label: 'Pay-later used / limit', value: `${formatMoney(client.creditUsedPaisa)} / ${formatMoney(client.creditLimitPaisa)}` },
-      { label: 'Lifetime value', value: formatMoney(client.totalSpentPaisa) },
+      { label: 'Payments received', value: formatMoney(client.totalSpentPaisa) },
     )
   }
   if (moneyFields.length > 0) groups.push({ title: 'Money', fields: moneyFields })

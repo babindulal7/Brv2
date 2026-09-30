@@ -10,6 +10,8 @@
 import { createPortal } from 'react-dom'
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { HOVER_DIMS } from '../../lib/smartHover'
+import { intelClosed, intelOpened, useIntelSession } from '../../lib/intel/store'
+import type { IntelContext, IntelEntityType } from '../../lib/intel/context'
 import { useHoverIntent, useHoverKeyboard, useHoverPosition, useLongPress } from './hooks'
 
 export function SmartHoverTrigger({
@@ -18,44 +20,72 @@ export function SmartHoverTrigger({
   large = false,
   renderCard,
   onOpenEntity,
+  entityType,
+  entityId,
+  context,
 }: {
   label: string
   triggerKind?: string
   large?: boolean
   renderCard: (opts: { sheet: boolean; onClose: () => void }) => ReactNode
   onOpenEntity?: () => void
+  entityType: IntelEntityType
+  entityId: string
+  context: IntelContext
 }) {
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const cardWrapRef = useRef<HTMLDivElement>(null)
   const id = useId()
+  const session = useIntelSession()
   const [sheet, setSheet] = useState(false)
   const { placed, measure } = useHoverPosition()
 
   const close = useCallback(() => {
     setOpen(false)
     setPinned(false)
-  }, [])
+    intelClosed(id)
+  }, [id])
+
+  useEffect(() => () => intelClosed(id), [id])
+
+  useEffect(() => {
+    if (session.openId !== null && session.openId !== id) {
+      setOpen(false)
+      setPinned(false)
+    }
+  }, [session.openId, id])
+
+  const claim = (mode: 'hover' | 'pinned' | 'bottom-sheet'): void => {
+    intelOpened(id, { entityType, entityId, context }, mode, triggerRef.current)
+  }
 
   const { handleTriggerEnter, handleLeaveBoth, handleCardEnter, handleCardLeave } = useHoverIntent({
     onOpen: () => {
-      const coarse = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+      const coarse = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches === true
       setSheet(coarse)
       setOpen(true)
+      claim(coarse ? 'bottom-sheet' : 'hover')
       requestAnimationFrame(() => measure(triggerRef.current, large))
     },
     onClose: () => {
-      if (!pinned) setOpen(false)
+      if (!pinned) close()
     },
   })
 
-  useHoverKeyboard({ open, pinned, onClose: close, onPin: () => setPinned(true), triggerRef })
+  useHoverKeyboard({ open, pinned, onClose: () => {
+    const back = cardWrapRef.current?.querySelector<HTMLButtonElement>('[aria-label="Back to previous preview"]')
+    if (back) back.click()
+    else close()
+  }, onPin: () => setPinned(true), triggerRef })
 
   const { start, cancel, handleTap } = useLongPress({
     onPreview: () => {
       setSheet(true)
       setOpen(true)
+      setPinned(true)
+      claim('bottom-sheet')
     },
   })
 
@@ -132,12 +162,14 @@ export function SmartHoverTrigger({
         onClick={() => {
           if (open && !pinned) {
             setPinned(true)
+            claim('pinned')
           } else if (open && pinned) {
             onOpenEntity?.()
           } else {
             setSheet(false)
             setOpen(true)
             setPinned(true)
+            claim('pinned')
             requestAnimationFrame(() => measure(triggerRef.current, large))
           }
         }}
@@ -146,6 +178,7 @@ export function SmartHoverTrigger({
             e.preventDefault()
             setOpen(true)
             setPinned(true)
+            claim('pinned')
           }
           if (e.key === 'Enter' && open) {
             onOpenEntity?.()
@@ -154,13 +187,14 @@ export function SmartHoverTrigger({
         onTouchStart={start}
         onTouchEnd={(e) => {
           cancel()
-          if ((e as unknown as { touches?: unknown }).touches !== undefined) return
+          e.preventDefault()
           handleTap(() => onOpenEntity?.())
         }}
         onTouchMove={cancel}
         style={{
           background: open ? 'var(--hover-row)' : 'transparent',
           border: 'none',
+          minHeight: 'var(--tap)',
           padding: '2px 4px',
           margin: '-2px -4px',
           color: 'inherit',

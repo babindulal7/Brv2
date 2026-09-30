@@ -23,12 +23,13 @@ export function RentalHoverCard({
   preview: RentalPreview
   canViewFinance: boolean
   defaultTab: string
-  onAction: (id: string) => void
-  onOpenClient: () => void
+  onAction?: (id: string) => void
+  onOpenClient?: () => void
 }) {
   const [tab, setTab] = useState(defaultTab)
   const progress = packingProgress(preview.packing.lines)
   const blocked = handoverBlockedReason(preview.readiness)
+  const beforeHandover = preview.stage === 'Quote' || preview.stage === 'Booked' || preview.stage === 'Packed'
   const tone = STATUS[PACKING_TONE[preview.packing.status] ?? 'neutral']
   const safeTone = tone ?? STATUS.neutral
 
@@ -42,12 +43,12 @@ export function RentalHoverCard({
             {preview.stage.toUpperCase()}
           </span>
         </div>
-        <button type="button" onClick={onOpenClient} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--link)', fontSize: 13, cursor: 'pointer', textAlign: 'left' }}>
+        {onOpenClient ? <button type="button" onClick={onOpenClient} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--link)', fontSize: 13, cursor: 'pointer', textAlign: 'left', minHeight: 'var(--tap)' }}>
           {preview.clientName} ›
-        </button>
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{preview.pickupAt} → {preview.returnAt} · {preview.rentalDays} rental day{preview.rentalDays === 1 ? '' : 's'}</div>
-        {blocked ? (
-          <p role="alert" style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--danger-text)' }}>🔴 Handover blocked — {blocked}</p>
+        </button> : <div>{preview.clientName}</div>}
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{preview.pickupAt} → {preview.returnAt}{preview.rentalDays === null ? '' : ` · ${preview.rentalDays} rental day${preview.rentalDays === 1 ? '' : 's'}`}</div>
+        {beforeHandover && blocked ? (
+          <p role={blocked === 'Readiness verification unavailable' ? 'status' : 'alert'} style={{ margin: '6px 0 0', fontSize: 13, color: blocked === 'Readiness verification unavailable' ? 'var(--muted)' : 'var(--danger-text)' }}>{blocked === 'Readiness verification unavailable' ? 'Handover readiness not verified' : `🔴 Handover blocked — ${blocked}`}</p>
         ) : (
           <p style={{ margin: '6px 0 0', fontSize: 13 }}>Packing {progress.packed} / {progress.total}</p>
         )}
@@ -66,7 +67,7 @@ export function RentalHoverCard({
       <div role="tabpanel">
         {tab === 'overview' ? (
           <div style={{ fontSize: 13, display: 'grid', gap: 8 }}>
-            <section aria-label="Readiness">
+            {beforeHandover ? <section aria-label="Readiness">
               <h4 style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', color: 'var(--muted)', margin: '0 0 4px' }}>READINESS</h4>
               <ReadinessRow ok={preview.readiness.equipmentReady} label="Equipment reserved" />
               <ReadinessRow ok={preview.readiness.packingReady} label={`Packing ${progress.packed} / ${progress.total}`} />
@@ -74,7 +75,7 @@ export function RentalHoverCard({
               <ReadinessRow ok={preview.readiness.depositReady} label="Deposit satisfied" />
               <ReadinessRow ok={preview.readiness.contractReady} label="Contract signed" />
               <ReadinessRow ok={preview.readiness.clientAllowed} label="Client allowed" />
-            </section>
+            </section> : <p style={{ margin: 0 }}>Stage: {preview.stage}. Handover readiness applies before pickup.</p>}
           </div>
         ) : null}
         {tab === 'equipment' ? (
@@ -106,11 +107,11 @@ export function RentalHoverCard({
         {tab === 'payments' ? (
           canViewFinance && preview.payments ? (
             <div style={{ display: 'grid', gap: 10 }}>
-              <PaymentSummary summary={preview.payments.summary} />
+              <PaymentSummary summary={preview.payments.summary} showDepositHeld={preview.payments.depositHeldVerified !== false} />
               <ul style={{ margin: 0, padding: 0 }}>
                 {sortTxNewestFirst(preview.payments.history).slice(0, 4).map((t) => <PaymentTransactionRow key={t.id} t={t} />)}
               </ul>
-              <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer', textAlign: 'left' }} onClick={() => onAction('view_ledger')}>View full ledger</button>
+              {onAction ? <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer', textAlign: 'left' }} onClick={() => onAction('view_ledger')}>View full ledger</button> : null}
             </div>
           ) : (
             <ClearanceBlock paymentClear={preview.clearance?.paymentClear ?? preview.readiness.paymentReady} depositClear={preview.clearance?.depositClear ?? preview.readiness.depositReady} />
@@ -126,7 +127,7 @@ export function RentalHoverCard({
                 </li>
               ))}
             </ul>
-            <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('add_note')}>+ Add note</button>
+            {onAction ? <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('add_note')}>+ Add note</button> : null}
           </div>
         ) : null}
       </div>
@@ -134,11 +135,11 @@ export function RentalHoverCard({
   )
 }
 
-function ReadinessRow({ ok, label }: { ok: boolean; label: string }) {
+function ReadinessRow({ ok, label }: { ok: boolean | null; label: string }) {
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
-      <Icon name={ok ? 'check' : 'alert_triangle'} size={15} color={ok ? 'var(--success-text)' : 'var(--danger-text)'} />
-      <span style={{ color: ok ? 'var(--text)' : 'var(--danger-text)' }}>{ok ? '✓' : '🔴'} {label}</span>
+      <Icon name={ok === true ? 'check' : ok === false ? 'alert_triangle' : 'dot'} size={15} color={ok === true ? 'var(--success-text)' : ok === false ? 'var(--danger-text)' : 'var(--muted)'} />
+      <span style={{ color: ok === true ? 'var(--text)' : ok === false ? 'var(--danger-text)' : 'var(--muted)' }}>{ok === true ? '✓' : ok === false ? '🔴' : '○'} {label}{ok === null ? ' — not verified' : ''}</span>
     </div>
   )
 }

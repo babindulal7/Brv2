@@ -86,6 +86,21 @@ export function intelReplaced(nextId: string, entry?: IntelNavigationEntry, mode
   intelOpened(nextId, entry, mode, originElement)
 }
 
+/** Return to the prior entity inside the active Intel card or sheet. */
+export function intelNavigateBack(id: string): void {
+  if (state.openId !== id || state.history.length === 0) return
+  const previous = state.history[state.history.length - 1]
+  if (!previous) return
+  state = {
+    ...state,
+    entityType: previous.entityType,
+    entityId: previous.entityId,
+    context: previous.context,
+    history: state.history.slice(0, -1),
+  }
+  emit()
+}
+
 export function isIntelSessionActive(): boolean {
   return state.active
 }

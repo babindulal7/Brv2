@@ -29,15 +29,15 @@ export function DocumentHoverCard({ preview, canViewFinance }: { preview: Invoic
             {preview.duePaisa !== undefined ? <Row label="Due" paisa={preview.duePaisa} strong /> : null}
           </div>
         ) : (
-          <ClearanceBlock paymentClear={preview.handoverClear ?? true} depositClear />
+          <ClearanceBlock paymentClear={preview.handoverClear ?? null} depositClear={null} />
         )}
-        <section aria-label="Recent payments">
+        {canViewFinance ? <section aria-label="Recent payments">
           <h4 style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', color: 'var(--muted)', margin: '0 0 4px' }}>RECENT</h4>
           <ul style={{ margin: 0, padding: 0 }}>
             {sortTxNewestFirst(preview.recent).slice(0, 3).map((t) => <PaymentTransactionRow key={t.id} t={t} />)}
             {preview.recent.length === 0 ? <li style={{ listStyle: 'none', fontSize: 13, color: 'var(--muted)' }}>No payments recorded.</li> : null}
           </ul>
-        </section>
+        </section> : null}
       </div>
     </div>
   )

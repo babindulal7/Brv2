@@ -6,6 +6,7 @@ import {
   derivePackingStatus,
   getHoverActions,
   handoverBlockedReason,
+  NAVIGATE_GRADE_ACTIONS,
   packingProgress,
   sortTxNewestFirst,
   summarizeRentalPayments,
@@ -60,6 +61,8 @@ describe('handover readiness (§34)', () => {
     const base = { equipmentReady: true, packingReady: true, paymentReady: true, depositReady: true, contractReady: true, clientAllowed: true }
     expect(handoverBlockedReason(base)).toBeNull()
     expect(handoverBlockedReason({ ...base, depositReady: false })).toBe('Security deposit missing')
+    expect(handoverBlockedReason({ ...base, depositReady: null })).toBe('Readiness verification unavailable')
+    expect(handoverBlockedReason({ ...base, packingReady: false, depositReady: null })).toBe('Packing incomplete')
   })
 })
 
@@ -126,6 +129,32 @@ describe('getHoverActions (§51–§52)', () => {
   it('money roles keep record_payment', () => {
     const a = getHoverActions({ entityType: 'invoice', context: 'payments', role: 'Accounts' })
     expect(a.primary).toBe('record_payment')
+  })
+  it('foreign mount falls back to Open, never a dead workspace verb', () => {
+    const a = getHoverActions({
+      entityType: 'equipment',
+      context: 'packing',
+      role: 'Warehouse',
+      supported: NAVIGATE_GRADE_ACTIONS,
+    })
+    expect(a.primary).toBe('open_entity')
+    expect([a.primary, a.secondary, ...a.overflow]).not.toContain('mark_packed')
+  })
+  it('call/email appear only with a reachable contact', () => {
+    const withPhone = getHoverActions({ entityType: 'client', context: 'clients', role: 'Manager', hasPhone: true, hasEmail: false })
+    expect(withPhone.overflow).toContain('call_client')
+    expect(withPhone.overflow).not.toContain('email_client')
+    const without = getHoverActions({ entityType: 'client', context: 'clients', role: 'Manager', hasPhone: false, hasEmail: false })
+    expect(without.overflow).not.toContain('call_client')
+    expect(without.overflow).not.toContain('email_client')
+  })
+})
+
+describe('handoverBlockedReason money gates', () => {
+  it('skips payment/deposit gates for money-blind rendering', () => {
+    const r = { equipmentReady: true, packingReady: true, paymentReady: false, depositReady: false, contractReady: true, clientAllowed: true }
+    expect(handoverBlockedReason(r)).toBe('Payment requirement not met')
+    expect(handoverBlockedReason(r, { includeMoneyGates: false })).toBeNull()
   })
 })
 

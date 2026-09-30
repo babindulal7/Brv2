@@ -21,7 +21,7 @@ export type IntelContext =
   | 'documents'
   | 'search'
 
-export type IntelEntityType = 'equipment' | 'client' | 'rental' | 'document'
+export type IntelEntityType = 'equipment' | 'client' | 'rental' | 'document' | 'invoice' | 'payment'
 
 export type IntelMode = 'glance' | 'detail'
 

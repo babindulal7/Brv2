@@ -12,6 +12,7 @@ import {
   timeUtilization,
 } from '../selectors'
 import { inTravelTriangle, pointInTriangle } from '../safeTriangle'
+import { intelClosed, intelNavigateBack, intelOpened, intelReplaced, intelSessionSnapshot } from '../store'
 
 describe('intel selectors (deterministic, no ML)', () => {
   it('computes time utilization', () => {
@@ -87,5 +88,19 @@ describe('safe triangle', () => {
     const card = { left: 100, top: 100, right: 300, bottom: 300 }
     expect(inTravelTriangle({ x: 50, y: 20 }, { x: 0, y: 0 }, card)).toBe(true)
     expect(inTravelTriangle({ x: -500, y: -500 }, { x: 0, y: 0 }, card)).toBe(false)
+  })
+})
+
+describe('shared Intel navigation', () => {
+  it('replaces the active entity and returns to the originating workflow', () => {
+    const origin = { entityType: 'rental' as const, entityId: 'r1', context: 'rental-list' as const }
+    const linked = { entityType: 'client' as const, entityId: 'c1', context: 'rental-list' as const }
+    intelOpened('test-card', origin, 'side-peek')
+    intelReplaced('test-card', linked, 'side-peek')
+    expect(intelSessionSnapshot()).toMatchObject({ openId: 'test-card', entityType: 'client', entityId: 'c1' })
+    expect(intelSessionSnapshot().history).toEqual([origin])
+    intelNavigateBack('test-card')
+    expect(intelSessionSnapshot()).toMatchObject({ entityType: 'rental', entityId: 'r1', context: 'rental-list', history: [] })
+    intelClosed('test-card')
   })
 })

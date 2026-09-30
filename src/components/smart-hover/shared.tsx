@@ -12,7 +12,7 @@ import { formatMoney } from '../../lib/money'
 import type { PaymentTransaction, RentalPaymentSummary } from '../../lib/smartHover'
 import Icon from '../ui/Icon'
 
-export function PaymentSummary({ summary }: { summary: RentalPaymentSummary }) {
+export function PaymentSummary({ summary, showDepositHeld = true }: { summary: RentalPaymentSummary; showDepositHeld?: boolean }) {
   const row = (label: string, paisa: number): ReactNode => (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13 }}>
       <span style={{ color: 'var(--muted)' }}>{label}</span>
@@ -25,11 +25,9 @@ export function PaymentSummary({ summary }: { summary: RentalPaymentSummary }) {
       {row('Total', summary.totalPaisa)}
       {row('Paid', summary.paidPaisa)}
       {row('Due', summary.duePaisa)}
-      {row('Deposit held', summary.depositHeldPaisa)}
+      {showDepositHeld ? row('Deposit held', summary.depositHeldPaisa) : null}
       <p style={{ margin: '6px 0 0', fontSize: 13 }}>
         <StatusWord tone={summary.state === 'PAID' ? 'var(--success-text)' : summary.state === 'UNPAID' || summary.state === 'PAYMENT_OVERDUE' ? 'var(--danger-text)' : 'var(--progress-text)'} label={summary.state.replace(/_/g, ' ')} icon={summary.state === 'PAID' ? 'check' : 'timer'} />
-        {' · '}
-        {summary.handoverClear ? 'Handover payment requirement clear' : 'Handover payment requirement pending'}
       </p>
     </section>
   )
@@ -44,21 +42,25 @@ export function StatusWord({ tone, label, icon }: { tone: string; label: string;
   )
 }
 
-export function ClearanceBlock({ paymentClear, depositClear }: { paymentClear: boolean; depositClear: boolean }) {
+export function ClearanceBlock({ paymentClear, depositClear }: { paymentClear: boolean | null; depositClear: boolean | null }) {
   return (
     <section aria-label="Payment clearance">
       <h4 style={{ fontFamily: 'var(--font-display)', fontSize: 12, letterSpacing: '0.08em', color: 'var(--muted)', margin: '0 0 4px' }}>PAYMENT</h4>
-      {paymentClear ? (
+      {paymentClear === null ? (
+        <p style={{ margin: '4px 0', fontSize: 13 }}><StatusWord tone="var(--muted)" label="Payment clearance unavailable" icon="dot" /></p>
+      ) : paymentClear ? (
         <p style={{ margin: '4px 0', fontSize: 13 }}><StatusWord tone="var(--success-text)" label="Payment cleared" icon="check" /></p>
       ) : (
         <p style={{ margin: '4px 0', fontSize: 13 }}><StatusWord tone="var(--danger-text)" label="Payment required" icon="alert_triangle" /></p>
       )}
-      {depositClear ? (
+      {depositClear === null ? (
+        <p style={{ margin: '4px 0', fontSize: 13 }}><StatusWord tone="var(--muted)" label="Deposit clearance unavailable" icon="dot" /></p>
+      ) : depositClear ? (
         <p style={{ margin: '4px 0', fontSize: 13 }}><StatusWord tone="var(--success-text)" label="Deposit received" icon="check" /></p>
       ) : (
         <p style={{ margin: '4px 0', fontSize: 13 }}><StatusWord tone="var(--danger-text)" label="Security deposit required" icon="lock" /></p>
       )}
-      {!paymentClear || !depositClear ? <p style={{ margin: '4px 0', fontSize: 12, color: 'var(--muted)' }}>Handover blocked</p> : null}
+      {paymentClear !== true || depositClear !== true ? <p style={{ margin: '4px 0', fontSize: 12, color: 'var(--muted)' }}>Handover readiness unconfirmed</p> : null}
     </section>
   )
 }
@@ -71,9 +73,9 @@ export function PaymentTransactionRow({ t }: { t: PaymentTransaction }) {
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>{t.status.toUpperCase()}</span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-        {t.type.replace(/_/g, ' ')} · {t.method.replace(/_/g, ' ')} · {t.paidAt ?? t.createdAt}
-        {t.rentalId ? ` · #${t.rentalId}` : ''}
-        {t.reference ? ` · ${t.reference}` : ''} · by {t.createdBy}
+        {t.type.replace(/_/g, ' ')}{t.method ? ` · ${t.method.replace(/_/g, ' ')}` : ''} · {t.paidAt ?? t.createdAt}
+        {t.rentalNo ? ` · #${t.rentalNo}` : ''}
+        {t.reference ? ` · ${t.reference}` : ''}{t.createdBy ? ` · by ${t.createdBy}` : ''}
       </div>
     </li>
   )

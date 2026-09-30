@@ -14,11 +14,13 @@ export function EquipmentHoverCard({
   canViewFinance,
   defaultTab,
   onAction,
+  onOpenRental,
 }: {
   preview: EquipmentPreview
   canViewFinance: boolean
   defaultTab: string
-  onAction: (id: string) => void
+  onAction?: (id: string) => void
+  onOpenRental?: (rentalNo: string) => void
 }) {
   const [tab, setTab] = useState(defaultTab)
   return (
@@ -51,23 +53,24 @@ export function EquipmentHoverCard({
           <ul style={{ margin: 0, padding: 0 }}>
             {preview.current.map((b) => (
               <li key={`${b.rentalId}-${b.pickupAt}`} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
-                <div><strong>{b.clientName}</strong> · #{b.rentalNo}</div>
+                <div><strong>{b.clientName}</strong> · {onOpenRental ? <button type="button" onClick={() => onOpenRental(b.rentalNo)} style={{ minHeight: 'var(--tap)', border: 0, background: 'none', color: 'var(--link)', cursor: 'pointer' }}>#{b.rentalNo}</button> : `#${b.rentalNo}`}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>{b.pickupAt} → {b.returnAt} · {b.qty}×</div>
                 {b.packingLabel ? <div style={{ fontSize: 12 }}>{b.packingLabel}</div> : null}
               </li>
             ))}
-            {preview.current.length === 0 ? <li style={{ listStyle: 'none', fontSize: 13, color: 'var(--muted)' }}>No current or upcoming bookings.</li> : null}
+            {preview.current.length === 0 ? <li style={{ listStyle: 'none', fontSize: 13, color: 'var(--muted)' }}>{preview.relationsLoaded === false ? 'Booking relationships not loaded.' : 'No current or upcoming bookings.'}</li> : null}
           </ul>
         ) : null}
         {tab === 'history' ? (
           <ul style={{ margin: 0, padding: 0 }}>
             {preview.history.map((h, i) => (
               <li key={`${h.rentalId}-${i}`} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
-                <div><strong>{h.clientName}</strong> · #{h.rentalNo}</div>
+                <div><strong>{h.clientName}</strong> · {onOpenRental ? <button type="button" onClick={() => onOpenRental(h.rentalNo)} style={{ minHeight: 'var(--tap)', border: 0, background: 'none', color: 'var(--link)', cursor: 'pointer' }}>#{h.rentalNo}</button> : `#${h.rentalNo}`}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>{h.pickupAt} → {h.returnAt}</div>
                 {h.note ? <div style={{ fontSize: 12 }}>{h.note}</div> : null}
               </li>
             ))}
+            {preview.history.length === 0 && preview.relationsLoaded === false ? <li style={{ listStyle: 'none', fontSize: 13, color: 'var(--muted)' }}>Rental history not loaded.</li> : null}
           </ul>
         ) : null}
         {tab === 'packing' ? (
@@ -83,10 +86,10 @@ export function EquipmentHoverCard({
                 ))}
               </ul>
               {preview.packing.packedBy ? <p style={{ fontSize: 12, color: 'var(--muted)' }}>Packed by {preview.packing.packedBy}{preview.packing.updatedAt ? ` · ${preview.packing.updatedAt}` : ''}</p> : null}
-              <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('mark_packed')}>Mark packed</button>
+              {onAction ? <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('mark_packed')}>Mark packed</button> : null}
             </div>
           ) : (
-            <p style={{ fontSize: 13, color: 'var(--muted)' }}>No active packing relationship for this equipment.</p>
+            <p style={{ fontSize: 13, color: 'var(--muted)' }}>{preview.relationsLoaded === false ? 'Packing relationship not loaded.' : preview.current.length > 0 ? 'Open a booking to inspect packing for that rental.' : 'No active packing relationship for this equipment.'}</p>
           )
         ) : null}
         {tab === 'notes' ? (
@@ -99,7 +102,7 @@ export function EquipmentHoverCard({
                 </li>
               ))}
             </ul>
-            <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('add_note')}>+ Add note</button>
+            {onAction ? <button type="button" style={{ minHeight: 'var(--tap)', background: 'none', border: 'none', color: 'var(--link)', cursor: 'pointer' }} onClick={() => onAction('add_note')}>+ Add note</button> : null}
           </div>
         ) : null}
         {tab === 'info' ? (

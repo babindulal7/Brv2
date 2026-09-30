@@ -48,8 +48,8 @@ describe('invoice card money-blind (§68)', () => {
       invoiceDate: '29 Sep 2026',
       dueDate: '30 Sep 2026',
       state: 'PARTIALLY PAID',
-      handoverClear: true,
-      recent: [],
+      handoverClear: null,
+      recent: [{ id: 'p1', clientId: 'c1', type: 'rental_payment', status: 'completed', method: 'cash', amountPaisa: 4860000, createdAt: '2026-09-29T10:00:00Z', createdBy: 'u1' }],
     }
     const { text, root, container } = await mountText(
       <SmartHoverCard
@@ -65,6 +65,8 @@ describe('invoice card money-blind (§68)', () => {
     expect(text).toContain('INV-0218')
     expect(text).not.toMatch(/Rs\s/)
     expect(text).not.toMatch(/1,85,000|48,600|25,000/)
+    expect(text).not.toContain('Recent payments')
+    expect(text).not.toContain('Payment cleared')
     await act(async () => {
       root.unmount()
     })
