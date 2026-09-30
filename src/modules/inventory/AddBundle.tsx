@@ -426,18 +426,16 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   /* §4 — Bundle Details */
-  const [name, setName] = useState('Sony FX3 Documentary Kit')
-  const [category, setCategory] = useState<InventoryCategory | ''>('Camera')
+  const [name, setName] = useState('')
+  const [category, setCategory] = useState<InventoryCategory | ''>('')
   const [active, setActive] = useState(true)
-  const [description, setDescription] = useState(
-    'Professional documentary shooting package including camera, prime lenses, support and essential accessories.',
-  )
-  const [tags, setTags] = useState<string[]>(['Documentary', 'Travel', 'Corporate'])
+  const [description, setDescription] = useState('')
+  const [tags, setTags] = useState<string[]>([])
   const [thumbnail, setThumbnail] = useState<string | null>(null)
 
   /* §7.3 — the rate is computed; an override is declared, never hidden. */
   const [override, setOverride] = useState(false)
-  const [overrideRate, setOverrideRate] = useState('18,000')
+  const [overrideRate, setOverrideRate] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
 
   /* §5 / §6 — the tree and the lines */
@@ -454,8 +452,8 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
   const [childrenOpen, setChildrenOpen] = useState<Set<string>>(new Set())
 
   /* §10 — crew, vehicle, boxes */
-  const [crew, setCrew] = useState<CrewPick[]>(INITIAL_CREW)
-  const [vehicle, setVehicle] = useState<VehicleType | null>(INITIAL_VEHICLE)
+  const [crew, setCrew] = useState<CrewPick[]>([])
+  const [vehicle, setVehicle] = useState<VehicleType | null>(null)
 
   const [notes, setNotes] = useState('')
 
@@ -1360,15 +1358,11 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                 paddingTop: 'var(--sp-md)',
                 borderTop: '1px solid var(--border)',
                 display: 'flex',
-                gap: 14,
-                flexWrap: 'wrap',
-                alignItems: 'flex-start',
+                flexDirection: 'column',
+                gap: 'var(--sp-md)',
               }}
             >
-              <FieldBlock
-                label="Default Daily Rate (Equipment Only)"
-                hint="This rate covers equipment only. Crew and vehicle are not included."
-              >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                   <span
                     className="figure"
@@ -1389,12 +1383,10 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                     {formatMoney(effectiveRatePaisa)}
                   </span>
                   <span style={subtle}>
-                    {override ? 'Override — declared below' : 'Computed from the lines below (§7.3)'}
+                    {override ? 'Override active' : 'Computed from the lines below (§7.3)'}
                   </span>
                 </span>
-              </FieldBlock>
 
-              <FieldBlock label="Override the computed rate">
                 <button
                   type="button"
                   onClick={() => setOverride((v) => !v)}
@@ -1413,12 +1405,12 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {override ? 'Override on' : 'Override off'}
+                  {override ? 'Disable override' : 'Set override rate'}
                 </button>
-              </FieldBlock>
+              </div>
 
               {override && (
-                <>
+                <div style={{ display: 'flex', gap: 'var(--sp-md)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                   <Field label="Target daily rate" required>
                     <input
                       value={overrideRate}
@@ -1428,6 +1420,7 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                       style={{ ...controlBase, width: 140 }}
                     />
                   </Field>
+
                   <Field
                     label="Reason for the override"
                     required
@@ -1440,7 +1433,16 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                       style={{ ...controlBase, width: 340 }}
                     />
                   </Field>
-                </>
+
+                  {impliedExtraPct !== 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', paddingTop: 'var(--sp-sm)', borderTop: '1px solid var(--border)', marginTop: 'auto', minWidth: '100%' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 'var(--r-badge)', background: impliedExtraPct > 0 ? 'var(--st-progress-bg)' : 'var(--st-in-bg)', color: impliedExtraPct > 0 ? 'var(--st-progress-fg)' : 'var(--st-in-fg)', fontSize: 'var(--t-meta)', fontWeight: 600 }}>
+                        <Icon name={impliedExtraPct > 0 ? 'alert_triangle' : 'info'} size={12} />
+                        Implied extra discount: {formatMoney(impliedExtraPaisa)} ({impliedExtraPct > 0 ? '+' : ''}{impliedExtraPct}%)
+                      </span>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </Section>
@@ -1511,6 +1513,9 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                   />
                 </label>
               </div>
+              <p style={{ margin: 0, ...subtle, lineHeight: 1.5 }}>
+                Free and Held are measured for this window. Click any row to add it to the bundle — required children are included automatically.
+              </p>
               <DataTableShell ariaLabel="Catalogue availability for bundle" style={{ maxHeight: 460, overflowY: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
@@ -1671,13 +1676,16 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                 }
               >
                 {lines.length === 0 ? (
-                  <div style={{ padding: '30px 16px', textAlign: 'center' }}>
-                    <Icon name="package" size={26} style={{ color: 'var(--muted)' }} />
-                    <p style={{ margin: '8px 0 4px', fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)' }}>
+                  <div style={{ padding: '40px 24px', textAlign: 'center', background: 'var(--card2)', borderRadius: 'var(--r-card)' }}>
+                    <Icon name="package" size={32} style={{ color: 'var(--muted)' }} />
+                    <p style={{ margin: '12px 0 6px', fontSize: 'var(--t-ui)', fontWeight: 600, color: 'var(--text)' }}>
                       No items in this bundle yet
                     </p>
-                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                      Pick models from the inventory tree on the left. §14 — a bundle needs at least one equipment line.
+                    <p style={{ margin: '0 0 16px', fontSize: 'var(--t-meta)', color: 'var(--text2)', maxWidth: 360, marginLeft: 'auto', marginRight: 'auto' }}>
+                      Search or browse the inventory tree on the left. Click any model to add it — required children (like batteries for a camera) are included automatically.
+                    </p>
+                    <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
+                      §14 — a bundle needs at least one equipment line to be created.
                     </p>
                   </div>
                 ) : (
@@ -1789,8 +1797,8 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
 
           {/* ── 4 · Crew, Vehicle and Boxes ─────────────────────────────── */}
           <Section n={4} title="Crew, Vehicle and Boxes">
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 'var(--sp-lg)' }}>
-              <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--sp-lg)' }}>
+              <div style={{ background: 'var(--card2)', borderRadius: 'var(--r-card)', padding: 'var(--sp-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-sm)' }}>
                   <Icon name="crew" size={14} style={{ color: 'var(--text2)' }} />
                   <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Crew suggestions</span>
@@ -1849,7 +1857,7 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                 </select>
               </div>
 
-              <div>
+              <div style={{ background: 'var(--card2)', borderRadius: 'var(--r-card)', padding: 'var(--sp-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-sm)' }}>
                   <Icon name="truck" size={14} style={{ color: 'var(--text2)' }} />
                   <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Vehicle suggestion</span>
@@ -1874,7 +1882,7 @@ export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: (
                 </select>
               </div>
 
-              <div>
+              <div style={{ background: 'var(--card2)', borderRadius: 'var(--r-card)', padding: 'var(--sp-md)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 'var(--sp-sm)' }}>
                   <Icon name="package" size={14} style={{ color: 'var(--text2)' }} />
                   <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Boxes and bags</span>
@@ -2463,9 +2471,10 @@ function TreeRow({
 }) {
   const kids = model.children ?? []
   const num: CSSProperties = { ...td, textAlign: 'right', padding: '8px 6px' }
+  const hasAvailable = model.available > 0
   return (
     <>
-      <tr style={{ borderBottom: '1px solid var(--border)' }}>
+      <tr style={{ borderBottom: '1px solid var(--border)', background: inBundle ? 'var(--success-bg)' : undefined }}>
         <td style={{ ...td, paddingRight: 'var(--sp-xs)' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             {kids.length > 0 ? (
@@ -2484,19 +2493,24 @@ function TreeRow({
             <button
               type="button"
               onClick={onAdd}
-              title={inBundle ? `Add one more ${model.name}` : `Add ${model.name} to the bundle`}
+              title={inBundle
+                ? `Add one more ${model.name}`
+                : hasAvailable
+                  ? `Add ${model.name} to the bundle`
+                  : 'No units free — add anyway to queue for later availability'}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
                 border: 'none',
-                background: 'transparent',
+                background: inBundle ? 'transparent' : 'transparent',
                 padding: 0,
                 font: 'inherit',
                 textAlign: 'left',
                 cursor: 'pointer',
-                color: 'var(--text)',
+                color: inBundle ? 'var(--text)' : hasAvailable ? 'var(--text)' : 'var(--text2)',
                 minWidth: 0,
+                opacity: 1,
               }}
             >
               <Icon name={iconForCategory(model.category)} size={13} style={{ color: 'var(--muted)', flexShrink: 0 }} />
@@ -2527,7 +2541,7 @@ function TreeRow({
               <button
                 type="button"
                 onClick={() => onAddChild(child)}
-                title={`Add ${child.name} as its own line`}
+                title={`Add ${child.name} as its own line${child.available === 0 ? ' (no units free)' : ''}`}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -2538,8 +2552,9 @@ function TreeRow({
                   font: 'inherit',
                   textAlign: 'left',
                   cursor: 'pointer',
-                  color: 'var(--text2)',
+                  color: childInBundle(child.id) ? 'var(--text)' : child.available > 0 ? 'var(--text2)' : 'var(--text2)',
                   minWidth: 0,
+                  opacity: 1,
                 }}
               >
                 <Icon name={iconForCategory(child.category)} size={12} style={{ color: 'var(--muted)', flexShrink: 0 }} />

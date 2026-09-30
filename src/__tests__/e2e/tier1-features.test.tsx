@@ -358,14 +358,15 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', () => {
     })
   })
 
-  describe('R4: New Rental 4-Step Guided Wizard', () => {
-    it('renders guided booking flow with stepper and live summary rail', async () => {
+  describe('R4: New Rental guided flow', () => {
+    it('renders the full booking form with a live summary', async () => {
       const { default: NewRental } = await import('../../modules/rentals/NewRental')
       await mountComponent(<NewRental />, ['/rentals/new'])
 
-      // Step indicator / Stepper
-      const stepper = container.querySelector('.new-rental-stepper-container, .rental-stepper')
-      expect(stepper).not.toBeNull()
+      // Sections stay mounted together so staff can review and correct them.
+      expect(container.querySelector('.new-rental-stepper-container, .rental-stepper')).toBeNull()
+      expect(container.querySelector('#section-1')?.textContent).toContain('Rental period')
+      expect(container.querySelector('#section-2')?.textContent).toContain('Equipment, Bundles & Services')
 
       // Client section
       expect(container.textContent).toContain('Client')

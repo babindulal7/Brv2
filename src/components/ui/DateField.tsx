@@ -180,6 +180,10 @@ export interface CalendarPopoverProps {
   embedded?: boolean | undefined
   /** Controls rendering of the title + close header (default true) */
   showHeader?: boolean | undefined
+  /** Override the calendar's Today action with the caller's operational day. */
+  todayDate?: string | undefined
+  /** Keep historical dates visually active when the caller filters past records. */
+  shadePastDates?: boolean | undefined
 }
 
 /**
@@ -211,8 +215,10 @@ export function CalendarPopover({
   maxDate,
   embedded = false,
   showHeader = true,
+  todayDate,
+  shadePastDates = true,
 }: CalendarPopoverProps) {
-  const today = todayIso()
+  const today = todayDate ?? todayIso()
   const anchor = (range?.from && !Number.isNaN(Date.parse(range.from)))
     ? range.from
     : value && !Number.isNaN(Date.parse(value))
@@ -342,8 +348,8 @@ export function CalendarPopover({
 
   return (
     <div
-      role="dialog"
-      aria-label={resolvedTitle}
+      role={embedded ? undefined : 'dialog'}
+      aria-label={embedded ? undefined : resolvedTitle}
       style={{
         ...(embedded
           ? {
@@ -605,7 +611,7 @@ export function CalendarPopover({
           const colIndex = (startWeekday + c.ad.getUTCDate() - 1) % 7
           const isCursor = iso === cursor
           const isToday = iso === today
-          const isPast = Boolean(minDate ? iso < minDate : iso < today)
+          const isPast = shadePastDates && Boolean(minDate ? iso < minDate : iso < today)
           const bs = toBs(c.ad)
 
           // Range and selection checks

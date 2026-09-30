@@ -934,7 +934,8 @@ export interface AssetDetailOptions {
 /**
  * Resolves the reference in `/inventory/:assetId` to one product and its units.
  *
- * The links that land on this route carry THREE different vocabularies, all
+ * The links that land on this route carry product UUIDs from Intel sessions and
+ * three public identifier vocabularies, all
  * live today: `StockCheck.tsx` links `assetCode || serial`, every floor
  * workspace and `BookingDetail` link a unit's serial, and the Inventory list's
  * own rows link the `asset_code`. So the ref is tried as, in order:
@@ -965,10 +966,16 @@ export async function getAssetDetail(
 
   const money = opts.withMoney ? { withMoney: true as const } : {}
 
+  // Intel sessions carry the stable product UUID. Resolve it without guessing
+  // an asset code or scanning units.
+  const byId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)
+    ? await listInventory({ chips: { id: [trimmed] }, ...money })
+    : null
+
   // 1. The product's own asset code. `chips` → `in(asset_code, [ref])`;
   //    `asset_code` is unique (0004:139), so this is zero rows or one.
-  const byCode = await listInventory({ chips: { asset_code: [trimmed] }, ...money })
-  let product = byCode.rows[0] ?? null
+  const byCode = byId ? null : await listInventory({ chips: { asset_code: [trimmed] }, ...money })
+  let product = byId?.rows[0] ?? byCode?.rows[0] ?? null
   let matchedUnitId: string | null = null
 
   // 2./3. A unit's serial, then its asset tag. Two `.eq` lookups rather than

@@ -54,7 +54,7 @@
 .rentals-card-item:hover {
   border-color: var(--border2, var(--border));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  transform: translateY(-1px);
+  filter: brightness(1.02);
 }
 .rentals-card-item.is-selected {
   border-color: var(--nav-active-accent);
@@ -223,7 +223,7 @@
   border-color: var(--border2);
 }
 .new-rental-stage-pill:active {
-  transform: scale(0.98);
+  filter: brightness(0.98);
 }
 
 .new-rental-stage-num {
@@ -348,7 +348,7 @@
   color: var(--text);
 }
 .new-rental-preset-chip:active {
-  transform: scale(0.97);
+  filter: brightness(0.98);
 }
 
 /* ── Micro-KBD indicator ── */

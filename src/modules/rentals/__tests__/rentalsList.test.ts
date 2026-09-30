@@ -657,6 +657,11 @@ const OWNER = gateContext('Owner')
 const WAREHOUSE = gateContext('Warehouse')
 
 describe('the Intel card is built from the queried row, not from the seed', () => {
+  it('never uses a security deposit as the rental total', () => {
+    const mapped = map({ depositRequired: rupees(50_000), totalAmount: null })
+    expect(mapped.deposit).toBe(rupees(50_000))
+    expect(mapped.totalAmount).toBeNull()
+  })
   it('omits the deposit line entirely for a money-blind role', () => {
     // HIS v2.1 §4.5 — "gated blocks are omitted from the payload, not
     // CSS-hidden". The floor must not receive the string at all.

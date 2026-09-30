@@ -31,6 +31,8 @@ import type { Database } from '../../types/supabase'
 import { rupees, type Paisa } from '../money'
 import { formatBsOrAd, formatAd } from '../bs'
 import type { ClientRecord, MembershipTier } from '../../data/clients'
+import type { GateContext } from '../fieldGating'
+import { canViewMoneyField, canViewPII } from '../fieldGating'
 export * from '../../data/clients'
 export { clientGlance, clientDetailGroups } from '../../data/clientIntel'
 export { STACK_NOTE } from '../../data/membership'
@@ -569,6 +571,47 @@ export interface ClientProfile {
  */
 const CLIENT_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+export interface ClientPreviewRecord {
+  id: string
+  code: string
+  name: string
+  membership: MembershipTier | null
+  blocked: boolean
+  sinceAd: string | null
+  contact?: { email: string | null; phone: string }
+  outstandingPaisa?: Paisa
+  depositHeldPaisa?: Paisa
+}
+
+/** The preview asks the directory view only for fields this role may receive.
+ * A money-blind or PII-limited request never selects those columns. */
+export async function getClientPreviewRecord(ref: string, ctx: GateContext): Promise<ClientPreviewRecord | null> {
+  const money = canViewMoneyField(ctx, 'client-balance')
+  const pii = canViewPII(ctx)
+  const columns = 'id, client_code, name, membership_level, is_blocked, client_since'
+    + (pii ? ', email, phone' : '')
+    + (money ? ', outstanding_amount, deposit_held_amount' : '')
+  const column = CLIENT_UUID_RE.test(ref) ? 'id' : 'client_code'
+  const { data, error } = await supabase.from('client_directory_v').select(columns).eq(column, ref).maybeSingle()
+  if (error) throw new Error(`getClientPreviewRecord failed: ${error.message}`)
+  if (!data) return null
+  const row = data as unknown as Pick<DirectoryRow, 'id' | 'client_code' | 'name' | 'membership_level' | 'is_blocked' | 'client_since'>
+    & Partial<Pick<DirectoryRow, 'email' | 'phone' | 'outstanding_amount' | 'deposit_held_amount'>>
+  const outstanding = money ? toPaisa(row.outstanding_amount ?? null) : null
+  const deposit = money ? toPaisa(row.deposit_held_amount ?? null) : null
+  if (money && (outstanding === null || deposit === null)) throw new Error('Client balances unavailable')
+  return {
+    id: row.id,
+    code: row.client_code,
+    name: row.name,
+    membership: row.membership_level,
+    blocked: row.is_blocked === true,
+    sinceAd: row.client_since,
+    ...(pii ? { contact: { email: row.email ?? null, phone: row.phone ?? '' } } : {}),
+    ...(money && outstanding !== null && deposit !== null ? { outstandingPaisa: outstanding, depositHeldPaisa: deposit } : {}),
+  }
+}
+
 export async function getClientRecord(ref: string): Promise<ClientProfile | null> {
   const column = CLIENT_UUID_RE.test(ref) ? 'id' : 'client_code'
 
@@ -902,4 +945,3 @@ export type {
   DuplicateMatchReason,
   DuplicateGroup,
 } from '../../data/clients'
-

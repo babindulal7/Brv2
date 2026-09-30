@@ -12,6 +12,7 @@ import { ErrorBanner, LoadingSkeleton } from '../../components/ui/StateViews'
 import { Badge } from '../../components/ui/Badge'
 import { Modal } from '../../components/ui/Modal'
 import { Input } from '../../components/ui/Input'
+import { Select } from '../../components/ui/Select'
 import { PageActions } from '../../components/ui/PageActions'
 import { OverflowMenu, type OverflowMenuItem } from '../../components/ui/OverflowMenu'
 import { getRentalPrimaryAction } from '../../lib/rentalActions'
@@ -43,7 +44,10 @@ import { useToast } from '../../components/ui/Toast'
 import { formatMoney, grouped, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { formatAdDateTime, toBs, formatBs } from '../../lib/bs'
+import { parseBookingNoSearch } from '../../lib/format'
 import { displayProjectType } from '../../lib/projectTypes'
+import { PROJECT_TYPES, isProjectType, validateProjectType } from '../../lib/projectTypes'
+import { updateBookingProject } from '../../actions/rentals/updateBookingProject'
 import { ExtendRentalModal } from './modals/ExtendRentalModal'
 import { AssignCrewModal } from './modals/AssignCrewModal'
 import { BookingCrewList } from './BookingCrewList'
@@ -177,6 +181,110 @@ function subRentedRowStyle(line: { lineType?: string | undefined }) {
  */
 function actionCtx(user: { id: string; role: ActionContext['role'] } | null | undefined): ActionContext | undefined {
   return user ? { userId: user.id, role: user.role } : undefined
+}
+
+/**
+ * Focused project-type editor for Block 1.
+ *
+ * BookingDetail's general Edit stays disabled (no general booking-update
+ * action exists) — this writes ONLY `project_type`/`project_type_other`
+ * through `updateBookingProject`, whose capability mirrors `bookings_update`.
+ * Offered to Coordinator+; floor roles see the read-only SummaryRows line
+ * above it (spec §24: view, never edit).
+ *
+ * Rollback (§42): the screen renders `current`, never the draft. A failed
+ * save throws, the error renders inline, and the old value stays — the UI
+ * can never show a value the database did not save.
+ */
+function ProjectTypeEditor({
+  bookingId,
+  currentType,
+  currentOther,
+  userId,
+  role,
+  onSaved,
+}: {
+  bookingId: string
+  currentType: string | null
+  currentOther: string | null
+  userId: string
+  role: ActionContext['role']
+  onSaved: (projectType: string | null, projectTypeOther: string | null) => void
+}) {
+  const [draft, setDraft] = useState(currentType ?? '')
+  const [draftOther, setDraftOther] = useState(currentOther ?? '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const dirty =
+    (draft.trim() !== '' ? draft : null) !== currentType ||
+    (draft === 'Other' && draftOther.trim() !== '' ? draftOther.trim() : null) !== (currentOther ?? null)
+  const validation = validateProjectType(draft.trim() !== '' ? draft : null, draftOther)
+
+  async function save() {
+    if (saving) return
+    if (!validation.valid) {
+      setError(validation.message ?? 'Select a project type from the list.')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const out = await updateBookingProject(
+        {
+          id: bookingId,
+          projectType: draft.trim() !== '' ? draft : null,
+          projectTypeOther: draft === 'Other' && draftOther.trim() !== '' ? draftOther.trim() : null,
+        },
+        { userId, role },
+      )
+      onSaved(out.projectType, out.projectTypeOther)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not update project type. Your previous value has been restored.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 'var(--sp-sm)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8 }}>
+        <Select
+          aria-label="Project type"
+          value={isProjectType(draft) ? draft : ''}
+          placeholder="Select project type"
+          options={[
+            { value: '', label: 'None / Unset' },
+            ...PROJECT_TYPES.map((t) => ({ value: t, label: t })),
+          ]}
+          onChange={(e) => {
+            const next = e.target.value
+            setDraft(next)
+            if (next !== 'Other') setDraftOther('')
+            setError(null)
+          }}
+        />
+        {draft === 'Other' && (
+          <Input
+            aria-label="Specify project type"
+            value={draftOther}
+            onChange={(e) => setDraftOther(e.target.value)}
+            placeholder="e.g. Live Theatre Production"
+          />
+        )}
+      </div>
+      {error && (
+        <div role="alert" style={{ fontSize: 'var(--t-meta)', color: 'var(--danger-text)', lineHeight: 1.4 }}>
+          {error}
+        </div>
+      )}
+      <div>
+        <Button type="button" disabled={!dirty || saving || !validation.valid} onClick={() => void save()}>
+          {saving ? 'Saving…' : 'Save project type'}
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 /** Off-screen but in the accessibility tree — no global `.sr-only` exists in this build. */
@@ -896,9 +1004,13 @@ export default function BookingDetail() {
    * ListFilters) so a role change re-keys the fetch instead of being trapped
    * in a stale closure.
    */
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
   const headFilters = useMemo<BookingListOptions>(
-    () => ({ chips: { booking_no: [id] }, withDeposit: canBookingMoney }),
-    [id, canBookingMoney],
+    () => ({
+      chips: isUuid ? { id: [id] } : { booking_no: Array.from(new Set([id, parseBookingNoSearch(id)])) },
+      withDeposit: canBookingMoney,
+    }),
+    [id, isUuid, canBookingMoney],
   )
   const head = useList<BookingListRow>(listBookings, headFilters, { baseline: headFilters })
   const refetchHead = head.refetch
@@ -2222,6 +2334,26 @@ export default function BookingDetail() {
                   <Button disabled>Edit</Button>
                 </Unavailable>
               </div>
+              {/* Focused project-type edit (0144) — the one header field with a
+                  real write path (`updateBookingProject`). Coordinator+ only;
+                  floor roles keep the read-only line above (spec §24). */}
+              {(() => {
+                const editorUser =
+                  user && (user.role === 'Owner' || user.role === 'Admin' || user.role === 'Manager' || user.role === 'Coordinator')
+                    ? user
+                    : null
+                return editorUser ? (
+                  <ProjectTypeEditor
+                    key={`${booking.id}·${booking.projectType ?? ''}·${booking.projectTypeOther ?? ''}`}
+                    bookingId={booking.id}
+                    currentType={booking.projectType}
+                    currentOther={booking.projectTypeOther}
+                    userId={editorUser.id}
+                    role={editorUser.role}
+                    onSaved={() => refreshBookingData()}
+                  />
+                ) : null
+              })()}
               {/* BD-08 — inline and persistent, in the block this failure is
                   ABOUT (§12: errors inline, toasts for successes only). Without
                   it the only trace of a failed client read was a greyed row

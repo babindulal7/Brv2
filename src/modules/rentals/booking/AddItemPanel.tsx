@@ -185,6 +185,12 @@ export interface AddItemPanelProps {
   minQueryChars?: number
   disabled?: boolean
   /**
+   * Called when a barcode/scan code is matched and should add the item.
+   * Receives the scanned code, the booking window, and days.
+   * Should return the scanned equipment ID if found and added, or null.
+   */
+  onScan?: (code: string, window: BookingWindow, days: number) => Promise<string | null>
+  /**
    * Render the search field **in the section** instead of behind an "Add Item"
    * trigger.
    *
@@ -253,6 +259,7 @@ export function AddItemPanel({
   minQueryChars = 2,
   disabled = false,
   inline = false,
+  onScan,
   includeCrewAndVehicle = false,
   applyBundleSaving = false,
 }: AddItemPanelProps) {
@@ -275,15 +282,42 @@ export function AddItemPanel({
   const [overrideUnit, setOverrideUnit] = useState<EquipmentResult | null>(null)
   const [availability, setAvailability] = useState<AvailabilityLevel | 'any'>('any')
   const [sort, setSort] = useState<SortKey>('recommended')
+
   const [showAllResults, setShowAllResults] = useState(false)
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scanCode, setScanCode] = useState('')
+  const [scanBusy, setScanBusy] = useState(false)
+  const [scanMessage, setScanMessage] = useState<{ error: boolean; text: string } | null>(null)
   const [activeIndex, setActiveIndex] = useState(0)
   const [preview, setPreview] = useState<BundleRecord | null>(null)
 
   const rootRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
+  const scanInputRef = useRef<HTMLInputElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
 
   const existing = useMemo(() => new Set(existingLineIds), [existingLineIds])
+
+  const submitScan = async () => {
+    const code = scanCode.trim()
+    if (!code || !onScan || scanBusy) return
+    setScanBusy(true)
+    setScanMessage(null)
+    try {
+      const addedId = await onScan(code, bookingWindow, days)
+      if (addedId) {
+        setScanCode('')
+        setScanMessage({ error: false, text: 'Item added to this booking.' })
+        scanInputRef.current?.focus()
+      } else {
+        setScanMessage({ error: true, text: 'Could not add this code. Check that it matches a rentable item, is available for these dates, and is not already on this booking.' })
+      }
+    } catch (error: unknown) {
+      setScanMessage({ error: true, text: error instanceof Error ? error.message : 'Could not look up this code. Try again.' })
+    } finally {
+      setScanBusy(false)
+    }
+  }
 
   const outcome = useMemo(
     () =>
@@ -523,9 +557,9 @@ export function AddItemPanel({
               style={{
                 ...inputStyle,
                 width: '100%',
-                height: 38,
+                minHeight: 44,
                 paddingLeft: 34,
-                paddingRight: query ? 32 : 12,
+                paddingRight: query ? 40 : 12,
                 borderRadius: 'var(--r-btn)',
               }}
             />
@@ -574,6 +608,25 @@ export function AddItemPanel({
             )}
           </div>
 
+          {onScan && (
+            <button
+              type="button"
+              className="press"
+              aria-label="Scan barcode or serial"
+              aria-expanded={scannerOpen}
+              onClick={() => {
+                setScannerOpen((value) => !value)
+                setOpen(false)
+                setScanMessage(null)
+                if (!scannerOpen) globalThis.requestAnimationFrame(() => scanInputRef.current?.focus())
+              }}
+              style={{ minHeight: 44, padding: '0 10px', display: 'inline-flex', gap: 5, alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: scannerOpen ? 'var(--st-primary-bg)' : 'var(--btn-secondary-bg)', color: 'var(--text)', cursor: 'pointer' }}
+            >
+              <Icon name="barcode" size={18} />
+              <span>Scan</span>
+            </button>
+          )}
+
           <button
             type="button"
             className="press"
@@ -594,7 +647,7 @@ export function AddItemPanel({
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
-              height: 38,
+              minHeight: 44,
               padding: '0 14px',
               borderRadius: 'var(--r-btn)',
               background: open ? 'var(--st-primary-bg)' : 'var(--btn-secondary-bg)',
@@ -612,6 +665,23 @@ export function AddItemPanel({
             <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
           </button>
         </div>
+      )}
+
+      {inline && scannerOpen && onScan && (
+        <form onSubmit={(event) => { event.preventDefault(); void submitScan() }} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+          <input
+            ref={scanInputRef}
+            aria-label="Barcode, serial, or asset tag"
+            value={scanCode}
+            onChange={(event) => { setScanCode(event.target.value); setScanMessage(null) }}
+            placeholder="Scan or enter barcode, serial, or asset tag"
+            style={{ ...inputStyle, minWidth: 220, flex: '1 1 220px', minHeight: 44 }}
+          />
+          <button type="submit" disabled={!scanCode.trim() || scanBusy} style={{ minHeight: 44, padding: '0 16px', borderRadius: 'var(--r-btn)', border: '1px solid var(--primary)', background: 'var(--btn-primary-bg)', color: 'var(--btn-primary-fg)', cursor: 'pointer' }}>
+            {scanBusy ? 'Checking…' : 'Add scanned item'}
+          </button>
+          {scanMessage && <p role={scanMessage.error ? 'alert' : 'status'} style={{ width: '100%', margin: 0, color: scanMessage.error ? 'var(--st-danger-fg)' : 'var(--st-success-fg)', fontSize: 'var(--t-meta)' }}>{scanMessage.text}</p>}
+        </form>
       )}
 
       {open && (

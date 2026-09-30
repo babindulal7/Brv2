@@ -1043,6 +1043,7 @@ export function inventoryGlance(row: InventoryListRow, gctx: GateContext): Intel
     subtitle: row.category ?? '—',
     badges: breakdown.slice(0, 2).map((b) => ({ label: `${b.count} ${b.status}` })),
     lines,
+    primaryAction: { label: 'Open equipment', to: `/inventory/${encodeURIComponent(row.assetCode)}` },
   }
 }
 

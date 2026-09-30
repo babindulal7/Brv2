@@ -43,6 +43,7 @@ const db = vi.hoisted(() => {
     tables: string[]
     /** The literal string handed to `.select()` — the thing a dropped column disappears from. */
     columns: string
+    selects: string[]
     /** `.select()`'s second argument: `{ count: 'exact' }` or `undefined`. */
     selectOptions: unknown
     /** Every filter call, in order, exactly as `applyListFilters` made it. */
@@ -50,29 +51,37 @@ const db = vi.hoisted(() => {
     /** What the awaited query resolves to. */
     rows: unknown[]
     count: number | null
-    error: { message: string } | null
+    error: { message: string; code?: string } | null
+    missingProjectType: boolean
+    queryCallsStart: number
   }
 
   const state: State = {
     table: '',
     tables: [],
     columns: '',
+    selects: [],
     selectOptions: undefined,
     calls: [],
     rows: [],
     count: null,
     error: null,
+    missingProjectType: false,
+    queryCallsStart: 0,
   }
 
   function reset(): void {
     state.table = ''
     state.tables = []
     state.columns = ''
+    state.selects = []
     state.selectOptions = undefined
     state.calls = []
     state.rows = []
     state.count = null
     state.error = null
+    state.missingProjectType = false
+    state.queryCallsStart = 0
   }
 
   /**
@@ -83,6 +92,8 @@ const db = vi.hoisted(() => {
   const builder = {
     select(columns: string, options?: unknown) {
       state.columns = columns
+      state.selects.push(columns)
+      state.queryCallsStart = state.calls.length
       state.selectOptions = options
       return builder
     },
@@ -121,11 +132,19 @@ const db = vi.hoisted(() => {
     then(
       onFulfilled: (value: {
         data: unknown[] | null
-        error: { message: string } | null
+        error: { message: string; code?: string } | null
         count: number | null
       }) => unknown,
     ): void {
-      onFulfilled({ data: state.rows, error: state.error, count: state.count })
+      const searchesProjectType = state.calls.slice(state.queryCallsStart).some(
+        ([method, value]) => method === 'or' && typeof value === 'string' && value.includes('project_type.'),
+      )
+      const missingColumn = state.missingProjectType && (state.columns.includes('project_type') || searchesProjectType)
+      onFulfilled({
+        data: missingColumn ? null : state.rows,
+        error: missingColumn ? { code: '42703', message: 'column bookings.project_type does not exist' } : state.error,
+        count: state.count,
+      })
     },
   }
 
@@ -360,6 +379,47 @@ describe('toRow — raw DB row → BookingListRow', () => {
   it('surfaces a query error rather than returning an empty list', async () => {
     db.state.error = { message: 'permission denied for column deposit_required' }
     await expect(listBookings()).rejects.toThrow(/listBookings failed/)
+  })
+
+  it('retries a dashboard booking read without 0144 columns when the connected schema lacks them', async () => {
+    db.state.missingProjectType = true
+    db.state.rows = [{ ...RAW, project_type: undefined, project_type_other: undefined }]
+    db.state.count = 1
+
+    const result = await listBookings({ ...todaysOutgoing('2026-08-12'), withCount: true })
+
+    expect(db.state.selects).toHaveLength(2)
+    expect(db.state.selects[0]).toContain('project_type')
+    expect(db.state.selects[1]).not.toContain('project_type')
+    expect(db.state.calls.filter(([method]) => method === 'gte')).toHaveLength(2)
+    expect(result.total).toBe(1)
+    expect(result.rows[0]).toMatchObject({ bookingNo: 'B-715', projectType: null, projectTypeOther: null, itemCount: 7 })
+  })
+
+  it('does not drop a project type filter when the connected schema lacks that column', async () => {
+    db.state.missingProjectType = true
+    await expect(listBookings({ chips: { project_type: ['Documentary'] } })).rejects.toThrow(
+      /column bookings\.project_type does not exist/,
+    )
+    expect(db.state.selects).toHaveLength(1)
+  })
+
+  it('does not retry unrelated database errors', async () => {
+    db.state.error = { code: '42501', message: 'permission denied for bookings' }
+    await expect(listBookings()).rejects.toThrow(/permission denied for bookings/)
+    expect(db.state.selects).toHaveLength(1)
+  })
+
+  it('retries count-only searches against pre-0144 searchable columns', async () => {
+    db.state.missingProjectType = true
+    db.state.count = 3
+    const result = await listBookings({ headOnly: true, search: 'FX3' })
+    expect(result).toEqual({ rows: [], total: 3 })
+    expect(db.state.selects).toEqual(['id', 'id'])
+    expect(db.state.calls.filter(([method]) => method === 'or')).toEqual([
+      ['or', 'booking_no.ilike.*FX3*,project.ilike.*FX3*,project_type.ilike.*FX3*,project_type_other.ilike.*FX3*'],
+      ['or', 'booking_no.ilike.*FX3*,project.ilike.*FX3*'],
+    ])
   })
 })
 

@@ -11,6 +11,7 @@ import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { RentalIntelFromFloor } from '../../components/intel/RentalIntelFromFloor'
 import { canViewMoney } from '../../lib/rbac'
 import { captureError } from '../../lib/monitoring'
 import { STATUS } from '../../lib/status'
@@ -1372,9 +1373,11 @@ export default function HandoverWorkspace({
                     )}
                   </div>
                   <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                    <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
-                      {floor.bookingNo}
-                    </Link>
+                    <RentalIntelFromFloor floor={floor} context="handover" role={user?.role ?? 'Client'}>
+                      <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
+                        {floor.bookingNo}
+                      </Link>
+                    </RentalIntelFromFloor>
                     {floor.project ? ` · ${floor.project}` : ''}
                     {floor.clientName ? ` · ${floor.clientName}` : ''}
                   </p>

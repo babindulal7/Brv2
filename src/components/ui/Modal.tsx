@@ -62,6 +62,7 @@ const TRANSITION_MS = 200
 export interface ModalProps {
   isOpen: boolean
   onClose: () => void
+  onEscape?: () => void
   title?: string
   subtitle?: string
   children: ReactNode
@@ -85,6 +86,7 @@ const SIZE_MAX_WIDTH: Record<NonNullable<ModalProps['size']>, number> = {
 export function Modal({
   isOpen,
   onClose,
+  onEscape,
   title,
   subtitle,
   children,
@@ -105,9 +107,13 @@ export function Modal({
       setShouldRender(true)
       return
     }
+    // Closed modals that never rendered need no exit timer. Pages can mount
+    // many dormant dialogs; scheduling one for each leaks work into test and
+    // page teardown, and can update a root after it has gone away.
+    if (!shouldRender) return
     const timeout = window.setTimeout(() => setShouldRender(false), TRANSITION_MS)
     return () => window.clearTimeout(timeout)
-  }, [isOpen])
+  }, [isOpen, shouldRender])
 
   const stackId = useRef<symbol | null>(null)
   if (stackId.current === null) stackId.current = Symbol('modal')
@@ -121,7 +127,7 @@ export function Modal({
     const handleKeyDown = (e: KeyboardEvent) => {
       // Only the top of the stack answers Escape — see module comment above.
       if (e.key === 'Escape' && isOpen && modalStack[modalStack.length - 1] === id) {
-        onClose()
+        ;(onEscape ?? onClose)()
       }
     }
     if (isOpen) {
@@ -132,7 +138,7 @@ export function Modal({
       unlockScroll(id)
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, onEscape])
 
   /*
    * Focus contract (WCAG 2.4.3 / 2.1.2) — the piece FilterDrawer and MoreSheet

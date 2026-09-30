@@ -69,16 +69,15 @@ const JOB_TITLES: Record<JobName, string> = {
 
 interface ShellContextValue {
   registerActions: (actions: WorkspaceActions) => void
+  inShell: true
 }
 
 const ShellContext = createContext<ShellContextValue | null>(null)
+const OUTSIDE_SHELL = { registerActions: () => {}, inShell: false as const }
 
 function useOperationShell() {
   const ctx = useContext(ShellContext)
-  if (!ctx) {
-    return { registerActions: () => {} }
-  }
-  return ctx
+  return ctx ?? OUTSIDE_SHELL
 }
 
 export function RentalOperationShell({
@@ -124,7 +123,7 @@ export function RentalOperationShell({
   const currentJobIndex = JOB_ORDER.indexOf(job)
 
   const ctxValue = useMemo(
-    () => ({ registerActions: handleRegisterActions }),
+    () => ({ registerActions: handleRegisterActions, inShell: true as const }),
     [handleRegisterActions],
   )
 
@@ -322,7 +321,7 @@ export function RentalOperationShell({
           <Button
             variant="primary"
             onClick={actions?.complete ?? primary.onClick}
-            disabled={primary.disabled || primary.loading || !actions?.canComplete || actions?.dispatching}
+            disabled={primary.disabled || primary.loading || (actions !== null ? !actions.canComplete || actions.dispatching : false)}
             icon={primary.icon ?? 'check'}
             style={{ fontWeight: 600, minWidth: 160 }}
           >
@@ -344,8 +343,8 @@ export function RentalOperationShell({
           primaryAction={{
             label: actions?.dispatching ? 'Recording…' : primary.label,
             onClick: actions?.complete ?? primary.onClick,
-            disabled: primary.disabled || !actions?.canComplete || actions?.dispatching,
-            loading: primary.loading || actions?.dispatching,
+            disabled: primary.disabled || (actions !== null ? !actions.canComplete || actions.dispatching : false),
+            loading: primary.loading || (actions?.dispatching ?? false),
             icon: primary.icon,
           }}
         />

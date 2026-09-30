@@ -133,6 +133,9 @@ describe('NewRental simplification (Part A - D)', () => {
     expect(container.textContent).not.toContain('Quick Actions')
     expect(container.textContent).not.toContain('Activity Timeline')
     expect(container.textContent).not.toContain('Review · ')
+    expect(container.querySelector('[aria-label="Booking steps"]')).toBeNull()
+    expect(container.textContent).not.toContain('Continue to Equipment')
+    expect(container.textContent).not.toContain('Continue to Pricing')
 
     const crewSection = container.querySelector('#section-3')
     expect(crewSection).not.toBeNull()

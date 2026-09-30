@@ -11,7 +11,6 @@ import { BAR_BOX } from '../../components/shell/BottomBar'
 import './rentals.css'
 import './new-rental-flow.css'
 import { EmptyState, LoadingSkeleton } from '../../components/ui/StateViews'
-import { ScannerInput } from '../../components/ui/ScannerInput'
 import { useToast } from '../../components/ui/Toast'
 import { useViewport } from '../../lib/device'
 import { useNetwork } from '../../lib/network'
@@ -1545,25 +1544,11 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * pick the wrong band and never correct it. The effect below is what makes
    * a band change actually reach the accordion.
    */
-  const [open, setOpen] = useState<boolean[]>([true, true, true, false, false, true])
+  const [open, setOpen] = useState<boolean[]>([true, true, true, false, false, false])
   const toggle = (i: number) =>
     setOpen((p) => p.map((v, j) => (j === i ? !v : v)))
 
-  // Section shortcuts still use these anchors; the booking itself is one page.
-  const [currentStep, setCurrentStep] = useState<number>(1)
   const workflowRef = useRef<HTMLDivElement>(null)
-  const previousStep = useRef(currentStep)
-  useEffect(() => {
-    const indices = currentStep === 1 ? [0, 1] : currentStep === 2 ? [2] : currentStep === 3 ? [5] : []
-    if (indices.length) {
-      setOpen((previous) => previous.map((value, index) => indices.includes(index) || value))
-    }
-    if (previousStep.current !== currentStep) {
-      const targetId = currentStep === 1 ? 'section-0' : currentStep === 2 ? 'section-2' : currentStep === 3 ? 'section-5' : 'rail-booking-summary'
-      document.getElementById(targetId)?.scrollIntoView({ block: 'start', behavior: 'smooth' })
-      previousStep.current = currentStep
-    }
-  }, [currentStep])
 
 
   // Return Pickup Logistics (§3.3)
@@ -1941,8 +1926,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   const [customLineRate, setCustomLineRate] = useState('')
   const [customLineQty, setCustomLineQty] = useState(1)
   const [customLineError, setCustomLineError] = useState<string | null>(null)
-  const [scannerOpen, setScannerOpen] = useState(false)
-  const [scanNotice, setScanNotice] = useState<{ tone: 'success' | 'warning' | 'danger'; text: string } | null>(null)
   /* 0, not the worked example's 7 — a discount is something someone grants. */
   const [discountPct, setDiscountPct] = useState(() => quoteBridge?.discountPct ?? 0)
   /* `discountReason` / `approver` / `discountPopoverOpen` left with the
@@ -2563,14 +2546,12 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
   /** Resolve a scanned physical-unit code back to its canonical product before
    * adding it. The booking line remains product-based; the normal creation
    * planner remains the one source of serial assignment. */
-  const addScannedEquipment = useCallback(async (rawCode: string) => {
+  const addScannedEquipment = useCallback(async (rawCode: string): Promise<string | null> => {
     const code = rawCode.trim()
-    if (!code) return
+    if (!code) return null
     if (!liveEquipment) {
-      setScanNotice({ tone: 'warning', text: 'The live catalogue is still loading. Try the scan again in a moment.' })
-      return
+      return null
     }
-    setScanNotice(null)
     type ScannedUnit = { product?: { id?: string | null } | null }
     let unit: ScannedUnit | null = null
     try {
@@ -2585,26 +2566,22 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         unit = data as ScannedUnit
       }
     } catch (error: unknown) {
-      setScanNotice({ tone: 'danger', text: `We could not look up that code: ${error instanceof Error ? error.message : String(error)}` })
-      return
+      return null
     }
 
     const productId = unit?.product?.id ?? null
     const match = productId ? liveEquipment.find((item) => item.id === productId) : undefined
     if (!match) {
-      setScanNotice({ tone: 'warning', text: 'No rentable catalogue product matches that barcode, serial, or asset tag.' })
-      return
+      return null
     }
-    if (lines.some((line) => line.id === match.id)) {
-      setScanNotice({ tone: 'warning', text: `${match.name} is already on this booking.` })
-      return
+    if (lines.some((line) => line.id === match!.id)) {
+      return null
     }
-    if (match.availability.level === 'unavailable') {
-      setScanNotice({ tone: 'danger', text: `${match.name} is unavailable for the selected rental period. Choose different dates or another item.` })
-      return
+    if (match!.availability.level === 'unavailable') {
+      return null
     }
-    addDrafts([equipmentLineDraft(match, days || 1)], { kind: match.kind, id: match.id, name: match.name })
-    setScanNotice({ tone: 'success', text: `${match.name} was added. Availability remains tied to the selected rental period.` })
+    addDrafts([equipmentLineDraft(match!, days || 1)], { kind: match!.kind, id: match!.id, name: match!.name })
+    return match!.id
   }, [liveEquipment, lines, addDrafts, days])
 
   const addCrew = (crewId: string) => {
@@ -3314,6 +3291,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     draftBookingNo,
     draftHasUnsavedChanges,
     draftData,
+    kind,
+    kindOther,
   ])
 
   /**
@@ -3392,20 +3371,13 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
   const health = useMemo(() => (client ? clientHealth(client) : null), [client])
 
-  // Power-user keyboard shortcuts: ⌘S/Ctrl+S (Save Draft), ⌘B/Ctrl+B (Toggle Scanner), ⌘Enter/Ctrl+Enter (Confirm Booking), Alt+1..4 (Jump Workflow Steps)
+  // Power-user keyboard shortcuts: save, confirm, and direct section access.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // ⌘S or Ctrl+S: Save Draft
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
         void saveDraft()
-        return
-      }
-
-      // ⌘B or Ctrl+B: Toggle Scanner
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
-        e.preventDefault()
-        setScannerOpen((open) => !open)
         return
       }
 
@@ -3418,31 +3390,18 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         return
       }
 
-      // Alt+1 to Alt+4: Navigate Steps
+      // Alt+1 to Alt+4: Jump to the corresponding section or summary.
       if (e.altKey && !e.ctrlKey && !e.metaKey && e.key >= '1' && e.key <= '4') {
         e.preventDefault()
-        const stepNum = Number(e.key)
-        setCurrentStep(stepNum)
-        setOpen((prev) => {
-          const next = [...prev]
-          if (stepNum === 1) {
-            next[0] = true
-            next[1] = true
-          } else if (stepNum === 2) {
-            next[2] = true
-          } else if (stepNum === 3) {
-            next[5] = true
-          } else if (stepNum === 4) {
-            return next.map(() => true)
-          }
-          return next
-        })
+        const target = ({ '1': 'section-0', '2': 'section-2', '3': 'section-5', '4': 'rail-booking-summary' } as Record<string, string>)[e.key]
+        if (target === 'section-5') setOpen((prev) => prev.map((value, index) => index === 5 || value))
+        document.getElementById(target ?? '')?.scrollIntoView({ block: 'start', behavior: 'smooth' })
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [confirmBlocked, saveState, saveDraft, confirmBooking, setCurrentStep, setOpen])
+  }, [confirmBlocked, saveState, saveDraft, confirmBooking])
 
 
   const bundleCount = useMemo(() => new Set(lines.map((l) => l.bundleCode).filter(Boolean)).size, [lines])
@@ -3460,7 +3419,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     const sectionIndex = SECTIONS.findIndex((_, i) => `section-${i}` === targetId)
     if (sectionIndex >= 0) {
       setOpen((prev) => prev.map((v, j) => (j === sectionIndex ? true : v)))
-      setCurrentStep(sectionIndex <= 1 || sectionIndex === 3 || sectionIndex === 4 ? 1 : sectionIndex === 2 ? 2 : 3)
     }
     globalThis.requestAnimationFrame(() => {
       const section = document.getElementById(targetId)
@@ -3841,36 +3799,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <MoneyRow label="Equipment" value={formatMoney(pricing.equipmentSubtotalPaisa)} />
-            {pricing.bundleSubtotalPaisa > 0 && <MoneyRow label="Bundles" value={formatMoney(pricing.bundleSubtotalPaisa)} />}
-            {pricing.servicesSubtotalPaisa > 0 && <MoneyRow label="Services & custom lines" value={formatMoney(pricing.servicesSubtotalPaisa)} />}
-            {canCrewMoney && pricing.crewSubtotalPaisa > 0 && <MoneyRow label="Crew" value={formatMoney(pricing.crewSubtotalPaisa)} />}
-            <MoneyRow label="Delivery" value={formatMoney(pricing.deliverySubtotalPaisa)} />
-          </div>
-
-          <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <MoneyRow label="Subtotal" value={formatMoney(pricing.grossSubtotalPaisa)} />
-            <MoneyRow
-              label={
-                pricing.discounts.appliedPercent > 0
-                  ? `Discount (${pricing.discounts.appliedPercent}%${pricing.discounts.capped ? ' capped' : ''})`
-                  : 'Discount'
-              }
-              value={pricing.discounts.discountPaisa > 0 ? `− ${formatMoney(pricing.discounts.discountPaisa)}` : '—'}
-              {...(pricing.discounts.discountPaisa > 0 ? { tone: 'var(--danger-text)' } : {})}
-            />
-            <MoneyRow
-              label={vatOn ? `VAT (${pricing.vatRatePercent}%)` : 'VAT'}
-              value={vatOn ? formatMoney(pricing.vatPaisa) : '—'}
-              {...(!vatOn ? { tone: 'var(--muted)' } : {})}
-            />
-          </div>
-
-          <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
-            <MoneyRow label="Rental Total" value={formatMoney(pricing.rentalTotalPaisa)} big />
-          </div>
-
           {/* Security Deposit (separate liability guarantee) and Advance Required */}
           <div
             style={{
@@ -3892,7 +3820,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             <MoneyRow
               label="Advance Required"
               value={formatMoney(pricing.advanceRequiredPaisa)}
-              tone="var(--st-primary-fg)"
+              tone="var(--text)"
               strong
             />
           </div>
@@ -4071,7 +3999,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           </div>
           <Button
             variant="outline"
-            onClick={() => setCurrentStep(2)}
+            onClick={() => jumpToSection('section-2')}
             style={{
               whiteSpace: 'nowrap',
               borderColor: 'currentColor',
@@ -4085,76 +4013,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           </Button>
         </div>
       )}
-
-      {/* 4-Step Guided Wizard Stepper */}
-      <nav
-        aria-label="Booking steps"
-        className="new-rental-stepper-container"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--sp-sm)',
-          marginBottom: 'var(--sp-md)',
-          overflowX: 'auto',
-          paddingBottom: 4,
-        }}
-      >
-        {[
-          { step: 1, label: 'Client & Dates', id: 'section-0' },
-          { step: 2, label: 'Equipment & Bundles', id: 'section-2' },
-          { step: 3, label: 'Price & Payment', id: 'section-5' },
-          { step: 4, label: 'Review & Confirm', id: 'rail-booking-summary' },
-        ].map((s) => {
-          const isActive = currentStep === s.step;
-          return (
-            <button
-              key={s.step}
-              type="button"
-              aria-current={isActive ? 'step' : undefined}
-              onClick={() => {
-                setCurrentStep(s.step);
-                if (s.step === 1) setOpen((p) => p.map((v, i) => (i === 0 || i === 1 ? true : v)));
-                if (s.step === 2) setOpen((p) => p.map((v, i) => (i === 2 ? true : v)));
-                if (s.step === 3) setOpen((p) => p.map((v, i) => (i === 5 ? true : v)));
-                if (s.step === 4) setOpen((p) => p.map(() => true));
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                minHeight: 36,
-                padding: '6px 12px',
-                borderRadius: 'var(--r-badge)',
-                border: isActive ? '1px solid var(--primary)' : '1px solid var(--border)',
-                background: isActive ? 'var(--primary-subtle, rgba(56, 106, 247, 0.1))' : 'transparent',
-                color: isActive ? 'var(--primary)' : 'var(--text2)',
-                fontWeight: isActive ? 700 : 500,
-                fontSize: 'var(--t-meta)',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <span
-                style={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: '50%',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: isActive ? 'var(--primary)' : 'var(--border)',
-                  color: isActive ? '#fff' : 'var(--text2)',
-                  fontSize: 11,
-                  fontWeight: 700,
-                }}
-              >
-                {s.step}
-              </span>
-              <span>{s.label}</span>
-            </button>
-          );
-        })}
-      </nav>
 
       <div
         className="new-rental-workspace"
@@ -4434,7 +4292,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               }}
               minReturnDate={pickup}
               priceHints={pricingHints}
-              disabled={currentStep > 0}
             />
 
             <div className="new-rental-period-fields" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 11, alignItems: 'start' }}>
@@ -4459,20 +4316,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           </Section>
 
 
-          {!isPhone && (
-            <div className="new-rental-stage-next" style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 8 }}>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setCurrentStep(2)
-                  setOpen((p) => p.map((v, i) => (i === 2 ? true : v)))
-                }}
-                style={{ minHeight: 44, padding: '0 24px', fontWeight: 600 }}
-              >
-                Continue to Equipment →
-              </Button>
-            </div>
-          )}
         </div>
 
         <div className="new-rental-stage new-rental-stage--equipment">
@@ -4561,42 +4404,8 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 onAdd={addDrafts}
                 showPrices={canBookingMoney}
                 inputStyle={inputStyle}
+                onScan={addScannedEquipment}
               />
-            </div>
-
-            <div style={{ margin: '0 0 12px', paddingBottom: 12, borderBottom: '1px solid var(--border)' }}>
-              <button
-                type="button"
-                className="press"
-                onClick={() => setScannerOpen((open) => !open)}
-                aria-expanded={scannerOpen}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 7, minHeight: 34, padding: '0 10px', borderRadius: 'var(--r-btn)', border: '1px solid var(--btn-secondary-border)', background: 'var(--btn-secondary-bg)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 'var(--t-meta)', fontWeight: 600, cursor: 'pointer' }}
-              >
-                <Icon name="barcode" size={15} />
-                <span>Scan barcode or serial</span>
-                <span className="new-rental-kbd">⌘B</span>
-                <Icon name={scannerOpen ? 'chevron_up' : 'chevron_down'} size={14} />
-              </button>
-              {scannerOpen && (
-                <div style={{ marginTop: 9, maxWidth: 620 }}>
-                  <ScannerInput
-                    autoFocus
-                    placeholder="Scan or enter barcode, serial, or asset tag…"
-                    onScan={(code) => void addScannedEquipment(code)}
-                  />
-                  <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
-                    The scan finds its canonical product, then checks availability for this rental period before adding it.
-                  </p>
-                </div>
-              )}
-              {scanNotice && (
-                <p
-                  role="status"
-                  style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', lineHeight: 1.45, color: scanNotice.tone === 'danger' ? 'var(--st-danger-fg)' : scanNotice.tone === 'warning' ? 'var(--warn-text)' : 'var(--st-in-fg)' }}
-                >
-                  {scanNotice.text}
-                </p>
-              )}
             </div>
 
             {canBookingMoney && (
@@ -4604,9 +4413,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                   <div>
                     <strong style={{ fontSize: 'var(--t-ui)' }}>Services & custom charges</strong>
-                    <p style={{ margin: '2px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                      Add non-inventory work without claiming stock availability or a serial number.
-                    </p>
                   </div>
                   <Button icon="plus" variant="secondary" onClick={() => setCustomLineOpen((open) => !open)}>
                     {customLineOpen ? 'Close custom line' : 'Add custom line'}
@@ -4647,7 +4453,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
                 including the two states that are not answers at all, rather
                 than claiming "all items available for the selected dates" over
                 a check nobody has run. */}
-            {(() => {
+            {lines.length > 0 && (() => {
               const conflicted = conflictSummary.conflicts.length > 0
               const answered = conflictSummary.state === 'ready'
               const tone = conflicted
@@ -4726,8 +4532,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             {lines.length === 0 ? (
               <div className="new-rental-empty-products">
                 <Icon name="box" size={22} />
-                <h3>This booking is empty</h3>
-                <p>Search above to add equipment or a bundle for this rental period.</p>
+                <p>Search above to add equipment or a bundle.</p>
               </div>
             ) : (
             <DataTableShell ariaLabel="Booking equipment and bundles">
@@ -4870,30 +4675,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </div>
           </Section>
 
-          {!isPhone && (
-            <div className="new-rental-stage-next" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setCurrentStep(1)
-                  setOpen((p) => p.map((v, i) => (i === 0 || i === 1 ? true : v)))
-                }}
-                style={{ minHeight: 44 }}
-              >
-                ← Back to Client & Dates
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setCurrentStep(3)
-                  setOpen((p) => p.map((v, i) => (i === 5 ? true : v)))
-                }}
-                style={{ minHeight: 44, padding: '0 24px', fontWeight: 600 }}
-              >
-                Continue to Pricing →
-              </Button>
-            </div>
-          )}
         </div>
 
           <Section
@@ -5108,23 +4889,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           <Section
             id="section-4"
             title={SECTIONS[4]}
-            badge={
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '2px 8px',
-                  borderRadius: 'var(--r-badge)',
-                  background: 'var(--surface)',
-                  color: 'var(--text)',
-                  fontSize: 11,
-                  fontWeight: 600,
-                }}
-              >
-                {deliveryType}
-              </span>
-            }
             open={open[4] ?? false}
             onToggle={() => toggle(4)}
             summary={clientPickup ? 'Client Pickup · Rs 0' : `Babin Delivery · ${canBookingMoney ? formatMoney(transportPaisa) : 'charged'}`}
@@ -5683,30 +5447,6 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
             </Section>
           )}
 
-          {!isPhone && (
-            <div className="new-rental-stage-next" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8 }}>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setCurrentStep(2)
-                  setOpen((p) => p.map((v, i) => (i === 2 ? true : v)))
-                }}
-                style={{ minHeight: 44 }}
-              >
-                ← Back to Equipment
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setCurrentStep(4)
-                  setOpen((p) => p.map(() => true))
-                }}
-                style={{ minHeight: 44, padding: '0 24px', fontWeight: 600 }}
-              >
-                Review Rental →
-              </Button>
-            </div>
-          )}
         </div>
 
           {/* Keep save feedback brief; the inline error above carries failure details. */}

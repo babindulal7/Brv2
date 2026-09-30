@@ -61,13 +61,22 @@ export function generateClientUuid(): string {
  */
 export const NON_MONEY_RETURNING_COLUMNS: Readonly<Record<string, string>> = {
   bookings:
-    'id, client_uuid, booking_no, branch_id, client_id, contact_id, authorized_contact_id, project, pickup_at, return_at, actual_return_at, delivery_type, pickup_location, return_location, quote_expires_at, cancelled_at, cancelled_by, cancellation_reason, closed_at, locked_by, locked_at, version, created_at, created_by, updated_at, updated_by, stage',
+    'id, client_uuid, booking_no, branch_id, client_id, contact_id, authorized_contact_id, project, project_type, project_type_other, pickup_at, return_at, actual_return_at, delivery_type, pickup_location, return_location, quote_expires_at, cancelled_at, cancelled_by, cancellation_reason, closed_at, locked_by, locked_at, version, created_at, created_by, updated_at, updated_by, stage',
   booking_lines:
     'id, client_uuid, booking_id, line_type, parent_line_id, product_id, bundle_id, description, qty, days, is_included, service_basis, supplier_id, line_note, sort_order, voided_at, voided_reason, created_at, created_by',
   products:
     'id, client_uuid, asset_code, name, short_name, category_id, brand, model, manufacturer, description, thumbnail_url, tracking_mode, status, total_quantity, reorder_level, quantity_unit, purchase_date, min_rental_days, rental_enabled, prep_time_minutes, cleaning_time_minutes, inspection_required, packing_required, is_subrental_only, weight_kg, case_capacity, supplier_id, notes_internal, notes_warehouse, notes_rental, is_active, created_at, created_by, updated_at, updated_by',
   product_units:
     'id, client_uuid, product_id, serial_no, asset_tag, barcode, qr_code, status, condition, branch_id, warehouse_id, storage_zone_id, rack, shelf, bin, container_id, purchase_date, warranty_expires_at, insurance_expires_at, running_hours, last_maintenance_at, next_maintenance_at, retired_at, retired_by, retirement_reason, created_at, created_by, updated_at, updated_by',
+}
+
+function stripProjectType(columns?: string): string | undefined {
+  if (!columns) return columns
+  return columns
+    .replace('project_type, project_type_other, ', '')
+    .replace('project_type, ', '')
+    .replace(', project_type_other', '')
+    .replace(', project_type', '')
 }
 
 export interface InsertOptions {
@@ -197,10 +206,28 @@ export async function idempotentInsert<
          would reintroduce the exact SELECT this option exists to avoid, and
          turn a satisfied idempotency guarantee back into a swallowed error. */
       if (!returnRow) return { data: null, error: null }
-      return await supabase.from(table as string)
+      let existing = await supabase.from(table as string)
         .select(returningColumns)
         .eq('client_uuid', finalPayload.client_uuid)
         .single()
+      if (existing.error?.code === '42703' && returningColumns?.includes('project_type')) {
+        existing = await supabase.from(table as string)
+          .select(stripProjectType(returningColumns))
+          .eq('client_uuid', finalPayload.client_uuid)
+          .single()
+      }
+      return existing
+    }
+
+    if (error.code === '42703' && returningColumns?.includes('project_type')) {
+      const stripped = stripProjectType(returningColumns)
+      const retry = await supabase.from(table as string)
+        .select(stripped)
+        .eq('client_uuid', finalPayload.client_uuid)
+        .single()
+      if (!retry.error) {
+        return { data: returnRow ? retry.data : null, error: null }
+      }
     }
     throw new Error(`[DataAccess] Insert failed on ${String(table)}: ${error.message}`)
   }
@@ -285,9 +312,19 @@ export async function safeUpdate<
            `[DataAccess] The ${String(table)} update could not be confirmed (${error.message}) and is not queueable. Treat it as NOT written.`,
          )
        }
-       console.warn(`[DataAccess] Network failure during update. Queuing ${String(table)}.`)
        await enqueueMutation(String(table), 'update', { ...payload, id }, `${actionUuid}:${id}`)
        return { data: { ...payload, id }, error: null }
+    }
+
+    if (error.code === '42703' && returningColumns?.includes('project_type')) {
+      const stripped = stripProjectType(returningColumns)
+      const retry = await supabase.from(table as string)
+        .select(stripped)
+        .eq('id', id)
+        .single()
+      if (!retry.error) {
+        return { data: returnRow ? retry.data : null, error: null }
+      }
     }
     throw new Error(`[DataAccess] Update failed on ${String(table)}: ${error.message}`)
   }

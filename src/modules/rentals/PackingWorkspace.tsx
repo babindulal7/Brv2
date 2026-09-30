@@ -19,6 +19,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { CompactButton } from '../../components/ui/TouchTarget'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { RentalIntelFromFloor } from '../../components/intel/RentalIntelFromFloor'
 import { captureError } from '../../lib/monitoring'
 import { formatBsOrAd, formatAd, formatAdDateTime } from '../../lib/bs'
 import { newClientUuid } from '../../lib/supabase'
@@ -1299,9 +1300,11 @@ export default function PackingWorkspace({
                     </span>
                   </div>
                   <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                    <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
-                      {floor.bookingNo}
-                    </Link>
+                    <RentalIntelFromFloor floor={floor} context="packing" role={user?.role ?? 'Client'}>
+                      <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
+                        {floor.bookingNo}
+                      </Link>
+                    </RentalIntelFromFloor>
                     {floor.project ? ` · ${floor.project}` : ''}
                     {floor.clientName ? ` · ${floor.clientName}` : ''}
                   </p>

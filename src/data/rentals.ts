@@ -1124,7 +1124,8 @@ export function toRentalListRow(
     deliveryType: row.deliveryType,
     quoteExpires: row.quoteExpiresAtAd ? formatAd(new Date(row.quoteExpiresAtAd)) : null,
     deposit: row.depositRequired,
-    totalAmount: (((row as unknown as Record<string, unknown>).totalAmount ?? (row as unknown as Record<string, unknown>).rentalTotal ?? row.depositRequired ?? null)) as Paisa | null,
+    // A deposit is a liability (Law 5); it cannot stand in for a rental total.
+    totalAmount: row.totalAmount ?? null,
     // §11.1 — derived from the lines, never a column. `null` while the set is
     // unknown; deliberately NOT defaulted to `false`, which would assert "no
     // external gear" from a question nobody asked. See the field's own comment.

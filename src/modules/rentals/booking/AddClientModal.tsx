@@ -796,8 +796,8 @@ export function AddClientModal({
           boxShadow: 'var(--shadow-modal)',
           overflow: 'hidden',
           opacity: isOpen ? 1 : 0,
-          transform: isOpen ? 'scale(1)' : 'scale(0.97)',
-          transition: 'opacity var(--dur) ease, transform var(--dur) ease',
+          transform: 'none',
+          transition: 'opacity var(--dur) ease',
         }}
       >
         {/* Header */}

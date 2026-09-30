@@ -25,9 +25,9 @@
 .rental-timeline__gridline { flex: 0 0 auto; box-sizing: border-box; border-right: 1px solid color-mix(in srgb, var(--border) 72%, transparent); }
 .rental-timeline__today { position: absolute; z-index: 2; inset-block: 0; width: 1px; background: var(--danger); opacity: .7; }
 .rental-timeline__today::before { content: ''; position: absolute; top: 0; left: -3px; width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
-.rental-timeline__bar { position: absolute; z-index: 1; top: 17px; height: 32px; min-width: 28px; display: flex; align-items: center; justify-content: space-between; gap: 6px; box-sizing: border-box; padding: 0 8px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--primary) 55%, var(--border)); border-radius: 7px; background: var(--nav-active-bg); color: var(--nav-active-accent); text-decoration: none; box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 12%, transparent); transition: transform .18s ease, box-shadow .18s ease; }
-.rental-timeline__bar:hover { transform: translateY(-1px); box-shadow: 0 7px 16px color-mix(in srgb, var(--primary) 18%, transparent); }
-.rental-timeline__bar:active { transform: translateY(0); }
+.rental-timeline__bar { position: absolute; z-index: 1; top: 17px; height: 32px; min-width: 28px; display: flex; align-items: center; justify-content: space-between; gap: 6px; box-sizing: border-box; padding: 0 8px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--primary) 55%, var(--border)); border-radius: 7px; background: var(--nav-active-bg); color: var(--nav-active-accent); text-decoration: none; box-shadow: 0 4px 12px color-mix(in srgb, var(--primary) 12%, transparent); transition: box-shadow .18s ease, filter .18s ease; }
+.rental-timeline__bar:hover { filter: brightness(1.06); box-shadow: 0 7px 16px color-mix(in srgb, var(--primary) 18%, transparent); }
+.rental-timeline__bar:active { filter: brightness(0.96); }
 .rental-timeline__bar[data-status='Packed'] { background: var(--st-progress-bg); color: var(--st-progress-fg); border-color: var(--ready); }
 .rental-timeline__bar[data-status='On Rent'] { background: var(--st-out-bg); color: var(--st-out-fg); border-color: var(--warn); }
 .rental-timeline__bar[data-status='Returned'] { background: var(--st-in-bg); color: var(--st-in-fg); border-color: var(--success); }

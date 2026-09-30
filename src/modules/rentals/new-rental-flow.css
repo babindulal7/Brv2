@@ -33,15 +33,6 @@
   display: contents;
 }
 
-.new-rental-stage-next {
-  grid-column: 1 / -1;
-  margin-top: 4px;
-}
-
-.new-rental-review {
-  grid-column: 1 / -1;
-}
-
 .new-rental-canvas #section-0,
 .new-rental-canvas #section-1,
 .new-rental-canvas #section-3,
@@ -277,7 +268,7 @@
   border-color: var(--border2);
 }
 .new-rental-compact-summary:active {
-  transform: scale(0.99);
+  filter: brightness(0.98);
 }
 .new-rental-compact-summary span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
 .new-rental-compact-summary strong {

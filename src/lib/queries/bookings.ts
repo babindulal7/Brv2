@@ -281,6 +281,10 @@ const BASE_COLUMNS =
   'cancelled_at, closed_at, created_at, ' +
   'clients ( name ), booking_lines ( id, qty )'
 
+// Migration 0144 is verified locally but has not reached every connected database.
+// Keep the earlier projection for read-only lists until Babin applies it live.
+const PRE_0144_COLUMNS = BASE_COLUMNS.replace('project_type, project_type_other, ', '')
+
 /**
  * The deposit is no longer a column variant of the base select — it comes from
  * `bookings_deposit_v` in a second query (see `readDeposits`). `BASE_COLUMNS` is
@@ -294,8 +298,8 @@ interface RawBookingRow {
   booking_no: string
   client_id: string
   project: string | null
-  project_type: string | null
-  project_type_other: string | null
+  project_type?: string | null
+  project_type_other?: string | null
   stage: BookingStageDb
   pickup_at: string
   return_at: string
@@ -356,8 +360,8 @@ function toRow(r: RawBookingRow): BookingListRow {
     // that hides it.
     clientName: r.clients?.name ?? '(client not joined)',
     project: r.project,
-    projectType: r.project_type,
-    projectTypeOther: r.project_type_other,
+    projectType: r.project_type ?? null,
+    projectTypeOther: r.project_type_other ?? null,
     stage: r.stage,
     pickupAtAd: r.pickup_at,
     returnAtAd: r.return_at,
@@ -403,6 +407,37 @@ function toRow(r: RawBookingRow): BookingListRow {
  * "documentary" (or an Other description like "theatre") finds those bookings.
  */
 const SEARCH_COLUMNS = ['booking_no', 'project', 'project_type', 'project_type_other'] as const
+const PRE_0144_SEARCH_COLUMNS = ['booking_no', 'project'] as const
+
+interface BookingQueryError {
+  message: string
+  code?: string
+}
+
+function missingProjectTypeColumn(error: BookingQueryError | null): boolean {
+  if (!error) return false
+  const msg = (error.message || '').toLowerCase()
+  const code = error.code
+  if (code === '42703' || code === 'PGRST204') {
+    if (msg.includes('project_type')) return true
+  }
+  if (msg.includes('project_type') && (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find'))) {
+    return true
+  }
+  return /^column bookings\.project_type(?:_other)? does not exist$/i.test(error.message)
+}
+
+function canUsePre0144Columns(filters: ListFilters): boolean {
+  const missingColumns = new Set(['project_type', 'project_type_other'])
+  return !(
+    (filters.search && filters.searchColumns?.some((column) => missingColumns.has(column))) ||
+    Object.entries(filters.chips ?? {}).some(([column, values]) => missingColumns.has(column) && !!values?.length) ||
+    (filters.dateRange && missingColumns.has(filters.dateRange.column)) ||
+    Object.entries(filters.presence ?? {}).some(([column, value]) => missingColumns.has(column) && value !== undefined) ||
+    (filters.sort && missingColumns.has(filters.sort.column)) ||
+    (filters.tiebreak && missingColumns.has(filters.tiebreak))
+  )
+}
 
 export interface BookingListOptions extends ListFilters {
   /** Ask for the total matching count. Costs an extra planner pass, so it is opt-in. */
@@ -491,30 +526,23 @@ export async function listBookings(opts: BookingListOptions = {}): Promise<ListQ
   const { withCount, withDeposit, withTotalAmount, headOnly, ...filters } = opts
 
   if (headOnly) {
-    const base = supabase
-      .from('bookings')
-      .select('id', { count: 'exact', head: true })
-
-    const query = applyListFilters(base, {
-      ...filters,
-      search: filters.search === undefined ? undefined : parseBookingNoSearch(filters.search),
-      searchColumns: filters.searchColumns ?? SEARCH_COLUMNS,
-    })
-
-    const { count, error } = (await query) as unknown as {
-      error: { message: string } | null
-      count: number | null
+    const countBookings = async (legacy: boolean): Promise<{ count: number | null; error: BookingQueryError | null }> => {
+      const base = supabase.from('bookings').select('id', { count: 'exact', head: true })
+      const query = applyListFilters(base, {
+        ...filters,
+        search: filters.search === undefined ? undefined : parseBookingNoSearch(filters.search),
+        searchColumns: filters.searchColumns ?? (legacy ? PRE_0144_SEARCH_COLUMNS : SEARCH_COLUMNS),
+      })
+      return (await query) as unknown as { count: number | null; error: BookingQueryError | null }
     }
 
+    let { count, error } = await countBookings(false)
+    if (missingProjectTypeColumn(error) && canUsePre0144Columns(filters)) {
+      ;({ count, error } = await countBookings(true))
+    }
     if (error) throw new Error(`listBookings count failed: ${error.message}`)
     return { rows: [], total: count ?? 0 }
   }
-
-  const base = supabase
-    .from('bookings')
-    .select(BASE_COLUMNS, withCount ? { count: 'exact' } : undefined)
-    // Law 3: a removed line is voided, never deleted, so it must not be counted.
-    .is('booking_lines.voided_at', null)
 
   /*
    * ⛔ This call used to read `applyListFilters(base as never, …)`.
@@ -543,33 +571,48 @@ export async function listBookings(opts: BookingListOptions = {}): Promise<ListQ
    * future postgrest-js renames an argument shape, `tsc` says so HERE, once,
    * instead of on the floor.
    */
-  const query = applyListFilters(base, {
-    ...filters,
-    /*
-     * R-10 / SPEC-P0-3 §4: `booking_no` is stored bare (`880`) and the `#` is
-     * display-only, so the two forms an operator actually types — `#880` from
-     * the screen in front of them, `B-880` from paperwork issued before 4 Sep —
-     * would both miss on a raw `ilike`. `parseBookingNoSearch` strips a prefix
-     * ONLY when digits follow, so a project search like "B-roll" reaches
-     * `project` unchanged; the same term runs against both columns.
-     */
-    search: filters.search === undefined ? undefined : parseBookingNoSearch(filters.search),
-    searchColumns: filters.searchColumns ?? SEARCH_COLUMNS,
-    sort: filters.sort ?? { column: 'pickup_at', ascending: true },
-    // Deterministic paging — see PAGINATION in `listQuery.ts`. `bookings.id` is
-    // `uuid not null default gen_random_uuid() primary key` (0002:22), so it is
-    // unique and never null, which is the whole requirement. Defaulted rather
-    // than hardcoded so a caller that knows better can override it, but no
-    // caller should need to.
-    tiebreak: filters.tiebreak ?? 'id',
-  })
-
-  const { data, error, count } = (await query) as unknown as {
+  const fetchBookings = async (legacy: boolean): Promise<{
     data: RawBookingRow[] | null
-    error: { message: string } | null
+    error: BookingQueryError | null
     count: number | null
+  }> => {
+    const base = supabase
+      .from('bookings')
+      .select(legacy ? PRE_0144_COLUMNS : BASE_COLUMNS, withCount ? { count: 'exact' } : undefined)
+      // Law 3: a removed line is voided, never deleted, so it must not be counted.
+      .is('booking_lines.voided_at', null)
+
+    const query = applyListFilters(base, {
+      ...filters,
+      /*
+       * R-10 / SPEC-P0-3 §4: `booking_no` is stored bare (`880`) and the `#` is
+       * display-only, so the two forms an operator actually types — `#880` from
+       * the screen in front of them, `B-880` from paperwork issued before 4 Sep —
+       * would both miss on a raw `ilike`. `parseBookingNoSearch` strips a prefix
+       * ONLY when digits follow, so a project search like "B-roll" reaches
+       * `project` unchanged; the same term runs against both columns.
+       */
+      search: filters.search === undefined ? undefined : parseBookingNoSearch(filters.search),
+      searchColumns: filters.searchColumns ?? (legacy ? PRE_0144_SEARCH_COLUMNS : SEARCH_COLUMNS),
+      sort: filters.sort ?? { column: 'pickup_at', ascending: true },
+      // Deterministic paging — see PAGINATION in `listQuery.ts`. `bookings.id` is
+      // `uuid not null default gen_random_uuid() primary key` (0002:22), so it is
+      // unique and never null, which is the whole requirement. Defaulted rather
+      // than hardcoded so a caller that knows better can override it, but no
+      // caller should need to.
+      tiebreak: filters.tiebreak ?? 'id',
+    })
+    return (await query) as unknown as {
+      data: RawBookingRow[] | null
+      error: BookingQueryError | null
+      count: number | null
+    }
   }
 
+  let { data, error, count } = await fetchBookings(false)
+  if (missingProjectTypeColumn(error) && canUsePre0144Columns(filters)) {
+    ;({ data, error, count } = await fetchBookings(true))
+  }
   if (error) throw new Error(`listBookings failed: ${error.message}`)
 
   const raw = data ?? []
@@ -1199,7 +1242,9 @@ function joinLocation(u: RawFloorUnitJoin | null): string | null {
  * booking that exists but has no lines, and the two must render differently.
  */
 export async function fetchFloorBooking(bookingRef: string): Promise<FloorBooking | null> {
-  const column = FLOOR_UUID_RE.test(bookingRef) ? 'id' : 'booking_no'
+  const isUuid = FLOOR_UUID_RE.test(bookingRef)
+  const column = isUuid ? 'id' : 'booking_no'
+  const target = isUuid ? bookingRef : parseBookingNoSearch(bookingRef)
 
   const { data, error } = await supabase
     .from('bookings')
@@ -1207,7 +1252,7 @@ export async function fetchFloorBooking(bookingRef: string): Promise<FloorBookin
     // Law 3 — a removed line is voided, never deleted. PostgREST prunes the
     // embed in place and leaves the parent row, which is what the floor wants.
     .is('booking_lines.voided_at', null)
-    .eq(column, bookingRef)
+    .eq(column, target)
     .maybeSingle()
 
   if (error) throw new Error(`fetchFloorBooking(${bookingRef}) failed: ${error.message}`)
@@ -1333,5 +1378,3 @@ export * from '../../data/rentals'
 export { OPERATIONS, isSubRentedLine, isSubRentalBooking, type PaymentHistoryRow } from '../../data/booking'
 export { paymentGlance, paymentDetailGroups } from '../../data/bookingIntel'
 export { businessNowAd } from '../../data/today'
-
-

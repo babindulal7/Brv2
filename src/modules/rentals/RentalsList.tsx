@@ -664,10 +664,8 @@ function RowOperations({
             cursor: primary.disabled ? 'not-allowed' : 'pointer',
             whiteSpace: 'nowrap',
             boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
-            transition: 'all 0.15s ease',
+            transition: 'filter 0.1s ease, background-color 0.1s ease',
           }}
-          onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.98)')}
-          onMouseUp={(e) => (e.currentTarget.style.transform = 'none')}
         >
           <TouchTarget />
           <Icon name={primary.icon} size={12} style={{ color: primary.fg }} />

@@ -17,6 +17,7 @@ import { Input } from '../../components/ui/Input'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
+import { RentalIntelFromFloor } from '../../components/intel/RentalIntelFromFloor'
 import { captureError } from '../../lib/monitoring'
 import { formatBsOrAd, formatAd, formatAdDateTime } from '../../lib/bs'
 /* `lateBand` and its two formatters return no monetary value — that is the
@@ -1310,9 +1311,11 @@ export default function ReturnWorkspace({
                     </span>
                   </div>
                   <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                    <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
-                      {floor.bookingNo}
-                    </Link>
+                    <RentalIntelFromFloor floor={floor} context="return" role={user?.role ?? 'Client'}>
+                      <Link to={`/rentals/${id}`} style={{ color: 'var(--link)', fontWeight: 600, textDecoration: 'none' }} className="identifier">
+                        {floor.bookingNo}
+                      </Link>
+                    </RentalIntelFromFloor>
                     {floor.project ? ` · ${floor.project}` : ''}
                     {floor.clientName ? ` · ${floor.clientName}` : ''}
                   </p>

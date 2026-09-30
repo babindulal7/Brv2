@@ -76,6 +76,8 @@ export const EVENT_TYPES = {
   /** §1.7 — the sixth stage, and the only terminal one. Emitted by CLOSE_RENTAL. */
   RENTAL_CLOSED: 'rental.closed',
   RENTAL_EXTENDED: 'rental.extended',
+  /** Project Type edit (0144) — emitted by UPDATE_BOOKING_PROJECT. */
+  RENTAL_PROJECT_UPDATED: 'rental.project_updated',
   NOTE_ADDED: 'booking.note_added',
   UNIT_RELEASED: 'booking.unit_released',
   /** WHATSAPP_LINKS_SPEC v1.0 §5.4 — one branch-day signed off (0078). */
