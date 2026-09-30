@@ -55,6 +55,8 @@ is the single most likely way this product's authorization model gets defeated.
 
 ## Deployment
 
+Follow the repository [production deployment runbook](DEPLOYMENT.md) for the release audit, database cutover boundary, staging checks, smoke tests, and rollback record.
+
 ### Environment variables
 
 Everything the app reads is prefixed `VITE_`, which means Vite **inlines it into the
