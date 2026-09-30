@@ -1056,15 +1056,16 @@ function Shell({
       <MockBanner />
       <OfflineBanner />
 
-      {/* Global Header spans 100% width, WorkspaceContext provides dynamic actions */}
-      <WorkspaceContextConsumer search={search} crumbs={crumbs} />
-
-      <div className="app-workspace" style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+      <div className="app-shell-layout" style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         {!phone && <Sidebar active={pathname + query} />}
-
-        <WorkspaceContent isForbidden={isForbidden} user={user} phone={phone} hasElevatedStickyBar={hasElevatedStickyBar} isFloor={isFloor}>
-          {children}
-        </WorkspaceContent>
+        <div className="app-shell-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+          <WorkspaceContextConsumer search={search} crumbs={crumbs} />
+          <div className="app-workspace" style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
+            <WorkspaceContent isForbidden={isForbidden} user={user} phone={phone} hasElevatedStickyBar={hasElevatedStickyBar} isFloor={isFloor}>
+              {children}
+            </WorkspaceContent>
+          </div>
+        </div>
       </div>
 
       {phone && <BottomBar active={pathname + query} />}

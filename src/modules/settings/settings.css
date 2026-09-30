@@ -240,7 +240,7 @@
 .settings-tab-btn:hover {
   background: var(--card2);
   border-color: color-mix(in srgb, var(--border) 70%, var(--nav-active-accent, #3b82f6));
-  transform: translateY(-1px);
+  filter: brightness(1.02);
 }
 
 .app-settings-nav-item.is-active,
@@ -262,7 +262,7 @@
 }
 
 .app-settings-nav-item:hover .app-settings-nav-icon-box {
-  transform: scale(1.05);
+  filter: brightness(1.05);
 }
 
 .app-settings-nav-text {
@@ -302,7 +302,7 @@
 .app-settings-nav-item:hover .app-settings-nav-chevron,
 .app-settings-nav-item.is-active .app-settings-nav-chevron {
   opacity: 1;
-  transform: translateX(2px);
+  color: var(--nav-active-accent, #3b82f6);
   color: var(--nav-active-accent, #3b82f6);
 }
 

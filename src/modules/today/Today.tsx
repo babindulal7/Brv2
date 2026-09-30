@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from '../../components/ui/Icon'
+import { CalendarPopover } from '../../components/ui/DateField'
 import { PageHeader, PageActions } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
@@ -98,9 +99,6 @@ const QUICK_PERIOD_LABELS: Record<'en' | 'ne', Record<QuickPeriod, string>> = {
   },
 }
 
-const NE_WEEKDAYS = ['आइत', 'सोम', 'मंगल', 'बुध', 'बिही', 'शुक्र', 'शनि'] as const
-const EN_WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'] as const
-
 function compactDate(day: string): string {
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00.000Z`))
 }
@@ -115,15 +113,6 @@ function filterLabel(filter: DateFilter, lang: 'en' | 'ne' = 'en'): string {
     return `${from.getUTCDate()}–${to.getUTCDate()} ${month}`
   }
   return `${compactDate(filter.from)} – ${compactDate(filter.to)}`
-}
-
-function calendarDays(month: Date): Array<string | null> {
-  const year = month.getUTCFullYear()
-  const monthIndex = month.getUTCMonth()
-  const result: Array<string | null> = Array.from({ length: new Date(Date.UTC(year, monthIndex, 1)).getUTCDay() }, () => null)
-  const count = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate()
-  for (let day = 1; day <= count; day += 1) result.push(new Date(Date.UTC(year, monthIndex, day)).toISOString().slice(0, 10))
-  return result
 }
 
 function formatMasterDispatchDate(filter: DateFilter, today: string, lang: 'en' | 'ne' = 'en'): string {
@@ -221,7 +210,7 @@ function CalendarPortal({
       const el = triggerRef.current
       if (el) {
         const r = el.getBoundingClientRect()
-        setRect(new DOMRect(r.x, Math.max(8, r.bottom + 10 - overflow), r.width, r.height))
+        setRect(new DOMRect(r.x, r.y - overflow, r.width, r.height))
       }
     }
   }, [rect, viewport, dialogRef, triggerRef])
@@ -243,6 +232,88 @@ function CalendarPortal({
   )
 }
 
+function DashboardCalendarContent({
+  title,
+  filter,
+  onChange,
+  onClose,
+  today,
+  lang = 'en',
+}: {
+  title: string
+  filter: DateFilter
+  onChange: (filter: DateFilter) => void
+  onClose: () => void
+  today: string
+  lang?: 'en' | 'ne'
+}) {
+  const selected = rangeFor(filter, today)
+  const initialRange = selected.from !== selected.to
+  const [rangeMode, setRangeMode] = useState(initialRange)
+  const [rangeStart, setRangeStart] = useState<string | null>(null)
+  const [draft, setDraft] = useState(() => initialRange
+    ? selected
+    : { from: '', to: '' })
+
+  const commit = (next: DateFilter) => {
+    onChange(next)
+    onClose()
+  }
+
+  return (
+    <>
+      <div className="dashboard-calendar__heading">
+        <div>
+          <strong>{title}</strong>
+          <span aria-live="polite">
+            {rangeStart
+              ? (lang === 'ne' ? 'अन्त्य मिति छान्नुहोस्' : 'Choose an end date')
+              : (lang === 'ne' ? 'मिति छान्नुहोस्' : 'Choose a date or range')}
+          </span>
+        </div>
+        <button type="button" aria-label="Close calendar" onClick={onClose}><Icon name="close" size={18} /></button>
+      </div>
+      <div className="dashboard-calendar__quick" role="group" aria-label="Quick date filters">
+        {QUICK_PERIODS.map((period) => (
+          <button key={period} type="button" aria-pressed={filter.kind === 'quick' && filter.period === period} onClick={() => commit({ kind: 'quick', period })}>
+            {QUICK_PERIOD_LABELS[lang][period]}
+          </button>
+        ))}
+      </div>
+      <div className="dashboard-calendar__mode" role="group" aria-label="Calendar selection mode">
+        <button type="button" aria-pressed={!rangeMode} onClick={() => { setRangeMode(false); setRangeStart(null) }}>
+          {lang === 'ne' ? 'एक दिन' : 'Single day'}
+        </button>
+        <button type="button" aria-pressed={rangeMode} onClick={() => { setRangeMode(true); setRangeStart(null); setDraft({ from: '', to: '' }) }}>
+          {lang === 'ne' ? 'मिति दायरा' : 'Date range'}
+        </button>
+      </div>
+      <CalendarPopover
+        embedded
+        showHeader={false}
+        title={title}
+        value={selected.from}
+        range={rangeMode ? draft : undefined}
+        todayDate={today}
+        shadePastDates={false}
+        onSelect={rangeMode ? undefined : (day) => commit({ kind: 'custom', from: day, to: day })}
+        onSelectRange={rangeMode ? ({ from, to }) => {
+          if (rangeStart) {
+            commit({ kind: 'custom', from, to })
+          } else {
+            setRangeStart(from)
+            setDraft({ from, to })
+          }
+        } : undefined}
+        onDismiss={() => {
+          if (rangeStart) commit({ kind: 'custom', from: rangeStart, to: rangeStart })
+          else onClose()
+        }}
+      />
+    </>
+  )
+}
+
 function DateFilterControl({
   noun,
   filter,
@@ -255,49 +326,25 @@ function DateFilterControl({
   today: string
 }) {
   const [open, setOpen] = useState(false)
-  const [rangeStart, setRangeStart] = useState<string | null>(null)
-  const [rangeMode, setRangeMode] = useState(false)
-  const initialDay = filter.kind === 'custom' ? filter.from : rangeFor(filter, today).from
-  const initialDate = new Date(`${initialDay}T00:00:00.000Z`)
-  const [month, setMonth] = useState(() => new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const dialog = useRef<HTMLDivElement>(null)
-  const days = useMemo(() => calendarDays(month), [month])
   const close = () => {
     setOpen(false)
-    setRangeStart(null)
     trigger.current?.focus()
   }
 
   useEffect(() => {
-    if (open) dialog.current?.focus()
-  }, [open])
-
-  useEffect(() => {
     if (!open) return
     const closeAway = (event: PointerEvent) => {
-      // The open calendar is portaled to document.body — a pointer inside it
-      // is logically inside, even though it is outside `root` in the DOM.
       const target = event.target as Node
-      if (dialog.current?.contains(target)) return
-      if (!root.current?.contains(target)) {
-        setOpen(false)
-        setRangeStart(null)
-        // Pointer dismissal only returns focus when it would otherwise strand
-        // it on body — if focus already moved somewhere meaningful, don't steal it.
-        const active = document.activeElement as Element | null
-        if (!active || active === document.body || dialog.current?.contains(active)) {
-          trigger.current?.focus()
-        }
-      }
+      if (dialog.current?.contains(target) || root.current?.contains(target)) return
+      setOpen(false)
     }
     const closeEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        setOpen(false)
-        setRangeStart(null)
-        trigger.current?.focus()
+        close()
       }
     }
     document.addEventListener('pointerdown', closeAway)
@@ -308,49 +355,6 @@ function DateFilterControl({
     }
   }, [open])
 
-  const selectQuick = (period: QuickPeriod) => {
-    onChange({ kind: 'quick', period })
-    close()
-  }
-
-  const selectDay = (day: string) => {
-    if (!rangeMode) {
-      onChange({ kind: 'custom', from: day, to: day })
-      close()
-      return
-    }
-    if (!rangeStart) {
-      setRangeStart(day)
-      return
-    }
-    onChange({ kind: 'custom', from: day < rangeStart ? day : rangeStart, to: day < rangeStart ? rangeStart : day })
-    close()
-  }
-
-  const useSingleDay = () => {
-    if (!rangeStart) return
-    onChange({ kind: 'custom', from: rangeStart, to: rangeStart })
-    close()
-  }
-
-  const onDayKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, day: string) => {
-    const delta = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' ? -7 : event.key === 'ArrowDown' ? 7 : 0
-    if (!delta) return
-    event.preventDefault()
-    const target = shiftDay(day, delta)
-    const targetDate = new Date(`${target}T00:00:00.000Z`)
-    if (targetDate.getUTCMonth() !== month.getUTCMonth() || targetDate.getUTCFullYear() !== month.getUTCFullYear()) {
-      setMonth(new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth(), 1)))
-      window.setTimeout(() => root.current?.querySelector<HTMLButtonElement>(`[data-calendar-day="${target}"]`)?.focus(), 0)
-    } else {
-      root.current?.querySelector<HTMLButtonElement>(`[data-calendar-day="${target}"]`)?.focus()
-    }
-  }
-
-  const currentFrom = filter.kind === 'custom' ? filter.from : null
-  const currentTo = filter.kind === 'custom' ? filter.to : null
-  const monthName = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(month)
-
   const triggerLabel = noun === 'dispatch' ? 'Sync dispatch day' : `Choose ${noun} date filter`
   const dialogLabel = noun === 'dispatch' ? 'Dispatch date filter' : `${noun} date filter`
   const visiblePeriod = filterLabel(filter)
@@ -360,98 +364,34 @@ function DateFilterControl({
       className="dashboard-date-filter"
       ref={root}
       onBlur={(event) => {
-        // The open calendar is portaled to document.body, so focus moving
-        // into it looks like focus leaving this wrapper — not a dismissal.
         const next = event.relatedTarget as Node | null
         if (next && (event.currentTarget.contains(next) || dialog.current?.contains(next))) return
-        if (event.relatedTarget) {
-          setOpen(false)
-          setRangeStart(null)
-        }
+        if (event.relatedTarget) setOpen(false)
       }}
     >
       <button
         ref={trigger}
         type="button"
         className="dashboard-date-filter__button"
-        /*
-         * WCAG 2.5.3 "Label in Name" — the accessible name must CONTAIN the
-         * visible text. It read only "Choose pickup date filter" while the
-         * button visibly reads "Today" / "Tomorrow" / "Sep 27", so a screen
-         * reader announced a control whose name said nothing about which period
-         * it currently showed. The period is now the first thing spoken, and
-         * the "change" affordance follows it.
-         */
         aria-label={`${visiblePeriod} — ${triggerLabel}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? `${noun}-date-dialog` : undefined}
-        onClick={() => {
-          setRangeStart(null)
-          if (!open) setMonth(new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
-          setOpen((value) => !value)
-        }}
+        onClick={() => setOpen((value) => !value)}
       >
         <span className="dashboard-date-filter__calendar" aria-hidden="true"><Icon name="calendar" size={18} /></span>
         <span className="dashboard-date-filter__label">{visiblePeriod}</span>
         <Icon name="chevron_down" size={15} />
       </button>
-
       {open && (
         <CalendarPortal triggerRef={trigger} dialogRef={dialog} id={`${noun}-date-dialog`} label={dialogLabel}>
-          <div className="dashboard-calendar__quick" role="group" aria-label="Quick date filters">
-            {QUICK_PERIODS.map((period) => (
-              <button
-                key={period}
-                type="button"
-                aria-pressed={filter.kind === 'quick' && filter.period === period}
-                onClick={() => selectQuick(period)}
-              >
-                {period}
-              </button>
-            ))}
-          </div>
-          <div className="dashboard-calendar__month-row">
-            <button type="button" aria-label="Previous month" onClick={() => setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() - 1, 1)))}>
-              <Icon name="chevron_left" size={17} />
-            </button>
-            <strong>{monthName}</strong>
-            <button type="button" aria-label="Next month" onClick={() => setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1)))}>
-              <Icon name="chevron_right" size={17} />
-            </button>
-          </div>
-          <div className="dashboard-calendar__weekdays" aria-hidden="true">
-            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((day) => <span key={day}>{day}</span>)}
-          </div>
-          <div className="dashboard-calendar__days">
-            {days.map((day, index) => {
-              if (!day) return <span key={`blank-${index}`} />
-              const selected = day === rangeStart || day === currentFrom || day === currentTo
-              const inRange = !!currentFrom && !!currentTo && day > currentFrom && day < currentTo
-              return (
-                <button
-                  key={day}
-                  type="button"
-                  data-calendar-day={day}
-                  className={selected ? 'is-selected' : inRange ? 'is-in-range' : undefined}
-                  aria-label={compactDate(day)}
-                  aria-pressed={selected || inRange}
-                  onClick={() => selectDay(day)}
-                  onKeyDown={(event) => onDayKeyDown(event, day)}
-                >
-                  {Number(day.slice(-2))}
-                </button>
-              )
-            })}
-          </div>
-          <div className="dashboard-calendar__footer">
-            <button type="button" aria-pressed={rangeMode} onClick={() => { setRangeMode(!rangeMode); setRangeStart(null) }}>
-              {rangeMode ? 'Date range' : 'Single date'}
-            </button>
-            <span aria-live="polite">{rangeStart ? 'Choose an end date.' : rangeMode ? 'Select start and end dates' : 'Select a date'}</span>
-            {rangeStart && <button type="button" onClick={useSingleDay}>Use {compactDate(rangeStart)}</button>}
-            <button type="button" className="dashboard-calendar__close" onClick={close}>Close</button>
-          </div>
+          <DashboardCalendarContent
+            title={noun === 'pickup' ? 'Pickup date' : noun === 'return' ? 'Return date' : 'Dispatch date'}
+            filter={filter}
+            onChange={onChange}
+            onClose={close}
+            today={today}
+          />
         </CalendarPortal>
       )}
     </div>
@@ -471,51 +411,25 @@ function MasterDispatchDateControl({
 }) {
   const lang = useCurrentLanguage()
   const [open, setOpen] = useState(false)
-  const [rangeStart, setRangeStart] = useState<string | null>(null)
-  const [rangeMode, setRangeMode] = useState(false)
-  const initialDay = filter.kind === 'custom' ? filter.from : rangeFor(filter, today).from
-  const initialDate = new Date(`${initialDay}T00:00:00.000Z`)
-  const [month, setMonth] = useState(() => new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const dialog = useRef<HTMLDivElement>(null)
-  const days = useMemo(() => calendarDays(month), [month])
   const close = () => {
     setOpen(false)
-    setRangeStart(null)
     trigger.current?.focus()
   }
-
-  // Move focus into the dialog when it opens — a keyboard user otherwise stays
-  // on the trigger after it closes over.
-  useEffect(() => {
-    if (open) dialog.current?.focus()
-  }, [open])
 
   useEffect(() => {
     if (!open) return
     const closeAway = (event: PointerEvent) => {
-      // The open calendar is portaled to document.body — a pointer inside it
-      // is logically inside, even though it is outside `root` in the DOM.
       const target = event.target as Node
-      if (dialog.current?.contains(target)) return
-      if (!root.current?.contains(target)) {
-        setOpen(false)
-        setRangeStart(null)
-        // Pointer dismissal only returns focus when it would otherwise strand
-        // it on body — if focus already moved somewhere meaningful, don't steal it.
-        const active = document.activeElement as Element | null
-        if (!active || active === document.body || dialog.current?.contains(active)) {
-          trigger.current?.focus()
-        }
-      }
+      if (dialog.current?.contains(target) || root.current?.contains(target)) return
+      setOpen(false)
     }
     const closeEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        setOpen(false)
-        setRangeStart(null)
-        trigger.current?.focus()
+        close()
       }
     }
     document.addEventListener('pointerdown', closeAway)
@@ -526,48 +440,6 @@ function MasterDispatchDateControl({
     }
   }, [open])
 
-  const selectQuick = (period: QuickPeriod) => {
-    onChange({ kind: 'quick', period })
-    close()
-  }
-
-  const selectDay = (day: string) => {
-    if (!rangeMode) {
-      onChange({ kind: 'custom', from: day, to: day })
-      close()
-      return
-    }
-    if (!rangeStart) {
-      setRangeStart(day)
-      return
-    }
-    onChange({ kind: 'custom', from: day < rangeStart ? day : rangeStart, to: day < rangeStart ? rangeStart : day })
-    close()
-  }
-
-  const useSingleDay = () => {
-    if (!rangeStart) return
-    onChange({ kind: 'custom', from: rangeStart, to: rangeStart })
-    close()
-  }
-
-  const onDayKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, day: string) => {
-    const delta = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' ? -7 : event.key === 'ArrowDown' ? 7 : 0
-    if (!delta) return
-    event.preventDefault()
-    const target = shiftDay(day, delta)
-    const targetDate = new Date(`${target}T00:00:00.000Z`)
-    if (targetDate.getUTCMonth() !== month.getUTCMonth() || targetDate.getUTCFullYear() !== month.getUTCFullYear()) {
-      setMonth(new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth(), 1)))
-      window.setTimeout(() => root.current?.querySelector<HTMLButtonElement>(`[data-calendar-day="${target}"]`)?.focus(), 0)
-    } else {
-      root.current?.querySelector<HTMLButtonElement>(`[data-calendar-day="${target}"]`)?.focus()
-    }
-  }
-
-  const currentFrom = filter.kind === 'custom' ? filter.from : null
-  const currentTo = filter.kind === 'custom' ? filter.to : null
-  const monthName = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(month)
   const masterLabel = formatMasterDispatchDate(filter, today, lang)
   const isToday = filter.kind === 'quick' && filter.period === 'Today'
 
@@ -578,13 +450,9 @@ function MasterDispatchDateControl({
       role="group"
       aria-label="Master dispatch date"
       onBlur={(event) => {
-        // Portaled calendar — same note as the pickup/return filter above.
         const next = event.relatedTarget as Node | null
         if (next && (event.currentTarget.contains(next) || dialog.current?.contains(next))) return
-        if (event.relatedTarget) {
-          setOpen(false)
-          setRangeStart(null)
-        }
+        if (event.relatedTarget) setOpen(false)
       }}
     >
       <span className="dashboard-header-controls__label" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 500, marginRight: 4 }}>
@@ -599,7 +467,6 @@ function MasterDispatchDateControl({
       >
         <Icon name="chevron_left" size={16} />
       </button>
-
       <button
         type="button"
         className={`dashboard-master-date-control__btn dashboard-day-pager__btn--today ${isToday ? 'is-today' : ''}`}
@@ -608,30 +475,18 @@ function MasterDispatchDateControl({
       >
         Today
       </button>
-
       <button
         ref={trigger}
         type="button"
         className={`dashboard-master-date-control__date-btn ${isToday ? 'is-today' : ''}`}
-        /*
-         * WCAG 2.5.3 "Label in Name" — see the pickup/return filter above.
-         * The button paints `masterLabel` ("Today", "Sep 27", "Ashwin 11")
-         * but announced only "Choose dispatch date filter", so the current
-         * dispatch day was never spoken. The day leads; the affordance follows.
-         */
         aria-label={`${masterLabel} — choose dispatch date filter`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? 'dispatch-date-dialog' : undefined}
-        onClick={() => {
-          setRangeStart(null)
-          if (!open) setMonth(new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
-          setOpen((v) => !v)
-        }}
+        onClick={() => setOpen((value) => !value)}
       >
         <span className="dashboard-master-date-control__label">{masterLabel}</span>
       </button>
-
       <button
         type="button"
         className="dashboard-master-date-control__btn"
@@ -641,69 +496,28 @@ function MasterDispatchDateControl({
       >
         <Icon name="chevron_right" size={16} />
       </button>
-
       <button
         type="button"
         className="dashboard-master-date-control__calendar-btn"
         aria-label="Dispatch calendar"
-        title="Open calendar (📅)"
+        title="Open calendar"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? 'dispatch-date-dialog' : undefined}
-        onClick={() => {
-          setRangeStart(null)
-          if (!open) setMonth(new Date(Date.UTC(initialDate.getUTCFullYear(), initialDate.getUTCMonth(), 1)))
-          setOpen((v) => !v)
-        }}
+        onClick={() => setOpen((value) => !value)}
       >
         <Icon name="calendar" size={18} />
       </button>
-
       {open && (
         <CalendarPortal triggerRef={trigger} dialogRef={dialog} id="dispatch-date-dialog" label="Dispatch date filter">
-          <div className="dashboard-calendar__quick" role="group" aria-label="Quick date filters">
-            {QUICK_PERIODS.map((period) => (
-              <button key={period} type="button" aria-pressed={filter.kind === 'quick' && filter.period === period} onClick={() => selectQuick(period)}>
-                {QUICK_PERIOD_LABELS[lang][period]}
-              </button>
-            ))}
-          </div>
-          <div className="dashboard-calendar__month-row">
-            <button type="button" aria-label="Previous month" onClick={() => setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() - 1, 1)))}><Icon name="chevron_left" size={17} /></button>
-            <strong>{monthName}</strong>
-            <button type="button" aria-label="Next month" onClick={() => setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1)))}><Icon name="chevron_right" size={17} /></button>
-          </div>
-          <div className="dashboard-calendar__weekdays" aria-hidden="true">
-            {(lang === 'ne' ? NE_WEEKDAYS : EN_WEEKDAYS).map((day) => <span key={day}>{day}</span>)}
-          </div>
-          <div className="dashboard-calendar__days">
-            {days.map((day, index) => {
-              if (!day) return <span key={`blank-${index}`} />
-              const selected = day === rangeStart || day === currentFrom || day === currentTo
-              const inRange = !!currentFrom && !!currentTo && day > currentFrom && day < currentTo
-              return (
-                <button key={day} type="button" data-calendar-day={day} className={selected ? 'is-selected' : inRange ? 'is-in-range' : undefined} aria-label={compactDate(day)} aria-pressed={selected || inRange} onClick={() => selectDay(day)} onKeyDown={(event) => onDayKeyDown(event, day)}>
-                  {Number(day.slice(-2))}
-                </button>
-              )
-            })}
-          </div>
-          <div className="dashboard-calendar__footer">
-            <button type="button" aria-pressed={rangeMode} onClick={() => { setRangeMode(!rangeMode); setRangeStart(null) }}>
-              {rangeMode ? (lang === 'ne' ? 'मिति दायरा' : 'Date range') : (lang === 'ne' ? 'एकल मिति' : 'Single date')}
-            </button>
-            <span aria-live="polite">
-              {rangeStart ? (lang === 'ne' ? 'अन्त्य मिति चयन गर्नुहोस्।' : 'Choose an end date.') : rangeMode ? (lang === 'ne' ? 'सुरु र अन्त्य मिति छान्नुहोस्' : 'Select start and end dates') : (lang === 'ne' ? 'मिति छान्नुहोस्' : 'Select a date')}
-            </span>
-            {rangeStart && (
-              <button type="button" onClick={useSingleDay}>
-                {lang === 'ne' ? `${compactDate(rangeStart)} प्रयोग गर्नुहोस्` : `Use ${compactDate(rangeStart)}`}
-              </button>
-            )}
-            <button type="button" className="dashboard-calendar__close" onClick={close}>
-              {lang === 'ne' ? 'बन्द गर्नुहोस्' : 'Close'}
-            </button>
-          </div>
+          <DashboardCalendarContent
+            title={lang === 'ne' ? 'डिस्प्याच मिति' : 'Dispatch date'}
+            filter={filter}
+            onChange={onChange}
+            onClose={close}
+            today={today}
+            lang={lang}
+          />
         </CalendarPortal>
       )}
     </div>
@@ -902,6 +716,10 @@ export default function Today() {
       }
     >
       <div className="dashboard-workbar">
+        <div className="dashboard-workbar__intro">
+          <span>Daily dispatch</span>
+          <p>Movement board</p>
+        </div>
         {/* Universal Express Counter Bar (Quick Search / Barcode Scanner) */}
         <div className="dashboard-counter-bar" role="search" aria-label="Express Counter Lookup">
           <div className="dashboard-counter-bar__search">
@@ -988,6 +806,7 @@ export default function Today() {
             noun="pickup"
             date={dispatchDate}
             title="Pickups"
+            subtitle="Scheduled departures"
             icon="truck"
             list={pickups}
             periodLabel={filterLabel(pickupDateFilter).toLowerCase()}

@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
-import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows } from '../../components/ui/Page'
 import { SearchInput } from '../../components/ui/SearchInput'
+import { ListControlRow } from '../../components/ui/ListWorkspace'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
@@ -229,7 +230,6 @@ const OUTSTANDING_INVOICES: ListFilters = outstandingInvoices()
  *    filterable set, and it is imported rather than retyped so a chip built
  *    from it cannot ask for a value that matches nothing.
  */
-const PAYMENT_STATUSES = ['Received', 'Refunded', 'Failed', 'Cancelled'] as const
 
 /* ── §9.4 the six tabs, and §9.2 the seven chips ──────────────────────────── */
 
@@ -1141,11 +1141,7 @@ export default function Finance() {
           ]}
         />
         <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.6 }}>
-          Invoices carry what was billed and payments carry what was received; neither is a profit-and-loss statement.
-          What this needs: an <span className="identifier">invoiced-in-period</span> named set over{' '}
-          <span className="identifier">invoices.total_amount</span>, an approved-expense total over{' '}
-          <span className="identifier">expenses.amount</span>, and a ruling on what cost of rental means for owned stock.
-          All three belong in <span className="identifier">lib/queries/finance.ts</span>. TODO(decision).
+          Profit and loss figures will appear when rental costs and approved expenses are available.
         </p>
       </Card>
 
@@ -1172,20 +1168,10 @@ export default function Finance() {
               <Donut slices={methodSlices} centreLabel="Received" centreValue={formatMoney(receivedTotal)} size={116} />
               <Legend slices={methodSlices} />
             </div>
-            <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.6 }}>
-              Every payment received in this period is in exactly one slice, so this reconciles to Received by
-              construction. A payment with no bank account on file is shown as “{NO_ACCOUNT_RECORDED}” — it is not
-              assumed to be cash.
-            </p>
           </>
         )}
       </Card>
 
-      <div style={{ ...cardStyle, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-        Deposits are liabilities and never appear in revenue or receivables — they live in{' '}
-        <span className="identifier">security_deposits</span>, and a table CHECK stops one ever being recorded as a
-        payment. Payments are immutable; corrections are reversal rows, never edits.
-      </div>
     </>
   )
 
@@ -1282,15 +1268,6 @@ export default function Finance() {
      viewport width. Status chips remain the table's primary tabs. */
   const invoiceFiltersPanel = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-      <Card title="Find">
-        <SearchInput
-          value={railSearch}
-          onChange={setRailSearch}
-          onClear={() => setRailSearch('')}
-          placeholder="Invoice or credit-note no…"
-          aria-label="Search invoices by invoice or credit-note number"
-        />
-      </Card>
       <Card title="Date">
         <div role="group" aria-label="Which date the range below binds" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {dateColChip('issue_date', 'Issue date', true)}
@@ -1330,18 +1307,7 @@ export default function Finance() {
           two Export buttons on one screen exporting different things is the
           duplication the re-host was done to remove. */}
       <PageHeader
-        {...(tab === 'Invoices'
-          ? {
-              leading: (
-                <FilterButton
-                  onClick={() => setInvoiceFiltersOpen(!invoiceFiltersOpen)}
-                  activeCount={invoiceFilterCount}
-                  controls="finance-invoice-filters"
-                  expanded={invoiceFiltersOpen}
-                />
-              ),
-            }
-          : { icon: 'card' as const })}
+        icon="card"
         title="Finance"
         {...(money && (tab === 'Dashboard' || tab === 'Invoices') ? { actions: headerActions } : {})}
       />
@@ -1400,7 +1366,29 @@ export default function Finance() {
       {(tab === 'Dashboard' || tab === 'Invoices') && (
       <PageBody noun="finance records" {...restriction}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <KpiStrip items={kpis} columns={kpis.length} />
+          {tab === 'Dashboard' && <KpiStrip items={kpis} columns={kpis.length} />}
+
+          {tab === 'Invoices' && (
+            <ListControlRow
+              search={
+                <SearchInput
+                  value={railSearch}
+                  onChange={setRailSearch}
+                  onClear={() => setRailSearch('')}
+                  placeholder="Search invoice or credit-note no…"
+                  aria-label="Search invoices by invoice or credit-note number"
+                />
+              }
+              filters={
+                <FilterButton
+                  onClick={() => setInvoiceFiltersOpen(!invoiceFiltersOpen)}
+                  activeCount={invoiceFilterCount}
+                  controls="finance-invoice-filters"
+                  expanded={invoiceFiltersOpen}
+                />
+              }
+            />
+          )}
 
           {/* No `onRetry`: `ErrorBanner`'s only button says "Retry", and retrying
               would mean issuing the invoice again, which is not what dismissing
@@ -1555,16 +1543,8 @@ export default function Finance() {
                   </Card>
                 </>
               ) : (
-                <Card
-                  title={invoiceCardTitle}
-                  action={
-                    /* §9.2 — `(All)(Draft)(Sent)(Partially Paid)(Paid)(Overdue)(Void)`.
-                       Each chip is a NAMED FILTER SET from `queries/finance.ts`;
-                       nothing here narrows rows already fetched. See
-                       `invoiceChipFilters` for why three of the seven are not a
-                       `status` filter and what happens if they are made one. */
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                      <div className="finance-chip-track" role="group" aria-label="Filter invoices by status">
+                <>
+                  <div className="finance-chip-track" role="group" aria-label="Filter invoices by status">
                         {INVOICE_CHIPS.map((c) => {
                         const on = chip === c
                         return (
@@ -1585,11 +1565,7 @@ export default function Finance() {
                               setChip(c)
                             }}
                             aria-pressed={on}
-                            {...(c === 'Overdue'
-                              ? { title: 'Derived from the due date, never stored — 0001:1010. This asks due_date < today on unsettled invoices.' }
-                              : c === 'Void'
-                                ? { title: 'Law 3 — nothing is deleted. Voiding is how an invoice reaches its terminal state, and voided invoices stay readable.' }
-                                : {})}
+                            {...(c === 'Overdue' ? { title: 'Past due and unpaid invoices' } : {})}
                             className={`finance-filter-chip ${on ? 'is-active' : ''}`}
                             style={{
                               minHeight: 44,
@@ -1600,11 +1576,8 @@ export default function Finance() {
                           </button>
                         )
                         })}
-                      </div>
-                    </div>
-                  }
-                  bodyStyle={{ padding: 0 }}
-                >
+                  </div>
+                <Card title={invoiceCardTitle} bodyStyle={{ padding: 0 }}>
                   {list.total !== null && (
                     <AppPageToolbar
                       pagination={
@@ -1672,6 +1645,10 @@ export default function Finance() {
                                     detail={detail}
                                     detailTitle={i.invoiceNo}
                                     detailSubtitle={`${i.clientName} · ${i.status}`}
+                                    entityType="invoice"
+                                    entityId={i.invoiceNo}
+                                    context="payments"
+                                    gateContext={gctx}
                                   >
                                     <span>{i.invoiceNo}</span>
                                   </IntelCard>
@@ -1738,6 +1715,10 @@ export default function Finance() {
                                 detail={detail}
                                 detailTitle={i.invoiceNo}
                                 detailSubtitle={`${i.clientName} · ${i.status}`}
+                                entityType="invoice"
+                                entityId={i.invoiceNo}
+                                context="payments"
+                                gateContext={gctx}
                               >
                                 <span className="identifier finance-mono" style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--link)' }}>
                                   {i.invoiceNo}
@@ -1793,61 +1774,9 @@ export default function Finance() {
                       </div>
                     )}
                   </PageBody>
-                  {list.total !== null && list.total > ROWS_PER_PAGE && (
-                    <div style={{ padding: 'var(--sp-md)', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
-                      <Pagination
-                        page={page}
-                        total={list.total}
-                        pageSize={ROWS_PER_PAGE}
-                        onPageChange={setPage}
-                      />
-                    </div>
-                  )}
                 </Card>
+                </>
               )}
-
-              <Card title="Status vocabularies">
-                {/* §5.2 — spelled out on the page, because conflating them is the bug. */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  {[
-                    { title: 'Payment statuses', list: PAYMENT_STATUSES as readonly string[] },
-                    { title: 'Invoice statuses (stored)', list: STORED_INVOICE_STATUSES as readonly string[] },
-                  ].map((g) => (
-                    <div key={g.title}>
-                      <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 7 }}>{g.title}</div>
-                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                        {g.list.map((s) => (
-                          <span
-                            key={s}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              height: 20,
-                              padding: '0 8px',
-                              borderRadius: 'var(--r-badge)',
-                              border: '1px solid var(--border)',
-                              background: 'var(--card2)',
-                              color: 'var(--text2)',
-                              fontSize: 'var(--t-meta)',
-                              fontWeight: 600,
-                            }}
-                          >
-                            {s}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.6 }}>
-                  These are different sets. <strong style={{ color: 'var(--text2)' }}>Partially Paid</strong> is an invoice
-                  status and never a payment status. <strong style={{ color: 'var(--text2)' }}>Overdue</strong> is a declared
-                  invoice status that is never stored — it is derived from the due date, so it is not listed above and a chip
-                  asking for it would match nothing. On the payment side only{' '}
-                  <strong style={{ color: 'var(--text2)' }}>Received</strong> is reachable on a live row: payments are immutable,
-                  so a refund is a reversal row rather than a status change.
-                </p>
-              </Card>
             </div>
 
             {/*
@@ -1925,7 +1854,6 @@ export default function Finance() {
         />
       )}
 
-      <FooterNote extra={['Finance consumes operational data and never creates it']} />
       </div>
     </PageShell>
   )

@@ -79,7 +79,7 @@ describe('Documents Workspace (Bento 2.0 / Design Taste)', () => {
     expect(tabBtns[0]?.textContent).toContain('All Documents')
   })
 
-  it('renders category rail buttons and count badges when filters drawer is toggled', () => {
+  it('keeps one category selector when filters drawer is toggled', () => {
     const el = render(
       <MemoryRouter initialEntries={['/documents']}>
         <Documents />
@@ -93,9 +93,8 @@ describe('Documents Workspace (Bento 2.0 / Design Taste)', () => {
       filterBtn?.click()
     })
 
-    const railBtns = document.body.querySelectorAll<HTMLButtonElement>('.doc-rail-cat-btn')
-    expect(railBtns.length).toBeGreaterThan(0)
-    expect(railBtns[0]?.textContent).toContain('All Documents')
+    expect(el.querySelectorAll<HTMLButtonElement>('.doc-tab-btn').length).toBeGreaterThan(0)
+    expect(document.body.querySelectorAll<HTMLButtonElement>('.doc-rail-cat-btn')).toHaveLength(0)
   })
 
   it('renders toolbar with search input and table/cards view switchers', () => {
@@ -105,8 +104,9 @@ describe('Documents Workspace (Bento 2.0 / Design Taste)', () => {
       </MemoryRouter>,
     )
 
-    const toolbar = el.querySelector('.doc-toolbar-shell')
+    const toolbar = el.querySelector('.list-workspace__controls')
     expect(toolbar).not.toBeNull()
+    expect(toolbar?.querySelector('input[aria-label="Search documents by name, ID, type, record or client"]')).not.toBeNull()
 
     const viewToggle = el.querySelector('.doc-view-toggle')
     expect(viewToggle).not.toBeNull()

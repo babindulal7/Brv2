@@ -7,7 +7,6 @@ import { DataTableShell } from '../../components/ui/DataTable'
 import { thStyle } from '../../components/ui/TableHeaderCell'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { EmptyState } from '../../components/ui/StateViews'
-import { Unavailable } from '../../components/ui/Unavailable'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { formatMoney } from '../../lib/money'
@@ -125,8 +124,6 @@ function onShootToday(a: CrewAssignment): boolean {
  * a modal on this screen, or an entry point on the booking itself — and which
  * record it attaches to. A page may not answer that (CLAUDE.md).
  */
-const BOOK_CREW_UNAVAILABLE =
-  'Not built yet — booking crew needs a booking to attach to, a person and dates, and nothing here collects them'
 
 /**
  * §13 — call sheets are unbuilt, and this button said so **through a success
@@ -135,7 +132,6 @@ const BOOK_CREW_UNAVAILABLE =
  * toasts are for successes only, and a control that cannot act says so where it
  * stands rather than congratulating the operator for pressing it.
  */
-const CALL_SHEET_UNAVAILABLE = 'Not built yet — call sheets are spec §13'
 
 
 /**
@@ -148,9 +144,6 @@ const CALL_SHEET_UNAVAILABLE = 'Not built yet — call sheets are spec §13'
  * `payoutLedger()` renders them in the rail's PAYOUT LEDGER section, which is
  * where §6.1 draws them.
  */
-const TIMESHEETS_UNAVAILABLE = 'Not built yet — planned/actual/overtime capture is spec 06 §8'
-const PAYOUTS_UNAVAILABLE =
-  'Not built yet — gross is in the rail’s payout ledger; TDS and net need a ruled rate (PLAN.md §4.12)'
 
 const ROSTER_STATE_TONE: Record<CrewMember['state'], StatusKey> = {
   Available: 'in',
@@ -187,7 +180,6 @@ export function CrewBooking() {
   const [rosterChip, setRosterChip] = useState<RosterChip>('All')
   const [crewAssignments, setCrewAssignments] = useState<CrewAssignment[]>(CREW_DATA)
   const [crewMembers, setCrewMembers] = useState<CrewMember[]>(CREW_ROSTER)
-  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   /* A failed read, never swallowed: the seed stays on screen behind the banner,
      and the banner says the data did not load live. */
   const [rosterLoadError, setRosterLoadError] = useState<string | null>(null)
@@ -282,18 +274,6 @@ export function CrewBooking() {
     [filteredCrew, crewByName, gctx, conflictIds]
   )
 
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) setSelectedRowIds(new Set(filteredCrew.map((c) => c.id)))
-    else setSelectedRowIds(new Set())
-  }
-
-  const handleToggleRow = (id: string) => {
-    const next = new Set(selectedRowIds)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    setSelectedRowIds(next)
-  }
-
   /**
    * Rulings §7 — "right rails collapse below 1280" means **reflow**, not hide,
    * and the ruling names spec 06 by number: its tablet drawing puts the day
@@ -347,33 +327,6 @@ export function CrewBooking() {
         />
       </RailSection>
 
-      <RailSection title="Quick actions">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-          {/* `Unavailable` is `inline-flex`, which would collapse these to
-              content width beside a full-width button. `display: grid` makes the
-              single child a grid item, which stretches — one stack again. */}
-          <Unavailable reason={BOOK_CREW_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
-            <Button variant="primary" icon="plus" disabled>
-              Book Crew
-            </Button>
-          </Unavailable>
-          <Unavailable reason={CALL_SHEET_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
-            <Button variant="secondary" icon="calendar" disabled>
-              Create Call Sheet
-            </Button>
-          </Unavailable>
-          <Unavailable reason={TIMESHEETS_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
-            <Button variant="secondary" icon="receipt" disabled>
-              Open Timesheets
-            </Button>
-          </Unavailable>
-          <Unavailable reason={PAYOUTS_UNAVAILABLE} style={{ display: 'grid', width: '100%' }}>
-            <Button variant="secondary" icon="card" disabled>
-              Open Payouts
-            </Button>
-          </Unavailable>
-        </div>
-      </RailSection>
     </>
   )
 
@@ -418,35 +371,20 @@ export function CrewBooking() {
         single surface: chips, CREW, ASSIGNMENTS, rail.
       */}
       <>
-          {/* RULING 2026-09-20: KPI cap ≤4 (Foundation page-type rule) over crew spec §10 six-tiles line — four shown, timesheet copy moved.
-              Clamped per band the way `KpiStrip` (Page.tsx:204) does: four 1fr
-              columns keep every tile legible on a 375px phone. */}
-          <KpiStrip
-            items={[
-              { label: 'Booked Today', value: String(crewBookedToday), note: 'Confirmed, shoot day is today', icon: 'crew', accent: 'primary' },
-              { label: 'Available', value: String(roster.available), note: `${roster.total} on the roster`, icon: 'check', accent: 'success' },
-              {
-                label: 'Conflicts',
-                value: String(conflicts.length + travelWarnings.length),
-                note: 'Next 7 days',
-                icon: 'alert_triangle',
-                accent: conflicts.length > 0 ? 'danger' : 'neutral',
-              },
-              {
-                label: 'Fill Rate',
-                value: `${crewDays} days · ${fill.pct}%`,
-                note: `${fill.filled} of ${fill.requested} roles filled`,
-                icon: 'users',
-                accent: 'primary',
-              },
-            ]}
-            columns={4}
-          />
-
           {/* Toolbar & filter chips — §6.1 draws `(All)(Available)(Booked)(Unavailable)`,
               roster availability rather than assignment status. The union and its
               counts live in `data/crew.ts` so the chip and its number cannot drift. */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: phone ? 'wrap' : 'nowrap', width: phone ? '100%' : 'auto', flexShrink: 0, order: 0 }}>
+              <div style={{ flex: phone ? '1 1 100%' : '1 1 320px', width: phone ? '100%' : 320, minWidth: phone ? '100%' : 240, maxWidth: 440 }}>
+                <SearchInput
+                  placeholder="Search crew, role, production…"
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  onClear={() => setSearchQuery('')}
+                />
+              </div>
+            </div>
             <div
               className="crew-chip-track rsp-chip-scroll"
               style={{
@@ -458,6 +396,7 @@ export function CrewBooking() {
                 width: phone ? '100%' : 'auto',
                 maxWidth: phone ? '100%' : 'calc(100% - 400px)',
                 paddingBottom: phone ? 4 : 0,
+                order: 2,
               }}
             >
               {ROSTER_CHIPS.map((label) => (
@@ -488,17 +427,29 @@ export function CrewBooking() {
               ))}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: phone ? 'wrap' : 'nowrap', width: phone ? '100%' : 'auto', flexShrink: 0 }}>
-              <div style={{ flex: phone ? '1 1 100%' : '1 1 320px', width: phone ? '100%' : 320, minWidth: phone ? '100%' : 240, maxWidth: 440 }}>
-                <SearchInput
-                  placeholder="Search crew, role, production…"
-                  value={searchQuery}
-                  onChange={setSearchQuery}
-                  onClear={() => setSearchQuery('')}
-                />
-              </div>
-            </div>
           </div>
+
+          <KpiStrip
+            items={[
+              { label: 'Booked Today', value: String(crewBookedToday), note: 'Confirmed, shoot day is today', icon: 'crew', accent: 'primary' },
+              { label: 'Available', value: String(roster.available), note: `${roster.total} on the roster`, icon: 'check', accent: 'success' },
+              {
+                label: 'Conflicts',
+                value: String(conflicts.length + travelWarnings.length),
+                note: 'Next 7 days',
+                icon: 'alert_triangle',
+                accent: conflicts.length > 0 ? 'danger' : 'neutral',
+              },
+              {
+                label: 'Fill Rate',
+                value: `${crewDays} days · ${fill.pct}%`,
+                note: `${fill.filled} of ${fill.requested} roles filled`,
+                icon: 'users',
+                accent: 'primary',
+              },
+            ]}
+            columns={4}
+          />
 
           {/* Calendar + tables (left) · rail (right).
               One column below 1280 so the rail's sections reflow beneath the
@@ -534,7 +485,6 @@ export function CrewBooking() {
                           <th style={thStyle}>Role</th>
                           <th style={thStyle}>Availability</th>
                           {canCrewMoney && <th style={thStyle}>Day rate</th>}
-                          <th style={{ ...thStyle, textAlign: 'right' }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -552,13 +502,6 @@ export function CrewBooking() {
                                   {formatMoney(m.dayRatePaisa)} / day
                                 </td>
                               )}
-                              <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                                <Unavailable reason={BOOK_CREW_UNAVAILABLE}>
-                                  <Button variant="secondary" disabled>
-                                    Book
-                                  </Button>
-                                </Unavailable>
-                              </td>
                             </tr>
                           )
                         })}
@@ -568,20 +511,7 @@ export function CrewBooking() {
                 )}
               </Card>
 
-              <Card
-                title="Assignments"
-                /* The selection drives no outcome until bulk actions exist —
-                   said where it happens, rather than letting ticks read as
-                   armed. */
-                action={
-                  selectedRowIds.size > 0 ? (
-                    <span role="status" style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                      {selectedRowIds.size} selected — bulk actions not built yet
-                    </span>
-                  ) : undefined
-                }
-                style={{ overflow: 'hidden' }}
-              >
+              <Card title="Assignments" style={{ overflow: 'hidden' }}>
                 {filteredCrew.length === 0 ? (
                   <EmptyState
                     title="No crew assignments found"
@@ -612,19 +542,6 @@ export function CrewBooking() {
                     <table className="crew-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 'var(--t-meta)' }}>
                       <thead>
                         <tr style={{ background: 'var(--card2)', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontSize: 'var(--t-th)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          <th style={{ ...thStyle, width: 36 }}>
-                            {/* Law 15 — the native box is ~13px; the hit area
-                                wraps it to the --tap floor. */}
-                            <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 'var(--tap)', minHeight: 'var(--tap)' }}>
-                              <input
-                                type="checkbox"
-                                aria-label="Select all assignments"
-                                checked={selectedRowIds.size === filteredCrew.length && filteredCrew.length > 0}
-                                onChange={(e) => handleSelectAll(e.target.checked)}
-                                style={{ accentColor: 'var(--nav-active-accent)' }}
-                              />
-                            </span>
-                          </th>
                           <th style={thStyle}>Crew Member</th>
                           {/* Tablet drops the three widest columns — §6.1's tablet
                               drawing is `name │ role │ [Book] ⋮`, and eight columns
@@ -648,17 +565,6 @@ export function CrewBooking() {
                               className={`crew-row ${inConflict ? 'is-conflict' : ''}`}
                               style={{ borderBottom: '1px solid var(--border)', background: inConflict ? 'var(--st-danger-bg)' : undefined }}
                             >
-                              <td style={{ padding: '12px 14px' }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 'var(--tap)', minHeight: 'var(--tap)' }}>
-                                  <input
-                                    type="checkbox"
-                                    aria-label={`Select ${c.name}`}
-                                    checked={selectedRowIds.has(c.id)}
-                                    onChange={() => handleToggleRow(c.id)}
-                                    style={{ accentColor: 'var(--nav-active-accent)' }}
-                                  />
-                                </span>
-                              </td>
                               <td style={{ padding: '12px 14px' }}>
                                 <IntelCard
                                   glance={glance}
@@ -796,11 +702,6 @@ function RosterCard({ member, showRate }: { member: CrewMember; showRate: boolea
         ) : (
           <span />
         )}
-        <Unavailable reason={BOOK_CREW_UNAVAILABLE}>
-          <Button variant="primary" disabled>
-            Book
-          </Button>
-        </Unavailable>
       </div>
     </article>
   )

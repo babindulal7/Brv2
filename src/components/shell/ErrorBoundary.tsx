@@ -17,8 +17,11 @@ import { captureError } from '../../lib/monitoring'
  * is the one place in the app that's a legitimate exception to "prefer
  * functions."
  */
-export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
-  state: { error: Error | null } = { error: null }
+export class ErrorBoundary extends Component<
+  { children: ReactNode; fallback?: ReactNode; onReset?: () => void },
+  { error: Error | null; retryCount: number }
+> {
+  state: { error: Error | null; retryCount: number } = { error: null, retryCount: 0 }
 
   static getDerivedStateFromError(error: Error) {
     return { error }
@@ -44,15 +47,60 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
     })
   }
 
+  handleRetry = () => {
+    if (this.props.onReset) {
+      this.props.onReset()
+    }
+    // If retry was pressed multiple times without recovery, do a hard reload
+    if (this.state.retryCount >= 2) {
+      window.location.reload()
+      return
+    }
+    this.setState((prev) => ({ error: null, retryCount: prev.retryCount + 1 }))
+  }
+
+  handleHardReload = () => {
+    window.location.reload()
+  }
+
   render() {
     if (this.state.error) {
+      if (this.props.fallback) {
+        return this.props.fallback
+      }
       return (
-        <div style={{ padding: '16px 20px 24px' }}>
+        <div style={{ padding: '16px 20px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <ErrorBanner
             title="This screen hit a problem"
-            message={`${this.state.error.message || 'An unexpected error stopped this page from rendering.'} Reloading usually clears it — if it keeps happening, the detail above is what to report.`}
-            onRetry={() => window.location.reload()}
+            message={
+              <div>
+                <span>{this.state.error.message || 'An unexpected error stopped this page from rendering.'}</span>
+                <span style={{ display: 'block', marginTop: 6, fontSize: 'var(--t-caption)', opacity: 0.85 }}>
+                  Clicking "Retry" will attempt to recover the screen inline without losing offline state.
+                </span>
+              </div>
+            }
+            onRetry={this.handleRetry}
           />
+          {this.state.retryCount > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={this.handleHardReload}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  fontSize: 'var(--t-caption)',
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                  padding: '4px 8px',
+                }}
+              >
+                Force full page reload
+              </button>
+            </div>
+          )}
         </div>
       )
     }

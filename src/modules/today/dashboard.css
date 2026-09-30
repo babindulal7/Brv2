@@ -201,11 +201,10 @@
   border-color: var(--dashboard-accent);
   background: var(--card);
   box-shadow: var(--shadow-card), var(--specular-rim);
-  transform: translateY(-1px);
 }
 
 .dashboard-date-filter__button:active {
-  transform: translateY(1px);
+  filter: brightness(0.98);
 }
 
 .dashboard-date-filter__button:focus-visible,
@@ -237,13 +236,13 @@
   top: calc(100% + 0.65rem);
   right: 0;
   z-index: 50;
-  width: min(23rem, calc(100vw - 2rem));
-  padding: 0.9rem;
+  width: min(360px, calc(100vw - 24px));
+  padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 0.625rem;
-  background: var(--dropdown);
+  border-radius: 16px;
+  background: var(--card);
   color: var(--text);
-  box-shadow: var(--shadow-modal);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
   animation: dashboard-calendar-in 160ms ease-out;
 }
 
@@ -258,136 +257,103 @@
   }
 }
 
+.dashboard-calendar__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.dashboard-calendar__heading strong {
+  display: block;
+  font-size: var(--t-ui);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.dashboard-calendar__heading span {
+  display: block;
+  margin-top: 2px;
+  color: var(--text2);
+  font-size: var(--t-th);
+}
+
+.dashboard-calendar__heading button {
+  display: grid;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  margin: -8px -10px 0 0;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+}
+
+.dashboard-calendar__heading button:hover {
+  background: var(--card2);
+  color: var(--text);
+}
+
 .dashboard-calendar__quick {
   display: grid;
   grid-template-columns: 0.9fr 1.2fr 1.35fr;
-  gap: 0.45rem;
-  margin-bottom: 1rem;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
 .dashboard-calendar__quick button {
-  min-height: var(--tap);
-  padding: 0 0.6rem;
+  min-height: 44px;
+  padding: 0 7px;
   border: 1px solid var(--border);
-  border-radius: 0.45rem;
-  background: var(--card2);
+  border-radius: var(--r-sm, 8px);
+  background: var(--card);
   color: var(--text2);
-  font: 600 var(--t-th)/1 var(--font-body);
+  font: 600 var(--t-th)/1.1 var(--font-body);
   cursor: pointer;
+}
+
+.dashboard-calendar__quick button:hover,
+.dashboard-calendar__mode button:hover {
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .dashboard-calendar__quick button[aria-pressed='true'] {
-  border-color: var(--dashboard-accent);
-  background: var(--dashboard-accent);
-  color: #fff;
-  box-shadow: 0 0.4rem 1rem color-mix(in srgb, var(--dashboard-accent) 26%, transparent);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--btn-primary-fg, #fff);
 }
 
-.dashboard-calendar__month-row {
+.dashboard-calendar__mode {
   display: grid;
-  grid-template-columns: 2.75rem 1fr 2.75rem;
-  align-items: center;
-  margin-bottom: 0.65rem;
-}
-
-.dashboard-calendar__month-row strong {
-  text-align: center;
-  font-size: var(--t-ui);
-}
-
-.dashboard-calendar__month-row button {
-  display: grid;
-  width: 2.75rem;
-  height: 2.75rem;
-  place-items: center;
-  border: 0;
-  border-radius: 0.4rem;
-  background: transparent;
-  color: var(--text2);
-  cursor: pointer;
-}
-
-.dashboard-calendar__month-row button:hover,
-.dashboard-calendar__days button:hover {
-  background: var(--dashboard-accent-soft);
-  color: var(--dashboard-accent-strong);
-}
-
-.dashboard-calendar__weekdays,
-.dashboard-calendar__days {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 0;
-}
-
-.dashboard-calendar__weekdays {
-  margin-bottom: 0.25rem;
-}
-
-.dashboard-calendar__weekdays span {
-  padding-block: 0.3rem;
-  color: var(--muted);
-  font-size: var(--t-th);
-  font-weight: 600;
-  text-align: center;
-}
-
-.dashboard-calendar__days button,
-.dashboard-calendar__days > span {
-  aspect-ratio: 1;
-}
-
-.dashboard-calendar__days button {
-  min-width: 0;
-  min-height: 44px;
-  border: 0;
-  border-radius: 0.45rem;
-  background: transparent;
-  color: var(--text);
-  font: 600 var(--t-th)/1 var(--font-id);
-  cursor: pointer;
-}
-
-.dashboard-calendar__days button.is-in-range {
-  border-radius: 0.25rem;
-  background: var(--dashboard-accent-soft);
-  color: var(--dashboard-accent-strong);
-}
-
-.dashboard-calendar__days button.is-selected {
-  background: var(--dashboard-accent);
-  color: #fff;
-}
-
-.dashboard-calendar__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin: 0.8rem -0.9rem -0.9rem;
-  flex-wrap: wrap;
-  padding: 0.75rem 0.9rem;
-  border-top: 1px solid var(--border);
-  color: var(--text2);
-  font-size: var(--t-th);
-}
-
-.dashboard-calendar__footer button {
-  min-height: var(--tap);
-  padding-inline: 0.7rem;
-  border: 0;
-  border-radius: 0.4rem;
-  background: var(--dashboard-accent);
-  color: #fff;
-  font: 600 var(--t-th)/1 var(--font-body);
-  cursor: pointer;
-}
-
-.dashboard-calendar__footer .dashboard-calendar__close {
-  background: transparent;
-  color: var(--text);
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 4px;
   border: 1px solid var(--border);
-  margin-left: auto;
+  border-radius: var(--r-sm, 8px);
+  background: var(--card2);
+}
+
+.dashboard-calendar__mode button {
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: calc(var(--r-sm, 8px) - 2px);
+  background: transparent;
+  color: var(--text2);
+  font: 700 var(--t-th)/1 var(--font-body);
+  cursor: pointer;
+}
+
+.dashboard-calendar__mode button[aria-pressed='true'] {
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
 }
 
 .movement-panel__table {
@@ -554,11 +520,11 @@
 
 .movement-panel__action:hover {
   background: var(--dashboard-accent-strong);
-  transform: translateY(-1px);
+  filter: brightness(1.03);
 }
 
 .movement-panel__action:active {
-  transform: translateY(1px);
+  filter: brightness(0.98);
 }
 
 .movement-panel__action--secondary {
@@ -714,7 +680,8 @@
 }
 
 .movement-card:hover {
-  transform: translateY(-1.5px);
+  filter: brightness(1.03);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
   border-color: var(--w20, var(--border2));
   background: color-mix(in srgb, var(--card2) 80%, var(--bgglow));
@@ -953,7 +920,7 @@
 }
 
 .movement-card__cta-btn:active {
-  transform: translateY(1px);
+  filter: brightness(0.98);
 }
 
 .movement-panel__load-more {
@@ -1322,7 +1289,7 @@
 
 .dashboard-alert__action:hover {
   background: color-mix(in srgb, currentColor 14%, transparent);
-  transform: translateY(-1px);
+  filter: brightness(1.03);
 }
 
 .dashboard-alert__action:active {
@@ -1467,7 +1434,9 @@
 }
 
 .dashboard-kpi-card:hover {
-  transform: translateY(-1px);
+  filter: brightness(1.02);
+  border-color: var(--border-strong, var(--border));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   border-color: var(--border-strong, var(--border));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
 }
@@ -1970,7 +1939,7 @@
 }
 
 .movement-card:hover {
-  transform: translateY(-1px);
+  filter: brightness(1.02);
   border-color: var(--border2);
   background: var(--surface-card-hover, var(--hover-card));
   box-shadow: var(--shadow-sm);
@@ -2200,7 +2169,7 @@
 }
 
 .movement-card__cta-btn:active {
-  transform: translateY(1px);
+  filter: brightness(0.98);
 }
 
 .movement-card__cta-btn .ui-icon {
@@ -2346,15 +2315,34 @@
 
 /* Today is a working ledger. Reserve strong color for status and interaction. */
 .dashboard-workbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(18rem, 30rem);
   align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
+  gap: 1rem 1.5rem;
   min-width: 0;
 }
 
+.dashboard-workbar__intro span {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--muted);
+  font-size: var(--t-caption, 11px);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.dashboard-workbar__intro p {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+}
+
 .dashboard-workbar .dashboard-counter-bar {
-  width: min(100%, 32rem);
+  width: 100%;
   max-width: none;
   min-height: 3rem;
   border-color: color-mix(in srgb, var(--border) 75%, transparent);
@@ -2366,6 +2354,8 @@
 }
 
 .dashboard-workbar .dashboard-alert {
+  grid-column: 1 / -1;
+  justify-self: start;
   min-height: 3rem;
   flex-shrink: 0;
   padding: 0 0 0 1rem;
@@ -2389,14 +2379,27 @@
 }
 
 .rental-dashboard__panels {
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
+  gap: 1.125rem;
+  align-items: start;
 }
 
 .rental-dashboard__panels .movement-panel {
+  grid-column: auto;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--card);
-  box-shadow: none;
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.rental-dashboard__panels--returns-focus,
+.rental-dashboard__panels--pickups-focus {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rental-dashboard__panels--returns-focus .movement-panel,
+.rental-dashboard__panels--pickups-focus .movement-panel {
+  grid-column: 1;
 }
 
 .rental-dashboard__panels .movement-panel--outgoing,
@@ -2405,9 +2408,9 @@
 }
 
 .rental-dashboard__panels .movement-panel__header {
-  min-height: 4.25rem;
-  padding: 0.85rem 1.25rem;
-  gap: 0;
+  min-height: 6rem;
+  padding: 1.1rem 1.5rem;
+  gap: 1rem;
   background: transparent;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
@@ -2417,7 +2420,10 @@
 }
 
 .rental-dashboard__panels .movement-panel__heading h2 {
-  font-size: 1.125rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+  font-size: 1.3rem;
   font-weight: 650;
   letter-spacing: -0.025em;
 }
@@ -2426,6 +2432,10 @@
 .rental-dashboard__panels .movement-panel--outgoing .movement-panel__heading h2 .figure,
 .rental-dashboard__panels .movement-panel--incoming .movement-panel__heading h2 .figure {
   color: var(--text);
+  font-family: 'JetBrains Mono Variable', monospace;
+  font-size: 1.65rem;
+  font-weight: 600;
+  letter-spacing: -0.065em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -2445,6 +2455,76 @@
 
 .rental-dashboard__panels .movement-panel__body {
   container-type: inline-size;
+}
+
+.rental-dashboard__panels .movement-panel__empty {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.1rem;
+  min-height: 8.5rem;
+  padding: 1.5rem;
+}
+
+.movement-panel__empty-mark {
+  display: grid;
+  flex: 0 0 3rem;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--card2);
+  color: var(--muted);
+}
+
+.movement-panel__empty-copy {
+  padding-top: 0.15rem;
+}
+
+.movement-panel__empty .movement-panel__empty-title {
+  font-size: var(--t-ui);
+  font-weight: 650;
+}
+
+.movement-panel__empty .movement-panel__empty-desc {
+  max-width: 38ch;
+  margin-top: 0.4rem;
+  line-height: 1.5;
+}
+
+.movement-panel__empty-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 44px;
+  margin-top: 0.6rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary-text);
+  font: 650 var(--t-meta)/1 var(--font-body);
+  cursor: pointer;
+}
+
+.movement-panel__empty-reset:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.movement-panel__empty-reset:focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
+}
+
+.dashboard-shift-handover__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.dashboard-shift-handover__label {
+  white-space: nowrap;
 }
 
 .rental-dashboard__panels .dashboard-date-filter__calendar,
@@ -2666,10 +2746,41 @@
 }
 
 @media (max-width: 767px) {
+  .dashboard-shift-handover__toggle {
+    flex-wrap: wrap;
+  }
+
+  .dashboard-shift-handover__status {
+    margin-left: 1.6rem;
+  }
+
+  .dashboard-master-date-control {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .dashboard-master-date-control .dashboard-header-controls__label,
+  .dashboard-master-date-control__calendar-btn {
+    display: none;
+  }
+
+  .dashboard-master-date-control__date-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-inline: 0.35rem;
+    overflow: hidden;
+  }
+
+  .dashboard-master-date-control__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .dashboard-workbar {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.5rem;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.9rem;
   }
 
   .dashboard-workbar .dashboard-counter-bar {
@@ -2682,12 +2793,30 @@
 
   .rental-dashboard__panels .movement-panel__header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.5rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    min-height: 5.5rem;
+    gap: 0.75rem;
+    padding: 1rem;
   }
 
   .rental-dashboard__panels .movement-panel__filter {
-    grid-column: 1;
+    grid-column: 2;
+    grid-row: 1;
+    margin-left: 0;
+  }
+
+  .rental-dashboard__panels .movement-panel__heading h2 {
+    font-size: 1.15rem;
+  }
+
+  .rental-dashboard__panels .movement-panel__heading h2 .figure {
+    font-size: 1.35rem;
+  }
+
+  .rental-dashboard__panels .movement-panel__empty {
+    gap: 0.85rem;
+    padding: 1.25rem 1rem;
   }
 
   .rental-dashboard__panels .movement-card {

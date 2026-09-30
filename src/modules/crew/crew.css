@@ -37,7 +37,7 @@
 .crew-kpi-card:hover {
   border-color: var(--border2, var(--border));
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
-  transform: translateY(-2px);
+  filter: brightness(1.02);
 }
 
 .crew-kpi-header {
@@ -128,7 +128,7 @@
   background: var(--hover-card, var(--card2));
   border-color: var(--border2, var(--border));
   color: var(--text);
-  transform: translateY(-1px);
+  filter: brightness(1.02);
 }
 
 .crew-filter-chip.is-active {
@@ -200,7 +200,6 @@
 
 .crew-calendar-block:hover {
   filter: brightness(1.05);
-  transform: translateY(-0.5px);
 }
 
 /* ── Table Styling ──────────────────────────────────────────────────────── */
@@ -274,5 +273,5 @@
 
 .crew-alert-row:hover {
   background: var(--hover-card, var(--card2));
-  transform: translateY(-1px);
+  filter: brightness(1.02);
 }

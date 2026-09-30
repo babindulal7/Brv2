@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, Button, FooterNote } from '../../components/ui/Page'
+import { Card, Button } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
 import { PageBody } from '../../components/ui/PageBody'
@@ -547,7 +547,7 @@ function AddExpenseSheet({
       isOpen={isOpen}
       onClose={onClose}
       title="Add Expense"
-      subtitle="Recorded against a branch and a category. Corrections are reversal rows, never edits."
+      subtitle="Record a cost against a branch and category."
       size="lg"
       footer={
         <>
@@ -592,12 +592,6 @@ function AddExpenseSheet({
               </option>
             ))}
           </select>
-          {/* §9.4 says "8 groups". `expense_categories` is a FLAT taxonomy with
-              no parent column, and it holds four rows. Said, not padded out. */}
-          <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            {categories.length} {categories.length === 1 ? 'category' : 'categories'} are configured. The wireframe draws
-            eight groups; expense_categories is flat — it has no parent column — so what is here is what exists.
-          </span>
         </label>
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -874,7 +868,7 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
         embedded={embedded}
         icon="card"
         title="Expenses"
-        description="Operating costs, entered here and approved here. Corrections are reversal rows, never edits."
+        description="Track operating costs and approvals."
         {...(money ? { actions: headerActions } : {})}
       />
 
@@ -902,12 +896,25 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
             style={{
               display: 'flex',
               gap: 8,
-              flexWrap: phone ? 'nowrap' : 'wrap',
-              overflowX: phone ? 'auto' : 'visible',
+              flexWrap: 'wrap',
+              overflowX: 'visible',
               alignItems: 'center',
               paddingBottom: phone ? 4 : 0,
             }}
           >
+            <select
+              aria-label="Filter by category"
+              value={categoryId}
+              onChange={(e) => {
+                setCategoryId(e.target.value)
+                setPage(1)
+              }}
+              disabled={categories.length === 0}
+              style={{ ...inputStyle, minHeight: 44, width: phone ? '100%' : 'auto' }}
+            >
+              <option value="All">All categories</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
             {(['All', ...EXPENSE_STATUSES] as const).map((s) => {
               const on = status === s
               return (
@@ -944,33 +951,6 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
               )
             })}
 
-            {/* §9.4's `[category ▾]`. Options are `expense_categories` rows and
-                the value sent is the uuid — `expenses.category_id` is a uuid FK,
-                so filtering by the NAME would need a join filter
-                `applyListFilters` cannot build. */}
-            <select
-              aria-label="Filter by category"
-              value={categoryId}
-              onChange={(e) => {
-                setCategoryId(e.target.value)
-                setPage(1)
-              }}
-              disabled={categories.length === 0}
-              style={{
-                ...inputStyle,
-                minHeight: 44,
-                width: phone ? '100%' : 'auto',
-                marginLeft: phone ? 0 : 'auto',
-                marginTop: phone ? 'var(--sp-xs)' : 0,
-              }}
-            >
-              <option value="All">All categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
           </div>
 
           <Card title={countedTitle} bodyStyle={{ padding: 0 }}>
@@ -1139,7 +1119,6 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
         />
       )}
 
-      <FooterNote extra={['Corrections are reversal rows, never edits']} />
     </PageShell>
   )
 }

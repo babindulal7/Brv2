@@ -6,14 +6,13 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { Select } from '../../components/ui/Select'
-import { Card, Button, KpiStrip, Rail, FooterNote } from '../../components/ui/Page'
+import { Card, Button, Rail } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { useViewport } from '../../lib/device'
 import { ScreenHeader } from '../finance/TabHeader'
-import { Unavailable } from '../../components/ui/Unavailable'
-import { Donut, Legend, catColor } from '../../components/ui/Charts'
+import { catColor } from '../../components/ui/Charts'
 import { EmptyState } from '../../components/ui/StateViews'
 import { STATUS } from '../../lib/status'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
@@ -21,7 +20,6 @@ import { useCanViewMoney } from '../../lib/moneyVisibility'
 import type { Role as SystemRole } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
 import { gateContext } from '../../lib/fieldGating'
-import { useMenuFlip } from '../../lib/menuFlip'
 import { IntelCard } from '../../components/ui/IntelCard'
 import type { IntelGlance, IntelGroup } from '../../components/ui/IntelCard'
 import {
@@ -33,23 +31,18 @@ import {
   ALL_RELATED,
   ALL_STATUS,
   ALL_TYPES,
-  ARCHIVED_NOT_RECYCLE_BIN,
   BRANCHES,
   DOC_STATUS,
   DOC_STATUSES,
   MISSING_TOTAL,
-  NOT_BUILT,
   PENDING_SIGNATURE_TOTAL,
   PER_PAGE,
   RELATED_TARGET,
-  ROW_MENU,
   SORTS,
   documentsFor,
   categoriesFor,
   expiringFor,
-  kpisFor,
   missingFor,
-  summarySlices,
   type CategoryKey,
   type DocRow,
   type RelatedKind,
@@ -57,6 +50,7 @@ import {
 } from '../../lib/queries/documents'
 import { DateField } from '../../components/ui/DateField'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { ListControlRow } from '../../components/ui/ListWorkspace'
 import { Pagination } from '../../components/ui/Pagination'
 
 /* Law 15 — the law is the hit area, and `--tap` holds the number. Kept as
@@ -156,177 +150,6 @@ function DocTile({ icon, index }: { icon: IconName; index: number }) {
       <Icon name={icon} size={15} fill />
     </span>
   )
-}
-
-function ActionIcon({ name, label, why }: { name: IconName; label: string; why: string }) {
-  return (
-    <button
-      type="button"
-      disabled
-      aria-label={`${label} — unavailable`}
-      title={`${label} — ${why}`}
-      className="doc-action-btn"
-      style={{
-        minWidth: 'var(--tap)',
-        minHeight: 'var(--tap)',
-        width: 'var(--tap)',
-        height: 'var(--tap)',
-        borderRadius: 'var(--r-xs)',
-        border: 'none',
-        background: 'transparent',
-        color: 'var(--disabled)',
-        cursor: 'not-allowed',
-        display: 'grid',
-        placeItems: 'center',
-      }}
-    >
-      <Icon name={name} size={16} />
-    </button>
-  )
-}
-
-/**
- * §11's row menu — Download · Print · Email · WhatsApp · Share Link ·
- * Duplicate · Archive. **No Delete**: §6 keeps every document for ever.
- *
- * The menu itself is real; each entry that needs storage or delivery says why
- * it cannot run. `Open related record` is the one that works today.
- */
-/** Tallest the menu gets — the related-record link, divider, all 7 `ROW_MENU` entries, and the closing note.
- *  Rose from 320 when the rows went to the 44px `--tap` floor: 8 × 44 + 13 divider + ~34 note + 12 padding. */
-const DOC_MENU_H = 420
-
-function RowMenu({ row, open, onToggle }: { row: DocRow; open: boolean; onToggle: () => void }) {
-  const target = RELATED_TARGET[row.relatedKind]
-  const { ref, up, measure } = useMenuFlip<HTMLButtonElement>(DOC_MENU_H)
-  return (
-    <span style={{ position: 'relative', display: 'inline-flex' }}>
-      <button
-        ref={ref}
-        type="button"
-        aria-label={`Actions for ${row.id}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className={`doc-action-btn ${open ? 'is-active' : ''}`}
-        onClick={() => {
-          if (!open) measure()
-          onToggle()
-        }}
-        style={{
-          minWidth: 'var(--tap)',
-          minHeight: 'var(--tap)',
-          width: 'var(--tap)',
-          height: 'var(--tap)',
-          borderRadius: 'var(--r-xs)',
-          border: 'none',
-          background: open ? 'var(--hover-card)' : 'transparent',
-          color: open ? 'var(--text)' : 'var(--muted)',
-          cursor: 'pointer',
-          display: 'grid',
-          placeItems: 'center',
-        }}
-      >
-        <Icon name="more_vert" size={16} />
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          style={{
-            position: 'absolute',
-            right: 0,
-            ...(up ? { bottom: 30 } : { top: 30 }),
-            minWidth: 208,
-            padding: 6,
-            borderRadius: 'var(--r-btn)',
-            background: 'var(--dropdown)',
-            border: '1px solid var(--border)',
-            boxShadow: 'var(--shadow-modal)',
-            zIndex: 30,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {target.route ? (
-            <Link
-              to={`${target.route}/${row.relatedTo}`}
-              role="menuitem"
-              style={{ ...menuItem, color: 'var(--text)', cursor: 'pointer' }}
-            >
-              <Icon name="external_link" size={15} style={{ color: 'var(--text2)' }} />
-              <span style={{ flex: 1 }}>Open {row.relatedTo}</span>
-            </Link>
-          ) : (
-            <span
-              role="menuitem"
-              aria-disabled
-              tabIndex={0}
-              title={`${target.label} screen is not built yet`}
-              style={{ ...menuItem, color: 'var(--muted)', cursor: 'not-allowed' }}
-            >
-              <Icon name="external_link" size={15} style={{ color: 'var(--disabled)' }} />
-              <span style={{ flex: 1 }}>Open {row.relatedTo}</span>
-            </span>
-          )}
-
-          <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }} />
-
-          {ROW_MENU.map((m) => (
-            <span
-              key={m.label}
-              role="menuitem"
-              aria-disabled
-              tabIndex={0}
-              title={NOT_BUILT}
-              style={{ ...menuItem, color: 'var(--muted)', cursor: 'not-allowed' }}
-            >
-              <Icon name={m.icon} size={15} style={{ color: 'var(--disabled)' }} />
-              <span style={{ flex: 1 }}>{m.label}</span>
-              <Icon name="close" size={12} style={{ color: 'var(--disabled)' }} />
-            </span>
-          ))}
-
-          {/* §6 — the absence of Delete is the point, so the menu says so. */}
-          <p style={{ margin: '6px 8px 2px', fontSize: 'var(--t-th)', color: 'var(--muted)', whiteSpace: 'normal', lineHeight: 1.4 }}>
-            {ARCHIVED_NOT_RECYCLE_BIN}
-          </p>
-        </div>
-      )}
-    </span>
-  )
-}
-
-/*
- * Law 14 / §7.3 — the floor is the HIT AREA, not the paint, and for THIS shape
- * the two cannot be separated.
- *
- * The compact-34-with-a-pseudo-element escape in §5 works for an icon button
- * sitting alone in a toolbar: the invisible 44 spills into empty chrome and
- * steals nothing. It cannot work in a stacked menu. These rows are contiguous —
- * item N's bottom edge IS item N+1's top edge — so inflating each one to 44
- * would give every row a 6px band of invisible target lying on top of its
- * neighbour's visible paint, and the later row in the DOM wins the tap. A menu
- * whose last entry is Archive is exactly where a silently-wrong-row tap is
- * least affordable.
- *
- * So the paint grows. It costs nothing here: the popover is absolutely
- * positioned with no max-height, `useMenuFlip` only *predicts* the height to
- * choose up-or-down, and `DOC_MENU_H` is updated alongside to keep that
- * prediction honest.
- */
-const menuItem = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 9,
-  width: '100%',
-  minHeight: 'var(--tap)',
-  padding: '0 9px',
-  borderRadius: 'var(--r-sm)',
-  border: 'none',
-  background: 'transparent',
-  fontSize: 'var(--t-meta)',
-  fontFamily: 'inherit',
-  textAlign: 'left' as const,
-  textDecoration: 'none',
 }
 
 /**
@@ -431,8 +254,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
 
   const allDocs: DocRow[] = docRows.length > 0 ? docRows : documentsFor(money)
   const categories = useMemo(() => categoriesFor(money, allDocs), [money, allDocs])
-  const kpis = useMemo(() => kpisFor(money, allDocs), [money, allDocs])
-  const slices = useMemo(() => summarySlices(categories), [categories])
   const missing = useMemo(() => missingFor(money), [money])
   const expiring = useMemo(() => expiringFor(money), [money])
   const total = useMemo(() => categories.reduce((a, c) => a + c.count, 0), [categories])
@@ -480,7 +301,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const [perPage, setPerPage] = useState<number>(PER_PAGE[0] ?? 10)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [menuFor, setMenuFor] = useState<string | null>(null)
 
   const types = useMemo(() => {
     const set = new Set(allDocs.map((d) => d.type))
@@ -516,7 +336,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
       { replace: true },
     )
     setPage(1)
-    setMenuFor(null)
   }
 
   function clearDocumentFilters() {
@@ -641,7 +460,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   )
 
   return (
-    <PageShell width="full" onClick={() => setMenuFor(null)}>
+    <PageShell width="full">
       <div className="doc-v2">
         <ScreenHeader
           embedded={embedded}
@@ -656,20 +475,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           title="Documents"
           actions={
             <>
-              {!phone && (
-                <>
-                  <Unavailable reason={NOT_BUILT}>
-                    <Button icon="upload" disabled>
-                      Upload Document
-                    </Button>
-                  </Unavailable>
-                  <Unavailable reason={NOT_BUILT}>
-                    <Button icon="upload" disabled>
-                      Import
-                    </Button>
-                  </Unavailable>
-                </>
-              )}
               <Button icon="download" aria-label="Export documents" onClick={exportCsv}>
                 {phone ? '' : 'Export'}
               </Button>
@@ -685,7 +490,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           }
         />
 
-        <KpiStrip items={kpis} columns={kpis.length} />
 
         {/* §2 — tabs. The rail's category list below shares this one selection,
             so the two controls can never disagree about what is on screen. */}
@@ -723,41 +527,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           {(() => {
             const categoriesContent = (
             <>
-            <Card title="Document Categories" bodyStyle={{ padding: 6 }}>
-              {[{ key: 'All' as const, rail: ALL_TAB, icon: 'file' as IconName, count: total }, ...categories].map((c) => {
-                const on = category === c.key
-                const tint = c.key === 'All' ? 'var(--text2)' : catColor(categoryIndex(c.key as CategoryKey))
-                return (
-                  <button
-                    key={c.key}
-                    type="button"
-                    onClick={() => pickCategory(c.key)}
-                    aria-pressed={on}
-                    className={`doc-rail-cat-btn ${on ? 'is-active' : ''}`}
-                  >
-                    <span className="doc-rail-cat-icon">
-                      <Icon name={c.icon} size={14} style={{ color: on ? 'var(--nav-active-accent)' : tint, flexShrink: 0 }} />
-                    </span>
-                    <span
-                      style={{
-                        flex: 1,
-                        textAlign: 'left',
-                        minWidth: 0,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {c.rail}
-                    </span>
-                    <span className="doc-rail-cat-count figure doc-mono" style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)', flexShrink: 0 }}>
-                      {c.count.toLocaleString('en-IN')}
-                    </span>
-                  </button>
-                )
-              })}
-            </Card>
-
           <Card
             title="Filters"
             action={
@@ -915,25 +684,8 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
 
         {/* ── centre ────────────────────────────────────────────────────── */}
         <Card bodyStyle={{ padding: 0 }}>
-          <AppPageToolbar
-            pagination={
-              <Pagination
-                page={current}
-                total={rows.length}
-                pageSize={perPage}
-                pageSizeOptions={PER_PAGE}
-                onPageChange={setPage}
-                onPageSizeChange={(size) => {
-                  setPerPage(size)
-                  setPage(1)
-                }}
-              />
-            }
-          />
-          <div className="doc-toolbar-shell">
-            {/* Global command search navigates records; this field filters the
-                displayed documents, including when hosted inside Finance. */}
-            <div className="doc-search-wrapper">
+          <ListControlRow
+            search={
               <SearchInput
                 value={query}
                 onChange={(val) => {
@@ -947,9 +699,8 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                 placeholder="Search in documents…"
                 aria-label="Search documents by name, ID, type, record or client"
               />
-            </div>
-
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            }
+            sort={<label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               Sort by
               <Select
                 value={sort}
@@ -962,9 +713,8 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                   </option>
                 ))}
               </Select>
-            </label>
-
-            <span className="doc-view-toggle">
+            </label>}
+            view={<span className="doc-view-toggle">
               {([['Table', false], ['Cards', true]] as const).map(([label, isCards]) => {
                 // `cardView`, not `cards` — below 768 the width forces cards, so
                 // the pressed state has to say what is actually rendering.
@@ -983,8 +733,24 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                   </button>
                 )
               })}
-            </span>
-          </div>
+            </span>}
+          />
+
+          <AppPageToolbar
+            pagination={
+              <Pagination
+                page={current}
+                total={rows.length}
+                pageSize={perPage}
+                pageSizeOptions={PER_PAGE}
+                onPageChange={setPage}
+                onPageSizeChange={(size) => {
+                  setPerPage(size)
+                  setPage(1)
+                }}
+              />
+            }
+          />
 
           {/* §11 — the bulk bar appears only on selection. */}
           {selected.size > 0 && (
@@ -1057,7 +823,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                     </div>
                     <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 500 }}>{d.party}</span>
                     <div className="doc-card-footer">
-                      <span>{d.recordState}</span>
+                      {d.recordState !== d.status && <span>{d.recordState}</span>}
                       <span className="figure doc-mono">
                         {bs ? formatBs(bs) : formatAd(d.createdAd)}
                       </span>
@@ -1097,7 +863,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                     {/* Eight columns do not fit a 300px-rail layout below a very
                         wide viewport, so the actions pin to the right edge and
                         stay reachable instead of scrolling out of sight. */}
-                    <th className="doc-th doc-sticky-actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1122,15 +887,19 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                             detail={detail}
                             detailTitle={d.name}
                             detailSubtitle={`${d.id} · ${d.type}`}
+                            entityType="document"
+                            entityId={d.id}
+                            context="documents"
+                            gateContext={gctx}
                           >
                             <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                               <DocTile icon={cat?.icon ?? 'file'} index={categoryIndex(d.category)} />
                               <span style={{ minWidth: 0 }}>
-                                <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+                                <span data-intel-identifier style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
                                   {d.name}
                                 </span>
                                 {/* §4 — one prefix per type; templates carry id · version. */}
-                                <span className="identifier doc-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
+                                <span data-intel-identifier className="identifier doc-mono" style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: 1 }}>
                                   {d.id}
                                 </span>
                               </span>
@@ -1154,11 +923,9 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                           ) : d.relatedTo === '—' ? (
                             <span style={{ color: 'var(--muted)' }}>—</span>
                           ) : (
-                            <Unavailable reason={`The ${target.label} screen is not built yet`}>
-                              <span className="identifier doc-mono" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>
-                                {d.relatedTo}
-                              </span>
-                            </Unavailable>
+                            <span className="identifier doc-mono" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>
+                              {d.relatedTo}
+                            </span>
                           )}
                         </td>
 
@@ -1167,7 +934,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                         <td className="doc-td">
                           <StatusPill status={d.status} />
                           {/* §5.2 — the record's state, never merged into the pill. */}
-                          <span
+                          {d.recordState !== d.status && <span
                             style={{
                               display: 'block',
                               marginTop: 'var(--sp-xs)',
@@ -1178,7 +945,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                             }}
                           >
                             {d.recordState}
-                          </span>
+                          </span>}
                         </td>
 
                         <td className="doc-td">
@@ -1191,21 +958,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                           </span>
                         </td>
 
-                        <td
-                          className="doc-td doc-sticky-actions"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
-                            <ActionIcon name="eye" label="View" why={NOT_BUILT} />
-                            <ActionIcon name="download" label="Download" why={NOT_BUILT} />
-                            <ActionIcon name="upload" label="Send" why={NOT_BUILT} />
-                            <RowMenu
-                              row={d}
-                              open={menuFor === d.id}
-                              onToggle={() => setMenuFor((m) => (m === d.id ? null : d.id))}
-                            />
-                          </span>
-                        </td>
                       </tr>
                     )
                   })}
@@ -1214,32 +966,12 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             </DataTableShell>
           )}
 
-          <div style={{ padding: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
-            <Pagination
-              page={current}
-              total={rows.length}
-              pageSize={perPage}
-              pageSizeOptions={PER_PAGE}
-              onPageChange={setPage}
-              onPageSizeChange={(size) => {
-                setPerPage(size)
-                setPage(1)
-              }}
-            />
-          </div>
         </Card>
 
         {/* ── right rail ────────────────────────────────────────────────── */}
         {(() => {
           const summaryContent = (
           <>
-          <Card title="Document Summary">
-            <div style={{ display: 'flex', gap: 11, alignItems: 'center' }}>
-              <Donut slices={slices} centreLabel="Total" centreValue={total.toLocaleString('en-IN')} size={96} />
-              <Legend slices={slices} />
-            </div>
-          </Card>
-
           <Card
             title="Pending Signatures"
             action={
@@ -1352,33 +1084,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
             </div>
           </Card>
 
-          <Card title="Quick Actions" bodyStyle={{ padding: 10 }}>
-            {/* The one tile with somewhere real to go. */}
-            <button
-              type="button"
-              onClick={() => pickCategory('Templates')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 7,
-                width: '100%',
-                minHeight: 44,
-                height: 44,
-                borderRadius: 'var(--r-btn)',
-                border: '1px solid var(--btn-secondary-border)',
-                background: 'var(--btn-secondary-bg)',
-                color: 'var(--text)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                fontFamily: 'inherit',
-                cursor: 'pointer',
-              }}
-            >
-              <Icon name="checklist" size={14} />
-              Document Templates
-            </button>
-          </Card>
           </>
           )
           return desktop ? (
@@ -1388,14 +1093,6 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
           )
         })()}
       </div>
-
-      <FooterNote
-        extra={[
-          'A document exists once and is linked wherever needed',
-          ARCHIVED_NOT_RECYCLE_BIN,
-          'Category counts are installation totals; the table lists the seeded sample',
-        ]}
-      />
 
       <CreateDocumentModal
         isOpen={isCreateOpen}

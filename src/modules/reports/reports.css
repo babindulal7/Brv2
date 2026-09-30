@@ -122,7 +122,7 @@
 .report-kpi-card:hover {
   border-color: var(--border2, var(--border));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-  transform: translateY(-1px);
+  filter: brightness(1.02);
 }
 
 .report-kpi-header {

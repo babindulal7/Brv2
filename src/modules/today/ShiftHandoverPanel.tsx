@@ -30,10 +30,6 @@ const sectionStyle: React.CSSProperties = {
 }
 
 const headerBarStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: 'var(--sp-sm)',
   cursor: 'pointer',
   padding: '12px 16px',
   borderRadius: 'var(--radius)',
@@ -144,6 +140,7 @@ export default function ShiftHandoverPanel() {
     <div style={sectionStyle}>
       {/* ── Section header ─────────────────────────────────────────── */}
       <div
+        className="dashboard-shift-handover__toggle"
         style={headerBarStyle}
         onClick={() => setExpanded((prev) => !prev)}
         role="button"
@@ -152,11 +149,12 @@ export default function ShiftHandoverPanel() {
         aria-label="Shift Handover"
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((p) => !p) } }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div className="dashboard-shift-handover__label" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <Icon name={expanded ? 'chevron_down' : 'chevron_right'} size={16} />
           <span style={{ fontWeight: 600, fontSize: 'var(--t-body)' }}>Shift Handover</span>
         </div>
         <Badge
+          className="dashboard-shift-handover__status"
           tone={handoverDone ? 'in' : 'warning'}
           label={handoverDone ? 'Handover complete' : 'Overlap window open · 14:00–15:00'}
         />

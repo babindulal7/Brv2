@@ -418,35 +418,30 @@ describe('Law 4 — the screen offers no edit', () => {
 
   it('states that no ↳ reversal row is drawn, so its absence is not read as "none exist"', async () => {
     await mount(1280)
-    expect(text()).toContain('payment_reversals')
-    expect(text()).toContain('not a claim that none exist')
+    expect(text()).toContain('Payment reversals are recorded separately and are not shown in this list.')
   })
 
   it('keeps that note visible on an empty ledger, where it is most easily misread', async () => {
     paymentRows = []
     await mount(1280)
-    expect(text()).toContain('payment_reversals')
+    expect(text()).toContain('Payment reversals are recorded separately and are not shown in this list.')
   })
 })
 
-describe('§9.3 filter row — every control is server-side or visibly disabled', () => {
-  it('draws the three answerable chips plus a disabled Reversed', async () => {
+describe('§9.3 filter row — only answerable controls appear', () => {
+  it('draws the three answerable status chips', async () => {
     await mount(1280)
     const chips = allButtons()
       .filter((b) => b.getAttribute('aria-pressed') !== null)
       .map((b) => b.textContent?.trim())
     expect(chips).toEqual(['All', 'Received', 'Refunded'])
 
-    const reversed = allButtons().find((b) => b.textContent?.trim().startsWith('Reversed'))
-    expect(reversed?.disabled).toBe(true)
-    expect(reversed?.getAttribute('aria-label')).toContain('payment_reversals')
+    expect(allButtons().some((b) => b.textContent?.trim().startsWith('Reversed'))).toBe(false)
   })
 
-  it('draws the method control disabled, naming what is missing', async () => {
+  it('omits the unavailable method filter', async () => {
     await mount(1280)
-    const method = container.querySelector('select')
-    expect(method?.disabled).toBe(true)
-    expect(method?.getAttribute('aria-label')).toContain('bank_accounts')
+    expect(container.querySelector('select[aria-label*="method"]')).toBeNull()
   })
 
   it('draws two live day inputs', async () => {
@@ -488,8 +483,7 @@ describe('§9.3 — the deposits rail (Law 5)', () => {
     expect(text()).toContain('Held')
     expect(text()).toContain('Applied')
     expect(text()).toContain('Refunded')
-    expect(text()).toContain('security_deposits')
-    expect(text()).toContain('Not tracked yet')
+    expect(text()).toContain('Deposit totals are unavailable in this view.')
   })
 
   it('never invents a rupee figure for a deposit', async () => {

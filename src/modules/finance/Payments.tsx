@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
-import { Card, PageActions, Button, Rail, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageActions, Button, Rail, cardStyle } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
 import { PageBody } from '../../components/ui/PageBody'
@@ -29,7 +29,11 @@ import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { RefundPaymentModal } from './modals/RefundPaymentModal'
 import { DateField } from '../../components/ui/DateField'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import '../../components/ui/list-workspace.css'
 import { Pagination } from '../../components/ui/Pagination'
+import { IntelCard } from '../../components/ui/IntelCard'
+import { gateContext } from '../../lib/fieldGating'
+import { paymentGlance, paymentDetailGroups } from '../../data/paymentIntel'
 import './finance.css'
 
 /**
@@ -379,7 +383,7 @@ export function chipFromParam(param: string | null): PaymentChip {
  * remaining cumulative cap under concurrent submissions.
  */
 const REVERSAL_SCOPE_NOTE =
-  'Corrects this receipt only. The ledger prevents cumulative reversals above its remaining amount.'
+  'Corrects this receipt only.'
 
 /**
  * Why no `↳ reversal row` is drawn beneath its original.
@@ -388,8 +392,7 @@ const REVERSAL_SCOPE_NOTE =
  * otherwise indistinguishable from "no payment has ever been reversed".
  */
 const NO_REVERSAL_ROWS_NOTE =
-  'Reversal rows are not shown beneath their original yet: corrections live in payment_reversals, ' +
-  'which has no reader in lib/queries/finance.ts. Its absence here is not a claim that none exist.'
+  'Payment reversals are recorded separately and are not shown in this list.'
 
 /* ── DEPOSITS ─────────────────────────────────────────────────────────────
  *
@@ -404,11 +407,7 @@ const NO_REVERSAL_ROWS_NOTE =
  * table by construction, so summing anything here could only produce a figure
  * about something else.
  */
-const DEPOSIT_LINES: ReadonlyArray<{ label: string; source: string }> = [
-  { label: 'Held', source: 'security_deposits' },
-  { label: 'Applied', source: 'deposit_movements' },
-  { label: 'Refunded', source: 'deposit_movements' },
-]
+const DEPOSIT_LINES = ['Held', 'Applied', 'Refunded'] as const
 
 /* ── fetchers ─────────────────────────────────────────────────────────────
  *
@@ -473,6 +472,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
    * writing to it. Absent, not disabled — `MovementList.tsx:307`.
    */
   const { user } = useAuth()
+  const paymentGate = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
   const canTakePayment = user ? canRecordPayment(user.role) : false
 
   // docs/PERMISSIONS.md F-a and the payment_reversals RLS policy agree exactly.
@@ -631,13 +631,13 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
       </div>
 
       <dl style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {DEPOSIT_LINES.map((d) => (
-          <div key={d.label} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
-            <dt style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{d.label}</dt>
+        {DEPOSIT_LINES.map((label) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 }}>
+            <dt style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{label}</dt>
             <dd
               className="figure"
               style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}
-              title={`Not read — ${d.source} has no query in lib/queries/finance.ts.`}
+              title="Deposit total unavailable"
             >
               —
             </dd>
@@ -646,14 +646,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
       </dl>
 
       <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-        Not tracked yet — <span className="identifier">security_deposits</span> and{' '}
-        <span className="identifier">deposit_movements</span> have no query in this app. A dash is a missing
-        reading, never a zero.
-      </p>
-
-      <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-        A deposit is a liability, not revenue: it never touches Rental Total or Outstanding, and it can never
-        appear in the ledger beside this — a table CHECK forbids a payment of type Security Deposit.
+        Deposit totals are unavailable in this view. Deposits are separate from rental charges and Outstanding.
       </p>
     </div>
   )
@@ -668,7 +661,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
         embedded={embedded}
         icon="card"
         title="Payments"
-        description="The receipt ledger. Payments are immutable — a correction is a reversal row, never an edit."
+        description="Review receipts and refunds."
         actions={
           !embedded ? (
             <PageActions
@@ -690,67 +683,8 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
       />
 
       {/* §9.3 filter row — `(All)(Received)(Refunded)(Reversed)  [method ▾][date▾]` */}
-      <div style={{ display: 'flex', gap: 'var(--sp-md)', flexWrap: 'wrap', alignItems: 'center' }}>
-        <div
-          role="group"
-          aria-label="Payment filters"
-          className="finance-chip-track rsp-chip-scroll"
-          style={{
-            display: 'flex',
-            gap: 'var(--sp-sm)',
-            flexWrap: phone ? 'nowrap' : 'wrap',
-            overflowX: phone ? 'auto' : undefined,
-            paddingBottom: phone ? 2 : 0,
-          }}
-        >
-          {PAYMENT_CHIPS.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => patch({ status: CHIP_PARAM[c], page: null })}
-              aria-pressed={chip === c}
-              className={`finance-filter-chip ${chip === c ? 'is-active' : ''}`}
-              style={chipStyle(chip === c)}
-              {...(c === 'Refunded'
-                ? {
-                    title:
-                      'Refunds are payment_type = Refund. The payment_status member "Refunded" is derived from a reversal row and is never written, so filtering on it would match nothing.',
-                  }
-                : {})}
-            >
-              {c}
-            </button>
-          ))}
-
-          {/* Drawn, disabled, and carrying its reason — see the header. */}
-          <button
-            type="button"
-            disabled
-            aria-label="Reversed — not tracked yet. Reversals live in payment_reversals, which has no reader in lib/queries/finance.ts."
-            title="Not tracked yet — payment_reversals has no reader in lib/queries/finance.ts, and it carries a narrower role list of its own."
-            className="finance-filter-chip"
-            style={chipStyle(false, true)}
-          >
-            Reversed
-            <Icon name="info" size={13} />
-          </button>
-        </div>
-
-        {/* [method ▾] — the column renders, the narrowing cannot. */}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-          Method
-          <select
-            disabled
-            aria-label="Method — not filterable yet. The channel lives on bank_accounts and the payments select does not join it with !inner."
-            title="Not filterable yet — payments has no method column; the channel comes from bank_accounts through an embed that PostgREST cannot filter the parent by."
-            style={{ ...inputStyle, opacity: 0.55, cursor: 'not-allowed' }}
-          >
-            <option>Not filterable yet</option>
-          </select>
-        </label>
-
-        {/* [date ▾] — genuinely server-side, at Kathmandu day boundaries. */}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+      <div className="list-workspace__controls" style={{ gap: 'var(--sp-md)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', order: 0 }}>
           From
           <DateField
             ariaLabel="Payments from this Kathmandu day"
@@ -761,7 +695,7 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
             style={inputStyle}
           />
         </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', order: 0 }}>
           To
           <DateField
             ariaLabel="Payments up to and including this Kathmandu day"
@@ -773,8 +707,36 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
             style={inputStyle}
           />
         </label>
+        <div
+          role="group"
+          aria-label="Payment filters"
+          className="finance-chip-track rsp-chip-scroll"
+          style={{
+            display: 'flex',
+            gap: 'var(--sp-sm)',
+            flexWrap: phone ? 'nowrap' : 'wrap',
+            overflowX: phone ? 'auto' : undefined,
+            paddingBottom: phone ? 2 : 0,
+            order: 2,
+            width: '100%',
+          }}
+        >
+          {PAYMENT_CHIPS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => patch({ status: CHIP_PARAM[c], page: null })}
+              aria-pressed={chip === c}
+              className={`finance-filter-chip ${chip === c ? 'is-active' : ''}`}
+              style={chipStyle(chip === c)}
+            >
+              {c}
+            </button>
+          ))}
 
-        {isFiltered && <Button onClick={clearFilters}>Clear filters</Button>}
+        </div>
+
+        {isFiltered && <Button onClick={clearFilters} style={{ order: 3 }}>Clear filters</Button>}
       </div>
 
       <div
@@ -811,8 +773,8 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
             skeletonRows={5}
             emptyMessage={
               isFiltered
-                ? 'No payment matches this filter. Clear it to see the whole ledger.'
-                : 'No payment has been recorded yet. Recording one is how it gets here — a payment is never edited afterwards.'
+                ? 'Clear filters to see the full ledger.'
+                : 'No payments have been recorded yet.'
             }
           >
             {/* PHONE <768 — the table becomes card rows. */}
@@ -825,9 +787,9 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                     style={{ ...cardStyle, padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 6 }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-sm)' }}>
-                      <span className="identifier finance-mono" style={{ fontWeight: 700, color: 'var(--text)' }}>
-                        {p.paymentNo}
-                      </span>
+                      <IntelCard glance={paymentGlance(p, paymentGate)} detail={paymentDetailGroups(p, paymentGate)} detailTitle={p.paymentNo} detailSubtitle={`${p.clientName} · ${p.status}`} entityType="payment" entityId={p.paymentNo} context="payments" gateContext={paymentGate}>
+                        <span className="identifier finance-mono" style={{ fontWeight: 700, color: 'var(--text)' }} data-intel-identifier>{p.paymentNo}</span>
+                      </IntelCard>
                       <span className="figure finance-mono" style={{ fontWeight: 700, color: 'var(--text)' }}>
                         {formatMoney(p.amount)}
                       </span>
@@ -903,7 +865,9 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
                     {rows.map((p) => (
                       <tr key={p.id} className="finance-row" style={{ borderBottom: '1px solid var(--border)' }}>
                         <td className="identifier finance-mono" style={{ ...td, fontWeight: 600 }}>
-                          {p.paymentNo}
+                          <IntelCard glance={paymentGlance(p, paymentGate)} detail={paymentDetailGroups(p, paymentGate)} detailTitle={p.paymentNo} detailSubtitle={`${p.clientName} · ${p.status}`} entityType="payment" entityId={p.paymentNo} context="payments" gateContext={paymentGate}>
+                            <span data-intel-identifier>{p.paymentNo}</span>
+                          </IntelCard>
                         </td>
                         <td style={td}>
                           <Link
@@ -992,12 +956,6 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
         {railBesideList ? <Rail label="Deposits">{railContent}</Rail> : railContent}
       </div>
 
-      <FooterNote
-        extra={[
-          'Payments are immutable — corrections are reversal rows, never edits',
-          'Deposits are a separate liability and never touch Outstanding',
-        ]}
-      />
 
       {/*
         Mounted only while open, and unmounted on close: `RecordPaymentModal`

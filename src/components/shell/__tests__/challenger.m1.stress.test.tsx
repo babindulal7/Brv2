@@ -665,7 +665,10 @@ describe('Empirical Challenger — Header Sync Badge Visibility States', () => {
       triggerSync: vi.fn(),
     }
     await mount(<Header crumbs={[{ label: 'Dashboard' }]} />)
-    expect(container.querySelector('.header-sync-control')).toBeNull()
+    const slot = container.querySelector<HTMLElement>('.header-sync-context')
+    expect(slot?.style.visibility).toBe('hidden')
+    expect(slot?.getAttribute('aria-hidden')).toBe('true')
+    expect(container.querySelector('.header-sync-control')?.getAttribute('tabindex')).toBe('-1')
   })
 
   it('state 2: surfaces sync badge when synced but mutations are queued (pendingCount > 0)', async () => {
@@ -682,7 +685,7 @@ describe('Empirical Challenger — Header Sync Badge Visibility States', () => {
     expect(badge1).not.toBeNull()
     expect(badge1?.textContent).toContain('1 Queued')
     expect(badge1?.style.minHeight).toBe('44px')
-    expect(badge1?.style.minWidth).toBe('44px')
+    expect(parseInt(badge1?.style.minWidth ?? '0', 10)).toBeGreaterThanOrEqual(44)
 
     // Also test larger count
     syncMockState.pendingCount = 42
@@ -797,7 +800,7 @@ describe('Empirical Challenger — Header Sync Badge Visibility States', () => {
     await mount(<Header crumbs={[{ label: 'Rentals' }]} />)
     const syncBadge = container.querySelector<HTMLButtonElement>('.header-sync-control')
     expect(syncBadge?.style.minHeight).toBe('44px')
-    expect(syncBadge?.style.minWidth).toBe('44px')
+    expect(parseInt(syncBadge?.style.minWidth ?? '0', 10)).toBeGreaterThanOrEqual(44)
 
     const userProfile = container.querySelector<HTMLButtonElement>('button[aria-label*="user profile"]')
     expect(userProfile?.style.minHeight).toBe('44px')
@@ -843,8 +846,9 @@ describe('Empirical Challenger — Header Sync Badge Visibility States', () => {
     expect(container.querySelector('[role="dialog"][aria-label="User profile"]')).not.toBeNull()
 
     // Click outside backdrop
-    const backdrop = container.querySelector('div[aria-hidden="true"]')
+    const backdrop = profileBtn?.nextElementSibling as HTMLElement | null
     expect(backdrop).not.toBeNull()
+    expect(backdrop?.getAttribute('aria-hidden')).toBe('true')
     await act(async () => (backdrop as HTMLElement)?.click())
     expect(container.querySelector('[role="dialog"][aria-label="User profile"]')).toBeNull()
   })

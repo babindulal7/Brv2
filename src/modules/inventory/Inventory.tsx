@@ -3,13 +3,15 @@ import type { ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, Button, PageHeader, PageActions, KpiStrip, FooterNote } from '../../components/ui/Page'
+import { Card, Button, PageHeader, PageActions, KpiStrip } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { AppSidePanel } from '../../components/shell/AppSidePanel'
 import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
 import { Pagination } from '../../components/ui/Pagination'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { ListControlRow, ListWorkspace } from '../../components/ui/ListWorkspace'
+import { SearchInput } from '../../components/ui/SearchInput'
 import { useFacetCounts } from '../../lib/queries/facetCounts'
 import type { Kpi } from '../../components/ui/Page'
 import { PageBody } from '../../components/ui/PageBody'
@@ -1274,6 +1276,7 @@ export default function Inventory() {
    * stack the operator has to walk out of.
    */
   const [params, setParams] = useSearchParams()
+  const searchTerm = params.get('q') ?? ''
   const tabParam = params.get('tab')
   const isNew = tabParam === 'new'
   const tab = tabFromSlug(tabParam)
@@ -1320,6 +1323,15 @@ export default function Inventory() {
   const [density, setDensity] = useState<Density>('comfortable')
   const [rowsPerPage, setRowsPerPage] = useState<number>(25)
   const [page, setPage] = useState(1)
+  const setSearchTerm = useCallback((value: string) => {
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      if (value.trim()) next.set('q', value)
+      else next.delete('q')
+      return next
+    }, { replace: true })
+    setPage(1)
+  }, [setParams])
   /** Keyed on `products.id`, the primary key — the mock keyed on `name`, which is not unique. */
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [inspectingEquipment, setInspectingEquipment] = useState<InventoryListRow | null>(null)
@@ -1353,7 +1365,7 @@ export default function Inventory() {
     () => Object.values(facets).reduce((a, s) => a + (s?.size ?? 0), 0),
     [facets],
   )
-  const filtersOn = activeFacetCount > 0 || chip.kind !== 'all'
+  const filtersOn = activeFacetCount > 0 || chip.kind !== 'all' || searchTerm.trim() !== ''
 
   const toggleFacet = useCallback(
     (key: FacetKey, value: string) => {
@@ -1381,6 +1393,7 @@ export default function Inventory() {
   const clearFilters = useCallback(() => {
     const p = new URLSearchParams(params)
     p.delete('chip')
+    p.delete('q')
     for (const paramName of Object.values(FACET_PARAM_MAP)) {
       p.delete(paramName)
     }
@@ -1416,6 +1429,10 @@ export default function Inventory() {
     () => inventoryQuery(statusChip, effectiveFacets, sort),
     [statusChip, effectiveFacets, sort],
   )
+  const searchFilters = useMemo<ListFilters>(
+    () => ({ ...query.filters, ...(searchTerm.trim() ? { search: searchTerm.trim() } : {}) }),
+    [query.filters, searchTerm],
+  )
 
   /*
    * ── P6 facet counts ────────────────────────────────────────────────────
@@ -1439,8 +1456,8 @@ export default function Inventory() {
     },
     [query.impossible],
   )
-  const categoryCounts = useFacetCounts(countRows, query.filters, FACET_COLUMN.Category, PRODUCT_CATEGORIES, filtersOpen)
-  const statusCounts = useFacetCounts(countRows, query.filters, FACET_COLUMN.Status, INV_ORDER, filtersOpen)
+  const categoryCounts = useFacetCounts(countRows, searchFilters, FACET_COLUMN.Category, PRODUCT_CATEGORIES, filtersOpen)
+  const statusCounts = useFacetCounts(countRows, searchFilters, FACET_COLUMN.Status, INV_ORDER, filtersOpen)
   const facetCounts = useMemo(
     () => ({ Category: categoryCounts.counts, Status: statusCounts.counts }),
     [categoryCounts.counts, statusCounts.counts],
@@ -1461,7 +1478,7 @@ export default function Inventory() {
 
   /* Server-side paging. `withCount: true` is what makes "Showing X to Y of Z" a
      count of the whole matching set rather than of the page in hand. */
-  const listFilters: ListFilters = { ...query.filters, page: { index: page - 1, size: rowsPerPage } }
+  const listFilters: ListFilters = { ...searchFilters, page: { index: page - 1, size: rowsPerPage } }
   const list = useList<InventoryListRow>(fetchInventory, listFilters, {
     baseline: query.baseline,
     isFilteredOverride: filtersOn,
@@ -1696,71 +1713,23 @@ export default function Inventory() {
          */
         <StockCheck embedded />
       ) : (
-        <div className="inventory-v2">
+        <ListWorkspace className="inventory-v2">
           {showStats && (
             <div style={{ marginBottom: 'var(--sp-sm)' }}>
               <KpiStrip items={kpis} columns={6} />
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <div className="inventory-chip-track">
-              {PRIMARY_EQUIPMENT_CHIPS.map((c) => {
-                const key = chipKey(c)
-                const on = chipKey(chip) === key
-                const tone =
-                  c.kind === 'all'
-                    ? 'var(--text2)'
-                    : c.kind === 'status'
-                      ? INV_DOT[c.status]
-                      : CONDITION_INK[c.condition]
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => {
-                      setChip(c)
-                      setPage(1)
-                    }}
-                    aria-pressed={on}
-                    className={`inventory-filter-chip ${on ? 'is-active' : ''}`}
-                    style={!on && tone ? { color: tone } : undefined}
-                  >
-                    {c.kind === 'status' && <Icon name={INV_STYLE[c.status].icon} size={12} />}
-                    {c.kind === 'condition' && <Icon name="eye" size={12} />}
-                    {c.label}
-                  </button>
-                )
-              })}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ order: 0, flex: '1 1 280px', maxWidth: 360, minWidth: 200 }}>
+              <SearchInput
+                value={searchTerm}
+                onChange={setSearchTerm}
+                onClear={() => setSearchTerm('')}
+                placeholder="Search equipment or asset code"
+                aria-label="Search inventory"
+              />
             </div>
-
-            <button
-              type="button"
-              onClick={() => setShowStats((s) => !s)}
-              aria-expanded={showStats}
-              aria-label={showStats ? 'Hide inventory statistics' : 'Show inventory statistics'}
-              style={{
-                flexShrink: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                minHeight: 44,
-                padding: '0 14px',
-                borderRadius: 'var(--r-btn, 8px)',
-                border: `1px solid ${showStats ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                background: showStats ? 'var(--nav-active-bg)' : 'var(--card)',
-                color: showStats ? 'var(--nav-active-accent)' : 'var(--text)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                transition: 'all var(--dur-fast) var(--ease)',
-              }}
-            >
-              <Icon name="chart" size={14} />
-              <span>{showStats ? 'Hide Stats' : 'Stats'}</span>
-            </button>
-
             <button
               type="button"
               onClick={() => setFiltersOpen((o) => !o)}
@@ -1768,6 +1737,7 @@ export default function Inventory() {
               aria-controls="inventory-filters"
               aria-label="Filter options"
               style={{
+                order: 1,
                 flexShrink: 0,
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1810,10 +1780,38 @@ export default function Inventory() {
 
             <button
               type="button"
-              onClick={clearFilters}
-              disabled={!filtersOn}
-              title={filtersOn ? 'Clear the status chip and every filter' : 'No filters are applied'}
+              onClick={() => setShowStats((s) => !s)}
+              aria-expanded={showStats}
+              aria-label={showStats ? 'Hide inventory statistics' : 'Show inventory statistics'}
               style={{
+                order: 2,
+                flexShrink: 0,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                minHeight: 44,
+                padding: '0 14px',
+                borderRadius: 'var(--r-btn, 8px)',
+                border: `1px solid ${showStats ? 'var(--nav-active-accent)' : 'var(--border)'}`,
+                background: showStats ? 'var(--nav-active-bg)' : 'var(--card)',
+                color: showStats ? 'var(--nav-active-accent)' : 'var(--text)',
+                fontSize: 'var(--t-meta)',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'all var(--dur-fast) var(--ease)',
+              }}
+            >
+              <Icon name="chart" size={14} />
+              <span>{showStats ? 'Hide Stats' : 'Stats'}</span>
+            </button>
+
+            {filtersOn && <button
+              type="button"
+              onClick={clearFilters}
+              title="Clear the status chip and every filter"
+              style={{
+                order: 3,
                 flexShrink: 0,
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -1823,18 +1821,51 @@ export default function Inventory() {
                 borderRadius: 'var(--r-btn, 8px)',
                 border: '1px solid transparent',
                 background: 'transparent',
-                color: filtersOn ? 'var(--link)' : 'var(--muted)',
+                color: 'var(--link)',
                 fontSize: 'var(--t-meta)',
                 fontWeight: 600,
-                cursor: filtersOn ? 'pointer' : 'not-allowed',
+                cursor: 'pointer',
                 fontFamily: 'inherit',
                 transition: 'all var(--dur-fast) var(--ease)',
               }}
             >
               <Icon name="refresh" size={13} />
               {phone ? '' : 'Clear Filters'}
-            </button>
+            </button>}
           </div>
+
+          <ListControlRow
+            sort={<label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              Sort
+              <select
+                value={sort}
+                onChange={(e) => { setSort(e.target.value as SortKey); setPage(1) }}
+                aria-label="Sort equipment"
+                style={{ minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)', font: 'inherit' }}
+              >
+                {SORTS.filter((s) => !SORT_UNAVAILABLE[s]).map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>}
+            view={<>
+              <button
+                type="button"
+                onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
+                aria-pressed={density === 'compact'}
+                aria-label={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}
+                title={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}
+                style={{ width: 44, height: 44, borderRadius: 'var(--r-sm)', border: '1px solid var(--border)', background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--card)', color: density === 'compact' ? 'var(--nav-active-accent)' : 'var(--text2)', cursor: 'pointer' }}
+              >
+                <Icon name={density === 'compact' ? 'chevron_up' : 'chevron_down'} size={15} />
+              </button>
+              <SegmentedControl
+                size="sm"
+                ariaLabel="View layout"
+                options={[{ id: 'table', label: 'Table', icon: 'checklist' }, { id: 'grid', label: 'Cards', icon: 'queues' }]}
+                value={view}
+                onChange={(v) => setView(v as 'table' | 'grid')}
+              />
+            </>}
+          />
 
           {/*
             §7.1 desktop: a filter rail on the left, the table to its right.
@@ -1863,88 +1894,28 @@ export default function Inventory() {
               `FilterDrawer` is `position: fixed`, so the grid is one column and
               the table keeps the width the rail was taking.
             */}
-            <Card
-              title={countedTitle}
-              action={
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-                  {/* Sort dropdown */}
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                    <Icon name="chevron_down" size={13} style={{ color: 'var(--muted)' }} />
-                    <span style={{ fontWeight: 500 }}>Sort:</span>
-                    <select
-                      value={sort}
-                      onChange={(e) => {
-                        setSort(e.target.value as SortKey)
-                        setPage(1)
-                      }}
-                      aria-label="Sort equipment"
-                      style={{
-                        minHeight: 44,
-                        height: 44,
-                        padding: '0 32px 0 12px',
-                        borderRadius: 'var(--r-sm)',
-                        border: '1px solid var(--border)',
-                        background: 'var(--card)',
-                        color: 'var(--text)',
-                        fontSize: 'var(--t-meta)',
-                        fontWeight: 500,
-                        fontFamily: 'inherit',
-                        cursor: 'pointer',
-                        appearance: 'none',
-                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
-                        backgroundRepeat: 'no-repeat',
-                        backgroundPosition: 'right 8px center',
-                      }}
-                    >
-                      {SORTS.map((s) => {
-                        const blocked = SORT_UNAVAILABLE[s]
-                        return (
-                          <option key={s} value={s} disabled={Boolean(blocked)} title={blocked}>
-                            {blocked ? `${s} — unavailable` : s}
-                          </option>
-                        )
-                      })}
-                    </select>
-                  </div>
-
-                  {/* Density toggle */}
+            <div className="inventory-chip-track" style={{ padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
+              {PRIMARY_EQUIPMENT_CHIPS.map((c) => {
+                const key = chipKey(c)
+                const on = chipKey(chip) === key
+                const tone = c.kind === 'all' ? 'var(--text2)' : c.kind === 'status' ? INV_DOT[c.status] : CONDITION_INK[c.condition]
+                return (
                   <button
+                    key={key}
                     type="button"
-                    onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
-                    aria-pressed={density === 'compact'}
-                    title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
-                    style={{
-                      width: 44,
-                      height: 44,
-                      minWidth: 44,
-                      minHeight: 44,
-                      borderRadius: 'var(--r-sm)',
-                      border: '1px solid var(--border)',
-                      background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--card)',
-                      color: density === 'compact' ? 'var(--nav-active-accent)' : 'var(--text2)',
-                      cursor: 'pointer',
-                      display: 'grid',
-                      placeItems: 'center',
-                    }}
+                    onClick={() => { setChip(c); setPage(1) }}
+                    aria-pressed={on}
+                    className={`inventory-filter-chip ${on ? 'is-active' : ''}`}
+                    style={!on && tone ? { color: tone } : undefined}
                   >
-                    <Icon name={density === 'compact' ? 'chevron_up' : 'chevron_down'} size={15} />
+                    {c.kind === 'status' && <Icon name={INV_STYLE[c.status].icon} size={12} />}
+                    {c.kind === 'condition' && <Icon name="eye" size={12} />}
+                    {c.label}
                   </button>
-
-                  {/* View layout SegmentedControl */}
-                  <SegmentedControl
-                    size="sm"
-                    ariaLabel="View layout"
-                    options={[
-                      { id: 'table', label: 'Table', icon: 'checklist' },
-                      { id: 'grid', label: 'Cards', icon: 'queues' },
-                    ]}
-                    value={view}
-                    onChange={(v) => setView(v as 'table' | 'grid')}
-                  />
-                </div>
-              }
-              bodyStyle={{ padding: 0 }}
-            >
+                )
+              })}
+            </div>
+            <Card title={countedTitle} bodyStyle={{ padding: 0 }}>
               {total !== null && (
                 <AppPageToolbar
                   pagination={
@@ -2045,8 +2016,10 @@ export default function Inventory() {
                 emptyMessage={
                   query.impossible
                     ? `The “${chip.label}” chip and the Status filter do not overlap, so nothing can match both.`
-                    : filtersOn
-                      ? 'Nothing in the catalogue satisfies the status chip and filter rail together.'
+                    : searchTerm.trim()
+                      ? 'Try another equipment name or asset code.'
+                      : filtersOn
+                        ? 'Try adjusting or clearing the filters.'
                       : 'No equipment has been added to the catalogue yet.'
                 }
                 {...(filtersOn ? {} : { emptyActionLabel: 'Add Equipment', onEmptyAction: () => navigate('/inventory/new') })}
@@ -2219,7 +2192,7 @@ export default function Inventory() {
               the list while a desktop operator found them beside it.
             */}
           </div>
-        </div>
+        </ListWorkspace>
       )}
 
       <ContextDrawer
@@ -2390,7 +2363,6 @@ export default function Inventory() {
         />
       )}
 
-      <FooterNote extra={['Equipment is retired, never deleted']} />
     </PageShell>
   )
 }

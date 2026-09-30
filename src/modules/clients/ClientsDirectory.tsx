@@ -1104,16 +1104,45 @@ export function ClientsDirectory({
 
       {/* ── quick filters + view switch ───────────────────────────────── */}
       <div
-        className="client-chip-track rsp-chip-scroll"
+        className="client-chip-track"
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 'var(--sp-sm)',
-          flexWrap: phone ? 'nowrap' : 'wrap',
-          overflowX: phone ? 'auto' : undefined,
-          paddingBottom: phone ? 4 : 0,
+          flexWrap: 'wrap',
         }}
       >
+        <span style={{ order: 0, marginLeft: 0, display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', width: phone ? '100%' : 'auto', flex: phone ? '1 1 100%' : '1 1 360px', flexWrap: 'nowrap' }}>
+          <div style={{ flex: phone ? '1 1 0' : undefined, width: phone ? undefined : 280, minWidth: 0 }}>
+            <SearchInput
+              value={searchInput}
+              onChange={setSearchInput}
+              onClear={() => {
+                setSearchInput('')
+                patchParams({ q: null }, true)
+              }}
+              onSearchSubmit={(val) => {
+                const midBurst = Boolean(searchQuery) && Boolean(val)
+                patchParams({ q: val || null }, midBurst)
+              }}
+              placeholder="Search client, phone, email, PAN…"
+              aria-label="Search clients"
+            />
+          </div>
+
+          {tabular &&
+            (['Table', 'Cards'] as ViewKey[]).map((v) => (
+              <Button
+                key={v}
+                icon={v === 'Table' ? 'queues' : 'box'}
+                variant={view === v ? 'primary' : 'secondary'}
+                onClick={() => setView(v)}
+              >
+                {v}
+              </Button>
+            ))}
+        </span>
+
         {visibleChips.map((c) => {
           const on = activeFilter === c.key
           return (
@@ -1138,6 +1167,7 @@ export function ClientsDirectory({
                 cursor: 'pointer',
                 fontFamily: 'inherit',
                 whiteSpace: 'nowrap',
+                order: 2,
               }}
             >
               {c.label}
@@ -1183,6 +1213,7 @@ export function ClientsDirectory({
             cursor: 'pointer',
             fontFamily: 'inherit',
             whiteSpace: 'nowrap',
+            order: 2,
           }}
         >
           <Icon name="alert_triangle" size={13} fill={overlays.blocked} />
@@ -1228,6 +1259,7 @@ export function ClientsDirectory({
               cursor: 'pointer',
               fontFamily: 'inherit',
               whiteSpace: 'nowrap',
+              order: 2,
             }}
           >
             <Icon name="lock" size={13} fill={true} />
@@ -1271,47 +1303,13 @@ export function ClientsDirectory({
             fontWeight: 600,
             cursor: 'pointer',
             fontFamily: 'inherit',
+            order: 3,
           }}
         >
           <Icon name="chart" size={14} />
           <span>{showKpis ? 'Hide Stats' : 'Stats'}</span>
         </button>
 
-        <span style={{ marginLeft: phone ? 0 : 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', width: phone ? '100%' : 'auto', flexWrap: phone ? 'nowrap' : 'nowrap' }}>
-          <div style={{ flex: phone ? '1 1 0' : undefined, width: phone ? undefined : 280, minWidth: 0 }}>
-            <SearchInput
-              value={searchInput}
-              onChange={setSearchInput}
-              onClear={() => {
-                setSearchInput('')
-                patchParams({ q: null }, true)
-              }}
-              onSearchSubmit={(val) => {
-                const midBurst = Boolean(searchQuery) && Boolean(val)
-                patchParams({ q: val || null }, midBurst)
-              }}
-              placeholder="Search client, phone, email, PAN…"
-              aria-label="Search clients"
-            />
-          </div>
-
-          {tabular &&
-            (['Table', 'Cards'] as ViewKey[]).map((v) => (
-              <Button
-                key={v}
-                icon={v === 'Table' ? 'queues' : 'box'}
-                variant={view === v ? 'primary' : 'secondary'}
-                onClick={() => setView(v)}
-              >
-                {v}
-              </Button>
-            ))}
-
-          {/* Was an `Unavailable` reading "Advanced client filters are not
-              built yet". They are now — `clientFacets.ts` carries the options,
-              the predicates and the counts, so the control does the thing its
-              label always claimed. */}
-        </span>
       </div>
 
       {/*

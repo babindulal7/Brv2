@@ -1,11 +1,12 @@
 import { Pagination } from '../../components/ui/Pagination'
 import { useMemo, useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, Button, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { EmptyState } from '../../components/ui/StateViews'
-import { Unavailable } from '../../components/ui/Unavailable'
+import { SearchInput } from '../../components/ui/SearchInput'
+import { ListControlRow } from '../../components/ui/ListWorkspace'
 import { STATUS, BRAND, BRAND_TEXT } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
@@ -227,11 +228,10 @@ function PlanCard({ p, money, onViewMembers, memberCount }: {
           in the table on this same screen, so it filters that table instead of
           navigating — a real destination beats a plausible one.
         */}
-        <button
+        {memberCount > 0 && <button
           type="button"
           onClick={onViewMembers}
-          disabled={memberCount === 0}
-          title={memberCount === 0 ? `No member is on the ${p.name} plan yet` : `Filter the member list to ${p.name}`}
+          title={`Filter the member list to ${p.name}`}
           style={{
             display: 'inline-flex',
             alignItems: 'center',
@@ -243,13 +243,13 @@ function PlanCard({ p, money, onViewMembers, memberCount }: {
             fontFamily: 'inherit',
             fontSize: 'var(--t-meta)',
             fontWeight: 600,
-            color: memberCount === 0 ? 'var(--disabled)' : 'var(--link)',
-            cursor: memberCount === 0 ? 'not-allowed' : 'pointer',
+            color: 'var(--link)',
+            cursor: 'pointer',
           }}
         >
           View members
           <Icon name="arrow_right" size={12} />
-        </button>
+        </button>}
       </div>
     </article>
   )
@@ -288,9 +288,6 @@ const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-met
 
 /* ── screen ────────────────────────────────────────────────────────────── */
 
-/** Bulk membership actions have no service behind them yet; the buttons say so. */
-const BULK_REASON = 'Bulk membership actions are not built yet — no reminder or level-change service exists'
-
 /**
  * Clients → **Membership**, built from renders `Clients - Memberships.PNG` and
  * `Clients - Memberships Tab.PNG`.
@@ -307,13 +304,14 @@ const BULK_REASON = 'Bulk membership actions are not built yet — no reminder o
  */
 export default function Membership({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const search = params.get('mq') ?? ''
   const money = useCanViewMoney()
 
   const [bucket, setBucket] = useState<MemberBucket | null>(null)
   const [level, setLevel] = useState<MembershipTier | null>(null)
   const [renewingSoon, setRenewingSoon] = useState(false)
   const [planView, setPlanView] = useState<PlanView>('Cards')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [perPage, setPerPage] = useState<number>(MEMBER_ROWS_PER_PAGE[1])
   const [page, setPage] = useState(1)
 
@@ -337,6 +335,7 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
   const rows = useMemo(
     () =>
       memberList.filter((m) => {
+        if (search && !`${m.name} ${m.id} ${m.level} ${m.kind}`.toLocaleLowerCase().includes(search.toLocaleLowerCase())) return false
         if (bucket && m.bucket !== bucket) return false
         if (level && m.level !== level) return false
         // "Renews within 30 days" is forward-looking — a member already past the
@@ -344,21 +343,13 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
         if (renewingSoon && !(m.daysLeft >= 0 && m.daysLeft <= 30)) return false
         return true
       }),
-    [memberList, bucket, level, renewingSoon],
+    [memberList, search, bucket, level, renewingSoon],
   )
+  const hasMemberFilters = Boolean(search || bucket || level || renewingSoon)
 
   const pageCount = Math.max(1, Math.ceil(rows.length / perPage))
   const current = Math.min(page, pageCount)
   const pageRows = rows.slice((current - 1) * perPage, current * perPage)
-
-  const allOnPageSelected = pageRows.length > 0 && pageRows.every((m) => selected.has(m.id))
-  const toggleAll = () =>
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (allOnPageSelected) pageRows.forEach((m) => next.delete(m.id))
-      else pageRows.forEach((m) => next.add(m.id))
-      return next
-    })
 
   const resetPage = () => setPage(1)
 
@@ -388,17 +379,6 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
             description="Manage memberships, renewals and member benefits"
             actions={
               <>
-                {/*
-                  The render's primary verb. Nothing enrols a member — there is
-                  no membership-creation flow anywhere in the build — so it is
-                  disabled with the reason rather than navigating to this same
-                  view, which would look like it had done something.
-                */}
-                <Unavailable reason="Membership enrolment is not built yet — no flow creates a membership record">
-                  <Button icon="plus" variant="primary" disabled>
-                    New Membership
-                  </Button>
-                </Unavailable>
                 <Button icon="settings" onClick={() => navigate('/settings')}>
                   Settings
                 </Button>
@@ -456,11 +436,6 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
                 {v}
               </Button>
             ))}
-            <Unavailable reason="Plan editing is not built yet — plan definitions are seed data, not a settings surface">
-              <Button icon="tool" disabled>
-                Edit Plans
-              </Button>
-            </Unavailable>
           </>
         }
       >
@@ -538,6 +513,29 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
         </p>
       </Card>
 
+      <ListControlRow
+        search={
+          <SearchInput
+            value={search}
+            onChange={(value) => {
+              const next = new URLSearchParams(params)
+              if (value) next.set('mq', value)
+              else next.delete('mq')
+              setParams(next, { replace: true })
+              resetPage()
+            }}
+            onClear={() => {
+              const next = new URLSearchParams(params)
+              next.delete('mq')
+              setParams(next, { replace: true })
+              resetPage()
+            }}
+            placeholder="Search members"
+            aria-label="Search members"
+          />
+        }
+      />
+
       {/* ── quick filters ─────────────────────────────────────────────── */}
       <div className="client-chip-track" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
         {chips.map((c) => {
@@ -601,16 +599,6 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
           >
             Renews within 30 days
           </Button>
-          <Unavailable reason="Advanced membership filters are not built yet — the status, level and renewal filters on this row are the ones that exist">
-            <Button icon="queues" disabled>
-              More filters
-            </Button>
-          </Unavailable>
-          <Unavailable reason="Membership export is not built yet — no export service exists">
-            <Button icon="download" disabled>
-              Export
-            </Button>
-          </Unavailable>
         </span>
       </div>
 
@@ -669,37 +657,6 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
             flexWrap: 'wrap',
           }}
         >
-          <input
-            type="checkbox"
-            aria-label="Select all members on this page"
-            checked={allOnPageSelected}
-            onChange={toggleAll}
-          />
-          <span className="figure" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            {selected.size} selected
-          </span>
-          {['Send Reminder', 'Change Level', 'More'].map((b) => (
-            <Unavailable key={b} reason={BULK_REASON}>
-              <Button disabled>{b}</Button>
-            </Unavailable>
-          ))}
-          {selected.size > 0 && (
-            <button
-              type="button"
-              onClick={() => setSelected(new Set())}
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--link)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Clear selection
-            </button>
-          )}
           <Pagination page={current} total={rows.length} pageSize={perPage} onPageChange={setPage} pageSizeOptions={MEMBER_ROWS_PER_PAGE} onPageSizeChange={(size) => { setPerPage(size); resetPage() }} />
         </div>
 
@@ -707,7 +664,6 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
           <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: money ? 1240 : 880 }}>
             <thead>
               <tr style={{ background: 'var(--th-bg)' }}>
-                <th style={{ ...th, width: 28 }} />
                 {shownHeaders.map((h) => (
                   <th key={h.label} style={th}>
                     {h.label}
@@ -719,39 +675,27 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
             <tbody>
               {pageRows.length === 0 ? (
                 <tr>
-                  <td colSpan={shownHeaders.length + 2} style={{ padding: '24px 16px' }}>
+                  <td colSpan={shownHeaders.length + 1} style={{ padding: '24px 16px' }}>
                     <EmptyState
-                      title="No members match this filter"
-                      description="No membership record matches the status, level and renewal filters currently applied."
-                      actionLabel="Clear all filters"
-                      onAction={() => {
+                      title={hasMemberFilters ? 'No members match this filter' : 'No membership records to show'}
+                      description={hasMemberFilters
+                        ? 'No membership record matches the current search and filters.'
+                        : 'Membership records will appear here when available.'}
+                      {...(hasMemberFilters ? { actionLabel: 'Clear all filters', onAction: () => {
                         setBucket(null)
                         setLevel(null)
                         setRenewingSoon(false)
+                        const next = new URLSearchParams(params)
+                        next.delete('mq')
+                        setParams(next, { replace: true })
                         resetPage()
-                      }}
+                      } } : {})}
                     />
                   </td>
                 </tr>
               ) : (
                 pageRows.map((m: MemberRow) => (
                   <tr key={m.id} className="client-row" style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td style={{ ...td, width: 28 }}>
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${m.name}`}
-                        checked={selected.has(m.id)}
-                        onChange={() =>
-                          setSelected((prev) => {
-                            const next = new Set(prev)
-                            if (next.has(m.id)) next.delete(m.id)
-                            else next.add(m.id)
-                            return next
-                          })
-                        }
-                      />
-                    </td>
-
                     <td style={td}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
                         <span
@@ -953,7 +897,6 @@ export default function Membership({ embedded = false }: { embedded?: boolean } 
             color: 'var(--text2)',
           }}
         >
-          <Pagination page={current} total={rows.length} pageSize={perPage} onPageChange={setPage} pageSizeOptions={MEMBER_ROWS_PER_PAGE} onPageSizeChange={(size) => { setPerPage(size); resetPage() }} />
           <span style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
             {LEGEND.map((l) => (
               <span key={l.text} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>

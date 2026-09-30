@@ -102,7 +102,7 @@ export default function DashboardMovementPanel({
         </span>
         <div className="movement-panel__heading">
           <h2 id={`${side}-panel-title`}>
-            {title} <span aria-hidden="true">·</span> <span className="figure">{count}</span>
+            <span>{title}</span>{' '}<span className="figure">{count}</span>
           </h2>
           {panelSubtitle && <p title={panelSubtitle}>{panelSubtitle}</p>}
         </div>
@@ -115,21 +115,30 @@ export default function DashboardMovementPanel({
           error={list.error}
           hasRows={list.rows.length > 0}
           onRetry={list.refetch}
-          empty={list.isEmpty}
-          emptyIsFiltered={list.isFiltered}
-          onClearFilters={onClearFilters}
           noun={noun}
           skeleton="movement"
           skeletonRows={3}
-          emptyTitle={`No ${noun} ${periodLabel}.`}
-          emptyMessage={
-            side === 'outgoing'
-              ? 'Nothing is scheduled to leave in this period.'
-              : 'Nothing is expected back in this period.'
-          }
-          clearLabel="Back to Today"
         >
-          {rows.length === 0 ? (
+          {list.isEmpty ? (
+            <div className="movement-panel__empty" role="status">
+              <span className="movement-panel__empty-mark" aria-hidden="true">
+                <Icon name={icon} size={22} />
+              </span>
+              <div className="movement-panel__empty-copy">
+                <p className="movement-panel__empty-title">No {noun} {periodLabel}.</p>
+                <p className="movement-panel__empty-desc">
+                  {side === 'outgoing'
+                    ? 'Nothing is scheduled to leave in this period.'
+                    : 'Nothing is expected back in this period.'}
+                </p>
+                {list.isFiltered && (
+                  <button type="button" className="movement-panel__empty-reset" onClick={onClearFilters}>
+                    Back to Today <Icon name="arrow_right" size={15} />
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : rows.length === 0 ? (
             <div className="movement-panel__empty-search" role="status">
               <span className="movement-panel__empty-icon" aria-hidden="true">
                 <Icon name="search" size={24} />

@@ -109,6 +109,25 @@ describe('focused pickup and return dashboard', () => {
     expect(buttonByLabel('Choose return date filter')?.textContent).toContain('Today')
   })
 
+  it('selects a date range with the shared calendar and keeps returns independent', async () => {
+    await mount()
+    await act(async () => buttonByLabel('Choose pickup date filter')?.click())
+    const dialog = document.querySelector('#pickup-date-dialog')!
+    expect(dialog.textContent).toContain('Single day')
+    expect(dialog.textContent).toContain('Date range')
+    expect(dialog.textContent).toContain('BS')
+
+    const rangeButton = [...dialog.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent === 'Date range')!
+    await act(async () => rangeButton.click())
+    await act(async () => dialog.querySelectorAll<HTMLButtonElement>('[role="gridcell"]')[0]?.click())
+    expect(dialog.textContent).toContain('Choose an end date')
+    await act(async () => dialog.querySelectorAll<HTMLButtonElement>('[role="gridcell"]')[1]?.click())
+
+    expect(document.querySelector('#pickup-date-dialog')).toBeNull()
+    expect(buttonByLabel('Choose pickup date filter')?.textContent).not.toContain('Today')
+    expect(buttonByLabel('Choose return date filter')?.textContent).toContain('Today')
+  })
+
   it('does not contain a duplicate New Rental button in the page header', async () => {
     await mount()
     const header = container.querySelector('.page-header')
