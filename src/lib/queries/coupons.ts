@@ -6,6 +6,9 @@
  * code redemption tracking, and lifecycle status.
  */
 
+import { getBusinessToday } from '../bs'
+import { formatMoney, rupees } from '../money'
+
 export interface Coupon {
   code: string
   type: 'pct' | 'flat'
@@ -146,7 +149,7 @@ export const COUPON_SEED: Coupon[] = [
 ]
 
 export function getCouponStatus(c: Coupon, todayIso?: string): CouponStatus {
-  const today = todayIso || new Date().toISOString().slice(0, 10)
+  const today = todayIso || getBusinessToday().toISOString().slice(0, 10)
   if (c.disabled) return 'Disabled'
   if (c.to < today) return 'Expired'
   if (c.limit && c.used >= c.limit) return 'Expired'
@@ -156,12 +159,15 @@ export function getCouponStatus(c: Coupon, todayIso?: string): CouponStatus {
 
 export function listCoupons(): Coupon[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(COUPON_SEED))
-      return [...COUPON_SEED]
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (!raw) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(COUPON_SEED))
+        return [...COUPON_SEED]
+      }
+      return JSON.parse(raw) as Coupon[]
     }
-    return JSON.parse(raw) as Coupon[]
+    return [...COUPON_SEED]
   } catch {
     return [...COUPON_SEED]
   }
@@ -169,7 +175,9 @@ export function listCoupons(): Coupon[] {
 
 export function saveCoupons(coupons: Coupon[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons))
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(coupons))
+    }
   } catch (err) {
     console.error('Failed to save coupons', err)
   }
@@ -188,7 +196,7 @@ export function validateCoupon(rawCode: string, ctx: CouponValidationContext): C
     return { ok: false, amount: 0, reason: 'Promo code not recognized or invalid.' }
   }
 
-  const today = ctx.today || new Date().toISOString().slice(0, 10)
+  const today = ctx.today || getBusinessToday().toISOString().slice(0, 10)
   const status = getCouponStatus(coupon, today)
 
   if (status === 'Disabled') {
@@ -207,7 +215,7 @@ export function validateCoupon(rawCode: string, ctx: CouponValidationContext): C
     return {
       ok: false,
       amount: 0,
-      reason: `Requires a minimum booking subtotal of Rs ${coupon.minBooking.toLocaleString('en-IN')}.`,
+      reason: `Requires a minimum booking subtotal of ${formatMoney(rupees(coupon.minBooking))}.`,
       status,
       coupon,
     }

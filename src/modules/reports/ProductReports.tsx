@@ -29,6 +29,7 @@ import { ReportToolbar } from '../../components/ui/ReportToolbar'
 import type { ReportCsvRow } from '../../components/ui/ReportToolbar'
 import { BRAND_TEXT } from '../../lib/status'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { formatMoney, rupees } from '../../lib/money'
 import { useViewport } from '../../lib/device'
 import {
   KPIS,
@@ -274,7 +275,7 @@ export default function ProductReports() {
                   groups={PROFIT_TREND.groups}
                   series={PROFIT_TREND.series}
                   yTicks={PROFIT_TREND.yTicks}
-                  format={(v) => `Rs ${(v * 10000).toLocaleString('en-IN')}`}
+                  format={(v) => formatMoney(rupees(v * 10000))}
                   height={140}
                 />
               </Card>

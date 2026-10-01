@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Modal } from './Modal'
 import { CalendarPopover } from './DateField'
 import { formatAd } from '../../lib/bs'
+import { formatMoney, rupees } from '../../lib/money'
 
 export interface CheckAvailabilityModalProps {
   open: boolean
@@ -47,7 +48,7 @@ export function CheckAvailabilityModal({
 
   const activeProduct = products?.find((p) => p.id === (selectedId || selectedProductId))
   const resolvedProductName = productTitle || activeProduct?.name
-  const resolvedRate = productRate || (activeProduct?.dailyRate ? `NPR ${activeProduct.dailyRate.toLocaleString()} / day` : undefined)
+  const resolvedRate = productRate || (activeProduct?.dailyRate ? `${formatMoney(rupees(activeProduct.dailyRate))} / day` : undefined)
   const resolvedDesc = productDescription || activeProduct?.description
   const resolvedStock = stockOnHand !== undefined ? stockOnHand : activeProduct?.totalQuantity
 

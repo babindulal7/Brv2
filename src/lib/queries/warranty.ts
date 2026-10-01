@@ -27,9 +27,9 @@ export interface WarrantyItem {
 
 const STORAGE_KEY = 'br.warranties'
 
-const NOW_MS = new Date('2026-07-23').getTime()
+import { getBusinessToday } from '../bs'
 
-const SEED_WARRANTY_DATA = [
+export const SEED_WARRANTY_DATA = [
   { name: 'Sony FX3', serialNo: 'FX3-9941', category: 'Cameras', provider: 'Sony Pro Nepal', startDate: '2024-03-14', endDate: '2027-03-14', months: 36, cost: 18000, claims: 1, claimed: 42000, notes: 'Sensor cleaning and shutter calibration claimed at 14 months.' },
   { name: 'Sony FX6', serialNo: 'FX6-2004', category: 'Cameras', provider: 'Sony Pro Nepal', startDate: '2024-09-02', endDate: '2026-09-02', months: 24, cost: 24000, claims: 0, claimed: 0, notes: 'Full cinema coverage with priority loaner turnaround.' },
   { name: 'NiSi Athena Prime Set', serialNo: 'ATH-SET-6', category: 'Lenses', provider: 'NiSi Intl (via Cine Hub)', startDate: '2024-08-20', endDate: '2026-08-20', months: 24, cost: 15000, claims: 0, claimed: 0, notes: 'Optical alignment & barrel coating guarantee.' },
@@ -42,27 +42,38 @@ const SEED_WARRANTY_DATA = [
   { name: 'Teradek Bolt 4K 750', serialNo: 'TDK-750-14', category: 'Wireless', provider: 'Teradek RMA', startDate: '2023-11-20', endDate: '2025-11-20', months: 24, cost: 14000, claims: 3, claimed: 61000, notes: 'High-wear RF module repaired twice in RMA hub.' },
 ]
 
-function computeState(endDateStr: string): { state: WarrantyState; days: number } {
+export function computeWarrantyState(endDateStr: string, now: Date = getBusinessToday()): { state: WarrantyState; days: number } {
   const endMs = new Date(endDateStr).getTime()
-  const days = Math.round((endMs - NOW_MS) / (1000 * 60 * 60 * 24))
+  const days = Math.round((endMs - now.getTime()) / (1000 * 60 * 60 * 24))
   if (days < 0) return { state: 'Expired', days }
   if (days <= 60) return { state: 'Expiring', days }
   return { state: 'Active', days }
 }
 
-export function getWarrantyItems(): WarrantyItem[] {
+export function getWarrantyItems(now: Date = getBusinessToday()): WarrantyItem[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as WarrantyItem[]
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (raw) {
+        const parsed = JSON.parse(raw) as WarrantyItem[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item) => {
+            const { state, days } = computeWarrantyState(item.endDate, now)
+            return {
+              ...item,
+              status: state,
+              daysRemaining: days,
+            }
+          })
+        }
+      }
     }
   } catch {
     /* fallback to seed */
   }
 
   return SEED_WARRANTY_DATA.map((d, i) => {
-    const { state, days } = computeState(d.endDate)
+    const { state, days } = computeWarrantyState(d.endDate, now)
     return {
       id: `WAR-${String(i + 1).padStart(2, '0')}`,
       name: d.name,
@@ -83,7 +94,13 @@ export function getWarrantyItems(): WarrantyItem[] {
 }
 
 export function saveWarrantyItems(items: WarrantyItem[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
+    }
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export function recordWarrantyClaim(id: string, amountRecovered: number, notes?: string): WarrantyItem[] {

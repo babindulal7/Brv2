@@ -279,7 +279,7 @@ export default function CouponsManager() {
               />
               <div>
                 <div style={{ fontWeight: 600, fontSize: 'var(--t-body)' }}>
-                  {testResult.ok ? `Valid Code: Rs ${testResult.amount.toLocaleString('en-IN')} Discount` : 'Voucher Rejected'}
+                  {testResult.ok ? `Valid Code: ${formatMoney(rupees(testResult.amount))} Discount` : 'Voucher Rejected'}
                 </div>
                 <div style={{ fontSize: 'var(--t-caption)', color: 'var(--muted)' }}>
                   {testResult.ok
@@ -400,10 +400,10 @@ export default function CouponsManager() {
 
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ fontWeight: 700 }}>
-                        {isPct ? `${c.value}% OFF` : `Rs ${c.value.toLocaleString('en-IN')} FLAT`}
+                        {isPct ? `${c.value}% OFF` : `${formatMoney(rupees(c.value))} FLAT`}
                       </div>
                       {c.capNpr > 0 && isPct && (
-                        <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Cap: Rs {c.capNpr.toLocaleString('en-IN')}</div>
+                        <div style={{ fontSize: '11px', color: 'var(--muted)' }}>Cap: {formatMoney(rupees(c.capNpr))}</div>
                       )}
                     </td>
 
@@ -415,7 +415,7 @@ export default function CouponsManager() {
                     </td>
 
                     <td style={{ padding: '14px 16px', fontSize: 'var(--t-caption)' }}>
-                      {c.minBooking > 0 ? `Rs ${c.minBooking.toLocaleString('en-IN')}` : 'None'}
+                      {c.minBooking > 0 ? formatMoney(rupees(c.minBooking)) : 'None'}
                     </td>
 
                     <td style={{ padding: '14px 16px', minWidth: 140 }}>

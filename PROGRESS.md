@@ -1,5 +1,48 @@
 # Progress Log
 
+## 2026-10-01 — Enforce formatMoney and dynamic Kathmandu business today across queries, modals, and reports
+
+**Did**
+1. In `src/lib/queries/warranty.ts`, removed fixed reference date (`2026-07-23`) and integrated `getBusinessToday()` from `src/lib/bs.ts` to dynamically calculate warranty expiration (`daysRemaining`) and status (`Active`, `Expiring`, `Expired`), with safe browser environment guards for localStorage.
+2. In `src/lib/queries/coupons.ts`, replaced UTC `new Date().toISOString().slice(0, 10)` with `getBusinessToday().toISOString().slice(0, 10)` to resolve date desynchronization during Kathmandu evening civil shifts (+05:45). Replaced unapproved `toLocaleString('en-IN')` with `formatMoney(rupees(coupon.minBooking))`.
+3. In `src/lib/damage.ts`, replaced `toRupees(i.replacementPaisa).toLocaleString('en-IN')` with `formatMoney(i.replacementPaisa)` and pruned unused import.
+4. In `src/components/ui/CheckAvailabilityModal.tsx`, replaced raw `.toLocaleString()` with `formatMoney(rupees(activeProduct.dailyRate))`.
+5. In `src/modules/inventory/WarrantyTracker.tsx`, replaced `.toLocaleString()` on amount and claims recovered with `formatMoney(rupees(...))`.
+6. In `src/modules/rentals/modals/SignOnGlassModal.tsx`, replaced raw deposit number formatting with `formatMoney(rupees(depositAmount))`.
+7. In `src/modules/reports/ProductReports.tsx`, replaced `(v * 10000).toLocaleString('en-IN')` with `formatMoney(rupees(v * 10000))`.
+8. In `src/modules/tools/CouponsManager.tsx`, replaced `.toLocaleString('en-IN')` in test voucher evaluation and voucher listing with `formatMoney(rupees(...))`.
+9. Added comprehensive unit tests in `src/lib/queries/__tests__/warranty.test.ts` (7/7 tests passed) and `src/lib/queries/__tests__/coupons.test.ts` (11/11 tests passed).
+
+**Ruled**
+- Formatting monetary figures with `toLocaleString('en-IN')` or raw number interpolation violates Financial Engine rules (§2.3/§2.4); all displays must use `formatMoney(rupees(...))` or integer paisa formatting.
+- Temporal comparisons for business logic (e.g., warranty and coupon expirations) must align with Kathmandu operational business date (`getBusinessToday()`), never naive UTC timestamps.
+
+**Verified**
+- Full test suite passed: 275/275 test files, 3,839/3,839 tests (0 failed).
+- TypeScript typecheck (`npm run typecheck`) passed with 0 errors.
+- ESLint (`npm run lint`) passed with 0 warnings.
+- PGlite check (`npm run check:pglite`) applied 142/142 migrations with 0 failures.
+- Lifecycle gate (`npm run check:lifecycle`) passed 22/22 steps.
+- Contrast verification (`npm run check:contrast`) passed 54/54 checks.
+- Production Vite + PWA build (`npm run build`) succeeded with 0 errors.
+- `npm run lint:progress` verified the new entry structure.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 47 / 47 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 41 · 4 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 22 / 22 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 142 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-01T00:11:38.684Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Continue "all one by one" auditing of open items, edge cases, and TODOs across modules.
+
 ## 2026-10-01 — Dual-format booking identifiers, bundle template stock bypass, and preview stability
 
 **Did**

@@ -4,6 +4,7 @@ import { Button } from '../../../components/ui/Button'
 import Icon from '../../../components/ui/Icon'
 import { SegmentedControl } from '../../../components/ui/SegmentedControl'
 import { formatAdDateTime } from '../../../lib/bs'
+import { formatMoney, rupees } from '../../../lib/money'
 
 export interface DigitalSignature {
   name: string
@@ -317,7 +318,7 @@ export function SignOnGlassModal({
               <span>Security Deposit Hold Required Before Perimeter Release</span>
             </div>
             <p style={{ margin: 0, fontSize: 'var(--t-meta, 12px)', color: 'var(--text2)', lineHeight: 1.45 }}>
-              A security deposit {depositAmount ? `of Rs. ${depositAmount.toLocaleString()}` : ''} is required on file. Confirm that credit card pre-authorization, bank hold, or executive credit waiver is logged.
+              A security deposit {depositAmount ? `of ${formatMoney(rupees(depositAmount))}` : ''} is required on file. Confirm that credit card pre-authorization, bank hold, or executive credit waiver is logged.
             </p>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--t-meta, 12px)', color: 'var(--text)', fontWeight: 600, cursor: 'pointer', marginTop: 4 }}>
               <input

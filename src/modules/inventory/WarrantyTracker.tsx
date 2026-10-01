@@ -77,7 +77,7 @@ export default function WarrantyTracker() {
     setClaimTarget(null)
     setClaimAmount('10000')
     setClaimNotes('')
-    showSuccessToast(`Claim of Rs ${amt.toLocaleString()} recorded for ${claimTarget.name}`)
+    showSuccessToast(`Claim of ${formatMoney(rupees(amt))} recorded for ${claimTarget.name}`)
   }, [claimTarget, claimAmount, claimNotes, showSuccessToast])
 
   const kpis: Kpi[] = useMemo(() => [
@@ -213,7 +213,7 @@ export default function WarrantyTracker() {
             <div style={{ padding: '10px 12px', background: 'var(--surface)', borderRadius: '8px', fontSize: 'var(--t-meta)' }}>
               <div><strong>Serial No:</strong> {claimTarget.serialNo}</div>
               <div><strong>Provider:</strong> {claimTarget.provider}</div>
-              <div><strong>Current Claims:</strong> {claimTarget.claimsCount} (Rs {claimTarget.claimsRecovered.toLocaleString()} recovered)</div>
+              <div><strong>Current Claims:</strong> {claimTarget.claimsCount} ({formatMoney(rupees(claimTarget.claimsRecovered))} recovered)</div>
             </div>
 
             <div>

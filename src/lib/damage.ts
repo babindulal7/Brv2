@@ -34,7 +34,7 @@
  *   overrule the person holding the item. It says so and lets them proceed.
  */
 
-import { rupees, toRupees } from './money'
+import { rupees, formatMoney } from './money'
 import type { Paisa } from './money'
 
 /** ≥ this figure needs the Owner; below it a Manager may approve. Ruled 12 Aug. */
@@ -102,7 +102,7 @@ export function validateDamageReport(i: DamageReportInput): DamageValidation {
     /* Not blocked — repair can genuinely cost more than replacement, and this
        engine does not get to overrule the person holding the item. */
     warnings.push(
-      `The charge is above the asset's replacement value of Rs ${toRupees(i.replacementPaisa).toLocaleString('en-IN')}. That can be right for a repair, but it needs saying out loud.`,
+      `The charge is above the asset's replacement value of ${formatMoney(i.replacementPaisa)}. That can be right for a repair, but it needs saying out loud.`,
     )
   }
 
