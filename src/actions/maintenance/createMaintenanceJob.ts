@@ -2,6 +2,7 @@ import { createAction, type ActionContext, type ActionConfig } from '../core';
 import { EVENT_TYPES } from '../../events/eventBus';
 import { idempotentInsert, generateClientUuid } from '../../lib/dataAccess';
 import { supabase } from '../../lib/supabase';
+import { getBusinessToday } from '../../lib/bs';
 
 export type CreateMaintenanceJobInput = {
   /** Optional client-side idempotency UUID (Law 8). */
@@ -79,7 +80,8 @@ export const createMaintenanceJobConfig: ActionConfig<CreateMaintenanceJobInput,
     // Generate record_no if not provided
     let recordNo = input.recordNo?.trim();
     if (!recordNo) {
-      const year = new Date().getFullYear();
+      const today = getBusinessToday();
+      const year = today.getFullYear();
       const { count } = await supabase
         .from('maintenance_records')
         .select('*', { count: 'exact', head: true });
@@ -91,7 +93,7 @@ export const createMaintenanceJobConfig: ActionConfig<CreateMaintenanceJobInput,
     const maintenanceType = input.maintenanceType || 'Preventive Service';
     const priority = input.priority || 'Normal';
     const status = input.status || 'Scheduled';
-    const scheduledDate = input.scheduledDate || new Date().toISOString().split('T')[0];
+    const scheduledDate = input.scheduledDate || getBusinessToday().toISOString().slice(0, 10);
 
     const row = {
       client_uuid: clientUuid,

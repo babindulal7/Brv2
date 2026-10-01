@@ -1,5 +1,48 @@
 # Progress Log
 
+## 2026-10-01 — Enforce grouped() formatting, Kathmandu business date sync across modals, actions, and pricing
+
+**Did**
+1. In `src/modules/rentals/modals/ReturnSettlementModal.tsx`, replaced `currentEst.toLocaleString('en-IN')` with `grouped(currentEst)` from `src/lib/money.ts`.
+2. In `src/data/documents.ts` and `src/data/communicationSettings.ts`, replaced all occurrences of `toLocaleString('en-IN')` with `grouped(...)` to maintain cross-runtime grouping consistency.
+3. In `src/lib/pricingPipeline.ts`, replaced raw `new Date().toISOString().slice(0, 10)` fallback with `getBusinessToday().toISOString().slice(0, 10)`, and replaced unformatted rupee spend division `Rs ${p.minSpendPaisa / 100}` with `formatMoney(p.minSpendPaisa)`.
+4. In `src/lib/rentalWindowParams.ts`, resolved UTC civil shift by initializing `todayIso` with `getBusinessToday().toISOString().slice(0, 10)`.
+5. In `src/modules/tools/CouponsManager.tsx`, updated voucher generation date defaults and evaluation state `todayIso` from raw UTC `new Date()` to `getBusinessToday()`.
+6. In `src/modules/inventory/modals/CreatePurchaseRequestModal.tsx`, replaced hardcoded fallback date `'2026-08-29'` and hardcoded BS date `'2083-05-13'` with dynamic `getBusinessToday()` and safe `toBs()` conversion.
+7. In `src/modules/inventory/modals/LogMaintenanceModal.tsx`, aligned estimated completion date calculation with `getBusinessToday()`.
+8. In `src/modules/rentals/ProductionsList.tsx`, replaced raw UTC timestamps with `getBusinessToday().toISOString().slice(0, 10)` for production creation dates.
+9. In `src/actions/maintenance/createMaintenanceJob.ts`, aligned record number generation year and scheduled date fallback with `getBusinessToday()`.
+
+**Ruled**
+- Number formatting across charts, seeds, and modals must use `grouped()` rather than `toLocaleString('en-IN')` to prevent ICU locale variations across Node and browser runtimes.
+- Inventory modals and actions creating dated entity records must synchronize with the Kathmandu business day (`getBusinessToday()`) rather than UTC midnight.
+
+**Verified**
+- TypeScript typecheck (`npm run typecheck`) passed with 0 errors.
+- ESLint (`npm run lint`) passed with 0 warnings.
+- PGlite check (`npm run check:pglite`) applied 142/142 migrations with 0 failures.
+- Lifecycle gate (`npm run check:lifecycle`) passed 22/22 steps.
+- Contrast verification (`npm run check:contrast`) passed 54/54 checks.
+- Production Vite + PWA build (`npm run build`) succeeded with 0 errors.
+- Targeted vitest suites passed (34/34 tests).
+- `npm run lint:progress` verified the new entry structure.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 47 / 47 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 41 · 4 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 22 / 22 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 142 files · check:pglite 142/142 applied, 0 failed. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-01T00:26:42.811Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Continue "all one by one" auditing of open items, edge cases, and TODOs across modules.
+
 ## 2026-10-01 — Enforce formatMoney and dynamic Kathmandu business today across queries, modals, and reports
 
 **Did**

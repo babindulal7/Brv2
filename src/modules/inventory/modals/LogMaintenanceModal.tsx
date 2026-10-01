@@ -8,6 +8,7 @@ import { useAuth } from '../../../lib/auth'
 import { useCanViewMoney } from '../../../lib/moneyVisibility'
 import { createMaintenanceJob } from '../../../actions/maintenance/createMaintenanceJob'
 import { generateClientUuid } from '../../../lib/dataAccess'
+import { getBusinessToday } from '../../../lib/bs'
 
 export type MaintenanceType = 'Repair' | 'Service' | 'Calibration' | 'Inspection'
 export type MaintenancePriority = 'Low' | 'Medium' | 'High' | 'Critical'
@@ -95,7 +96,7 @@ export function LogMaintenanceModal({
         }
       }
 
-      const estCompletion = new Date()
+      const estCompletion = getBusinessToday()
       estCompletion.setDate(estCompletion.getDate() + (daysToComplete || 1))
 
       const payload: MaintenanceJobPayload = {
@@ -107,7 +108,7 @@ export function LogMaintenanceModal({
         technician: technician.trim(),
         ...(vendor.trim() ? { vendor: vendor.trim() } : {}),
         estCostPaisa: money ? rupees(costRupees) : (0 as Paisa),
-        estCompletionAd: estCompletion.toISOString().split('T')[0] ?? '',
+        estCompletionAd: estCompletion.toISOString().slice(0, 10),
         ...(bookingImpact.trim() ? { bookingImpact: bookingImpact.trim() } : {}),
         notes: notes.trim(),
         loggedBy: user?.name ?? 'Staff',

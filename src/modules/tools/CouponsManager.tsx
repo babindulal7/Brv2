@@ -20,6 +20,7 @@ import {
   getCouponStatus,
   type Coupon,
 } from '../../lib/queries/coupons'
+import { getBusinessToday } from '../../lib/bs'
 
 export default function CouponsManager() {
   const { showSuccessToast } = useToast()
@@ -41,9 +42,9 @@ export default function CouponsManager() {
   const [newMinSpend, setNewMinSpend] = useState('10000')
   const [newCapNpr, setNewCapNpr] = useState('5000')
   const [newLimit, setNewLimit] = useState('100')
-  const [newFrom, setNewFrom] = useState(() => new Date().toISOString().slice(0, 10))
+  const [newFrom, setNewFrom] = useState(() => getBusinessToday().toISOString().slice(0, 10))
   const [newTo, setNewTo] = useState(() => {
-    const d = new Date()
+    const d = getBusinessToday()
     d.setMonth(d.getMonth() + 3)
     return d.toISOString().slice(0, 10)
   })
@@ -51,7 +52,7 @@ export default function CouponsManager() {
   const [newStackable, setNewStackable] = useState(true)
   const [createError, setCreateError] = useState('')
 
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const todayIso = useMemo(() => getBusinessToday().toISOString().slice(0, 10), [])
 
   const refreshedCoupons = () => {
     setCoupons(listCoupons())

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import type { RentalWindow } from './availability'
+import { getBusinessToday } from './bs'
 
 /**
  * # The availability window, read from and written to the URL
@@ -59,7 +60,7 @@ export interface RentalWindowParams {
 export function useRentalWindowParams(onChange?: () => void): RentalWindowParams {
   const [params, setParams] = useSearchParams()
 
-  const todayIso = useMemo(() => startOfDayUtc(new Date().toISOString().slice(0, 10)), [])
+  const todayIso = useMemo(() => startOfDayUtc(getBusinessToday().toISOString().slice(0, 10)), [])
   const from = params.get('from')
   const to = params.get('to')
 

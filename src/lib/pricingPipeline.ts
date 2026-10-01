@@ -1,4 +1,5 @@
-import { roundHalfUp, type Paisa } from './money'
+import { roundHalfUp, formatMoney, type Paisa } from './money'
+import { getBusinessToday } from './bs'
 
 /**
  * # Canonical Pricing Pipeline — Babin Rentals OS (Task 6)
@@ -293,7 +294,7 @@ export function evaluateDiscounts(
     // Promo code validation
     if (discounts.promoCode) {
       const p = discounts.promoCode
-      const today = bookingDateAd || new Date().toISOString().slice(0, 10)
+      const today = bookingDateAd || getBusinessToday().toISOString().slice(0, 10)
       let valid = p.active
       let failReason: string | undefined
 
@@ -307,7 +308,7 @@ export function evaluateDiscounts(
         failReason = `Promo code expired on ${p.validTo}`
       } else if (p.minSpendPaisa && grossSubtotalPaisa < p.minSpendPaisa) {
         valid = false
-        failReason = `Minimum spend of Rs ${p.minSpendPaisa / 100} not met`
+        failReason = `Minimum spend of ${formatMoney(p.minSpendPaisa)} not met`
       }
 
       sources.push({

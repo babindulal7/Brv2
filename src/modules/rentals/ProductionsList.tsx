@@ -19,6 +19,7 @@ import { useToast } from '../../components/ui/Toast'
 import { formatMoney, rupees } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
+import { getBusinessToday } from '../../lib/bs'
 import {
   PROD_PHASES,
   getProductions,
@@ -117,8 +118,8 @@ export default function ProductionsList() {
       director: newDirector.trim() || '—',
       dop: newDop.trim() || '—',
       dates: newDates.trim() || 'TBD',
-      startDate: new Date().toISOString().slice(0, 10),
-      endDate: new Date().toISOString().slice(0, 10),
+      startDate: getBusinessToday().toISOString().slice(0, 10),
+      endDate: getBusinessToday().toISOString().slice(0, 10),
       phase: 'Pre-Production',
       gearCount: Number(newGearCount) || 0,
       budgetNpr: Number(newBudget) || 0,

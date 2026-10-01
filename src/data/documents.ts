@@ -2,6 +2,7 @@ import type { Kpi } from '../components/ui/Page'
 import type { IconName } from '../components/ui/Icon'
 import type { Slice } from '../components/ui/Charts'
 import type { StatusKey } from '../lib/status'
+import { grouped } from '../lib/money'
 
 /**
  * Documents seed data.
@@ -303,7 +304,7 @@ export function summarySlices(cats: CategoryMeta[]): Slice[] {
   return cats.map((c) => ({
     label: c.tab,
     value: c.count,
-    display: c.count.toLocaleString('en-IN'),
+    display: grouped(c.count),
     percent: `${((c.count / total) * 100).toFixed(1)}%`,
   }))
 }
@@ -328,7 +329,7 @@ export function kpisFor(money: boolean, rows?: DocRow[]): Kpi[] {
   return [
     {
       label: 'Total Documents',
-      value: totalDocuments(money, rows).toLocaleString('en-IN'),
+      value: grouped(totalDocuments(money, rows)),
       icon: 'file',
       accent: 'neutral',
       // §6 — Total counts everything not deleted, **including archived**, and says so.

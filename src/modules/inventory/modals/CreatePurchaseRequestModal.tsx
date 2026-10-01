@@ -3,6 +3,7 @@ import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
 import { rupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
+import { getBusinessToday, toBs, formatBs } from '../../../lib/bs'
 import { DomainEvents, EVENT_TYPES } from '../../../events/eventBus'
 import { useAuth } from '../../../lib/auth'
 import type { PRPriority, PurchaseRequest } from '../../../lib/queries/purchaseRequests'
@@ -64,8 +65,11 @@ export function CreatePurchaseRequestModal({
         priority,
         status: 'Draft',
         requestedBy: user?.name ?? 'Warehouse Lead',
-        dateCreatedAD: new Date().toISOString().split('T')[0] ?? '2026-08-29',
-        dateCreatedBS: '2083-05-13',
+        dateCreatedAD: getBusinessToday().toISOString().slice(0, 10),
+        dateCreatedBS: (() => {
+          const bs = toBs(getBusinessToday())
+          return bs ? formatBs(bs) : ''
+        })(),
         notes: justification.trim(),
         refusedBookings: [],
         subRentals: [],

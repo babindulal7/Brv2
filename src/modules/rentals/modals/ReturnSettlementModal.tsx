@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Button'
 import Icon from '../../../components/ui/Icon'
-import { formatMoney, rupees, type Paisa } from '../../../lib/money'
+import { formatMoney, rupees, grouped, type Paisa } from '../../../lib/money'
 import {
   lateFee,
   formatOverage,
@@ -590,7 +590,7 @@ export function ReturnSettlementModal({
                       <span style={{ fontSize: 'var(--t-meta, 11px)', color: 'var(--muted)' }}>Repair / Replacement: Rs</span>
                       <input
                         type="text"
-                        value={currentEst > 0 ? currentEst.toLocaleString('en-IN') : ''}
+                        value={currentEst > 0 ? grouped(currentEst) : ''}
                         onChange={(e) => handleEstimateChange(item.key, e.target.value)}
                         placeholder="0"
                         aria-label={`Damage charge for ${item.name}`}
