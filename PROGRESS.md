@@ -1,5 +1,142 @@
 # Progress Log
 
+## 2026-10-02 — Consistent add, edit, and booking workflows across clients, inventory, bundles, and quotes
+
+**Did**
+- Implemented unified add and edit workflows using the booking page pattern as the visual baseline:
+  - Added shared record furniture (`RecordWorkspace`, `RecordSection`, `RecordActions`, `useUnsavedRecord`) and `RecordForm` domain editor with atomic persistence adapters (`updateEquipment`, `updateRentalQuote`, `saveRecord`).
+  - Added database migrations `0146_record_editor_transactions.sql` and `0147_quote_editor_transactions.sql` providing atomic transactions for multi-entity edits, revision locks, audit events, and stage integrity checks.
+  - Client workflows: Preserved canonical `AddClient` validation, Nepal mobile (+977 98/97) formatting, exact 9-digit PAN rules, Law 8 deduplication keys, and duplicate phone checks, while integrating prefilled record-level editing on `ClientDetail`.
+  - Equipment & Bundles: Unified section structure (`Identity → Units & location → Purchase → Pricing → Maintenance & notes` and `Identity → Components → Rates → Summary`) with permanent database saves.
+  - Rental / Booking: Enabled full booking editing on drafts and unconfirmed quotes (`stage === 'Quote'`) with optimistic locking, revision validation, and single "Save changes" commit, while keeping existing operational actions and transition gates for confirmed bookings. Restored desktop header "Save as draft" and mobile/tablet action bars.
+
+**Ruled**
+- In accordance with N-5, migrations 0146 and 0147 are WRITTEN and locally VERIFIED only; never pushed to live Supabase.
+- Law 1, Law 3, Law 4, Law 5, and Law 8: Integer paisa everywhere; deposits remain liabilities; edits on unconfirmed quotes do not alter payments or issued financial documents; removed quote lines are voided, never hard-deleted; idempotency keys prevent duplicate records.
+- Stricter role permissions maintained: only roles with edit capabilities can commit changes; money fields remain shielded from money-blind roles.
+
+**Verified**
+- `npm run typecheck`: clean 0 errors.
+- `npm run lint`: clean 0 warnings and 0 errors (`eslint src --max-warnings 0`).
+- Test suites: 38 action suites (721 tests), `tier1-features.test.tsx` (13 tests), and all 36 module suites across rentals, inventory, and clients (476 tests) passed green.
+- `npm run check:pglite`: 145/145 migrations applied from scratch with 0 failures.
+- `npm run check:lifecycle`: 22/22 steps green in Postgres + RLS.
+- `npm run check:contrast`: 54/54 passed WCAG AA in light and dark themes.
+- `npm run build`: built production bundles and PWA service worker successfully.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 49 / 50 (98%) | +2 |
+| Real data | DB-only · mixed · seed · none / 45 | 39 · 6 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 22 / 22 (100%) | +0 |
+| Overall | mean of five | ≈ 98% | -1 |
+Migrations 145 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-02T11:26:42.257Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live Supabase application and production verification for migrations 0146 and 0147 remain pending Babin's backup and application protocol.
+- Continue operational workflows and floor transitions.
+
+## 2026-10-02 — 300 ms hover opening across Intel and sidebar hints
+
+**Did**
+- Set the shared Intel card's initial and adjacent identifier hover opening to 300 ms. Set the smart-hover trigger's initial and sibling opening to 300 ms. Set sidebar hover hints to 300 ms.
+- Updated the direct Intel card test to assert the card remains closed at 299 ms and opens at 300 ms.
+
+**Ruled**
+- Applied Babin's requested 300 ms delay to pointer hover openings. Keyboard opening, 500 ms touch long press, and 300 ms close grace retain their existing interaction behavior.
+
+**Verified**
+- `npm run typecheck`; full Vitest suite (277 files, 3,855 tests); `check:pglite` (143/143); `check:lifecycle` (22/22); `build`; `lint`; and `check:contrast` (54/54) passed locally.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 47 / 47 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 40 · 5 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 22 / 22 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 143 files. Counted by `npm run completion`, not typed. Its session cache did not observe the separately executed test and migration commands; their results are recorded above.
+
+### Remaining
+- Live Supabase application and production verification for the previously written registry policy remain pending Babin's backup and application process.
+- Remaining v2 preview surfaces and the full desktop, tablet, and phone interaction matrix remain pending.
+
+## 2026-10-01 — Registry document Intel direct view and role read scope
+
+**Did**
+- Routed `document` Intel to a dedicated registry preview instead of the invoice ledger preview. It shows the stored document identifier, type, status, AD/BS dates, and an internal rental link when a booking exists. The preview query selects only those fields; it does not fetch file URLs, signer identity, or money.
+- Preserved the registry's supplied booking reference instead of constructing a false booking number from a UUID prefix.
+- Added migration `0145_document_registry_read_scope.sql`: finance-capable staff read registry records, Technician reads operational types, Warehouse reads Rental Agreement, Packing List, and Delivery Note, and Driver reads none. The restrictive SELECT policy also limits the older permissive FOR ALL policy. Mirrored those restrictions in the preview loader and mock data.
+- Updated the Expenses filter test to open its current drawer before selecting a category.
+
+**Ruled**
+- Followed `docs/PERMISSIONS.md` Finance — Documents, W11, and the existing Law 6 money boundary. No new action or custody permission was introduced.
+- Migration 0145 is WRITTEN and locally VERIFIED only. It has not been APPLIED to live Supabase or PRODUCTION-VERIFIED.
+
+**Verified**
+- Owner and Warehouse document direct views were driven in the local mock app. Warehouse finance documents and finance amounts were absent from that view; the rental link retained its actual reference. This is UI evidence, not a live RLS test.
+- Final local `typecheck`, full Vitest suite (277 files, 3,855 tests), `check:pglite` (143/143), `check:lifecycle` (22/22), `build`, `lint`, and `check:contrast` (54/54) passed. The focused document and Expenses suites passed 25/25. The build reported only its existing large-chunk warning.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 47 / 47 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 40 · 5 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 22 / 22 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 143 files. Counted by `npm run completion`, not typed. Its session cache did not observe the separately executed test and migration commands; their results are recorded above.
+
+### Remaining
+- Apply migration 0145 through Babin's backup and live application process, then verify production RLS and document previews for each role. No live migration was applied here.
+- Continue the remaining v2 handover, return, and inspection previews and the complete desktop, tablet, and phone interaction matrix.
+
+## 2026-10-01 — Faster shared search workflow; visual redesign deferred
+
+**Did**
+- Kept the existing app design following Babin's clarification. The generated desktop and phone concepts remain preview-only and were not integrated into the app.
+- Fixed global search dropping valid query results when the matching booking alias or another searched field was absent from the displayed label. Formatted booking references now open their matching record directly.
+- Added explicit loading and failure feedback, an inline retry that retains the query, and a one-tap Clear action that retains focus. Results are scoped to the current query and role; late responses cannot replace the current results. Incoming records no longer shift a selected command.
+- Updated the header's search wording to expose record lookup. Included Clear and Retry in the dialog's keyboard focus loop and kept external clients out of record search.
+- Prevented the shared `/` search shortcut from interrupting editable notes, modified shortcuts, composition, or a modal workflow. Increased the existing More create actions hit area from 32px to 44px.
+- Added nine behavioral regressions for alias matches, asynchronous responses, retry, clear, stable command selection, focus, role scope, and shortcut boundaries. Updated shell tests for the descriptive search label.
+- Tap counts: open global search → type one query → open result = 2 pointer taps and 1 typed field; clear = 1 tap; retry = 1 tap with 0 retyped fields. Keyboard users retain Ctrl/Command+K → query → Enter. No write or custody gate changed.
+
+**Ruled**
+- Applied existing R-39, role permissions, inline-error and touch-target rules. No new domain or permission ruling. Visual redesign is explicitly deferred at the user's request.
+- Other concurrent work in the shared checkout was preserved; this entry claims only the shell/search changes and their verification.
+
+**Verified**
+- `npm run typecheck` and `npm run lint` passed.
+- Full suite executed twice. The later run reported 3,853 passed and one shell-label failure while that label/test pair was being finalized. Final rerun against the settled files passed all 73 tests across seven suites, including both E2E tiers, rental-list rendering, command accessibility/navigation, new search workflow tests, and SearchInput.
+- Browser verification in local mock mode: `nr` opened the New Rental form; `#902` found the displayed `B-902` record and its detail page. At 390px width, the result, Clear, and Close were reachable; Clear reset the input while retaining the dialog. Restored the original viewport afterward.
+- Local `check:pglite`: 143/143 migrations applied to the disposable test database, zero failed. `check:lifecycle`: 22/22 passed. No migration was authored or applied to live Supabase by this workflow task.
+- `check:contrast`: 54/54 passed. Production build completed with PWA output (248 precache entries); Vite reported a non-blocking large-chunk warning.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 47 / 47 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 45 | 40 · 5 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 22 / 22 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Counted by `npm run completion`, not typed. Gates read from `.lifecycle-result.json`, written 2026-10-01T09:10:43.831Z. Its default migration/test cache said "not run this session"; the independently executed commands and actual results are recorded above.
+
+### Remaining
+- Visual redesign deferred by Babin. This pass covers shared search and shortcut workflows, not a redesign of every operational flow.
+- A single uninterrupted all-green full-suite run was not obtained; the final targeted rerun cleared the remaining shell-label failure. Concurrent changes outside this task need their own verification.
+- Live Supabase rollout remains outside this task; local gate success is not production verification.
+
 ## 2026-10-01 — Enforce grouped() formatting, Kathmandu business date sync across modals, actions, and pricing
 
 **Did**

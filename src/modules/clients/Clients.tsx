@@ -63,6 +63,7 @@ export default function Clients() {
   const { showSuccessToast } = useToast()
   const [params, setParams] = useSearchParams()
   const [directoryFiltersOpen, setDirectoryFiltersOpen] = useState(false)
+  const [membershipFiltersOpen, setMembershipFiltersOpen] = useState(false)
 
   /**
    * Every panel on this screen now reads the database. The directory comes from
@@ -148,7 +149,15 @@ export default function Clients() {
                 />
               ),
             }
-          : {})}
+          : activeTab === 'membership' ? {
+              leading: (
+                <FilterButton
+                  onClick={() => setMembershipFiltersOpen((open) => !open)}
+                  controls="membership-filters"
+                  expanded={membershipFiltersOpen}
+                />
+              ),
+            } : {})}
         title="Clients"
         actions={
           <PageActions
@@ -206,7 +215,7 @@ export default function Clients() {
       {activeTab === 'new' && <AddClient embedded onDone={() => setTab('clients')} />}
       {activeTab === 'import' && <ImportCenter embedded />}
       {activeTab === 'duplicates' && <DuplicateCenter embedded />}
-      {activeTab === 'membership' && <Membership embedded />}
+      {activeTab === 'membership' && <Membership embedded filtersOpen={membershipFiltersOpen} onFiltersClose={() => setMembershipFiltersOpen(false)} />}
       {activeTab === 'referral' && <ReferralView />}
       {activeTab === 'credit' && money && (
         <CreditView clients={clients} loading={clientsLoading} error={clientsError} onRetry={refresh} />

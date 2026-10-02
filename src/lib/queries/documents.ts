@@ -1,7 +1,8 @@
-import { supabase } from '../supabase'
+import { IS_MOCK, supabase } from '../supabase'
 import type { ListFilters } from './listQuery'
 import type { ListQueryResult } from './useList'
 import type { Database } from '../../types/supabase'
+import type { SystemRole } from '../../types/database'
 import {
   DOCUMENTS,
   type DocRow,
@@ -108,6 +109,57 @@ export interface DocumentRowDb {
   created_at: string
 }
 
+/** Operational document types that a money-blind role may inspect. Finance
+ * documents are excluded in the query itself, before their rows reach JS. */
+const OPERATIONAL_PREVIEW_TYPES = [
+  'Rental Agreement', 'Packing List', 'Delivery Note', 'Return Report',
+  'Inspection Report', 'Damage Report', 'Job Card', 'Service Report',
+  'Incident Report', 'Insurance Claim', 'Call Sheet',
+] as const
+
+export interface DocumentPreviewRecord {
+  id: string
+  documentNo: string
+  type: string
+  status: string
+  createdAt: string
+  signedAt: string | null
+  bookingRef: string | null
+}
+
+export async function getDocumentPreviewRecord(ref: string, canSeeFinance: boolean, role?: SystemRole): Promise<DocumentPreviewRecord | null> {
+  if (role === 'Driver' || role === 'Client') return null
+  const allowedTypes = role === 'Warehouse'
+    ? ['Rental Agreement', 'Packing List', 'Delivery Note']
+    : canSeeFinance ? null : [...OPERATIONAL_PREVIEW_TYPES]
+  if (IS_MOCK) {
+    const row = documentsFor(canSeeFinance).find((item) => item.id === ref && (!allowedTypes || allowedTypes.includes(item.type)))
+    if (!row) return null
+    return {
+      id: row.id, documentNo: row.id, type: row.type, status: row.status,
+      createdAt: row.createdAd.toISOString(), signedAt: null,
+      bookingRef: row.relatedKind === 'booking' ? row.relatedTo : null,
+    }
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)
+  let query = supabase.from('document_registry')
+    .select('id, document_no, document_type, lifecycle_status, booking_id, created_at, signed_at')
+  if (allowedTypes) query = query.in('document_type', allowedTypes)
+  const { data, error } = await (isUuid ? query.eq('id', ref) : query.eq('document_no', ref)).maybeSingle()
+  if (error) throw new Error(`Document preview unavailable: ${error.message}`)
+  if (!data) return null
+  return {
+    id: data.id,
+    documentNo: data.document_no,
+    type: data.document_type,
+    status: data.lifecycle_status,
+    createdAt: data.created_at,
+    signedAt: data.signed_at,
+    bookingRef: data.booking_id,
+  }
+}
+
 function mapTypeToCategory(docType: string): Exclude<CategoryKey, 'Archived'> {
   switch (docType) {
     case 'Tax Invoice':
@@ -165,6 +217,9 @@ export function mapDbRowToDocRow(row: DocumentRowDb): DocRow {
   const createdDate = row.created_at ? new Date(row.created_at) : new Date()
   const hours = createdDate.getHours().toString().padStart(2, '0')
   const mins = createdDate.getMinutes().toString().padStart(2, '0')
+  // The registry stores a booking UUID. Mock records may carry B-numbers.
+  // Neither form may be truncated and presented as an invented booking no.
+  const relatedTo = row.booking_id ?? 'General'
 
   return {
     id: row.document_no || row.id,
@@ -172,7 +227,7 @@ export function mapDbRowToDocRow(row: DocumentRowDb): DocRow {
     type: row.document_type,
     category,
     ...(isArchived ? { archived: true } : {}),
-    relatedTo: row.booking_id ? `B-${row.booking_id.slice(0, 4)}` : 'General',
+    relatedTo,
     relatedKind: row.booking_id ? 'booking' : 'template',
     party: 'Client',
     branch: 'Kathmandu',

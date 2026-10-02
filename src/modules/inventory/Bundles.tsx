@@ -41,6 +41,7 @@ import {
 import { useBundleRecords } from '../../lib/queries/useBundles'
 import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
 import { DateField } from '../../components/ui/DateField'
+import { FilterDrawer } from '../../components/ui/FilterDrawer'
 import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 import './inventory.css'
 
@@ -368,7 +369,7 @@ const ROWS_PER_PAGE = [10, 25, 50]
 
 /* ── the screen ────────────────────────────────────────────────────────── */
 
-export function Bundles() {
+export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { filtersOpen?: boolean; onFiltersClose?: () => void }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const isNewBundle = params.get('action') === 'new'
@@ -456,9 +457,6 @@ export function Bundles() {
   const [previewId, setPreviewId] = useState<string>('')
   const [serialsOpen, setSerialsOpen] = useState<Set<string>>(new Set())
   const [groupsClosed, setGroupsClosed] = useState<Set<string>>(new Set())
-
-  const filtersOn =
-    chip !== 'All' || category !== 'All' || tag !== 'All' || hasCrew !== 'Any' || hasVehicle !== 'Any'
 
   const clearAll = () => {
     setChip('All')
@@ -648,6 +646,42 @@ export function Bundles() {
 
   return (
     <div className="inventory-v2">
+      <FilterDrawer
+        id="bundle-filters"
+        open={filtersOpen}
+        onClose={onFiltersClose}
+        resultCount={bundles.loading ? null : filtered.length}
+        noun="bundles"
+        activeCount={Number(category !== 'All') + Number(tag !== 'All') + Number(hasCrew !== 'Any') + Number(hasVehicle !== 'Any')}
+        onClearAll={clearAll}
+        standardFooter
+        onApply={onFiltersClose}
+      >
+        <div style={{ display: 'grid', gap: 'var(--sp-md)' }}>
+          <label>Category
+            <Select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1) }} style={{ ...selectStyle, width: '100%' }}>
+              <option value="All">All categories</option>
+              {allCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </Select>
+          </label>
+          {allTags.length > 0 && <label>Tags
+            <Select value={tag} onChange={(e) => { setTag(e.target.value); setPage(1) }} style={{ ...selectStyle, width: '100%' }}>
+              <option value="All">All tags</option>
+              {allTags.map((t) => <option key={t} value={t}>{t}</option>)}
+            </Select>
+          </label>}
+          <label>Contains crew
+            <Select value={hasCrew} onChange={(e) => { setHasCrew(e.target.value as Triple); setPage(1) }} style={{ ...selectStyle, width: '100%' }}>
+              <option value="Any">Any</option><option value="Yes">Yes</option><option value="No">No</option>
+            </Select>
+          </label>
+          <label>Contains vehicle
+            <Select value={hasVehicle} onChange={(e) => { setHasVehicle(e.target.value as Triple); setPage(1) }} style={{ ...selectStyle, width: '100%' }}>
+              <option value="Any">Any</option><option value="Yes">Yes</option><option value="No">No</option>
+            </Select>
+          </label>
+        </div>
+      </FilterDrawer>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
@@ -818,58 +852,8 @@ export function Bundles() {
             </span>
           </div>
 
-          {/* Filter bar — the render's row, with every control wired to state. */}
+          {/* Sorting and view controls stay beside the list. */}
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 600 }}>
-              <Icon name="checklist" size={14} />
-              Filters
-            </span>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              Category
-              <Select value={category} onChange={(e) => { setCategory(e.target.value); setPage(1) }} style={selectStyle}>
-                <option value="All">All</option>
-                {allCategories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </Select>
-            </label>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              Tags
-              <Select value={tag} onChange={(e) => { setTag(e.target.value); setPage(1) }} style={selectStyle}>
-                <option value="All">All</option>
-                {allTags.map((t) => (
-                  <option key={t} value={t}>{t}</option>
-                ))}
-              </Select>
-            </label>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              Contains Crew
-              <Select value={hasCrew} onChange={(e) => { setHasCrew(e.target.value as Triple); setPage(1) }} style={selectStyle}>
-                <option value="Any">Any</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </Select>
-            </label>
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-              Contains Vehicle
-              <Select value={hasVehicle} onChange={(e) => { setHasVehicle(e.target.value as Triple); setPage(1) }} style={selectStyle}>
-                <option value="Any">Any</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
-              </Select>
-            </label>
-            {filtersOn ? (
-              <Button icon="close" onClick={clearAll}>
-                Clear All
-              </Button>
-            ) : (
-              <Unavailable reason="No filter is set, so there is nothing to clear.">
-                <Button icon="close" disabled>
-                  Clear All
-                </Button>
-              </Unavailable>
-            )}
-
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
                 Sort by

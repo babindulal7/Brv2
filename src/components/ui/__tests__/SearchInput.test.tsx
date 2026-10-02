@@ -22,6 +22,26 @@ afterEach(() => {
 })
 
 describe('SearchInput Component', () => {
+  it('focuses with slash but leaves modified shortcuts and editable notes alone', () => {
+    mount(<><SearchInput value="" onChange={() => {}} autoFocusShortcut /><div contentEditable><span>Note</span></div></>)
+    const input = container.querySelector('input')!
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true })))
+    expect(document.activeElement).toBe(input)
+    input.blur()
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', ctrlKey: true, bubbles: true })))
+    expect(document.activeElement).not.toBe(input)
+    act(() => container.querySelector('[contenteditable] span')!.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true })))
+    expect(document.activeElement).not.toBe(input)
+  })
+
+  it('does not steal focus from a modal workflow', () => {
+    mount(<><SearchInput value="" onChange={() => {}} autoFocusShortcut /><div role="dialog" aria-modal="true"><button>Continue</button></div></>)
+    const button = container.querySelector('button')!
+    button.focus()
+    act(() => button.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true })))
+    expect(document.activeElement).toBe(button)
+  })
+
   it('renders a searchbox with 44px minimum touch target (Law 15)', () => {
     mount(<SearchInput value="" onChange={() => {}} placeholder="Search rentals…" />)
     const input = container.querySelector('input')

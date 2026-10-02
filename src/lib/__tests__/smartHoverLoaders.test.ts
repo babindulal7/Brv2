@@ -15,7 +15,7 @@ import { listBookings, fetchFloorBooking } from '../queries/bookings'
 import { getAssetDetail } from '../queries/inventory'
 import { equipmentBookingRelations } from '../queries/equipmentRelations'
 import { listInvoices, listPayments } from '../queries/finance'
-import { loadClientPreview, loadEquipmentPreview, loadInvoicePreview, loadRentalPreview } from '../smartHoverLoaders'
+import { loadClientPreview, loadDocumentPreview, loadEquipmentPreview, loadInvoicePreview, loadRentalPreview } from '../smartHoverLoaders'
 
 const UUID = '11111111-1111-4111-8111-111111111111'
 
@@ -72,5 +72,16 @@ describe('Smart Hover role-filtered payloads', () => {
     await expect(loadInvoicePreview('INV-1', { role: 'Warehouse', surface: 'floor' })).rejects.toThrow('restricted')
     expect(listInvoices).not.toHaveBeenCalled()
     expect(listPayments).not.toHaveBeenCalled()
+  })
+
+  it('uses a registry document preview without exposing finance documents to Warehouse', async () => {
+    const agreement = await loadDocumentPreview('RA-2026-0716', { role: 'Warehouse' })
+    expect(agreement.type).toBe('Rental Agreement')
+    expect(agreement.bookingRef).toBe('B-716')
+    expect(agreement).not.toHaveProperty('totalPaisa')
+    await expect(loadDocumentPreview('INV-161', { role: 'Warehouse' })).rejects.toThrow('unavailable')
+    const finance = await loadDocumentPreview('INV-161', { role: 'Owner' })
+    expect(finance.type).toBe('Tax Invoice')
+    expect(finance).not.toHaveProperty('totalPaisa')
   })
 })

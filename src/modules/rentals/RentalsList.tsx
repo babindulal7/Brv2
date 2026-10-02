@@ -9,10 +9,8 @@ import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { ContextDrawer } from '../../components/ui/ContextDrawer'
 import { DataTableShell } from '../../components/ui/DataTable'
-import { ActiveFilterChips } from '../../components/ui/FilterDrawer'
+import { ActiveFilterChips, FilterButton } from '../../components/ui/FilterDrawer'
 import { SavedViewsMenu, type SavedListView } from '../../components/ui/SavedViewsMenu'
-import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
-import { AppSidePanel } from '../../components/shell/AppSidePanel'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { FilterBar } from '../../components/ui/FilterBar'
 import { Pagination } from '../../components/ui/Pagination'
@@ -1680,6 +1678,14 @@ export default function RentalsList() {
   return (
     <PageShell className="rentals-v2">
       <PageHeader
+        leading={
+          <FilterButton
+            onClick={() => setFiltersOpen((open) => !open)}
+            activeCount={f.activeCount}
+            controls="rentals-filters"
+            expanded={filtersOpen}
+          />
+        }
         title="Rentals"
         description="Manage bookings, pickups, returns, and the next action."
         actions={
@@ -1745,29 +1751,25 @@ export default function RentalsList() {
           />
         }
       />
-      <WorkspaceLeftPanel>
-        <AppSidePanel id="rentals-filters" side="left" title="Filters" isOpen={filtersOpen} onClose={() => setFiltersOpen(false)}>
-          <BooqableRentalFilterDrawer
-            embedded
-            open={true}
-            onClose={() => setFiltersOpen(false)}
-            resultCount={total}
-            activeCount={f.activeCount}
-            onClearAll={clearFilters}
-            statusFilter={statusFilter}
-            onToggleStatus={toggleStatus}
-            projectTypeFilter={projectTypeFilter}
-            onToggleProjectType={toggleProjectType}
-            quickFilter={chip}
-            onSelectQuickFilter={pickChip}
-            dateRange={{ from, to }}
-            onChangeDateRange={({ from: nextFrom, to: nextTo }) => setRange(nextFrom, nextTo)}
-            subOn={subOn}
-            onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
-            money={money}
-          />
-        </AppSidePanel>
-      </WorkspaceLeftPanel>
+      <BooqableRentalFilterDrawer
+        id="rentals-filters"
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        resultCount={total}
+        activeCount={f.activeCount}
+        onClearAll={clearFilters}
+        statusFilter={statusFilter}
+        onToggleStatus={toggleStatus}
+        projectTypeFilter={projectTypeFilter}
+        onToggleProjectType={toggleProjectType}
+        quickFilter={chip}
+        onSelectQuickFilter={pickChip}
+        dateRange={{ from, to }}
+        onChangeDateRange={({ from: nextFrom, to: nextTo }) => setRange(nextFrom, nextTo)}
+        subOn={subOn}
+        onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
+        money={money}
+      />
 
       {/* 5-view operational bar + Sub-Rental + active facet chip */}
       <FilterBar
@@ -1775,9 +1777,6 @@ export default function RentalsList() {
         onSearchChange={(val) => f.setSearch(val)}
         searchPlaceholder="Search booking, project, or type"
         searchAriaLabel="Search rentals"
-        onToggleDrawer={() => setFiltersOpen((open) => !open)}
-        isDrawerOpen={filtersOpen}
-        drawerControlsId="rentals-filters"
         activeCount={f.activeCount}
         onClearAll={clearFilters}
         filterChips={<ActiveFilterChips filters={f.chips} {...(isFiltered ? { onClearAll: clearFilters } : {})} />}

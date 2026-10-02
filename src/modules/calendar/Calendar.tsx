@@ -6,6 +6,7 @@ import type { IconName } from '../../components/ui/Icon'
 import { Select, SearchInput, EmptyState, TouchTarget, PageBody, CheckAvailabilityModal, Modal } from '../../components/ui'
 import { PageShell } from '../../components/ui/PageShell'
 import { Card, PageHeader, PageActions, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
+import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { listInventory } from '../../lib/queries/inventory'
 import './calendar.css'
 import { BRAND } from '../../lib/status'
@@ -2108,6 +2109,7 @@ export default function Calendar() {
   /* ── filtering ──────────────────────────────────────────────────────── */
   const q = query.trim().toLowerCase()
   const filterActive = kinds.size > 0 || client !== 'All' || q.length > 0
+  const activeFilterCount = kinds.size + (client !== 'All' ? 1 : 0) + (q ? 1 : 0)
 
   /**
    * The bars the grid draws, after the chip row.
@@ -2820,13 +2822,7 @@ export default function Calendar() {
   )
 
   const filtersPanel = (
-    <Card bodyStyle={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700 }}>Filters</div>
-        <button type="button" onClick={clearAll} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 'var(--tap)', padding: '0 12px', background: 'none', border: 'none', borderRadius: 'var(--r-btn)', color: 'var(--link)', fontSize: 'var(--t-meta)', cursor: 'pointer', fontFamily: 'inherit' }}>
-          Clear All
-        </button>
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
 
       <div>
         <span style={{ display: 'block', fontSize: 'var(--t-th)', color: 'var(--text2)', marginBottom: 5 }}>Search</span>
@@ -2943,7 +2939,7 @@ export default function Calendar() {
           })}
         </div>
       </div>
-    </Card>
+    </div>
   )
 
   /**
@@ -3283,6 +3279,7 @@ export default function Calendar() {
         style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'var(--app)', overflow: 'auto', padding: 'var(--sp-md)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
+          <FilterButton onClick={() => setShowFilters((open) => !open)} activeCount={activeFilterCount} controls="calendar-filters" expanded={showFilters} />
           <h1 style={{ margin: 0, fontSize: 'var(--t-h2)', fontWeight: 700 }}>Calendar</h1>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-sm)', marginLeft: 10 }}>{navButtons}</span>
           <span style={{ marginLeft: 'auto', width: 300 }}>
@@ -3295,9 +3292,12 @@ export default function Calendar() {
             />
           </span>
           <Button icon="calendar_event" onClick={() => setShowCheckAvailability(true)}>Check availability</Button>
-          <Button icon="settings" onClick={() => setShowFilters((v) => !v)}>{showFilters ? 'Hide Filters' : 'Filters'}</Button>
           <Button icon="close" onClick={() => setFullChoice(false)}>Exit Full View</Button>
         </div>
+
+        <FilterDrawer id="calendar-filters" open={showFilters} onClose={() => setShowFilters(false)} desktopMode="overlay" resultCount={barList.loading ? null : bars.length} noun="events" activeCount={activeFilterCount} onClearAll={clearAll} standardFooter onApply={() => setShowFilters(false)}>
+          {filtersPanel}
+        </FilterDrawer>
 
         {monthStepNote}
 
@@ -3313,12 +3313,11 @@ export default function Calendar() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: showFilters ? '230px minmax(0,1fr) auto' : 'minmax(0,1fr) auto',
+            gridTemplateColumns: 'minmax(0,1fr) auto',
             gap: 'var(--sp-md)',
             alignItems: 'start',
           }}
         >
-          {showFilters && filtersPanel}
           <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>{centre}</div>
           <Rail width={300} label="Event detail">
             {selected ? (
@@ -3430,6 +3429,7 @@ export default function Calendar() {
     <PageShell width="full">
       <div className="calendar-v2">
         <PageHeader
+        leading={<FilterButton onClick={() => setShowFilters((open) => !open)} activeCount={activeFilterCount} controls="calendar-filters" expanded={showFilters} />}
         icon="calendar"
         title="Calendar"
         actions={
@@ -3444,9 +3444,6 @@ export default function Calendar() {
               <Button key="new" icon="plus" onClick={() => navigate('/rentals/new')}>
                 New Rental
               </Button>,
-              <Button key="filters" icon="settings" onClick={() => setShowFilters((v) => !v)}>
-                {showFilters ? 'Hide Filters' : 'Filters'}
-              </Button>,
               ...(desktop ? [
                 <Button key="full" icon="eye" onClick={() => setFullChoice(true)}>
                   Full View
@@ -3456,6 +3453,10 @@ export default function Calendar() {
           />
         }
       />
+
+      <FilterDrawer id="calendar-filters" open={showFilters} onClose={() => setShowFilters(false)} desktopMode="overlay" resultCount={barList.loading ? null : bars.length} noun="events" activeCount={activeFilterCount} onClearAll={clearAll} standardFooter onApply={() => setShowFilters(false)}>
+        {filtersPanel}
+      </FilterDrawer>
 
       {monthStepNote}
 
@@ -3495,12 +3496,11 @@ export default function Calendar() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: showFilters ? '230px minmax(0,1fr) auto' : 'minmax(0,1fr) auto',
+            gridTemplateColumns: 'minmax(0,1fr) auto',
             gap: 'var(--sp-md)',
             alignItems: 'start',
           }}
         >
-          {showFilters && filtersPanel}
           <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
             {centre}
             {selected && <SelectedEventPanel bar={selected.bar} row={selected.row} onClose={() => setSelectedId(null)} />}
@@ -3515,7 +3515,6 @@ export default function Calendar() {
            hiding behind a handle (rulings §7). `CollapsibleAside` is deliberately
            not used here and its defaults are untouched. */
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
-          {showFilters && filtersPanel}
           {centre}
           {selected && <SelectedEventPanel bar={selected.bar} row={selected.row} onClose={() => setSelectedId(null)} />}
 

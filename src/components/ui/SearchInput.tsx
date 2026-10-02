@@ -60,7 +60,13 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
     if (!autoFocusShortcut || disabled || readOnly) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
+      const target = e.target instanceof Element ? e.target : null
+      if (e.defaultPrevented || e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return
+      if (target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) return
+      // A page shortcut must not pull focus out of an open modal workflow.
+      const dialog = document.querySelector('[role="dialog"][aria-modal="true"], dialog[open]')
+      if (dialog && !dialog.contains(internalRef.current)) return
+      if (e.key === '/') {
         e.preventDefault()
         internalRef.current?.focus()
       }

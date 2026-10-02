@@ -1,3 +1,4 @@
+import { RecordForm } from '../../components/records/RecordForm'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -173,7 +174,7 @@ export interface EditBundleProps {
   onDone?: () => void
 }
 
-export default function EditBundle(props: EditBundleProps = {}) {
+export function LegacyEditBundle(props: EditBundleProps = {}) {
   const { bundleRef: propBundleRef, embedded, onDone } = props
   const routeParams = useParams<{ bundleRef: string }>()
   const bundleRef = propBundleRef ?? routeParams.bundleRef
@@ -844,3 +845,5 @@ export default function EditBundle(props: EditBundleProps = {}) {
     </PageShell>
   )
 }
+
+export default function EditBundle(props: EditBundleProps = {}) { const params=useParams<{bundleRef:string}>(); const id=props.bundleRef ?? params.bundleRef; return id ? <RecordForm kind="bundle" recordId={id} {...(props.onDone ? {onDone:props.onDone}: {})}/> : <p>Bundle not found.</p> }

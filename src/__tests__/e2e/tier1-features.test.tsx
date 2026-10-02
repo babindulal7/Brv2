@@ -243,9 +243,9 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', () => {
       expect(breadcrumbNav?.textContent).toContain('BK-2026-0001')
 
       // Command palette trigger button with Ctrl+K / ⌘K
-      const searchBtn = container.querySelector('button[aria-label="Search commands and pages"]')
+      const searchBtn = container.querySelector('button[aria-label="Search bookings, clients, equipment and pages"]')
       expect(searchBtn).not.toBeNull()
-      expect(searchBtn?.textContent).toContain('Search commands and pages…')
+      expect(searchBtn?.textContent).toContain('Search bookings, clients, equipment…')
       expect(searchBtn?.textContent).toContain('Ctrl+K / ⌘K')
 
       // User profile trigger representation

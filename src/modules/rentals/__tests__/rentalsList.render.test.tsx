@@ -363,20 +363,21 @@ describe('§18 — this screen’s filters are the query string', () => {
 })
 
 describe('the three layouts, from one width reading (Law 14)', () => {
-  it('desktop ≥1280 — the shared panel is absent when closed and uses the global width token when open', async () => {
+  it('desktop ≥1280 — the filter drawer is absent when closed and opens beside the list', async () => {
     await mount(1280)
     expect(container.querySelector('table')).not.toBeNull()
 
     // Closed by default, so it consumes no workspace track.
     expect(filterButton()?.getAttribute('aria-expanded')).toBe('false')
-    expect(container.querySelector('.app-side-panel')).toBeNull()
+    expect(container.querySelector('.filter-overlay')).toBeNull()
     expect(text()).not.toContain('Save as new filter')
 
     await act(async () => filterButton()!.click())
-    const panel = container.querySelector<HTMLElement>('.app-side-panel.left')
-    expect(panel?.style.width).toBe('var(--app-panel-width, 320px)')
+    const panel = container.querySelector<HTMLElement>('.filter-overlay [role="dialog"]')
+    expect(panel).not.toBeNull()
+    expect(panel?.parentElement?.style.position).toBe('fixed')
     expect(panel?.style.position).toBe('relative')
-    expect(panel?.querySelector('[role="region"]')).not.toBeNull()
+    expect(panel?.textContent).toContain('Smart Views & Presets')
   })
 
   it('tablet 768–1279 — fewer columns, and the filter panel is reachable at this width too', async () => {
@@ -574,5 +575,3 @@ describe('§Step 10 & 11 — Sub-Rental refresh and retry', () => {
     expect(liveSubBtn?.disabled).toBe(false)
   })
 })
-
-

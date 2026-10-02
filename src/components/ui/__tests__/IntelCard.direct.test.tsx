@@ -40,7 +40,9 @@ describe('direct Intel card', () => {
     const identifier = host.querySelector('[data-intel-identifier]') as HTMLElement
     await act(async () => identifier.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })))
     expect(document.body.querySelector('[data-intel-overlay]')).toBeNull()
-    await act(async () => vi.advanceTimersByTime(250))
+    await act(async () => vi.advanceTimersByTime(299))
+    expect(document.body.querySelector('[data-intel-overlay]')).toBeNull()
+    await act(async () => vi.advanceTimersByTime(1))
     const card = document.body.querySelector('[data-intel-overlay]') as HTMLElement
     expect(card).not.toBeNull()
     expect(card.getAttribute('role')).toBe('dialog')

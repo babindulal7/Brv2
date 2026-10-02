@@ -1,3 +1,5 @@
+import NewRental from './NewRental'
+import { useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -878,11 +880,6 @@ function NotWiredNote({ children }: { children: React.ReactNode }) {
  * operator can see editing IS a future possibility and knows WHY it is absent
  * today. A missing button would read as "this screen is read-only by design."
  */
-const BOOKING_EDIT_UNAVAILABLE =
-  'Inline edit was removed with the 21 Aug live conversion — it persisted ' +
-  'nothing and silently reverted on reload. A real booking-update action is ' +
-  'needed before this control can be re-wired.'
-
 const NO_INVOICE_PAYMENT_UNAVAILABLE =
   'No invoice has been raised for this booking yet, and a payment settles against an invoice. ' +
   'Use Create Invoice to raise the Draft first — it stays a Draft, so an advance can be taken against it.'
@@ -948,7 +945,7 @@ function bsOrDash(iso: string): string {
  * fabricated fact indistinguishable from a genuine one-day hire.
  */
 
-export default function BookingDetail() {
+function BookingDetailView() {
   const { bookingNo } = useParams()
   const id = bookingNo ?? ''
   const [showExtendModal, setShowExtendModal] = useState(false)
@@ -2330,9 +2327,7 @@ export default function BookingDetail() {
                   button reads as "read-only by design"; a disabled one with a
                   reason states the truth: the write path is not yet wired. */}
               <div style={{ marginTop: 'var(--sp-sm)' }}>
-                <Unavailable reason={BOOKING_EDIT_UNAVAILABLE}>
-                  <Button disabled>Edit</Button>
-                </Unavailable>
+                {booking.stage === 'Quote' && !booking.isCancelled && Boolean(user?.role && ['Owner','Admin','Manager','Coordinator'].includes(user.role)) ? <Link to="?action=edit"><Button>Edit booking</Button></Link> : <Unavailable reason="General editing is available before confirmation. Use this booking's operational actions."><Button disabled>Edit</Button></Unavailable>}
               </div>
               {/* Focused project-type edit (0144) — the one header field with a
                   real write path (`updateBookingProject`). Coordinator+ only;
@@ -3227,3 +3222,5 @@ const sub = {
   fontWeight: 700,
   color: 'var(--text)',
 } as const
+
+export default function BookingDetail(){const [params]=useSearchParams();const {bookingNo}=useParams();return params.get("action")==="edit" && bookingNo ? <NewRental editBookingId={bookingNo}/> : <BookingDetailView/>}

@@ -38,9 +38,7 @@ import AlertsPanel from '../today/AlertsPanel'
 import { useViewport } from '../../lib/device'
 import { kathmanduCivil, NPT_OFFSET_MIN, getBusinessToday } from '../../lib/bs'
 import { CalendarPopover, DateField } from '../../components/ui/DateField'
-import { FilterButton, FilterSection } from '../../components/ui/FilterDrawer'
-import { AppSidePanel } from '../../components/shell/AppSidePanel'
-import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
+import { FilterButton, FilterDrawer, FilterSection } from '../../components/ui/FilterDrawer'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { Pagination } from '../../components/ui/Pagination'
 import { DataTableShell } from '../../components/ui/DataTable'
@@ -761,12 +759,6 @@ export default function OperationsQueues() {
             aria-label="Search ID, client, project"
           />
         </div>
-        <FilterButton
-          onClick={() => setShowMoreFilters((open) => !open)}
-          activeCount={operationFilterCount}
-          controls="operations-filters"
-          expanded={showMoreFilters}
-        />
         {(isFiltered || search || clientFilter !== 'all' || projectFilter !== 'all') && <Button variant="ghost" onClick={clearOperationFilters}>Clear filters</Button>}
       </div>
 
@@ -926,19 +918,17 @@ export default function OperationsQueues() {
 
       <FastReturnModal isOpen={fastReturnOpen} onClose={() => setFastReturnOpen(false)} onSuccess={refreshAll} />
       <BarcodeLookupModal isOpen={barcodeModalOpen} onClose={() => setBarcodeModalOpen(false)} />
-      <WorkspaceLeftPanel>
-      <AppSidePanel
+      <FilterDrawer
         id="operations-filters"
-        side="left"
-        title={`Filters · ${visibleJobs.length} ${visibleJobs.length === 1 ? 'job' : 'jobs'}`}
-        isOpen={showMoreFilters}
+        open={showMoreFilters}
         onClose={() => setShowMoreFilters(false)}
-        footer={
-          <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
-            <Button onClick={clearOperationFilters} disabled={operationFilterCount === 0}>Reset</Button>
-            <Button variant="primary" onClick={() => setShowMoreFilters(false)}>Apply</Button>
-          </div>
-        }
+        desktopMode="overlay"
+        resultCount={visibleJobs.length}
+        noun={visibleJobs.length === 1 ? 'job' : 'jobs'}
+        activeCount={operationFilterCount}
+        onClearAll={clearOperationFilters}
+        standardFooter
+        onApply={() => setShowMoreFilters(false)}
       >
         <div style={{ display: 'grid', gap: 'var(--sp-xs)' }}>
           <FilterSection title="Date range">
@@ -1016,8 +1006,7 @@ export default function OperationsQueues() {
             <AlertsPanel alerts={alertRows} loading={alertsQ.loading || quotesQ.loading} error={alertsQ.error ?? quotesQ.error} onRetry={retryAlerts} />
           </FilterSection>
         </div>
-      </AppSidePanel>
-      </WorkspaceLeftPanel>
+      </FilterDrawer>
       <div style={{ gridColumn: '1 / -1' }}>
         <FooterNote extra={['Queues are stages — no page defines its own status names']} />
       </div>

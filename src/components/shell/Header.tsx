@@ -240,7 +240,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
           <button
             type="button"
             onClick={() => openCommandPalette()}
-            aria-label="Search commands and pages"
+            aria-label="Search bookings, clients, equipment and pages"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -277,7 +277,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                 color: 'var(--muted)',
               }}
             >
-              Search commands and pages…
+              Search bookings, clients, equipment…
             </span>
             {vp !== 'tablet' && (
               <kbd

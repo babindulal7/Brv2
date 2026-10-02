@@ -515,11 +515,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: filtersOpen && !phone
-              ? 'minmax(230px, 280px) minmax(0,1fr) auto'
-              : desktop
-                ? 'minmax(0,1fr) auto'
-                : 'minmax(0,1fr)',
+            gridTemplateColumns: desktop ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
             gap: 'var(--sp-md)',
             alignItems: 'start',
           }}
@@ -668,7 +664,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
               id="documents-filters"
               open={filtersOpen}
               onClose={() => setFiltersOpen(false)}
-              desktopMode="rail"
+              desktopMode="overlay"
               width={360}
               resultCount={rows.length}
               noun={rows.length === 1 ? 'document' : 'documents'}

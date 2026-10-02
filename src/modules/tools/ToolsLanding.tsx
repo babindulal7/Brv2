@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
+import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { PageShell } from '../../components/ui/PageShell'
 import { useViewport } from '../../lib/device'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -132,6 +133,10 @@ export default function ToolsLanding() {
   const money = useCanViewMoney()
   const groups = useMemo(() => visibleGroups(money), [money])
   const [params, setParams] = useSearchParams()
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [selectedGroup, setSelectedGroup] = useState('')
+  const filteredGroups = selectedGroup ? groups.filter((group) => group.heading === selectedGroup) : groups
+  const visibleToolCount = filteredGroups.reduce((total, group) => total + group.cards.length, 0)
 
   useEffect(() => {
     void getToolsStatus()
@@ -169,8 +174,17 @@ export default function ToolsLanding() {
       <PageHeader
         icon="tool"
         title="Tools"
+        {...(activeTab === 'overview' ? { leading: <FilterButton onClick={() => setFiltersOpen((open) => !open)} controls="tools-filters" expanded={filtersOpen} activeCount={Number(Boolean(selectedGroup))} /> } : {})}
         description="Integrated calculators and technical utilities — work within the workbench without external shortcuts."
       />
+      <FilterDrawer id="tools-filters" open={filtersOpen && activeTab === 'overview'} onClose={() => setFiltersOpen(false)} resultCount={visibleToolCount} noun="tools" activeCount={Number(Boolean(selectedGroup))} onClearAll={() => setSelectedGroup('')} standardFooter onApply={() => setFiltersOpen(false)}>
+        <label style={{ display: 'grid', gap: 8, fontWeight: 600 }}>Category
+          <select aria-label="Filter tools by category" value={selectedGroup} onChange={(event) => setSelectedGroup(event.target.value)} style={{ minHeight: 44, width: '100%' }}>
+            <option value="">All categories</option>
+            {groups.map((group) => <option key={group.heading} value={group.heading}>{group.heading}</option>)}
+          </select>
+        </label>
+      </FilterDrawer>
 
       {/* Tabs strip */}
       <div
@@ -219,7 +233,7 @@ export default function ToolsLanding() {
 
       {activeTab === 'overview' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
-          {groups.map((group) => (
+          {filteredGroups.map((group) => (
             <section key={group.heading} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
               <h2
                 style={{

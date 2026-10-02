@@ -350,10 +350,11 @@ describe('Expenses — every filter is a database predicate', () => {
 
   it('filters by category id, never by the category name', async () => {
     const c = await mount()
+    await click(c.querySelector('[aria-label="Show filters panel"]') ?? undefined, 'the Filters button')
     db.filters.length = 0
 
     const select = Array.from(c.querySelectorAll('select')).find(
-      (s) => s.getAttribute('aria-label') === 'Filter by category',
+      (s) => s.getAttribute('aria-label') === 'Filter expenses by category',
     )
     if (!select) throw new Error('the category filter was never rendered')
     await act(async () => {

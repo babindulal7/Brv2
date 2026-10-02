@@ -1,3 +1,5 @@
+import { RecordForm } from '../../components/records/RecordForm'
+import { useSearchParams } from 'react-router-dom'
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -300,7 +302,7 @@ function UnitFact({ label, value }: { label: string; value: string }) {
 
 type AssetTab = 'Units' | 'Timeline' | 'Maintenance' | 'Money' | 'Documents' | 'Activity'
 
-export default function AssetDetail() {
+function AssetDetailView() {
   const { assetId } = useParams<{ assetId?: string }>()
   const navigate = useNavigate()
   /* `useCanViewMoney()` is the one gate every other money check in the app
@@ -460,6 +462,7 @@ export default function AssetDetail() {
           }
           actions={
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {user && ['Owner','Admin','Manager'].includes(user.role) && <Button onClick={() => navigate(`${location.pathname}?action=edit`)}>Edit Equipment</Button>}
               {units[0] && (
                 <Button variant="secondary" icon="download" onClick={() => setLabelUnit(units[0] ?? null)}>
                   Print Labels
@@ -655,7 +658,7 @@ export default function AssetDetail() {
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <Button variant="ghost" size="sm" onClick={() => setLabelUnit(u)}>Label</Button>
-                    <Button variant="ghost" size="sm" onClick={() => setEditingUnit((v) => (v === u.id ? null : u.id))}>
+                    <Button variant="ghost" size="sm" onClick={() => navigate(`${location.pathname}?action=edit`)}>
                       {editingUnit === u.id ? 'Close' : 'Edit'}
                     </Button>
                   </div>
@@ -740,7 +743,7 @@ export default function AssetDetail() {
                             <td style={{ padding: '10px 8px', textAlign: 'right' }}>
                               <div style={{ display: 'inline-flex', gap: 6 }}>
                                 <Button variant="ghost" onClick={() => setLabelUnit(u)}>Label</Button>
-                                <Button variant="ghost" onClick={() => setEditingUnit((s) => (s === u.id ? null : u.id))}>
+                                <Button variant="ghost" onClick={() => navigate(`${location.pathname}?action=edit`)}>
                                   {editingUnit === u.id ? 'Close' : 'Edit'}
                                 </Button>
                               </div>
@@ -1078,3 +1081,5 @@ export default function AssetDetail() {
     </PageShell>
   )
 }
+
+export default function AssetDetail() { const [params]=useSearchParams(); const route=useParams<{assetId:string}>(); return params.get("action")==="edit" && route.assetId ? <RecordForm kind="equipment" recordId={route.assetId}/> : <AssetDetailView/> }

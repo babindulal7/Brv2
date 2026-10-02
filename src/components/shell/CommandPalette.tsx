@@ -9,6 +9,7 @@ import { toggleScanner } from './ScannerFab'
 import { quickCreateActions } from './QuickCreateMenu'
 import { searchRecords, type GlobalSearchResult } from '../../lib/queries/globalSearch'
 import { useCurrentLanguage, toggleLanguage } from '../../lib/i18n'
+import { isStaff } from '../../lib/rbac'
 
 /**
  * The global ⌘K / Ctrl-K palette.
@@ -76,7 +77,13 @@ export const CommandPalette: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const [recordResults, setRecordResults] = useState<GlobalSearchResult[]>([])
+  const [recordSearch, setRecordSearch] = useState<{
+    term: string
+    role: string
+    status: 'loading' | 'ready' | 'error'
+    rows: GlobalSearchResult[]
+  } | null>(null)
+  const [retry, setRetry] = useState(0)
   const navigate = useNavigate()
   const { user } = useAuth()
   const hasUser = Boolean(user)
@@ -84,7 +91,14 @@ export const CommandPalette: React.FC = () => {
   const currentLang = useCurrentLanguage()
   const inputRef = useRef<HTMLInputElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const resultsId = useId()
+  const term = search.trim().toLowerCase()
+  const canSearchRecords = Boolean(user && isStaff(user.role) && term.length >= 2)
+  const currentSearch = recordSearch?.term === term && recordSearch.role === user?.role ? recordSearch : null
+  const recordResults = canSearchRecords ? currentSearch?.rows ?? [] : []
+  const searching = canSearchRecords && (!currentSearch || currentSearch.status === 'loading')
+  const searchFailed = canSearchRecords && currentSearch?.status === 'error'
 
   // Listen for ⌘K or Ctrl+K or custom open command
   useEffect(() => {
@@ -122,18 +136,23 @@ export const CommandPalette: React.FC = () => {
 
   useEffect(() => {
     const userRole = user?.role
-    if (!isOpen || !userRole || search.trim().length < 2) {
-      setRecordResults([])
+    if (!isOpen || !userRole || !isStaff(userRole) || term.length < 2) {
+      setRecordSearch(null)
       return
     }
     let cancelled = false
+    setRecordSearch({ term, role: userRole, status: 'loading', rows: [] })
     const timer = window.setTimeout(() => {
-      void searchRecords({ role: userRole, term: search, limit: 4 })
-        .then((rows) => { if (!cancelled) setRecordResults(rows) })
-        .catch(() => { if (!cancelled) setRecordResults([]) })
+      void searchRecords({ role: userRole, term, limit: 4 })
+        .then((rows) => {
+          if (!cancelled) setRecordSearch({ term, role: userRole, status: 'ready', rows })
+        })
+        .catch(() => {
+          if (!cancelled) setRecordSearch({ term, role: userRole, status: 'error', rows: [] })
+        })
     }, 180)
     return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [isOpen, search, user?.role])
+  }, [isOpen, term, user?.role, retry])
 
   useEffect(() => {
     if (isOpen) {
@@ -213,8 +232,10 @@ export const CommandPalette: React.FC = () => {
     },
   ]
 
-  const term = search.trim().toLowerCase()
   const filtered = actions.filter((a) => {
+    // Record queries already match identifiers, aliases and fields that may not
+    // appear in the result label. Filtering them again hides valid matches.
+    if (a.category === 'Records') return true
     if (!term) return true
     if (a.shortcut && a.shortcut.toLowerCase() === term) return true
     if (a.keywords && a.keywords.some((k) => k.toLowerCase() === term || k.toLowerCase().startsWith(term))) return true
@@ -223,19 +244,20 @@ export const CommandPalette: React.FC = () => {
       (a.subtitle && a.subtitle.toLowerCase().includes(term)) ||
       a.category.toLowerCase().includes(term)
     )
-  })
+  }).sort((a, b) => Number(a.category === 'Records') - Number(b.category === 'Records'))
+  const activeIndex = Math.min(selectedIndex, Math.max(0, filtered.length - 1))
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.nativeEvent.isComposing) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setSelectedIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0))
+      setSelectedIndex(activeIndex < filtered.length - 1 ? activeIndex + 1 : 0)
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : Math.max(0, filtered.length - 1)))
-    } else if (e.key === 'Enter' && filtered[selectedIndex]) {
+      setSelectedIndex(activeIndex > 0 ? activeIndex - 1 : Math.max(0, filtered.length - 1))
+    } else if (e.key === 'Enter' && filtered[activeIndex]) {
       e.preventDefault()
-      filtered[selectedIndex].onSelect()
+      filtered[activeIndex].onSelect()
       setIsOpen(false)
     }
   }
@@ -257,14 +279,16 @@ export const CommandPalette: React.FC = () => {
       <div style={{ position: 'fixed', inset: 0 }} onClick={() => setIsOpen(false)} />
 
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
         onKeyDown={(e) => {
           if (e.key !== 'Tab') return
           e.preventDefault()
-          if (document.activeElement === inputRef.current) closeRef.current?.focus()
-          else inputRef.current?.focus()
+          const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('input, button:not(:disabled)') ?? [])
+          const current = controls.indexOf(document.activeElement as HTMLElement)
+          controls[(current + (e.shiftKey ? -1 : 1) + controls.length) % controls.length]?.focus()
         }}
         style={{
           position: 'relative',
@@ -303,18 +327,21 @@ export const CommandPalette: React.FC = () => {
             ref={inputRef}
             type="text"
             role="combobox"
-            aria-label="Search commands and destinations"
+            aria-label="Search records, commands and pages"
             aria-autocomplete="list"
             aria-expanded="true"
             aria-controls={resultsId}
-            aria-activedescendant={filtered[selectedIndex] ? `${resultsId}-${selectedIndex}` : undefined}
+            aria-activedescendant={filtered[activeIndex] ? `${resultsId}-${activeIndex}` : undefined}
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
               setSelectedIndex(0)
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Type a command or destination…"
+            placeholder="Search bookings, clients, equipment or pages…"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
             style={{
               flex: 1,
               minWidth: 0,
@@ -328,6 +355,20 @@ export const CommandPalette: React.FC = () => {
               fontFamily: 'var(--font-body)',
             }}
           />
+          {search && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => {
+                setSearch('')
+                setSelectedIndex(0)
+                inputRef.current?.focus()
+              }}
+              style={{ minWidth: 44, minHeight: 44, background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer' }}
+            >
+              Clear
+            </button>
+          )}
           <button
             ref={closeRef}
             type="button"
@@ -350,9 +391,27 @@ export const CommandPalette: React.FC = () => {
           </button>
         </div>
 
+        <div role={searchFailed ? 'alert' : 'status'} style={{ padding: '8px var(--sp-lg)', color: 'var(--muted)', fontSize: 'var(--t-meta)' }}>
+          {searchFailed ? (
+            <>
+              Could not search records. Check your connection and try again.
+              <button
+                type="button"
+                onClick={() => { setRetry((value) => value + 1); inputRef.current?.focus() }}
+                style={{ minHeight: 44, padding: '0 12px', marginLeft: 8, borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card2)', color: 'var(--text)', font: 'inherit', cursor: 'pointer' }}
+              >
+                Retry search
+              </button>
+            </>
+          ) : searching ? 'Searching records…' : canSearchRecords
+            ? `${recordResults.length} record ${recordResults.length === 1 ? 'match' : 'matches'}. Commands and pages are also shown when they match.`
+            : isStaff(user.role) ? 'Type at least 2 characters to find records, or choose a page or action.'
+            : 'Choose a page or action.'}
+        </div>
+
         {/* Results list */}
         <div id={resultsId} role="listbox" aria-label="Commands and destinations" style={{ flex: 1, overflowY: 'auto', padding: 'var(--sp-sm)' }}>
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && !searching && !searchFailed ? (
             <div
               style={{
                 padding: 'var(--sp-2xl)',
@@ -365,7 +424,7 @@ export const CommandPalette: React.FC = () => {
             </div>
           ) : (
             filtered.map((item, idx) => {
-              const isSelected = idx === selectedIndex
+              const isSelected = idx === activeIndex
               return (
                 <div
                   key={item.id}

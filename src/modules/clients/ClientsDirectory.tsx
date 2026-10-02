@@ -7,11 +7,10 @@ import { SearchInput } from '../../components/ui'
 import type { Kpi } from '../../components/ui/Page'
 import {
   ActiveFilterChips,
+  FilterDrawer,
   FilterOptionList,
   filterGroupStyle,
 } from '../../components/ui/FilterDrawer'
-import { AppSidePanel } from '../../components/shell/AppSidePanel'
-import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { Pagination } from '../../components/ui/Pagination'
 import type { ActiveFilter } from '../../components/ui/FilterDrawer'
@@ -1476,23 +1475,19 @@ export function ClientsDirectory({
             </>
           )
           return (
-            <WorkspaceLeftPanel>
-              <AppSidePanel
+              <FilterDrawer
                 id="clients-filters"
-                side="left"
-                title={`Filters · ${filteredClients.length} ${filteredClients.length === 1 ? 'client' : 'clients'}`}
-                isOpen={filtersOpen}
+                open={filtersOpen}
                 onClose={() => setFiltersOpen(false)}
-                footer={
-                  <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
-                    <Button onClick={clearAll} disabled={selectionCount(facetSel) === 0}>Reset</Button>
-                    <Button variant="primary" onClick={() => setFiltersOpen(false)}>Apply</Button>
-                  </div>
-                }
+                resultCount={filteredClients.length}
+                noun="clients"
+                activeCount={selectionCount(facetSel)}
+                onClearAll={clearAll}
+                standardFooter
+                onApply={() => setFiltersOpen(false)}
               >
                 {filtersContent}
-              </AppSidePanel>
-            </WorkspaceLeftPanel>
+              </FilterDrawer>
           )
         })()}
         </>

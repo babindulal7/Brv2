@@ -1,3 +1,5 @@
+import { readEditor, saveEditor } from './recordEditor'
+import type { RecordKind } from '../recordEditor'
 /**
  * **Mock Supabase client — the drop-in.**
  *
@@ -1079,6 +1081,29 @@ export const mockSupabase = {
     return createBuilder(table, hooks)
   },
   rpc(name: string, args?: Record<string, unknown>) {
+    if (name === 'read_record_editor' || name === 'save_record_editor') {
+      try {
+        const actor=readSession()?.user.id
+        const role=store['users']?.find(row=>row['id']===actor)?.['role']
+        const kind=String(args?.['p_kind']) as RecordKind
+        const allowed=kind==='client'?['Owner','Admin','Manager','Coordinator']:['Owner','Admin','Manager']
+        if(!actor || !allowed.includes(String(role))) throw new Error('Permission denied for this record.')
+        if(name==='read_record_editor')return Promise.resolve({data:readEditor(store,kind,String(args?.['p_id'])),error:null})
+        const staged=structuredClone(store)
+        const response=saveEditor(staged,args??{},actor,nextDocumentNumber)
+        for(const [table,rows] of Object.entries(staged)) {
+          for(const row of rows) {
+            const old=store[table]?.find(r=>r['id']===row['id'])
+            if(!old)overlay.inserts.push({table,row})
+            else if(JSON.stringify(old)!==JSON.stringify(row))overlay.updates.push({table,id:row['id'],patch:row})
+          }
+          store[table]=rows
+        }
+        saveOverlay(overlay)
+        return Promise.resolve({data:response,error:null})
+      } catch(error) {return Promise.resolve({data:null,error:{code:'P0001',message:error instanceof Error?error.message:String(error),details:'',hint:''} as PgError})}
+    }
+
     if (name === 'next_document_number') {
       const key = String(args?.['p_sequence_key'] ?? 'doc')
       return Promise.resolve({ data: nextDocumentNumber(key), error: null })

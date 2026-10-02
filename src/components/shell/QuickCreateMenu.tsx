@@ -125,7 +125,7 @@ export function QuickCreateMenu({ role, compact = false }: { role: SystemRole | 
               onClick={() => setOpen((c) => !c)}
               style={{
                 minHeight: 'var(--control-height)',
-                width: 32,
+                width: 44,
                 padding: '0 4px',
                 borderTopRightRadius: 'var(--r-btn)',
                 borderBottomRightRadius: 'var(--r-btn)',

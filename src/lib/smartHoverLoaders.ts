@@ -23,6 +23,7 @@ import {
   getAssetDetail,
 } from './queries/inventory'
 import { equipmentBookingRelations } from './queries/equipmentRelations'
+import { getDocumentPreviewRecord } from './queries/documents'
 import { listInvoices, paymentsForBooking, paymentsForClient, paymentsForInvoice, listPayments, type PaymentListRow } from './queries/finance'
 import type { GateContext } from './fieldGating'
 import {
@@ -30,6 +31,7 @@ import {
   type EquipmentPreview,
   type RentalPreview,
   type InvoicePreview,
+  type DocumentPreview,
   type PaymentPreview,
 } from '../components/smart-hover/previewTypes'
 import {
@@ -284,6 +286,16 @@ async function loadRentalPayments(bookingId: string, grandTotal: Paisa, depositR
 
 /* ── Invoice Preview Loader ───────────────────────────────────────────────── */
 
+export async function loadDocumentPreview(ref: string, ctx: GateContext): Promise<DocumentPreview> {
+  const record = await getDocumentPreviewRecord(ref, canViewMoneyField(ctx, 'booking'), ctx.role)
+  if (!record) throw new Error(`Document not found or unavailable: ${ref}`)
+  return {
+    ...record,
+    createdAt: adWithBs(record.createdAt),
+    signedAt: record.signedAt ? adWithBs(record.signedAt) : null,
+  }
+}
+
 export async function loadInvoicePreview(
   invoiceRef: string,
   ctx: GateContext
@@ -409,7 +421,7 @@ export const previewLoaders = {
   equipment: loadEquipmentPreview,
   rental: loadRentalPreview,
   invoice: loadInvoicePreview,
-  document: loadInvoicePreview,
+  document: loadDocumentPreview,
   payment: loadPaymentPreview,
 } as const
 

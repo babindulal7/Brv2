@@ -388,7 +388,7 @@ describe('Tier 2: Boundaries, Corner Cases & Guardrails', () => {
       )
 
       // Command palette button
-      const searchBtn = container.querySelector('button[aria-label="Search commands and pages"]') as HTMLElement
+      const searchBtn = container.querySelector('button[aria-label="Search bookings, clients, equipment and pages"]') as HTMLElement
       expect(searchBtn).not.toBeNull()
       const searchStyle = searchBtn.style
       expect(Number.parseInt(searchStyle.minHeight, 10)).toBeGreaterThanOrEqual(44)

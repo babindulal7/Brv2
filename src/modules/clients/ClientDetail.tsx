@@ -1,3 +1,5 @@
+import { RecordForm } from '../../components/records/RecordForm'
+import { useSearchParams } from 'react-router-dom'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -284,7 +286,7 @@ async function fetchClientInvoices(filters: ListFilters) {
   return listInvoices(filters)
 }
 
-export default function ClientDetail() {
+function ClientDetailView() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const money = useCanViewMoney()
@@ -1646,3 +1648,5 @@ const th = {
  * means those targets can be grown to 44 without re-creating the overlap.
  */
 const td = { height: 'var(--row-min-h)', padding: '11px 12px', fontSize: 'var(--t-meta)', color: 'var(--text)', verticalAlign: 'top' as const }
+
+export default function ClientDetail() { const [params]=useSearchParams(); const route=useParams<{id:string}>(); return params.get("action")==="edit" && route.id ? <RecordForm kind="client" recordId={route.id}/> : <ClientDetailView/> }

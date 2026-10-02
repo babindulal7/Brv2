@@ -25,6 +25,12 @@ export interface RentalDraftData {
   specialInstructions: string
   lines: Array<{
     id: string
+    bookingLineId?: string | undefined
+    clientUuid?: string | undefined
+    parentClientUuid?: string | null | undefined
+    productId?: string | null | undefined
+    bundleId?: string | null | undefined
+    isIncluded?: boolean | undefined
     lineType?: 'Equipment' | 'Bundle' | 'Accessory' | 'Service' | 'Sub-rental' | 'Manual item' | undefined
     name: string
     serial: string

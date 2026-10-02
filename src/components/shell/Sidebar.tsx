@@ -24,7 +24,7 @@ const ROW_H = 44
 const LONG_PRESS_MS = 450
 
 /** Rail tooltip timing — calm, not jumpy and not browser-slow. */
-const TOOLTIP_OPEN_DELAY_MS = 120
+const TOOLTIP_OPEN_DELAY_MS = 300
 const TOOLTIP_CLOSE_DELAY_MS = 75
 /** Gap between the rail and the floating tooltip. */
 const TOOLTIP_GAP = 10

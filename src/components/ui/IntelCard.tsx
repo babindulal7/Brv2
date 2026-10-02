@@ -33,8 +33,8 @@ const editableIntelType = (type: IntelEntityType | undefined): type is 'client' 
  * omitted from the payload, not CSS-hidden).
  *
  * Interaction contract:
- * - Desktop: 250ms hover-intent open, 300ms close intent, safe-triangle
- *   travel from trigger into card, ~0ms adjacent switching while a session
+ * - Desktop: 300ms hover-intent open, 300ms close intent, safe-triangle
+ *   travel from trigger into card, 300ms adjacent switching while a session
  *   is active. Never auto-closes on a timer (WCAG 1.4.13).
  * - Pin: Space tap or interacting with the card pins it until
  *   ESC, close button, or click-away. Space-hold is a temporary preview.

@@ -1,3 +1,4 @@
+import { RecordForm } from '../../components/records/RecordForm'
 import { useRef, useState } from 'react'
 import { EquipmentProvider, useEquipmentContext } from './components/AddEquipmentContext'
 import { SectionIdentity } from './components/SectionIdentity'
@@ -429,10 +430,12 @@ function AddEquipmentLayout({ embedded, onDone }: { embedded?: boolean; onDone?:
   )
 }
 
-export default function AddEquipment(props: { embedded?: boolean; onDone?: () => void } = {}) {
+export function LegacyAddEquipment(props: { embedded?: boolean; onDone?: () => void } = {}) {
   return (
     <EquipmentProvider>
       <AddEquipmentLayout {...props} />
     </EquipmentProvider>
   )
 }
+
+export default function AddEquipment(props: {embedded?:boolean;onDone?:()=>void} = {}) { return <RecordForm kind="equipment" {...(props.onDone ? {onDone:props.onDone}: {})}/> }

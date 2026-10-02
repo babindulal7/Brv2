@@ -1,3 +1,4 @@
+import { RecordForm } from '../../components/records/RecordForm'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { newClientUuid } from '../../lib/supabase'
 import { useInventoryCategories, listInventory } from '../../lib/queries/inventory'
@@ -407,7 +408,7 @@ function downloadCsv(name: string, rows: string[][]) {
  */
 const NOTES_LIMIT = 500
 
-export function AddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: () => void } = {}) {
+export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: () => void } = {}) {
   const navigate = useNavigate()
   const handleExit = () => (onDone ? onDone() : navigate('/inventory'))
   const money = useCanViewMoney()
@@ -2893,3 +2894,5 @@ function LineRow({
     </>
   )
 }
+
+export function AddBundle(props: {embedded?:boolean;onDone?:()=>void} = {}) { return <RecordForm kind="bundle" {...(props.onDone ? {onDone:props.onDone}: {})}/> }

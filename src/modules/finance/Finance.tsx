@@ -621,6 +621,7 @@ export default function Finance() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [invoiceFiltersOpen, setInvoiceFiltersOpen] = useState(false)
+  const [expenseFiltersOpen, setExpenseFiltersOpen] = useState(false)
   const [page, setPage] = useState(1)
 
   /**
@@ -1307,6 +1308,18 @@ export default function Finance() {
           two Export buttons on one screen exporting different things is the
           duplication the re-host was done to remove. */}
       <PageHeader
+        {...(tab === 'Invoices' ? {
+          leading: (
+            <FilterButton
+              onClick={() => setInvoiceFiltersOpen((open) => !open)}
+              activeCount={invoiceFilterCount}
+              controls="finance-invoice-filters"
+              expanded={invoiceFiltersOpen}
+            />
+          ),
+        } : tab === 'Expenses' ? {
+          leading: <FilterButton onClick={() => setExpenseFiltersOpen((open) => !open)} controls="expense-filters" expanded={expenseFiltersOpen} />,
+        } : {})}
         icon="card"
         title="Finance"
         {...(money && (tab === 'Dashboard' || tab === 'Invoices') ? { actions: headerActions } : {})}
@@ -1328,6 +1341,7 @@ export default function Finance() {
           value={tab}
           onChange={(next) => {
             if (next !== 'Invoices') setInvoiceFiltersOpen(false)
+            if (next !== 'Expenses') setExpenseFiltersOpen(false)
             setTab(next)
           }}
         />
@@ -1346,7 +1360,7 @@ export default function Finance() {
         restricted state twice, once from this page and once from theirs.
       */}
       {tab === 'Payments' && <Payments embedded />}
-      {tab === 'Expenses' && <Expenses embedded />}
+      {tab === 'Expenses' && <Expenses embedded filtersOpen={expenseFiltersOpen} onFiltersClose={() => setExpenseFiltersOpen(false)} />}
       {tab === 'Closing' && <DailyClosing embedded />}
       {tab === 'Reports' && <ReportCatalog />}
 
@@ -1379,14 +1393,6 @@ export default function Finance() {
                   aria-label="Search invoices by invoice or credit-note number"
                 />
               }
-              filters={
-                <FilterButton
-                  onClick={() => setInvoiceFiltersOpen(!invoiceFiltersOpen)}
-                  activeCount={invoiceFilterCount}
-                  controls="finance-invoice-filters"
-                  expanded={invoiceFiltersOpen}
-                />
-              }
             />
           )}
 
@@ -1399,9 +1405,7 @@ export default function Finance() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: tab === 'Invoices' && invoiceFiltersOpen && viewport !== 'phone'
-                ? 'minmax(230px, 280px) minmax(0,1fr)'
-                : 'minmax(0,1fr)',
+              gridTemplateColumns: 'minmax(0,1fr)',
               gap: 'var(--sp-md)',
               alignItems: 'start',
             }}
@@ -1411,7 +1415,7 @@ export default function Finance() {
                 id="finance-invoice-filters"
                 open={invoiceFiltersOpen}
                 onClose={() => setInvoiceFiltersOpen(false)}
-                desktopMode="rail"
+                desktopMode="overlay"
                 width={360}
                 resultCount={list.loading ? null : list.total}
                 noun="invoices"

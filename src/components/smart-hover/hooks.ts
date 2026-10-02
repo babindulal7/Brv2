@@ -1,7 +1,8 @@
 /**
  * Smart hover interaction hooks — §6–§10, §76, §80–§81.
  *
- * Timing: open 250ms, close 300ms, sibling switch 50–80ms (§6/§8).
+ * Timing: every hover opens after 300ms, including sibling switches;
+ * close grace is 300ms (§6/§8).
  * Safe travel: a grace window keeps trigger → card travel open (§7).
  * Touch: 500ms long-press opens the sheet; short tap navigates (§10).
  * Keyboard: Space pins, Enter activates, Esc closes and restores focus (§80).

@@ -3,20 +3,22 @@ import type { IntelContext, IntelEntityType } from '../../lib/intel/context'
 import type { GateContext } from '../../lib/fieldGating'
 import { canViewMoneyField } from '../../lib/fieldGating'
 import { defaultTabForContext, type HoverContext } from '../../lib/smartHover'
-import { loadClientPreview, loadEquipmentPreview, loadInvoicePreview, loadPaymentPreview, loadRentalPreview } from '../../lib/smartHoverLoaders'
-import type { ClientPreview, EquipmentPreview, InvoicePreview, PaymentPreview, RentalPreview } from '../smart-hover/previewTypes'
+import { loadClientPreview, loadDocumentPreview, loadEquipmentPreview, loadInvoicePreview, loadPaymentPreview, loadRentalPreview } from '../../lib/smartHoverLoaders'
+import type { ClientPreview, DocumentPreview, EquipmentPreview, InvoicePreview, PaymentPreview, RentalPreview } from '../smart-hover/previewTypes'
 import { ClientHoverCard } from '../smart-hover/cards/ClientHoverCard'
 import { EquipmentHoverCard } from '../smart-hover/cards/EquipmentHoverCard'
 import { RentalHoverCard } from '../smart-hover/cards/RentalHoverCard'
 import { DocumentHoverCard } from '../smart-hover/cards/DocumentHoverCard'
+import { RegistryDocumentHoverCard } from '../smart-hover/cards/RegistryDocumentHoverCard'
 import { PaymentHoverCard } from '../smart-hover/cards/PaymentHoverCard'
 
-type CoreType = 'client' | 'equipment' | 'rental' | 'invoice' | 'payment'
+type CoreType = 'client' | 'equipment' | 'rental' | 'document' | 'invoice' | 'payment'
 type Loaded =
   | { type: 'client'; preview: ClientPreview }
   | { type: 'equipment'; preview: EquipmentPreview }
   | { type: 'rental'; preview: RentalPreview }
   | { type: 'invoice'; preview: InvoicePreview }
+  | { type: 'document'; preview: DocumentPreview }
   | { type: 'payment'; preview: PaymentPreview }
 
 const CONTEXT: Record<IntelContext, HoverContext> = {
@@ -49,11 +51,9 @@ export function IntelTabbedDetail({ entityType, entityId, context, gateContext, 
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [error, setError] = useState<string | null>(null)
   const core: CoreType | null =
-    entityType === 'client' || entityType === 'equipment' || entityType === 'rental' || entityType === 'invoice' || entityType === 'payment'
+    entityType === 'client' || entityType === 'equipment' || entityType === 'rental' || entityType === 'document' || entityType === 'invoice' || entityType === 'payment'
       ? entityType
-      : entityType === 'document'
-        ? 'invoice'
-        : null
+      : null
   const role = gateContext?.role
   const surface = gateContext?.surface
   const deliveryLinked = gateContext?.deliveryLinked
@@ -67,6 +67,7 @@ export function IntelTabbedDetail({ entityType, entityId, context, gateContext, 
     const request = core === 'client' ? loadClientPreview(entityId, gate)
       : core === 'equipment' ? loadEquipmentPreview(entityId, gate)
       : core === 'rental' ? loadRentalPreview(entityId, gate)
+      : core === 'document' ? loadDocumentPreview(entityId, gate)
       : core === 'invoice' ? loadInvoicePreview(entityId, gate)
       : loadPaymentPreview(entityId, gate)
     void request.then((preview) => {
@@ -85,6 +86,7 @@ export function IntelTabbedDetail({ entityType, entityId, context, gateContext, 
   if (loaded.type === 'client') return <ClientHoverCard key={entityId} preview={loaded.preview} canViewFinance={canViewMoneyField(gateContext, 'client-balance')} defaultTab={defaultTab} onOpenRental={(no) => onFollow(`/rentals/${encodeURIComponent(no)}`)} />
   if (loaded.type === 'equipment') return <EquipmentHoverCard key={entityId} preview={loaded.preview} canViewFinance={canViewMoneyField(gateContext, 'asset-finance')} defaultTab={defaultTab} onOpenRental={(no) => onFollow(`/rentals/${encodeURIComponent(no)}`)} />
   if (loaded.type === 'invoice') return <DocumentHoverCard key={entityId} preview={loaded.preview} canViewFinance={canViewMoneyField(gateContext, 'booking')} />
+  if (loaded.type === 'document') return <RegistryDocumentHoverCard key={entityId} preview={loaded.preview} onFollow={onFollow} />
   if (loaded.type === 'payment') return <PaymentHoverCard key={entityId} preview={loaded.preview} onFollow={onFollow} />
   return <RentalHoverCard key={entityId} preview={loaded.preview} canViewFinance={canViewMoneyField(gateContext, 'booking')} defaultTab={defaultTab} onOpenClient={() => onFollow(`/clients/${encodeURIComponent(loaded.preview.clientId)}`)} />
 }

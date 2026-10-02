@@ -6,6 +6,7 @@ import { PageShell } from '../../components/ui/PageShell'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { thStyle } from '../../components/ui/TableHeaderCell'
 import { SearchInput } from '../../components/ui/SearchInput'
+import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { EmptyState } from '../../components/ui/StateViews'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -174,6 +175,8 @@ export function CrewBooking() {
   const phone = viewport === 'phone'
 
   const [searchQuery, setSearchQuery] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [selectedRole, setSelectedRole] = useState('')
   // §6.1's chip row is roster availability, not assignment status. `data/crew.ts`
   // owns the three-chips-over-four-states union (law 1), so the count and the
   // predicate can never drift apart.
@@ -232,20 +235,23 @@ export function CrewBooking() {
   const ledger = useMemo(() => payoutLedger(crewAssignments), [crewAssignments])
 
   const chipCounts = useMemo(() => rosterChipCounts(crewMembers), [crewMembers])
+  const roles = useMemo(() => [...new Set([...crewMembers.map((member) => member.role), ...crewAssignments.map((assignment) => assignment.role)])].sort(), [crewMembers, crewAssignments])
 
   /** §6.1's CREW list — roster people, filtered by the chip row and the search box. */
   const filteredRoster = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
     return crewMembers.filter((m) => {
       if (!matchesRosterChip(m, rosterChip)) return false
+      if (selectedRole && m.role !== selectedRole) return false
       if (!q) return true
       return m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q) || m.role.toLowerCase().includes(q)
     })
-  }, [crewMembers, searchQuery, rosterChip])
+  }, [crewMembers, searchQuery, rosterChip, selectedRole])
 
   /** §6.1's ASSIGNMENTS list. Search only — the chips above govern the roster. */
   const filteredCrew = useMemo(() => {
     return crewAssignments.filter((c) => {
+      if (selectedRole && c.role !== selectedRole) return false
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase()
         return (
@@ -258,7 +264,7 @@ export function CrewBooking() {
       }
       return true
     })
-  }, [crewAssignments, searchQuery])
+  }, [crewAssignments, searchQuery, selectedRole])
 
   // HIS builders (crewGlance/crewDetailGroups) construct a full field-gated
   // object graph per row — compute them once per relevant dependency change
@@ -336,8 +342,17 @@ export function CrewBooking() {
         <PageHeader
           icon="crew"
           title="Crew Assist"
+          leading={<FilterButton onClick={() => setFiltersOpen((open) => !open)} controls="crew-filters" expanded={filtersOpen} activeCount={Number(Boolean(selectedRole))} />}
           description="Roster management, shoot-day assignments, and conflict detection."
         />
+        <FilterDrawer id="crew-filters" open={filtersOpen} onClose={() => setFiltersOpen(false)} resultCount={filteredRoster.length} noun="crew members" activeCount={Number(Boolean(selectedRole))} onClearAll={() => setSelectedRole('')} standardFooter onApply={() => setFiltersOpen(false)}>
+          <label style={{ display: 'grid', gap: 8, fontWeight: 600 }}>Role
+            <select aria-label="Filter crew by role" value={selectedRole} onChange={(event) => setSelectedRole(event.target.value)} style={{ minHeight: 44, width: '100%' }}>
+              <option value="">All roles</option>
+              {roles.map((role) => <option key={role} value={role}>{role}</option>)}
+            </select>
+          </label>
+        </FilterDrawer>
 
       {rosterLoadError && (
         <p

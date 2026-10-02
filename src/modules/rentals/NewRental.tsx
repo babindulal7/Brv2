@@ -1,12 +1,16 @@
+import { RecordActions, useUnsavedRecord } from '../../components/ui/RecordWorkspace'
+import { readQuoteEditor, quoteToDraft, type QuoteSnapshot } from '../../lib/queries/quoteEditor'
+import { updateRentalQuote } from '../../actions/rentals/updateRentalQuote'
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { ConfirmDialog, Input, Select, Modal, PageActions } from '../../components/ui'
+import { ConfirmDialog, Input, Select, Modal } from '../../components/ui'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { Card, PageHeader, Rail, cardStyle } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { PageShell } from '../../components/ui/PageShell'
+import { PageActions } from '../../components/ui/PageActions'
 import { BAR_BOX } from '../../components/shell/BottomBar'
 import './rentals.css'
 import './new-rental-flow.css'
@@ -234,6 +238,7 @@ const SHOOT_PRESETS = [
  */
 
 interface Line {
+  bookingLineId?: string | undefined
   id: string
   clientUuid?: string | undefined
   parentClientUuid?: string | null | undefined
@@ -1495,19 +1500,21 @@ function CrewSearch({
 }
 
 export interface NewRentalProps {
+  editBookingId?: string
+
   embedded?: boolean
   onDone?: () => void
 }
 
-export default function NewRental({ embedded = false, onDone }: NewRentalProps = {}) {
+export default function NewRental({ embedded = false, onDone, editBookingId }: NewRentalProps = {}) {
   const navigate = useNavigate()
   const doExit = useCallback(() => {
     if (onDone) {
       onDone()
     } else {
-      navigate('/rentals')
+      navigate(editBookingId ? `/rentals/${editBookingId}` : '/rentals')
     }
-  }, [onDone, navigate])
+  }, [onDone, navigate, editBookingId])
   const viewport = useViewport()
   const isDesktop = viewport === 'desktop'
   const isPhone = viewport === 'phone'
@@ -2421,9 +2428,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    * next press fails.
    */
   const confirmBlocked = blockingNotices.length > 0
-  const blockReasonText = confirmBlocked
-    ? `Blocked — ${blockingNotices.length} ${blockingNotices.length === 1 ? 'notice' : 'notices'} must be resolved before this booking can be confirmed.`
-    : undefined
+  const blockReasonText = confirmBlocked ? blockingNotices.map((n) => n.text).join('. ') : undefined
 
   const pickupBs = toBs(new Date(pickup))
 
@@ -2645,6 +2650,12 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
    *    NR-13 renamed what the footer says about it, because nothing on this
    *    page persists a draft. 'error' exists so a rejected save cannot fall
    *    back into that quiet state; see the footer's own note. */
+  const [quoteSnapshot,setQuoteSnapshot]=useState<QuoteSnapshot|null>(null)
+  const [quoteLoading,setQuoteLoading]=useState(Boolean(editBookingId))
+  const [quoteReload,setQuoteReload]=useState(0)
+  const quoteInitial=useRef<string|null>(null)
+  const quoteSaving=useRef(false)
+  const quoteKey=useRef<{fingerprint:string;key:string}|null>(null)
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
   /**
    * **Law 8.** One key per Confirm press, reused by every retry of that press
@@ -2709,6 +2720,12 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       specialInstructions,
       lines: lines.map((line) => ({
         id: line.id,
+        bookingLineId:line.bookingLineId,
+        clientUuid:line.clientUuid,
+        parentClientUuid:line.parentClientUuid,
+        productId:line.productId,
+        bundleId:line.bundleId,
+        isIncluded:line.isIncluded,
         ...(line.lineType !== undefined ? { lineType: line.lineType } : {}),
         name: line.name,
         serial: line.serial,
@@ -2876,6 +2893,102 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       })
   }, [searchParams])
 
+  useEffect(() => {
+    if(!editBookingId)return
+    let active=true;setQuoteLoading(true);setActionError(null)
+    void readQuoteEditor(editBookingId).then(snapshot=>{
+      if(!active)return
+      const data=quoteToDraft(snapshot)
+      setQuoteSnapshot(snapshot);setDraftBookingNo(snapshot.code);quoteInitial.current=null
+        setSelectedClientId(data.selectedClientId)
+        setDraftClientDbId(data.clientDbId)
+        setProject(data.project)
+        /* Legacy drafts stored free-text `kind`; only allow-listed values
+           survive the restore — anything else would fail validation on save. */
+        setKind(isProjectType(data.kind) ? data.kind : '')
+        setKindOther(data.kindOther ?? '')
+        setGovId(data.govId)
+        setPickup(data.pickup)
+        setPickupTime(data.pickupTime)
+        setRet(data.returnDate)
+        setReturnTime(data.returnTime)
+        setDeliveryType(data.deliveryType)
+        setPickupLocation(data.pickupLocation)
+        setReturnLocation(data.returnLocation)
+        setSpecialInstructions(data.specialInstructions)
+        setLines(
+          data.lines.map((line) => ({
+            ...line,
+            ratePaisa: line.ratePaisa as Paisa,
+            status: line.status as InvStatus | undefined,
+          })),
+        )
+        setCrew(
+          data.crew.map((member) => ({
+            ...member,
+            role: member.role as CrewRole,
+            dayRatePaisa: member.dayRatePaisa as Paisa,
+            overtimePaisa: member.overtimePaisa as Paisa,
+            accommodationPaisa: member.accommodationPaisa as Paisa,
+            mealsPaisa: member.mealsPaisa as Paisa,
+          })),
+        )
+        setDeliveryChargePaisa(data.deliveryChargePaisa as Paisa)
+        setFuelChargePaisa(data.fuelChargePaisa as Paisa)
+        setVehicle(data.vehicle)
+        setNumberPlate(data.numberPlate)
+        setDriverContact(data.driverContact)
+        if (data.returnPickupType) setReturnPickupType(data.returnPickupType)
+        if (data.returnPickupAddress) setReturnPickupAddress(data.returnPickupAddress)
+        if (data.returnPickupTime) setReturnPickupTime(data.returnPickupTime)
+        if (typeof data.returnPickupChargePaisa === 'number') {
+          setReturnPickupChargePaisa(data.returnPickupChargePaisa)
+        }
+        setDiscountPct(data.discountPct)
+        setVatOn(data.vatOn)
+        setVatRatePercent(data.vatRatePercent)
+        setAdvancePaisa(data.advancePaisa as Paisa)
+
+      setQuoteLoading(false)
+    }).catch((error:unknown)=>{if(active){setQuoteLoading(false);setActionError(error instanceof Error?error.message:String(error))}})
+    return()=>{active=false}
+  },[editBookingId,quoteReload])
+  if(editBookingId && quoteSnapshot && !quoteLoading && quoteInitial.current===null && client)quoteInitial.current=draftFingerprint
+  const quoteDirty=quoteInitial.current!==null && quoteInitial.current!==draftFingerprint
+  useUnsavedRecord(Boolean(editBookingId && quoteDirty))
+  const saveQuote = useCallback(async () => {
+    if (!quoteSnapshot || quoteSaving.current) return
+    const ctx = dispatchContext()
+    if (!ctx) return
+    quoteSaving.current = true
+    setSaveState('saving')
+    setActionError(null)
+    if (quoteKey.current?.fingerprint !== draftFingerprint) quoteKey.current = { fingerprint: draftFingerprint, key: newClientUuid() }
+    try {
+      const payload = { ...draftData, lines: draftData.lines.map((line) => ({ ...line, clientUuid: line.clientUuid ?? newClientUuid() })) }
+      await updateRentalQuote(
+        {
+          bookingId: quoteSnapshot.id,
+          expectedRevision: quoteSnapshot.revision,
+          clientUuid: quoteKey.current!.key,
+          draft: payload,
+          snapshot: quoteSnapshot,
+          depositPaisa: pricing.securityDeposit.requiredPaisa,
+        },
+        ctx,
+      )
+      quoteInitial.current = draftFingerprint
+      showSuccessToast('Booking saved', quoteSnapshot.code)
+      doExit()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error))
+      setSaveState('error')
+    } finally {
+      quoteSaving.current = false
+    }
+  }, [quoteSnapshot, dispatchContext, draftFingerprint, draftData, pricing.securityDeposit.requiredPaisa, showSuccessToast, doExit])
+
+
   const retryLoadDraft = useCallback(() => {
     const requestedId = searchParams.get('draft')
     if (!requestedId) return
@@ -2898,7 +3011,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
   const saveDraft = useCallback(
     (options?: { silent?: boolean }) => {
-      if (saveState === 'saving') return
+      if (editBookingId || saveState === 'saving') return
       const ctx = dispatchContext()
       if (!ctx) {
         setActionError('Not saved — you are not signed in, so this draft cannot be attributed to anyone. Sign in and save again.')
@@ -2954,16 +3067,16 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           setActionError(`Not saved — ${err instanceof Error ? err.message : String(err)}`)
         })
     },
-    [saveState, dispatchContext, draftId, draftData, draftFingerprint, searchParams, setSearchParams, showSuccessToast, client, govId],
+    [saveState, dispatchContext, draftId, draftData, draftFingerprint, searchParams, setSearchParams, showSuccessToast, client, govId, editBookingId],
   )
 
   useEffect(() => {
-    if (!draftId || !draftHasUnsavedChanges || saveState === 'saving') return
+    if (editBookingId || !draftId || !draftHasUnsavedChanges || saveState === 'saving') return
     const timer = setTimeout(() => {
       saveDraft({ silent: true })
     }, 2500)
     return () => clearTimeout(timer)
-  }, [draftId, draftHasUnsavedChanges, saveState, saveDraft])
+  }, [draftId, draftHasUnsavedChanges, saveState, saveDraft, editBookingId])
 
   const confirmBooking = useCallback(() => {
     /*
@@ -2983,7 +3096,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
      * and both buttons are `disabled` on the same expression — so the notice is
      * on screen, persistently, before the press instead of after it (Law 12).
      */
-    if (confirmBlocked || saveState === 'saving') return
+    if (editBookingId || confirmBlocked || saveState === 'saving') return
     const ctx = dispatchContext()
     if (!ctx) {
       setActionError('Not confirmed — you are not signed in, so this booking cannot be attributed to anyone. Sign in and confirm again.')
@@ -3293,6 +3406,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
     draftData,
     kind,
     kindOther,
+    editBookingId,
   ])
 
   /**
@@ -3377,7 +3491,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
       // ⌘S or Ctrl+S: Save Draft
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
-        void saveDraft()
+        if(editBookingId) void saveQuote(); else void saveDraft()
         return
       }
 
@@ -3401,7 +3515,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [confirmBlocked, saveState, saveDraft, confirmBooking])
+  }, [confirmBlocked, saveState, saveDraft, confirmBooking, editBookingId, saveQuote])
 
 
   const bundleCount = useMemo(() => new Set(lines.map((l) => l.bundleCode).filter(Boolean)).size, [lines])
@@ -3881,30 +3995,31 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
           </div>
         </div>
       )}
-
-      {/* Action */}
-      {isDesktop && <div style={{ marginTop: 14 }}>
-        <Button
-          icon={saveState === 'saving' ? 'refresh' : 'check'}
-          variant="primary"
-          onClick={confirmBooking}
-          disabled={confirmBlocked || saveState === 'saving'}
-          title={blockReasonText}
-          style={{ width: '100%', minHeight: 44, justifyContent: 'center', fontWeight: 700 }}
-        >
-          {saveState === 'saving' ? 'Confirming Booking…' : 'Confirm Booking'}
-        </Button>
-      </div>}
+      {!editBookingId && isDesktop && (
+        <div style={{ marginTop: 14 }}>
+          <Button
+            variant="primary"
+            onClick={confirmBooking}
+            disabled={confirmBlocked || saveState === 'saving'}
+            title={blockReasonText}
+            style={{ minHeight: 44, width: '100%', fontWeight: 700 }}
+          >
+            {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
+          </Button>
+        </div>
+      )}
     </Card>
   )
 
-  if (draftLoading) {
+  if (draftLoading || quoteLoading) {
     return (
       <div style={{ padding: 'var(--sp-xl)', maxWidth: 1000, margin: '40px auto' }}>
         <LoadingSkeleton type="card" label="Loading draft booking…" />
       </div>
     )
   }
+
+  if(editBookingId && !quoteSnapshot && !quoteLoading) return <Card title="Booking not loaded"><p role="alert">{actionError}</p><Button onClick={()=>setQuoteReload(v=>v+1)}>Retry</Button><Button onClick={doExit}>Back to booking</Button></Card>
 
   if (draftLoadError) {
     return (
@@ -3950,21 +4065,23 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
               </Link>
             </div>
           }
-          title={draftBookingNo ? `Draft #${draftBookingNo}` : 'New Rental'}
-          actions={isDesktop ? (
-            <PageActions
-              secondary={
-                <Button
-                  variant="outline"
-                  icon="file"
-                  onClick={() => saveDraft()}
-                  disabled={saveState === 'saving'}
-                >
-                  {saveState === 'saving' ? 'Saving…' : 'Save as draft'}
-                </Button>
-              }
-            />
-          ) : undefined}
+          title={editBookingId ? `Edit ${draftBookingNo ?? 'booking'}` : draftBookingNo ? `Draft #${draftBookingNo}` : 'New Rental'}
+          actions={
+            !editBookingId && isDesktop ? (
+              <PageActions
+                secondary={
+                  <Button
+                    variant="outline"
+                    icon="file"
+                    onClick={() => saveDraft()}
+                    disabled={saveState === 'saving'}
+                  >
+                    {saveState === 'saving' ? 'Saving…' : 'Save as draft'}
+                  </Button>
+                }
+              />
+            ) : undefined
+          }
         />
       }
     >
@@ -3973,6 +4090,7 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         <p role="status" style={inlineErrorStyle}>
           <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 1 }} />
           {actionError}
+          {editBookingId && <Button onClick={()=>{if(!quoteDirty || window.confirm('Discard edits and reload the latest booking?'))setQuoteReload(v=>v+1)}}>Reload latest booking</Button>}
         </p>
       )}
 
@@ -5504,116 +5622,127 @@ export default function NewRental({ embedded = false, onDone }: NewRentalProps =
         </div>
       )}
 
-      {isPhone && (
-        <nav className="new-rental-mobile-actions" style={{ bottom: BAR_BOX }} aria-label="Rental workflow actions">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 6, gap: 8 }}>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}
-              style={{ minHeight: 36, padding: '0 8px', fontSize: 'var(--t-meta)' }}
-            >
-              Cancel
-            </Button>
-          </div>
-          <button type="button" className="new-rental-compact-summary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} aria-label="Review rental summary">
-            <span>{client?.name ?? 'No client selected'} · {totalUnits} items</span>
-            {canBookingMoney && <strong>{formatMoney(pricing.rentalTotalPaisa)}</strong>}
-          </button>
-          <div className="new-rental-mobile-action-buttons">
-            <Button variant="outline" onClick={() => saveDraft()} disabled={saveState === 'saving'}>
-              {saveState === 'saving' ? 'Saving…' : 'Save draft'}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={confirmBooking}
-              disabled={confirmBlocked || saveState === 'saving'}
-              title={blockReasonText}
-            >
-              {saveState === 'saving' ? 'Confirming…' : 'Confirm booking'}
-            </Button>
-          </div>
-        </nav>
-      )}
-
-      {!isPhone && !isDesktop && (
-        <aside
-          aria-label="Rental confirmation bar"
-          style={{
-            position: 'sticky',
-            bottom: 0,
-            zIndex: 30,
-            background: 'color-mix(in srgb, var(--surface, var(--card)) 86%, transparent)',
-            borderTop: '1px solid color-mix(in srgb, var(--border) 75%, transparent)',
-            padding: '12px 20px',
-            margin: 'var(--sp-md) calc(-1 * var(--page-padding)) 0',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 'var(--sp-md)',
-            boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -8px 24px rgba(0, 0, 0, 0.08)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
+      {editBookingId ? (
+        <RecordActions
+          busy={saveState === 'saving'}
+          dirty={quoteDirty}
+          label="Save changes"
+          onSave={() => void saveQuote()}
+          onCancel={() => {
+            if (!quoteDirty || window.confirm('Discard unsaved changes?')) doExit()
           }}
-        >
-          {/* Left: Cancel & Save Draft */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Button
-              variant="outline"
-              onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}
-              style={{ minHeight: 44, padding: '0 16px' }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => saveDraft()}
-              disabled={saveState === 'saving'}
-              style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}
-            >
-              {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
-            </Button>
-          </div>
+        />
+      ) : (
+        <>
+          {isPhone && (
+            <nav className="new-rental-mobile-actions" style={{ bottom: BAR_BOX }} aria-label="Rental workflow actions">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 6, gap: 8 }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}
+                  style={{ minHeight: 36, padding: '0 8px', fontSize: 'var(--t-meta)' }}
+                >
+                  Cancel
+                </Button>
+                <span className="new-rental-mobile-state">{draftPersisted ? 'Draft' : 'New booking'}</span>
+              </div>
+              <button type="button" className="new-rental-compact-summary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} aria-label="Review rental summary">
+                <span>{client?.name ?? 'No client selected'} · {totalUnits} items</span>
+                {canBookingMoney && <strong>{formatMoney(pricing.rentalTotalPaisa)}</strong>}
+              </button>
+              <div className="new-rental-mobile-action-buttons">
+                <Button variant="outline" onClick={() => saveDraft()} disabled={saveState === 'saving'}>
+                  {saveState === 'saving' ? 'Saving…' : 'Save draft'}
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={confirmBooking}
+                  disabled={confirmBlocked || saveState === 'saving'}
+                  title={blockReasonText}
+                >
+                  {saveState === 'saving' ? 'Confirming…' : 'Confirm booking'}
+                </Button>
+              </div>
+            </nav>
+          )}
 
-          {/* Middle: Clean notices only (summary stats live in right rail) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
-            {blockingNotices.length > 0 && (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '5px 12px',
-                  borderRadius: 'var(--r-badge)',
-                  background: 'var(--st-danger-bg)',
-                  border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
-                  color: 'var(--st-danger-fg)',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 600,
-                }}
-              >
-                <Icon name="alert_triangle" size={14} />
-                {blockingNotices.length} blocking {blockingNotices.length === 1 ? 'item' : 'items'}
-              </span>
-            )}
-          </div>
-
-          {/* Confirm is always available while the booking stays on one page. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {canBookingMoney && <strong className="new-rental-footer-total">{formatMoney(pricing.rentalTotalPaisa)}</strong>}
-            <Button
-              variant="primary"
-              onClick={confirmBooking}
-              disabled={confirmBlocked || saveState === 'saving'}
-              title={blockReasonText}
-              style={{ minHeight: 44, padding: '0 20px', fontWeight: 600 }}
+          {!isPhone && !isDesktop && (
+            <aside
+              aria-label="Rental confirmation bar"
+              style={{
+                position: 'sticky',
+                bottom: 0,
+                zIndex: 30,
+                background: 'color-mix(in srgb, var(--surface, var(--card)) 86%, transparent)',
+                borderTop: '1px solid color-mix(in srgb, var(--border) 75%, transparent)',
+                padding: '12px 20px',
+                margin: 'var(--sp-md) calc(-1 * var(--page-padding)) 0',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 'var(--sp-md)',
+                boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -8px 24px rgba(0, 0, 0, 0.08)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+              }}
             >
-              {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
-            </Button>
-          </div>
-        </aside>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Button
+                  variant="outline"
+                  onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}
+                  style={{ minHeight: 44, padding: '0 16px' }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => saveDraft()}
+                  disabled={saveState === 'saving'}
+                  style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}
+                >
+                  {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
+                </Button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
+                {blockingNotices.length > 0 && (
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '5px 12px',
+                      borderRadius: 'var(--r-badge)',
+                      background: 'var(--st-danger-bg)',
+                      border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
+                      color: 'var(--st-danger-fg)',
+                      fontSize: 'var(--t-meta)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    <Icon name="alert_triangle" size={14} />
+                    {blockingNotices.length} blocking {blockingNotices.length === 1 ? 'item' : 'items'}
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {canBookingMoney && <strong className="new-rental-footer-total">{formatMoney(pricing.rentalTotalPaisa)}</strong>}
+                <Button
+                  variant="primary"
+                  onClick={confirmBooking}
+                  disabled={confirmBlocked || saveState === 'saving'}
+                  title={blockReasonText}
+                  style={{ minHeight: 44, padding: '0 20px', fontWeight: 600 }}
+                >
+                  {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
+                </Button>
+              </div>
+            </aside>
+          )}
+        </>
       )}
-
       {/* ── Disclosures. None of these route; the booking stays behind them. ── */}
       {client && (
         <ClientQuickView

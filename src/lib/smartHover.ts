@@ -532,9 +532,9 @@ export function defaultTabForContext(entityType: HoverEntity, context: HoverCont
 /* ── timing (§6/§8), dimensions (§4), viewport (§76) ─────────────────────── */
 
 export const HOVER_TIMING = {
-  openMs: 250,
+  openMs: 300,
   closeMs: 300,
-  siblingMs: 80,
+  siblingMs: 300,
   longPressMs: 500,
   animMs: 150,
 } as const

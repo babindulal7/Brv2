@@ -94,6 +94,16 @@ export interface InvoicePreview {
   recent: PaymentTransaction[]
 }
 
+export interface DocumentPreview {
+  id: string
+  documentNo: string
+  type: string
+  status: string
+  createdAt: string
+  signedAt: string | null
+  bookingRef: string | null
+}
+
 export interface PaymentPreview {
   id: string
   paymentNo: string
@@ -109,4 +119,4 @@ export interface PaymentPreview {
   reference: string | null
 }
 
-export type AnyPreview = ClientPreview | EquipmentPreview | RentalPreview | InvoicePreview | PaymentPreview
+export type AnyPreview = ClientPreview | EquipmentPreview | RentalPreview | InvoicePreview | DocumentPreview | PaymentPreview

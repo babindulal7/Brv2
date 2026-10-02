@@ -4,6 +4,7 @@ import type { IconName } from '../../components/ui/Icon'
 import { Card, Button } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
+import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { PageBody } from '../../components/ui/PageBody'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { Modal } from '../../components/ui/Modal'
@@ -689,7 +690,7 @@ function AddExpenseSheet({
  * so the tab strip is not sitting above a second page title, and nothing else
  * about the screen changes. Not a width branch (Law 13).
  */
-export default function Expenses({ embedded = false }: { embedded?: boolean }) {
+export default function Expenses({ embedded = false, filtersOpen: externalFiltersOpen, onFiltersClose }: { embedded?: boolean; filtersOpen?: boolean; onFiltersClose?: () => void }) {
   const { user } = useAuth()
   /** The one money gate. Mirrors `auth_can_view_money()` — Law 6. */
   const money = useCanViewMoney()
@@ -717,6 +718,9 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
    */
   const [status, setStatus] = useState<ExpenseStatusDb | 'All'>('All')
   const [categoryId, setCategoryId] = useState<string>('All')
+  const [internalFiltersOpen, setInternalFiltersOpen] = useState(false)
+  const filtersOpen = externalFiltersOpen ?? internalFiltersOpen
+  const closeFilters = onFiltersClose ?? (() => setInternalFiltersOpen(false))
   const [page, setPage] = useState(1)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [banner, setBanner] = useState<{ title: string; message: string } | null>(null)
@@ -868,9 +872,18 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
         embedded={embedded}
         icon="card"
         title="Expenses"
+        leading={!embedded ? <FilterButton onClick={() => setInternalFiltersOpen((open) => !open)} controls="expense-filters" expanded={filtersOpen} activeCount={Number(categoryId !== 'All')} /> : undefined}
         description="Track operating costs and approvals."
         {...(money ? { actions: headerActions } : {})}
       />
+      <FilterDrawer id="expense-filters" open={filtersOpen} onClose={closeFilters} resultCount={list.loading ? null : total} noun="expenses" activeCount={Number(categoryId !== 'All')} onClearAll={() => { setCategoryId('All'); setPage(1) }} standardFooter onApply={closeFilters}>
+        <label style={{ display: 'grid', gap: 8, fontWeight: 600 }}>Category
+          <select aria-label="Filter expenses by category" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setPage(1) }} disabled={categories.length === 0} style={{ ...inputStyle, minHeight: 44, width: '100%' }}>
+            <option value="All">All categories</option>
+            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+          </select>
+        </label>
+      </FilterDrawer>
 
       {/*
         THE gate. `restricted` outranks error, loading, empty and children, so a
@@ -902,19 +915,6 @@ export default function Expenses({ embedded = false }: { embedded?: boolean }) {
               paddingBottom: phone ? 4 : 0,
             }}
           >
-            <select
-              aria-label="Filter by category"
-              value={categoryId}
-              onChange={(e) => {
-                setCategoryId(e.target.value)
-                setPage(1)
-              }}
-              disabled={categories.length === 0}
-              style={{ ...inputStyle, minHeight: 44, width: phone ? '100%' : 'auto' }}
-            >
-              <option value="All">All categories</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
             {(['All', ...EXPENSE_STATUSES] as const).map((s) => {
               const on = status === s
               return (

@@ -6,8 +6,7 @@ import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, PageHeader, PageActions, KpiStrip } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
-import { AppSidePanel } from '../../components/shell/AppSidePanel'
-import { WorkspaceLeftPanel } from '../../components/shell/WorkspacePortal'
+import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { Pagination } from '../../components/ui/Pagination'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { ListControlRow, ListWorkspace } from '../../components/ui/ListWorkspace'
@@ -1638,12 +1637,32 @@ export default function Inventory() {
   return (
     <PageShell>
       <PageHeader
+        {...((tab === 'Equipment' || tab === 'Bundles') && !isNew && params.get('action') !== 'new' ? {
+          leading: (
+            <FilterButton
+              onClick={() => setFiltersOpen((open) => !open)}
+              activeCount={tab === 'Equipment' ? activeFacetCount : 0}
+              controls={tab === 'Equipment' ? 'inventory-filters' : 'bundle-filters'}
+              expanded={filtersOpen}
+            />
+          ),
+        } : {})}
         title="Inventory"
         description="Find equipment, check availability, and manage stock."
         actions={equipmentActions}
       />
-      <WorkspaceLeftPanel>
-        <AppSidePanel id="inventory-filters" side="left" title="Filters" isOpen={filtersOpen && tab === 'Equipment' && !isNew} onClose={() => setFiltersOpen(false)}>
+      <FilterDrawer
+        id="inventory-filters"
+        open={filtersOpen && tab === 'Equipment' && !isNew}
+        onClose={() => setFiltersOpen(false)}
+        desktopMode="overlay"
+        resultCount={list.loading ? null : list.total}
+        noun="equipment models"
+        activeCount={activeFacetCount}
+        onClearAll={clearFilters}
+        standardFooter
+        onApply={() => setFiltersOpen(false)}
+      >
           <FilterRail
             facets={facets}
             onToggle={toggleFacet}
@@ -1652,8 +1671,7 @@ export default function Inventory() {
             activeCount={activeFacetCount}
             counts={facetCounts}
           />
-        </AppSidePanel>
-      </WorkspaceLeftPanel>
+      </FilterDrawer>
 
       {/*
         §7 closing note — **"Tabs scroll horizontally rather than wrapping at any
@@ -1699,7 +1717,7 @@ export default function Inventory() {
           />
           </Suspense>
       ) : tab === 'Bundles' ? (
-        <Bundles />
+        <Bundles filtersOpen={filtersOpen} onFiltersClose={() => setFiltersOpen(false)} />
       ) : tab === 'Maintenance' ? (
         <Maintenance />
       ) : tab === 'Stock Check' ? (
@@ -1730,54 +1748,6 @@ export default function Inventory() {
                 aria-label="Search inventory"
               />
             </div>
-            <button
-              type="button"
-              onClick={() => setFiltersOpen((o) => !o)}
-              aria-expanded={filtersOpen}
-              aria-controls="inventory-filters"
-              aria-label="Filter options"
-              style={{
-                order: 1,
-                flexShrink: 0,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                minHeight: 44,
-                padding: '0 14px',
-                borderRadius: 'var(--r-btn, 8px)',
-                border: `1px solid ${filtersOpen || activeFacetCount > 0 ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                background: filtersOpen || activeFacetCount > 0 ? 'var(--nav-active-bg)' : 'var(--card)',
-                color: filtersOpen || activeFacetCount > 0 ? 'var(--nav-active-accent)' : 'var(--text)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                transition: 'all var(--dur-fast) var(--ease)',
-              }}
-            >
-              <Icon name="filter" size={14} />
-              <span>Filters</span>
-              {activeFacetCount > 0 && (
-                <span
-                  className="figure"
-                  style={{
-                    minWidth: 18,
-                    height: 18,
-                    padding: '0 5px',
-                    borderRadius: 'var(--r-badge)',
-                    display: 'grid',
-                    placeItems: 'center',
-                    background: 'var(--nav-active-accent)',
-                    color: 'var(--on-primary, #ffffff)',
-                    fontSize: 'var(--t-th)',
-                    fontWeight: 700,
-                  }}
-                >
-                  {activeFacetCount}
-                </span>
-              )}
-            </button>
-
             <button
               type="button"
               onClick={() => setShowStats((s) => !s)}

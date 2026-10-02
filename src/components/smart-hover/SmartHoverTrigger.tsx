@@ -2,7 +2,7 @@
  * SmartHoverTrigger + SmartHoverPortal — §7–§11, §76, §80–§84.
  *
  * Identifier-only triggers: underline + background highlight on hover,
- * never row scaling (§84). Hover (250ms), safe travel (300ms grace),
+ * never row scaling (§84). Hover (300ms), safe travel (300ms grace),
  * pin on click / Space, Esc closes with focus return, 500ms long-press
  * opens the bottom sheet on touch (§10).
  */
