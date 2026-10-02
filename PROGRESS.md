@@ -27,14 +27,14 @@
 ### Completion
 | Dimension | Counts | Now | Δ |
 |---|---|---|---|
-| Backend | actions implemented / total | 49 / 50 (98%) | +2 |
+| Backend | actions implemented / total | 50 / 50 (100%) | +1 |
 | Real data | DB-only · mixed · seed · none / 45 | 39 · 6 · 0 · 0 |  |
 | DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
 | Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
 | Lifecycle | steps green / total | 22 / 22 (100%) | +0 |
-| Overall | mean of five | ≈ 98% | -1 |
+| Overall | mean of five | ≈ 99% | +1 |
 Migrations 145 files · check:pglite not run this session. Suite: not run this session.
-Gates read from .lifecycle-result.json, written 2026-10-02T11:26:42.257Z.
+Gates read from .lifecycle-result.json, written 2026-10-02T20:25:30.882Z.
 Counted by `npm run completion`, not typed.
 
 ### Remaining
