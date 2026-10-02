@@ -1,7 +1,7 @@
 # Babin Rentals OS — Open Decisions Register
 
 **Status:** Authoritative Active Decision Register  
-**Last Reconciled:** 29 September 2026
+**Last Reconciled:** 3 October 2026
 
 *Note: All decisions resolved by rulings R-00 through R-43 or verified in `PROGRESS.md` (e.g. damage resolution, fail-closed transitions, atomic booking creation, same-day rentals, 13% VAT) have been removed from this register.*
 
@@ -49,3 +49,15 @@
 - **Question:** How should Service, Sub-rental and Manual item lines resolve during Pack/Handover, and how should a booking with no physical lines reach Returned?
 - **Context:** Migration 0139 exempts those line types from Return receipts, while Pack/Handover still require line records in parts of the floor flow. The current Return action also requires a triaged row and a return session.
 - **Current Status:** `TODO(decision)` — define non-physical Pack/Handover handling and choose automatic Handover completion or a named no-equipment completion action; never fabricate physical movement or a return receipt.
+
+## 7. Who may read the staff roster (`staff_directory_v`)
+- **Question:** Is the staff directory Owner-only, or readable by every signed-in staff member?
+- **Context:** `docs/PERMISSIONS.md` says both. P9 and AD2 scope the roster to the Owner; §4.3 says "all staff". The disagreement is not new — R-27 (8 Sep) refused §12.2 D-8's "Admin grants Manager" partly on the ground that "`staff_directory_v` carries `where auth_user_role() = 'Owner'` inline, so an Admin gets zero rows to act on."
+- **What actually happened:** `0120_users_visibility_and_role_ceiling.sql` recreated the view and **dropped that row predicate entirely**. The view then had no row gate, and the only thing narrowing it was a grant `anon` did not hold — so every signed-in role, Client included, could list the roster. That is the state the 3 Oct 2026 third-party audit found, and it invalidated R-27's third ground.
+- **Interim state:** `0148_view_anon_leak_closure.sql` (WRITTEN, locally verified, **not applied to live** — N-5) re-emits the view with `and auth_is_staff()` and revokes `anon` from every view in `public`. `auth_is_staff()` is `auth_user_role() <> 'Client'` (0014), so the roster is readable by all staff and by nobody unauthenticated. This was chosen because it **strictly narrows** (B-1) without answering the dispute — it closes the exposure either way.
+- **Options:**
+  - **(a) Owner-only** — restore `auth_user_role() = 'Owner'` inline. Requires `canManageSettings` and `StaffDirectory.tsx`'s render gate to move together, or the screen offers a list that returns nothing.
+  - **(b) All staff** — keep `auth_is_staff()`, and correct P9/AD2 in `PERMISSIONS.md` so the document stops contradicting §4.3. This is what R-27's third ground assumed all along, and it is the status quo ante.
+  - **(c) All staff, narrowed columns** — every staff member sees name, role, employee code, branch and active flag, but not `email`, mobile or PIN state. The roster stays useful for "who is on shift" without becoming a contact directory for roles that have no need of one.
+- **Current Status:** `TODO(decision)` — Babin's call. Until it is ruled, do not move the predicate again: any change to `staff_directory_v` belongs in a **new** migration, never an edit to `0148`, whose predicate will have shipped by then.
+- **Related:** R-27 (8 Sep, amended 3 Oct 2026), `docs/live/APPLY_PLAN_2026-10-03.md`.

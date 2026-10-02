@@ -1135,9 +1135,15 @@ const STEPS = [
         const myLines = await q('select id, booking_id from booking_lines')
         assert(myLines.rows.length > 0, 'Client sees booking lines for own bookings')
 
-        // 4. Staff directory view exists and is accessible
+        // 4. Staff directory view exists and is blocked to Client (0148: P9)
         const staff = await q('select count(*) from staff_directory_v')
-        assert(Number(staff.rows[0].count) > 0, 'Staff directory view exists and lists staff')
+        assertEq(Number(staff.rows[0].count), 0, 'Client cannot read internal staff directory (0148 / P9)')
+      })
+
+      // Verify that staff can read the staff directory
+      await as('Coordinator', async () => {
+        const staff = await q('select count(*) from staff_directory_v')
+        assert(Number(staff.rows[0].count) > 0, 'Staff directory view exists and lists staff for staff roles')
       })
     },
   },

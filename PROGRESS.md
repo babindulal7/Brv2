@@ -1,5 +1,82 @@
 # Progress Log
 
+## 2026-10-03 (b) — Close the anon view leak (0148), gate it, and produce the live apply plan
+
+**Did**
+- Wrote `supabase/migrations/0148_view_anon_leak_closure.sql`: re-emits `audit_logs` (inline `auth_user_role() in ('Owner','Admin','Manager')`), `staff_directory_v` (`and auth_is_staff()`) and `product_units_service_v` (`where auth_is_staff()`), then revokes `anon`'s SELECT from **every** view in `public`. Four catalogue POST-CONDITIONs plus one rolled-back behavioural probe.
+- **Refused `security_invoker = on`** on `audit_logs`, against the audit's own recommendation. `0048`'s header rules it out for this schema, and `PLAN.md` §6.32's pending per-column grant repair would make an invoker view require SELECT on `audit_events.old_values/new_values/diff` — breaking the audit trail for exactly the roles meant to read it. Used `0048`'s inline-predicate pattern instead.
+- **Measured the real blast radius: 30 of 30 public views were `anon`-readable**, not the three the audit named. Verified by running the new gate with `0148` removed from the chain: `30 public view(s) checked, 30 readable by anon`. This is why the revoke covers every view instead of an allow-list of three — an allow-list passes the moment someone adds a fourth.
+- Added the reusable gate to `scripts/check-pglite.mjs` (`auditAnonViewReads`), derived from `pg_class` on every run. It checks the **grant** via `has_table_privilege`, not the rows: a view can return zero rows and still be a hole. It reports how many views it examined and treats "0 views" as a failure, so it cannot pass by inspecting nothing.
+- Rewrote `e2e-lifecycle.mjs` L14, which was **asserting the leak** — it required `count(*) > 0` from `staff_directory_v` inside `as('Client', …)`, so the suite passed only while anon could read the roster. It now asserts a Client reads zero rows of all three views, plus a staff positive control, because an assertion of zero rows passes just as happily against a view that was dropped.
+- Built `scripts/plan-migrations.mjs` (`npm run db:plan`, `db:plan:selftest`): the ordered, authoritative pending set, generated rather than hand-maintained.
+- Corrected `BACKUP_PROTOCOL.md` §3, which instructed `supabase db push` against a `0130–0132` range.
+- Recorded the roster read-scope question as `TODO(decision)` in `docs/OPEN_DECISIONS.md` §7 with three options; amended `RULINGS-2026-09-08.md` R-27, whose third ground (an Admin gets zero rows) `0120` had silently invalidated. Corrected the stale "Owner alone … carries `auth_user_role() = 'Owner'` inline" claim in `src/lib/queries/staff.ts`.
+
+**Ruled**
+- **N-5.** `0148` is WRITTEN and locally VERIFIED only. Never pushed to live; live apply is Babin's, after `BACKUP_PROTOCOL.md`.
+- **`staff_directory_v` → `auth_is_staff()`, not Owner-only.** The narrowest predicate satisfying P9 + D-6 without answering the R-27-vs-0120 dispute, and it strictly narrows rather than widens (B-1, "stricter wins"). The product question is logged, not decided.
+- **Never invent a product decision.** The roster scope is `TODO(decision)` in three places (register, R-27 amendment, `staff.ts` header) so that no one can later mistake the interim state for a ruling.
+- **A gate that cannot fail is not a gate.** Each was proved by breaking it on purpose: removing `0148` turns the view gate red with 30 leaks; disabling the rename classifier's ordered-prefix rule fails `db:plan:selftest` on all six known false renames *and* the missing seed hazard.
+- **Regex over prose is not a safety check.** An earlier `db:plan` detector flagged `0099` as a "known live failure" — it is a migration that *repairs* a live defect, matched only because its header describes its predecessors failing. Deleted rather than tuned, because no threshold separates a repair from a breakage.
+- **Unapplied ≠ safe to batch-apply.** `0047_seed_reference_corpus.sql` is pending, and its own header says *"Apply it ONCE, into a database that has never held it"*; its number `0047` is already spent on live by a different file. Flagged as a decision, not a step.
+
+**Verified**
+- `npm run check:pglite`: **146/146 applied**, 0 failed, and the view-leak gate green — 30 views checked, 0 `anon`-readable. Proven non-vacuous: with `0148` removed, 30/30 leak and the run exits 1.
+- `npm run check:lifecycle`: **22/22 green**, on three consecutive runs. L14's Client-reads-none assertions and its staff positive control both pass.
+- `npm run db:plan:selftest`: **PASS, 12 checks**.
+- `npm run db:plan`: exits 2 with blockers — 5 renames, 2 hazards (`0047`), 2 unexplained live rows — and issues no apply list.
+- **The audit's apply range is wrong.** It says `0125–0147`; measured against the 8 Sep export, **66** of 146 files are pending, live tops out at `0089`, and `0125` depends on much of the missing range.
+- `supabase db push` is the wrong command for this repo: it keys on `name`, so the 5 renames would be re-run, and it would apply the `0047` seed. *(Unverified here — the Supabase CLI is not installed; this rests on `apply-migrations-local.mjs`'s documented rationale.)*
+
+### Remaining
+- **Babin's decision** on `docs/OPEN_DECISIONS.md` §7 — who reads the staff roster. One line of `0148` plus the masks above it; any change ships as a **new** migration, never an edit to `0148`.
+- **Live apply is blocked on Babin**, and `BACKUP_PROTOCOL.md` §3 as corrected now stops at three blockers: confirm the 5 renames, decide `0047`, explain the 2 unexplained live rows. Apply in filename order, one file per transaction.
+- Re-export `schema_migrations` before the maintenance window — every number above is a function of a 25-day-old export.
+- **One unexplained `check:lifecycle` result.** An early run reported L14 failing; three subsequent runs are 22/22 and nothing in the tree changed between them. Not reproduced, not explained, not claimed fixed. Worth watching: if it recurs, L14's staff positive control is the assertion to suspect first.
+- Previously declined, still open: **B1** (regenerate or delete the two contradictory `CURRENT_STATE.md` files) and **B2** (make `completion` run the suite and pglite itself, or state plainly that it did not — it currently prints "check:pglite not run this session" seconds after it ran green, from a cached `.lifecycle-result.json` dated 2026-10-02). Coverage for `src/actions/**` and `src/modules/**` (C5) also still open.
+- Uncommitted and needing a commit decision: `0148`, `scripts/plan-migrations.mjs`, this plan document, plus ~14 untracked files predating this session (`src/lib/schemaGuard.ts` and its banner/tests, five `src/modules/reports/` screens with their query layers and tests, `src/lib/intel/*.ts`).
+
+## 2026-10-03 — Complete dedicated report suites across rentals, operations, damage & maintenance, finance, and staff activity
+
+**Did**
+- Designed and built five dedicated report suites covering all operational, logistical, and financial analytics domains:
+  - **Rental Reports (`/reports/rentals`)**: 3-tab analysis (Rental Performance, Rental Duration distribution across operational day spans, Cancellations & lost quote root causes), supported by `rentalReports.ts` aggregation query layer and full CSV export.
+  - **Operations Reports (`/reports/operations`)**: 5-tab tracking (Pickups & dispatch fulfillment, Returns & condition turnaround, Overdue rentals & fleet risk, Packing & prep fulfillment, Inspections & cleaning/damage flags) backed by `operationReports.ts`.
+  - **Damage & Maintenance Reports (`/reports/damage-maintenance`)**: 4-tab tracking (Damage findings & client liability, Workshop repairs & turnaround, Preventive maintenance & calibration schedules, Equipment downtime & fleet availability) backed by `damageMaintenanceReports.ts`.
+  - **Finance Reports (`/reports/sales` & `/reports/vat-tax`)**: 2-tab tracking (Invoiced revenue, collection reconciliation, settlement status, and Nepal statutory 13% output VAT ledger with monthly IRD filing schedules) backed by `salesVatReports.ts`.
+  - **Staff Activity Reports (`/reports/activity`)**: 3-tab audit and operator analytics (Activity overview with category & severity donut distributions, Operator breakdown volume, and full immutable audit trail stream) backed by `activityReports.ts`.
+- Integrated all 7 dedicated report routes into `ReportCatalog.tsx`'s `DEDICATED_REPORTS` in-place mount map (`/reports/rentals`, `/reports/operations`, `/reports/damage-maintenance`, `/reports/sales`, `/reports/vat-tax`, `/reports/activity`, `/reports/asset-roi`) and registered deep routes in `App.tsx` with dedicated breadcrumb shells.
+- Reconciled all 43 catalog reports in `catalog.ts`: 30 reports served by dedicated screens, 2 deep-linked to Finance tabs, 5 projection templates, and 10 intentionally blocked with honest "not tracked yet" empty states.
+
+**Ruled**
+- Law 1 & Law 6: All monetary figures calculated in exact integer Paisa; money-blind roles (Warehouse, Technician, Driver, Client) see restricted states or shielded valuation columns without leaking figures in payloads or exports.
+- Law 7: Operational days computed from 06:00 to 06:00 NPT in Kathmandu timezone.
+- Catalog tests and invariants preserved: Exactly 43 reports across 10 groups with zero duplicate report names.
+
+**Verified**
+- `npm run typecheck`: clean 0 errors.
+- `npm run lint`: clean 0 warnings and 0 errors (`eslint src --max-warnings 0`).
+- Test suites: 6 report test suites (47 tests) passing clean.
+- `npm run build`: built production bundles and PWA service worker with 820 modules in 30.65s.
+- `npm run completion`: Real data score elevated to 48 / 50 DB-only routes (96%).
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 50 / 50 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 50 | 48 · 2 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 22 / 22 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 146 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-02T22:48:48.928Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live Supabase application and production verification for migrations 0146 and 0147 remain pending Babin's backup and application protocol.
+- Continue operational workflows and floor transitions.
+
 ## 2026-10-02 — Consistent add, edit, and booking workflows across clients, inventory, bundles, and quotes
 
 **Did**
