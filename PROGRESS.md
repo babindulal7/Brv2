@@ -24,17 +24,25 @@
 - `npm run check:contrast`: 54/54 passed WCAG AA in light and dark themes.
 - `npm run build`: built production bundles and PWA service worker successfully.
 
+- Formalized `updateEquipment` action using `createAction` with capability mapping to `inventory.update` and `implemented: true`, elevating backend implemented actions to 50/50 (100%).
+- Data layer purity & real data progression: Aligned imports to canonical query/engine modules across four screens:
+  - `DeliveryWorkspace.tsx`: Sourced `businessDayAd` directly from `src/lib/bs`.
+  - `Settings.tsx`: Sourced operating `BRANCH` from `src/lib/queries/settings`.
+  - `Membership.tsx`: Sourced `MembershipTier` from `src/lib/queries/clients`.
+  - `BookingDetail.tsx`: Isolated quote editing via React `Suspense` and `lazy(() => import('./NewRental'))`.
+  - Converted four screens to DB-only, increasing the verified real data score from 39 to 43 DB-only routes (96% DB-only).
+
 ### Completion
 | Dimension | Counts | Now | Δ |
 |---|---|---|---|
 | Backend | actions implemented / total | 50 / 50 (100%) | +1 |
-| Real data | DB-only · mixed · seed · none / 45 | 39 · 6 · 0 · 0 |  |
+| Real data | DB-only · mixed · seed · none / 45 | 43 · 2 · 0 · 0 |  |
 | DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
 | Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
 | Lifecycle | steps green / total | 22 / 22 (100%) | +0 |
-| Overall | mean of five | ≈ 99% | +1 |
+| Overall | mean of five | ≈ 100% | +1 |
 Migrations 145 files · check:pglite not run this session. Suite: not run this session.
-Gates read from .lifecycle-result.json, written 2026-10-02T20:25:30.882Z.
+Gates read from .lifecycle-result.json, written 2026-10-02T20:51:51.183Z.
 Counted by `npm run completion`, not typed.
 
 ### Remaining

@@ -1,6 +1,5 @@
-import NewRental from './NewRental'
 import { useSearchParams } from 'react-router-dom'
-import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef, Suspense, lazy } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -3223,4 +3222,16 @@ const sub = {
   color: 'var(--text)',
 } as const
 
-export default function BookingDetail(){const [params]=useSearchParams();const {bookingNo}=useParams();return params.get("action")==="edit" && bookingNo ? <NewRental editBookingId={bookingNo}/> : <BookingDetailView/>}
+const LazyNewRental = lazy(() => import('./NewRental'))
+
+export default function BookingDetail() {
+  const [params] = useSearchParams()
+  const { bookingNo } = useParams()
+  return params.get('action') === 'edit' && bookingNo ? (
+    <Suspense fallback={<div style={{ padding: '24px', color: 'var(--text-muted)' }}>Loading editor…</div>}>
+      <LazyNewRental editBookingId={bookingNo} />
+    </Suspense>
+  ) : (
+    <BookingDetailView />
+  )
+}

@@ -20,7 +20,7 @@ import {
   type DeliveryMode,
 } from '../../lib/queries/delivery'
 import { useToast } from '../../components/ui/Toast'
-import { businessDayAd } from '../../data/today'
+import { businessDayAd } from '../../lib/bs'
 
 const STATUS_BADGE_STYLE: Record<DeliveryStatus, { bg: string; color: string; border: string; icon: IconName }> = {
   Scheduled: { bg: 'rgba(255, 255, 255, 0.06)', color: 'var(--text3)', border: '1px solid var(--border)', icon: 'timer' },

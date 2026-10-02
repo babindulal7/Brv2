@@ -10,7 +10,7 @@ import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { listMembers, type MemberListRow } from '../../lib/queries/membership'
-import type { MembershipTier } from '../../data/clients'
+import type { MembershipTier } from '../../lib/queries/clients'
 import './clients.css'
 
 const PAGE_SIZES = [10, 25, 50] as const

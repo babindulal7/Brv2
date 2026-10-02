@@ -24,7 +24,6 @@ import { applyLanguage } from '../../lib/i18n'
 import { canManageSettings } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
 import { useTheme } from '../../lib/theme'
-import { BRANCH } from '../../data/nav'
 import {
   TABS,
   LEGACY_TAB,
@@ -33,6 +32,7 @@ import {
   TAB_SUMMARY,
   isTabKey,
   BRANCHES,
+  BRANCH,
   SYSTEM_SUMMARY,
   SEED_ERRORS,
 } from '../../lib/queries/settings'
