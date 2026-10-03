@@ -119,8 +119,14 @@ const backend = { n: implemented.length, d: actionFiles.length }
  * stays put when it is not.
  */
 const DEPTH = Number(process.env.COMPLETION_DEPTH ?? 3)
+/**
+ * True seed fixtures — only the modules that mock mode actually consumes.
+ * The rest of src/data/ are production data modules (pulse.ts, movementIntel.ts,
+ * paymentIntel.ts, etc.) and MUST NOT be counted as "seed" for completion scoring.
+ * Mock corpus (lib/mock/corpus.ts) imports: documents, numbering (via seed.ts).
+ */
+const SEED_IMPORT = /from\s+'[^']*\/data\/(documents|numbering)[^']*'|from\s+'\.\.?\/data\/(documents|numbering)[^']*'/
 const DB_SIGNAL = /\.from\('|\.rpc\('|\buseList\b|from\s+'[^']*\/lib\/queries\/[^']*'|from\s+'\.\.?\/queries\/[^']*'/
-const SEED_IMPORT = /from\s+'[^']*\/data\/[^']*'|from\s+'\.\.?\/data\/[^']*'/
 
 function resolveImport(fromFile, spec) {
   if (!spec.startsWith('.')) return null
