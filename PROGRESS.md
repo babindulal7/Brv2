@@ -1,5 +1,47 @@
 # Progress Log
 
+## 2026-10-03 (h) — Audit findings C1, C6, C8: Migration collision cleanup, env-based script credentials, and auditLogger console gate
+
+**Did**
+- Resolved audit C1 (duplicate migration prefixes): Cleaned up old duplicate migration filenames (`0056_auth_role_resolves_without_pre_request_hook.sql`, `0056_ruled_sequences_completion.sql`, `0076_seed_operational_stage_corpus.sql`) following renumbering to `0073`, `0081`, and `0082`.
+- Resolved audit C6 (hardcoded anon key in scripts): Removed hardcoded public anon key JWT from `scripts/test-staff-logins.mjs`, `scripts/test-law6-permissions.mjs`, and `scripts/test-server-side-prices.mjs`. Scripts now read `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` dynamically from `process.env` or `.env.local`. Zero hardcoded JWT tokens remain in repository scripts.
+- Resolved audit C8 (runtime console.log): Gated runtime console logging in `src/events/auditLogger.ts` behind `VITE_DEV_AUDIT_LOG === 'true'`. Zero unconfigured runtime `console.log` statements remain in `src/`.
+- Repaired `BookingDatesSection.tsx` section title to default to `'Rental period'`, restoring 100% green status on opaque-box E2E suites (`tier1-features.test.tsx` and `newRentalSimplification.test.tsx`).
+- Verified full pipeline: `typecheck` (0 errors), `lint` (0 warnings), `check:pglite` (148/148 applied from scratch, 0 failed; 30 views closed, 21 anon RPCs locked), `check:lifecycle` (24/24 green), full test suite (283 files / 3,895 tests passing), `check:contrast` (54/54 passed), and `build` (clean dist + PWA).
+
+**Ruled**
+- In accordance with Law N-8 & audit C6, repository scripts must not embed JWT credentials; configuration must be loaded from `process.env` or local uncommitted `.env.local` files.
+- In accordance with production hygiene (audit C8), client code in `src/` must remain silent at runtime unless explicitly enabled by developer flags (`VITE_DEV_AUDIT_LOG`).
+- In accordance with opaque-box testing rules, section header labels on the New Rental workspace must conform to user-facing spec terms (`Rental period`).
+
+**Verified**
+- `npm run typecheck`: PASS, 0 errors.
+- `npm run lint`: PASS, 0 warnings.
+- `npm run check:pglite`: PASS, 148/148 applied, 0 failed, 30 views checked (0 readable by anon), 21 functions checked (0 unauthorized).
+- `npm run check:lifecycle`: PASS, 24/24 green, 0 failed.
+- `npm test`: PASS, 283 test files / 3,895 tests passed.
+- `npm run check:contrast`: PASS, 54/54 passed WCAG AA.
+- `npm run build`: PASS, production bundle and PWA service worker generated cleanly.
+- `npm run completion`: counts counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 51 / 51 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 50 | 50 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 148 files · check:pglite 148/148 applied, 0 failed. Suite: 283 files / 3,895 tests pass.
+Gates read from .lifecycle-result.json, written 2026-10-03T08:46:30.863Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live database application and production verification for pending migrations (following corrected `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Babin's decision on `docs/OPEN_DECISIONS.md` §7 (staff roster read scope).
+- Tracked decision reviews for `TODO(decision)` items in `docs/OPEN_DECISIONS.md` (audit C4).
+
 ## 2026-10-03 (g) — Audit finding C2: Decompose NewRental.tsx (reduced by 1,436 lines) into modular domain subcomponents
 
 **Did**

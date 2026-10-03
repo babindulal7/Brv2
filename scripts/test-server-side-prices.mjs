@@ -1,8 +1,29 @@
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'node:crypto'
 
-const SUPABASE_URL = 'https://sxguwvgoserhdolewibb.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4Z3V3dmdvc2VyaGRvbGV3aWJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyNTk3OTksImV4cCI6MjA5MzgzNTc5OX0.1KX30S4B78yKO4l2bG-hhgQVflr4REAUISTa2B1YY3I'
+import { readFileSync, existsSync } from 'node:fs'
+
+function readEnv(files = ['.env.local', '.env']) {
+  for (const f of files) {
+    if (!existsSync(f)) continue
+    const out = {}
+    for (const line of readFileSync(f, 'utf8').split('\n')) {
+      const m = line.match(/^\s*([A-Z_0-9]+)\s*=\s*(.*)\s*$/)
+      if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '').trim()
+    }
+    if (out.VITE_SUPABASE_URL || out.VITE_SUPABASE_ANON_KEY) return out
+  }
+  return {}
+}
+
+const env = readEnv()
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || env.VITE_SUPABASE_URL || 'https://sxguwvgoserhdolewibb.supabase.co'
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY
+
+if (!SUPABASE_ANON_KEY) {
+  console.error('Set VITE_SUPABASE_ANON_KEY or configure .env.local to run this check.')
+  process.exit(1)
+}
 
 // N-8: credentials never live in the repo. Run with:
 //   $env:BABIN_STAFF_TEST_PASSWORD = '...'

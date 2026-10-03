@@ -1,7 +1,7 @@
 import { DomainEvents } from './eventBus';
 
 export function startAuditLogging() {
-  if (import.meta.env.DEV) {
+  if (import.meta.env.DEV && import.meta.env.VITE_DEV_AUDIT_LOG === 'true') {
     console.log('[AuditLogger] Starting centralized activity logging...');
   }
 
@@ -15,7 +15,7 @@ export function startAuditLogging() {
     const actor = p.actor ? `[User: ${p.actor}]` : '';
     const target = p.id || p.rentalId ? `[Target: ${p.id || p.rentalId}]` : '';
 
-    if (import.meta.env.DEV) {
+    if (import.meta.env.DEV && import.meta.env.VITE_DEV_AUDIT_LOG === 'true') {
       console.log(
         `%c[AUDIT LOG] %c${timestamp} %c[${eventName}] ${actor} ${target}`,
         'color: white; background: #c0392b; padding: 2px 4px; border-radius: 3px; font-weight: bold;',
