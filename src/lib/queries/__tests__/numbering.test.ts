@@ -46,6 +46,10 @@ describe('previewNextNumbers mirrors next_document_number after 0085/0089', () =
     expect(previewNextNumber(row({ prefix: 'PAY-', padding: 4, currentValue: 93 }), AT)).toBe('PAY-0094')
   })
 
+  it('payment after 0151 ruling is short sequential PAY-N (padding 1, include_year false)', () => {
+    expect(previewNextNumber(row({ prefix: 'PAY-', padding: 1, includeYear: false, currentValue: 93 }), AT)).toBe('PAY-94')
+  })
+
   it('a year-scoped sequence still resets on a year change; a year-less one never does', () => {
     expect(previewNextNumber(row({ prefix: 'PAY-', padding: 4, includeYear: true, currentYear: 2025, currentValue: 93 }), AT)).toBe(
       'PAY-2026-0001',

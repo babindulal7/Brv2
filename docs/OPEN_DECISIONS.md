@@ -50,14 +50,15 @@
 - **Implementation:** Migration 0149 (`apply_booking_stage_transition()` with `v_has_physical_lines` and non-physical line exemption in Handover gate), `src/actions/rentals/fulfillServiceRental.ts`, `src/actions/rentals/floorVerb.ts`, `src/lib/rentalActions.ts` (`isServiceOnly`), `src/modules/rentals/HandoverWorkspace.tsx`, and `src/modules/rentals/BookingDetail.tsx`.
 - **Status:** Resolved (3 October 2026, Migration 0149).
 
-## 7. Who may read the staff roster (`staff_directory_v`)
-- **Question:** Is the staff directory Owner-only, or readable by every signed-in staff member?
-- **Context:** `docs/PERMISSIONS.md` says both. P9 and AD2 scope the roster to the Owner; §4.3 says "all staff". The disagreement is not new — R-27 (8 Sep) refused §12.2 D-8's "Admin grants Manager" partly on the ground that "`staff_directory_v` carries `where auth_user_role() = 'Owner'` inline, so an Admin gets zero rows to act on."
-- **What actually happened:** `0120_users_visibility_and_role_ceiling.sql` recreated the view and **dropped that row predicate entirely**. The view then had no row gate, and the only thing narrowing it was a grant `anon` did not hold — so every signed-in role, Client included, could list the roster. That is the state the 3 Oct 2026 third-party audit found, and it invalidated R-27's third ground.
-- **Interim state:** `0148_view_anon_leak_closure.sql` (WRITTEN, locally verified, **not applied to live** — N-5) re-emits the view with `and auth_is_staff()` and revokes `anon` from every view in `public`. `auth_is_staff()` is `auth_user_role() <> 'Client'` (0014), so the roster is readable by all staff and by nobody unauthenticated. This was chosen because it **strictly narrows** (B-1) without answering the dispute — it closes the exposure either way.
-- **Options:**
-  - **(a) Owner-only** — restore `auth_user_role() = 'Owner'` inline. Requires `canManageSettings` and `StaffDirectory.tsx`'s render gate to move together, or the screen offers a list that returns nothing.
-  - **(b) All staff** — keep `auth_is_staff()`, and correct P9/AD2 in `PERMISSIONS.md` so the document stops contradicting §4.3. This is what R-27's third ground assumed all along, and it is the status quo ante.
-  - **(c) All staff, narrowed columns** — every staff member sees name, role, employee code, branch and active flag, but not `email`, mobile or PIN state. The roster stays useful for "who is on shift" without becoming a contact directory for roles that have no need of one.
-- **Current Status:** `TODO(decision)` — Babin's call. Until it is ruled, do not move the predicate again: any change to `staff_directory_v` belongs in a **new** migration, never an edit to `0148`, whose predicate will have shipped by then.
-- **Related:** R-27 (8 Sep, amended 3 Oct 2026), `docs/live/APPLY_PLAN_2026-10-03.md`.
+## 7. Who may read the staff roster (`staff_directory_v`) — RESOLVED
+- **Decision:** Option (b) (All staff) — keep `auth_is_staff()` on `staff_directory_v`. All authenticated internal staff roles (Warehouse, Technician, Driver, Coordinator, Accounts, Manager, Admin, Owner) may view colleagues on shift and operational rosters. External clients and unauthenticated public/anon remain strictly blocked.
+- **Implementation:** Migration `0148_view_anon_leak_closure.sql` (enforces `where auth_is_staff()` inline and revokes `anon` SELECT).
+- **Status:** Resolved (3 October 2026, Babin ruling).
+
+---
+
+## 8. Payment Document Numbering Sequence — RESOLVED
+- **Decision:** Option 2: Switch payment document sequence to short sequential format `PAY-94` (`padding: 1, include_year: false`), aligning new payment numbers with booking (`BK-1`) and invoice (`INV-1`) bare sequence conventions. Historical payments 1..93 remain immutable under Law 3 and Law 4 as `PAY-2026-0001` .. `PAY-2026-0093` (`trg_payments_reject_update`).
+- **Implementation:** Migration `0151_payment_numbering_short_format.sql` (updates `number_sequences` for `payment` to `padding = 1, include_year = false`).
+- **Status:** Resolved (3 October 2026, Babin ruling, Migration 0151).
+

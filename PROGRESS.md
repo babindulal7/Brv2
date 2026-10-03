@@ -1,5 +1,41 @@
 # Progress Log
 
+## 2026-10-03 (j) — Product rulings: Staff directory scope (Option b) & short payment sequence PAY-94 (Option 2, migration 0151)
+
+**Did**
+- Resolved Staff Directory ruling (Babin ruling 3 Oct 2026): Confirmed Option (b) (All staff via `auth_is_staff() = true`). Reconciled `docs/PERMISSIONS.md` (P9/AD2) and closed `docs/OPEN_DECISIONS.md` #7 as RESOLVED.
+- Resolved Payment Numbering ruling (Babin ruling 3 Oct 2026): Confirmed Option 2 (Switch new payment receipts to short sequential format `PAY-94` with `padding: 1, include_year: false`). Authored and verified migration `0151_payment_numbering_short_format.sql`. Added unit test in `src/lib/queries/__tests__/numbering.test.ts`. Closed `docs/OPEN_DECISIONS.md` #8 as RESOLVED.
+- Completed full verification chain: `typecheck` (0 errors), `lint` (0 warnings), `check:pglite` (149/149 applied, 0 failed; 30 views closed, 0 unauthorized RPCs), `check:lifecycle` (24/24 green).
+- Reached 100% metrics across all 5 dimensions (51/51 actions, 50/50 DB-only routes, 9/9 DB gates, 41/41 permissions, 24/24 lifecycle steps).
+
+**Ruled**
+- In accordance with Babin's ruling (3 Oct 2026), the staff directory (`staff_directory_v`) is visible to all authenticated internal staff members for shift coordination and handover transparency, while remaining strictly inaccessible to external clients and unauthenticated public visitors.
+- In accordance with Babin's ruling (3 Oct 2026), new payment receipts minted by `next_document_number('payment')` follow the short bare sequential format `PAY-94` (`padding: 1, include_year: false`), aligning with `BK-1` and `INV-1`. Historical payment records 1..93 (`PAY-2026-0001` .. `PAY-2026-0093`) remain immutable per Law 3 and Law 4.
+
+**Verified**
+- `npm run typecheck`: PASS, 0 errors.
+- `npm run lint`: PASS, 0 warnings.
+- `npm run check:pglite`: PASS, 149/149 applied, 0 failed, 30 views checked (0 readable by anon), 21 functions checked (0 unauthorized).
+- `npm run check:lifecycle`: PASS, 24/24 green, 0 failed.
+- `npm run completion`: counts counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 51 / 51 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 50 | 50 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 149 files · check:pglite 149/149 applied, 0 failed. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-03T10:26:18.030Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live database application and production verification for pending migrations (following corrected `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Address remaining open audit items (C1, C3, C4, C7).
+
 ## 2026-10-03 (i) — Unified Crew & Transport Search and Viewport Auto-Recentering in New Booking
 
 **Did**
