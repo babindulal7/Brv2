@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { rentalDaysBetween, formatRentalDays } from '../../../lib/rentalDays'
-import { bookingDays } from '../../../modules/rentals/NewRental'
+import { bookingDays } from '../../../modules/rentals/booking/newRentalUtils'
 import {
   calculatePricingPipeline,
   calculateAdvanceRequired,

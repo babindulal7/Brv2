@@ -1,13 +1,13 @@
 import { RecordActions, useUnsavedRecord } from '../../components/ui/RecordWorkspace'
 import { readQuoteEditor, quoteToDraft, type QuoteSnapshot } from '../../lib/queries/quoteEditor'
 import { updateRentalQuote } from '../../actions/rentals/updateRentalQuote'
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { ConfirmDialog, Input, Select, Modal } from '../../components/ui'
 import { DataTableShell } from '../../components/ui/DataTable'
-import { Card, PageHeader, Rail, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Rail } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { PageShell } from '../../components/ui/PageShell'
 import { PageActions } from '../../components/ui/PageActions'
@@ -20,11 +20,9 @@ import { useViewport } from '../../lib/device'
 import { useNetwork } from '../../lib/network'
 import { STATUS } from '../../lib/status'
 import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
-import { NPT_OFFSET_STRING } from '../../lib/operationalDay'
 import { rentalDaysBetween } from '../../lib/rentalDays'
 import { validateDiscount } from '../../lib/discount'
 import { PROJECT_TYPES, isProjectType, validateProjectType } from '../../lib/projectTypes'
-import { getSetting } from '../../lib/settingsStore'
 import {
   calculatePricingPipeline,
   type PricingPipelineResult,
@@ -35,7 +33,7 @@ import { formatMoney, rupees, roundHalfUp, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { listClientRecords, type ClientRecord } from '../../lib/queries/clients'
 import { updateClient } from '../../actions/clients/updateClient'
-import { CREW_ROLES, createRental, deliveryTypeFromLabel, type BookingLineType } from '../../actions/rentals/createRental'
+import { createRental, deliveryTypeFromLabel, type BookingLineType } from '../../actions/rentals/createRental'
 import {
   cancelDraft,
   convertDraft,
@@ -57,7 +55,7 @@ import type {
   EquipmentAvailabilitySource,
   LiveEquipmentRow,
 } from './booking/itemCatalogue'
-import { listCrewMembers, CREW_ROSTER, searchRoster, type CrewMember, type CrewRole } from '../../lib/queries/crew'
+import { listCrewMembers, CREW_ROSTER, type CrewMember, type CrewRole } from '../../lib/queries/crew'
 import { useAuth } from '../../lib/auth'
 import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
@@ -65,18 +63,44 @@ import { IntelCard } from '../../components/ui/IntelCard'
 import { clientGlance, clientDetailGroups } from '../../data/clientIntel'
 import { newRentalEquipmentGlance, newRentalEquipmentDetail } from '../../data/newRentalEquipmentIntel'
 import {
+  AddClientButton,
   AddClientModal,
   AddItemPanel,
   ClientCombobox,
   ClientHealthEye,
   ClientHistoryDrawer,
   ClientQuickView,
+  CrewSearch,
   DateTimeField,
   DatePresets,
+  DiscountChips,
   DraftEmailModal,
+  Field,
+  MoneyRow,
+  NumberStepper,
+  RowMenu,
+  Section,
+  TouchInset,
+  VatToggle,
   clientHealth,
+  dbRejectsRole,
+  inputStyle,
+  srOnly,
 } from './booking'
-import type { AddItemSource, BookingLineDraft, BookingWindow } from './booking'
+import type {
+  AddItemSource,
+  BookingLineDraft,
+  BookingWindow,
+} from './booking'
+import {
+  DAY,
+  readVatRatePercent,
+  stableJson,
+  bookingInstant,
+  bookingDays,
+  PRODUCT_ID_RE,
+  SHOOT_PRESETS,
+} from './booking/newRentalUtils'
 
 /**
  * **New Rental — Booking Workspace**, built from render `6989CD12` and
@@ -112,123 +136,9 @@ import type { AddItemSource, BookingLineDraft, BookingWindow } from './booking'
  * and the page became responsive on the existing `useViewport()` bands (§65).
  */
 
-const DAY = 86400000
-
-/** JSONB does not preserve object-key order. Canonicalise before dirty checks. */
-function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
-  if (value !== null && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, child]) => child !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b))
-    return `{${entries.map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`).join(',')}}`
-  }
-  return JSON.stringify(value)
-}
-
-/**
- * The two pickers of one end of the booking — a `YYYY-MM-DD` date and an
- * `HH:mm` wall-clock time — as a single instant, or `null` if either is
- * unparseable.
- *
- * This is the **same construction `confirmBooking` sends** (`new
- * Date(`${date}T${time}`)`, local wall-clock in, `.toISOString()` — AD/UTC —
- * out, Law 7). It exists so the page cannot measure the booking over one pair
- * of instants and store it over another: before NR-19 the length was computed
- * from the DATES ALONE while the write sent date+time, so the two disagreed by
- * up to a day at every booking whose times were not midnight.
- *
- * `null` rather than a fallback instant: an unparseable value is not midnight,
- * and `DateTimeField` never lets one through anyway — `commitDate` reverts to
- * the last good date and `commitTime` to the last good time, so the guard here
- * is a type-level one rather than a state this screen can reach.
- */
-export function bookingInstant(date: string, time: string): Date | null {
-  if (!date || !time) return null
-  let isoTime = time.trim()
-  if (!/[Z+-]/.test(isoTime)) {
-    if (isoTime.length === 5) isoTime = `${isoTime}:00`
-    isoTime = `${isoTime}${NPT_OFFSET_STRING}`
-  }
-  const d = new Date(`${date}T${isoTime}`)
-  return Number.isNaN(d.getTime()) ? null : d
-}
-
-/**
- * The booking's length in whole rental days, or `0` for a window that is not a
- * booking at all.
- *
- * The arithmetic is **not** here — `lib/rentalDays.ts` owns it (Law 1), and its
- * header settles which of this repo's three day-counts this is: the priced
- * span, elapsed ms ÷ 86 400 000, rounded half-up, floored at 1. What is here is
- * the page's own gate, and only that: a return at or before the pickup is `0`,
- * which every date-dependent thing on this screen reads as "unset" (an em dash,
- * never a zero — §8.6) and which blocks Confirm.
- *
- * ⛔ NR-19 — the page used to difference the two `YYYY-MM-DD` picker values and
- * ignore the times beside them, so a 09:00 → 18:00 same-day hire measured 0 and
- * was refused for being zero days long. `createRental.validate` refuses only a
- * return strictly BEFORE the pickup, and the write sends date+time, so the page
- * was rejecting bookings its own action would have taken. Measured over the
- * instants that are actually stored, that hire is 9 h → the engine's floor of
- * one rental day.
- *
- * `0` cannot be a stored length: Law 9 and six `days >= 1` CHECKs, and Confirm
- * is blocked while this is 0.
- */
-export function bookingDays(pickupAt: Date | null, returnAt: Date | null): number {
-  if (!pickupAt || !returnAt || returnAt.getTime() <= pickupAt.getTime()) return 0
-  return rentalDaysBetween(pickupAt.toISOString(), returnAt.toISOString()) ?? 0
-}
-
-/**
- * The VAT rate is **read from Settings**, never a literal.
- *
- * `VAT_PCT = 13` used to live here and is deleted: `PLAN.md` §5 Conventions
- * bans "a hardcoded VAT rate", and `WIREFRAME_RULINGS_2026-08-12.md` §7 rules
- * that spec 01's drawn `VAT 13%` is read as `VAT {rate}%` off
- * `settingsStore`'s `vatRatePercent`. Read once per mount — the same shape
- * every other consumer of `getSetting` uses; a rate changed in another tab
- * lands on the next mount, not mid-booking.
- */
-function readVatRatePercent(): number {
-  const n = Number(getSetting('vatRatePercent'))
-  return Number.isFinite(n) ? n : 0
-}
-
-/**
- * 01_NEW_RENTAL §1.1 rail — `Discount  chips`.
- *
- * Common presets, NOT a ceiling. Law 10 as amended 31 Aug 2026 (D3, Babin:
- * "don't put any gate on discount"): no reason, no approver, no cap below
- * 100%. The reason+approver popover the chips used to open left with the
- * gate; `validateDiscount()` still gates Confirm, but only on arithmetic
- * validity (negative, >100%), which no chip can produce.
- */
-
-interface DiscountPresetMeta {
-  readonly pct: number
-  readonly label: string
-  readonly reason?: string
-}
-
-const DISCOUNT_PRESETS: readonly DiscountPresetMeta[] = [
-  { pct: 0, label: '0%' },
-  { pct: 5, label: '5% (Repeat)', reason: 'Repeat Client Loyalty' },
-  { pct: 10, label: '10% (Partner)', reason: 'Production Partner Discount' },
-  { pct: 15, label: '15% (Weekly)', reason: 'Long-term / Weekly Production' },
-  { pct: 20, label: '20% (Festival)', reason: 'Dashain / Festival Production Privilege' },
-  { pct: 25, label: '25% (Promo)', reason: 'Promotional / Sponsorship Booking' },
-] as const
-
-const SHOOT_PRESETS = [
-  { id: '1-day', label: '1-Day Shoot', icon: 'timer' as const, description: 'Single-day shoot (07:00 → 20:00, 1 rental day)' },
-  { id: 'weekend', label: 'Weekend (Fri–Mon)', icon: 'calendar_week' as const, description: 'Weekend shoot (Friday 14:00 → Monday 10:00, 3 rental days)' },
-  { id: '3-day', label: '3-Day Commercial', icon: 'video' as const, description: '3-day commercial shoot (08:00 → Day 3 20:00, 3 rental days)' },
-  { id: '1-week', label: '1-Week Production', icon: 'calendar_event' as const, description: '7-day production block (08:00 → Day 7 20:00, 7 rental days)' },
-] as const
 
 /*
+
  * `CatalogueItem` and `EQUIPMENT_CATALOGUE` lived here — the demo catalogue,
  * flattened from `PARENTS` at module load, with product NAMES and unit SERIALS
  * for ids. Both are gone: `AddItemPanel` now searches a pool of real products
@@ -294,20 +204,10 @@ function lineAmountPaisa(l: Line): Paisa {
   return roundHalfUp(l.qty * l.days * l.ratePaisa * (1 - l.discountPct / 100)) as Paisa
 }
 
-/**
- * A live catalogue row's id is a `products.id` uuid; a demo row's id is the
- * product NAME. This is the cheapest honest test of which one a line is.
- *
- * Module scope rather than inside the Confirm handler so it is compiled once
- * instead of per render, and so a second caller cannot quietly write a fourth
- * spelling of "is this a uuid".
- *
- * (An earlier note here claimed two places had to agree about it and pointed at
- * `confirmWriteRefusals`. That was wrong: `confirmWriteRefusals` is handed a
- * precomputed `sampleLineName` and never sees the regex — there is exactly one
- * use, the `lines.find` that computes that argument.)
- */
-const PRODUCT_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+
+
+
 
 /**
  * One reason Confirm Booking is refused, in the shape the rail's blocking-
@@ -439,21 +339,6 @@ const SECTIONS = [
 ] as const
 
 
-/* Law 15 — hit area over paint, number from `--tap`. This object is also handed
-   down as the `inputStyle` prop to the discount and crew sub-forms, so raising
-   it here raises every field they render too — which is the point: they are the
-   same vertical form, split only for readability. */
-const inputStyle = {
-  width: '100%',
-  minHeight: 'var(--tap)',
-  padding: '0 9px',
-  borderRadius: 'var(--r-input)',
-  border: '1px solid var(--input-border)',
-  background: 'var(--input-bg)',
-  color: 'var(--text)',
-  fontSize: 'var(--t-meta)',
-  fontFamily: 'inherit',
-} as const
 
 /**
  * §60 — one table vocabulary for the whole page. Column headers sit at the
@@ -526,269 +411,7 @@ const inlineInfoStyle = {
   lineHeight: 1.4,
 } as const
 
-/**
- * A transparent 44×44 hit area centred on a control that is visually smaller.
- * The touch minimum applies on desktop too, and inflating a table's remove
- * glyph or a section chevron to 44px tall would wreck the density §60 asks
- * for — so the *target* grows and the glyph does not. The parent must be
- * `position: relative`.
- *
- * Same shape as `booking/AddItemPanel.tsx`'s private `TouchInset`; it is not
- * exported from that module, and re-declaring nine lines is better than
- * widening another agent's public surface mid-flight.
- *
- * The two 44s were typed in as numbers and now read `var(--tap)`, which is the
- * same 44 with a name: the touch minimum belongs to the theme, and a literal
- * here would keep its old value on the day the token moves. The geometry is
- * untouched, so all fifteen call sites below are unaffected — this is the token
- * discipline the rest of the file already follows, arriving late.
- *
- * `theme.css` has since grown a `.tap` utility doing the same job with a
- * pseudo-element instead of a child span, and that is where this should land
- * eventually. Not in this pass: the class has to be checked against each of the
- * fifteen parents (several sit inside clipping or side-scrolling boxes, and
- * `overflow` cuts a hit area as hard as it cuts paint), and half-migrating would
- * leave two mechanisms doing one job in one file.
- */
-function TouchInset() {
-  return (
-    <span
-      aria-hidden="true"
-      style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 'max(100%, var(--tap))', height: 'var(--tap)' }}
-    />
-  )
-}
 
-/**
- * redesign v1 §7.4 — qty and days as steppers rather than boxed number
- * inputs, so the equipment table reads as a table again instead of a form
- * embedded in one. Each glyph button keeps the 44×44 hit area via
- * `TouchInset` while staying visually compact for table density.
- */
-function NumberStepper({ value, min = 1, onChange, disabled, label }: { value: number; min?: number; onChange: (n: number) => void; disabled?: boolean; label: string }) {
-  const isMin = value <= min
-  return (
-    <div className="new-rental-stepper-pill">
-      <button
-        type="button"
-        className="press new-rental-stepper-btn"
-        aria-label={`Decrease ${label}`}
-        disabled={disabled || isMin}
-        onClick={() => onChange(Math.max(min, value - 1))}
-      >
-        <TouchInset />
-        <Icon name="minus" size={11} />
-      </button>
-      <span className="figure new-rental-stepper-val" style={{ color: disabled ? 'var(--muted)' : 'var(--text)' }}>
-        {value}
-      </span>
-      <button
-        type="button"
-        className="press new-rental-stepper-btn"
-        aria-label={`Increase ${label}`}
-        disabled={disabled}
-        onClick={() => onChange(value + 1)}
-      >
-        <TouchInset />
-        <Icon name="plus" size={11} />
-      </button>
-    </div>
-  )
-}
-
-function Field({
-  label,
-  children,
-  error,
-  helper,
-  labelId,
-}: {
-  label: string
-  children: React.ReactNode
-  /** When set, renders below children in the danger tone. Field can't reach into
-   *  arbitrary children to stamp aria-invalid/aria-describedby on the input itself
-   *  (children are caller-supplied), so callers that want full a11y wiring should
-   *  point their input's aria-describedby at this span's id themselves.
-   *  `| undefined` is explicit because tsconfig sets exactOptionalPropertyTypes:
-   *  callers pass ternaries like `cond ? '...' : undefined`. */
-  error?: string | undefined
-  /** Muted helper text shown below children when there is no error. */
-  helper?: string | undefined
-  /**
-   * When set the wrapper becomes a `<div>` with an `id`-carrying label span
-   * instead of a `<label>`. A `<label>` around a composite widget (the client
-   * combobox is an input *plus* a listbox *plus* the health eye) steals clicks
-   * meant for the eye, so those callers wire `aria-labelledby` instead.
-   */
-  labelId?: string | undefined
-}) {
-  const errorId = error ? `field-error-${label.replace(/\s+/g, '-').toLowerCase()}` : undefined
-  const body = (
-    <>
-      <span id={labelId} style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', marginBottom: 3 }}>{label}</span>
-      {children}
-      {error ? (
-        <span id={errorId} role="alert" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--danger-text)', marginTop: 3 }}>
-          {error}
-        </span>
-      ) : helper ? (
-        <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)', marginTop: 3 }}>{helper}</span>
-      ) : null}
-    </>
-  )
-  if (labelId) return <div style={{ display: 'block', minWidth: 0 }}>{body}</div>
-  return <label style={{ display: 'block', minWidth: 0 }}>{body}</label>
-}
-
-/**
- * §59 — **the** section header. All sections render through this one
- * component; there is no second heading style anywhere on the page, which is
- * what stops Section 4 slowly drifting away from Section 1.
- *
- * redesign v1 §7.1 — plain heading and its collapse chevron only, no numbered
- * pill. A numbered circle reads as step one of a wizard, and the footer says
- * explicitly "Sections are not a wizard" — the pills contradicted the note.
- *
- * Equipment is expanded by default (§6); on a phone the lower sections start
- * collapsed (§65) and their header carries a one-line summary so a collapsed
- * section is still informative.
- */
-function Section({
-  id,
-  title,
-  open,
-  onToggle,
-  action,
-  summary,
-  badge,
-  children,
-}: {
-  /** Scroll target for the rail's Review card — see `jumpToSection`. */
-  id?: string
-  title: string
-  open: boolean
-  onToggle: () => void
-  action?: React.ReactNode
-  /** Shown in the header when collapsed, so collapsing never hides the facts. */
-  summary?: string
-  badge?: React.ReactNode
-  children: React.ReactNode
-}) {
-  return (
-    <section id={id} className={`new-rental-section-card ${open ? 'is-active' : ''}`} style={{ ...cardStyle, minWidth: 0, padding: 0 }}>
-      <div
-        onClick={onToggle}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '12px 16px',
-          borderBottom: open ? '1px solid var(--border)' : 'none',
-          background: 'var(--surface)',
-          cursor: 'pointer',
-          userSelect: 'none',
-          minHeight: 48,
-          transition: 'background var(--dur-fast) var(--ease)',
-        }}
-      >
-        <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
-          {title}
-        </h2>
-        {badge}
-        {!open && summary && (
-          <span
-            style={{
-              fontSize: 'var(--t-meta)',
-              color: 'var(--text2)',
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              background: 'var(--surface)',
-              padding: '2px 8px',
-              borderRadius: 'var(--r-xs)',
-              marginLeft: 4,
-              border: '1px solid color-mix(in srgb, var(--border) 60%, transparent)',
-            }}
-          >
-            {summary}
-          </span>
-        )}
-        {/* §6 — toolbars hide when the section is collapsed. */}
-        {open && action && (
-          <span
-            onClick={(e) => e.stopPropagation()}
-            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
-          >
-            {action}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggle()
-          }}
-          aria-expanded={open}
-          aria-label={`${open ? 'Collapse' : 'Expand'} ${title}`}
-          className="press"
-          style={{
-            marginLeft: open && action ? 6 : 'auto',
-            position: 'relative',
-            width: 34,
-            height: 34,
-            borderRadius: 'var(--r-btn)',
-            border: 'none',
-            background: 'var(--surface)',
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            display: 'grid',
-            placeItems: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <TouchInset />
-          <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
-        </button>
-      </div>
-      <div hidden={!open} style={{ padding: 'var(--sp-md) var(--sp-lg)' }}>{children}</div>
-    </section>
-  )
-}
-
-/** §37 / §52 — a money row. Label left, figure right, aligned on the same right edge everywhere. */
-function MoneyRow({ label, value, tone, strong, big }: { label: string; value: string; tone?: string; strong?: boolean; big?: boolean }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: big ? '6px 0 2px' : '3px 0' }}>
-      <span style={{ flex: 1, minWidth: 0, fontSize: big ? 'var(--t-meta)' : 'var(--t-meta)', fontWeight: big ? 700 : 400, color: big ? 'var(--text)' : 'var(--text2)' }}>{label}</span>
-      <span
-        className="figure"
-        style={{
-          fontSize: big ? 'var(--t-h3)' : 'var(--t-meta)',
-          fontWeight: big || strong ? 700 : 600,
-          letterSpacing: big ? '-0.02em' : undefined,
-          color: tone ?? 'var(--text)',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  )
-}
-
-/** Off-screen but in the accessibility tree — no global `.sr-only` exists in this build. */
-const srOnly = {
-  position: 'absolute' as const,
-  width: 1,
-  height: 1,
-  padding: 0,
-  margin: -1,
-  overflow: 'hidden',
-  clip: 'rect(0 0 0 0)',
-  whiteSpace: 'nowrap' as const,
-  border: 0,
-}
 
 /* ── Equipment grouping — 01_NEW_RENTAL Notes: "Equipment list renders
  *    parent-first with children nested." ─────────────────────────────────── */
@@ -840,664 +463,9 @@ function isNested(g: LineGroup): boolean {
   return g.kind === 'bundle' || g.lines.length > 1
 }
 
-/**
- * The `⋮` the wireframe draws on every parent row. Only real actions appear —
- * there is no third "…" entry standing in for something unbuilt.
- */
-function RowMenu({ label, items }: { label: string; items: Array<{ label: string; icon: IconName; onClick: () => void }> }) {
-  const [open, setOpen] = useState(false)
-  const rootRef = useRef<HTMLDivElement | null>(null)
 
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node | null)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [open])
 
-  return (
-    <div ref={rootRef} style={{ position: 'relative', display: 'inline-block' }}>
-      <button
-        type="button"
-        className="press"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={label}
-        onClick={() => setOpen((o) => !o)}
-        style={{ position: 'relative', width: 26, height: 26, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}
-      >
-        <TouchInset />
-        <Icon name="more_vert" size={15} />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          aria-label={label}
-          style={{ position: 'absolute', zIndex: 40, top: 'calc(100% + 4px)', right: 0, minWidth: 210, padding: 5, background: 'var(--dropdown)', border: '1px solid var(--border)', borderRadius: 'var(--r-card)', boxShadow: 'var(--shadow-modal)' }}
-        >
-          {items.map((it) => (
-            <button
-              key={it.label}
-              type="button"
-              role="menuitem"
-              className="press"
-              onClick={() => {
-                it.onClick()
-                setOpen(false)
-              }}
-              style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', width: '100%', minHeight: 40, padding: '0 9px', borderRadius: 'var(--r-btn)', border: 'none', background: 'transparent', color: 'var(--text)', fontFamily: 'inherit', fontSize: 'var(--t-meta)', fontWeight: 600, textAlign: 'left', cursor: 'pointer' }}
-            >
-              <Icon name={it.icon} size={15} style={{ color: 'var(--text2)' }} />
-              {it.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
-/**
- * The rail's `VAT {rate}%  [on ▢]` control.
- *
- * Law 11 — never colour alone: the switch carries an icon and the words On /
- * Off beside it, so the state is readable with no colour perception at all.
- * The *rate* is the caller's, read from Settings; this component never knows
- * a number.
- */
-function VatToggle({ ratePercent, on, onChange }: { ratePercent: number; on: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      className="press"
-      onClick={() => onChange(!on)}
-      style={{
-        position: 'relative',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 7,
-        width: '100%',
-        minHeight: 30,
-        padding: '3px 2px',
-        border: 'none',
-        background: 'transparent',
-        color: 'var(--text2)',
-        fontFamily: 'inherit',
-        fontSize: 'var(--t-meta)',
-        cursor: 'pointer',
-        textAlign: 'left',
-      }}
-    >
-      <TouchInset />
-      <span style={{ flex: 1, minWidth: 0 }}>VAT {ratePercent}%</span>
-      <span
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-          height: 20,
-          padding: '0 7px',
-          // §3.3 — not a count badge, so not the 999 radius.
-          // NOTE: this toggle also wears STATUS hues while being a CONTROL;
-          // flagged for a ruling rather than changed mid-sweep.
-          borderRadius: 'var(--r-btn)',
-          background: on ? 'var(--st-in-bg)' : 'var(--st-neutral-bg)',
-          color: on ? 'var(--st-in-fg)' : 'var(--st-neutral-fg)',
-          fontSize: 'var(--t-th)',
-          fontWeight: 700,
-        }}
-      >
-        <Icon name={on ? 'check' : 'close'} size={11} />
-        {on ? 'On' : 'Off'}
-      </span>
-    </button>
-  )
-}
-
-/**
- * The rail's `Discount  chips` row.
- *
- * The Law 10 approval popover this component used to open — reason ≥10 chars,
- * named approver, the "Approval needed" badge — left with the discount gate
- * (D3 ruled 30 Aug 2026; Babin's final word 31 Aug: "don't put any gate on
- * discount"). The chips set a percent and nothing else needs to happen.
- * `validateDiscount()` still gates Confirm, but only on arithmetic validity,
- * which no chip can violate.
- */
-function DiscountChips({
-  percent,
-  onPercent,
-  amount,
-  onSelectPreset,
-}: {
-  percent: number
-  onPercent: (n: number) => void
-  amount: string
-  onSelectPreset?: (pct: number, reason?: string) => void
-}) {
-  return (
-    <div style={{ position: 'relative', padding: '3px 0' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
-        <span style={{ flex: 1, minWidth: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Discount</span>
-        <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: percent > 0 ? 'var(--danger-text)' : 'var(--text)', whiteSpace: 'nowrap' }}>
-          {percent > 0 ? `− ${amount}` : amount}
-        </span>
-      </div>
-      <div role="group" aria-label="Discount percentage" style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
-        {DISCOUNT_PRESETS.map((p) => {
-          const active = percent === p.pct
-          return (
-            <button
-              key={p.pct}
-              type="button"
-              className="press"
-              aria-pressed={active}
-              aria-label={`${p.pct}% discount`}
-              title={p.reason ? `${p.label} — ${p.reason}` : `${p.pct}% discount`}
-              onClick={() => {
-                onPercent(p.pct)
-                onSelectPreset?.(p.pct, p.reason)
-              }}
-              style={{
-                position: 'relative',
-                minHeight: 24,
-                padding: '0 9px',
-                borderRadius: 'var(--r-btn)',
-                border: `1px solid ${active ? 'var(--st-primary-fg)' : 'var(--border)'}`,
-                background: active ? 'var(--st-primary-bg)' : 'var(--card2)',
-                color: active ? 'var(--st-primary-fg)' : 'var(--text2)',
-                fontFamily: 'inherit',
-                fontSize: 'var(--t-th)',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              <TouchInset />
-              {p.label}
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
-/**
- * The add-client control, living **inside the field's trailing slot** — the
- * same slot the §11 health eye takes over once a client is chosen.
- *
- * Babin, 4 Sep 2026: "for costumer the eye button inside search box appears
- * when we add costumer, before that there will be +client icon to add client."
- * So that slot is never empty and never holds two things at once: no client
- * selected → add a client; client selected → their health. The standalone
- * `+ New Client` button that used to sit beside the field is gone, its job
- * moved in here.
- *
- * Babin said **icon**, and this is an icon: a square control on Law 15's 44px
- * touch floor carrying the plus glyph and no word. It borrows the eye's
- * `--r-btn`, its `press` class and the same global `:focus-visible` ring
- * (`theme.css:877`), but not its colour — the eye is tinted by a health
- * verdict, and an add button has no verdict to state, so it takes the neutral
- * secondary treatment.
- *
- * It does **not** claim to match the eye's width. The eye is as wide as its
- * verdict label ("Good", "Watch", "Do not book"), so there was never a fixed
- * geometry to mirror and the row's width changes when the two swap either way.
- *
- * The word survives where a word is useful and costs no room: `aria-label` is
- * the accessible name, and `title` gives a sighted mouse user the same phrase
- * on hover. WCAG 2.5.3 (label in name) does not apply — there is no visible
- * label text to disagree with the accessible name.
- */
-function AddClientButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      className="press"
-      onClick={onClick}
-      aria-label="Add a new client"
-      title="Add a new client"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 'var(--tap)',
-        height: 'var(--tap)',
-        minWidth: 'var(--tap)',
-        minHeight: 'var(--tap)',
-        flexShrink: 0,
-        padding: 0,
-        borderRadius: 'var(--r-btn)',
-        background: 'var(--btn-secondary-bg)',
-        color: 'var(--text)',
-        border: '1px solid var(--btn-secondary-border)',
-        lineHeight: 1,
-        cursor: 'pointer',
-      }}
-    >
-      <Icon name="plus" size={20} />
-    </button>
-  )
-}
-
-/* ── Section 3 · the crew picker ─────────────────────────────────────────
- *
- * Babin, 4 Sep 2026: **"same for crew and transport"**, said straight after
- * "in new rental equipment bundle & services don't put +add equipment button,
- * i want search button over there directly". So Section 3's header slot no
- * longer carries an `Add Member…` <Select>: the field lives in the section
- * body, and typing a name or a job is the whole interaction.
- *
- * This is deliberately **not** a second `AddItemPanel`. That panel searches
- * three pools across four tabs, filters by category and by availability inside
- * the booking window, and sorts. Crew here is one pool of people — no tabs, no
- * categories, and no availability check on this screen — so it gets a plain
- * combobox rather than a copy of a panel whose complexity it does not have.
- *
- * The matching is `data/crew.ts:searchRoster` (law 1 — the page states the
- * outcome, it does not decide it). That function's own note records that
- * `modules/crew/CrewBooking.tsx:247-251` is a second roster picker with its
- * own rule; this one does not replace it and does not claim to.
- */
-
-/**
- * The roster's role vocabulary is not the database's, and that is a live bug.
- *
- * `createRental`'s `CREW_ROLES` accepts only a `crew_role` enum member
- * (`types/database.ts:43`), and crew rides the booking write — so a booking
- * staffed from one of the roles below would be refused by the action itself:
- * *"…is not a crew_role the database accepts"*. Five of the roster's eight
- * roles are in that state; the three the two vocabularies happen to share —
- * Gaffer, Grip, Sound Recordist — go through. Seven of the twelve people on
- * the roster carry a rejected role.
- *
- * They are still listed and still addable. Hiding them would shrink the roster
- * to five of twelve with no stated reason, and inventing a mapping
- * (`1st AC` → `Focus Puller`? `Director of Photography` → `DoP`? `DIT` → what?)
- * is precisely the product decision CLAUDE.md forbids a page to make — the
- * action says as much itself: *"no mapping is ruled"*. So the row states the
- * consequence and lets the operator decide.
- *
- * The row is not the last word on it. Adding one of these people raises a
- * **Critical** blocking notice naming them (see the `alerts` list), so Confirm
- * is refused with a readable reason rather than throwing the action's message
- * at the operator after the press.
- *
- * TODO(decision) — the roster vocabulary (`data/crew.ts:CrewRole`) and the
- * `crew_role` enum (`0001_enums.sql:313-325`) disagree on five roles. Either
- * the enum grows `1st AC`, `2nd AC` and `DIT` and gains the roster's spelling
- * of DoP and Drone Pilot, or a ruled roster→enum mapping lands in the action.
- * Until one of those, Confirm refuses any booking staffed from those rows.
- * Do not change the enum or the action to unblock this picker.
- *
- * Law 1 — **this page does not hold a list of what the database accepts.** It
- * imports the action's own `CREW_ROLES` and takes the complement against the
- * roster's vocabulary, at compile time for the type and at runtime for the
- * check. Add a role to the enum and to that list and the warning stops firing
- * for it here, with no edit on this page; there is no second copy to drift.
- */
-type RoleRejectedByDb = Exclude<CrewRole, (typeof CREW_ROLES)[number]>
-
-const ROLES_ACCEPTED_BY_DB: ReadonlySet<string> = new Set<string>(CREW_ROLES)
-
-function dbRejectsRole(role: CrewRole): role is RoleRejectedByDb {
-  return !ROLES_ACCEPTED_BY_DB.has(role)
-}
-
-/** One sentence, no jargon, same wording in the row and in its accessible name. */
-function rejectionNote(role: CrewRole): string {
-  return `The database has no “${role}” role, so Confirm will refuse this booking until that is settled.`
-}
-
-function CrewSearch({
-  onBooking,
-  onAdd,
-  showRates,
-  roster = CREW_ROSTER,
-}: {
-  /** Who is already on the booking. Excluded from the list — nobody is added twice. */
-  onBooking: readonly CrewLine[]
-  onAdd: (crewId: string) => void
-  /** The page's `canCrewMoney`. A money-blind role sees the roster and never a rate. */
-  showRates: boolean
-  roster?: readonly CrewMember[]
-}) {
-  const reactId = useId()
-  const labelId = `${reactId}-crew-label`
-  const listboxId = `${reactId}-crew-listbox`
-  const hintId = `${reactId}-crew-hint`
-
-  const [query, setQuery] = useState('')
-  const [activeIndex, setActiveIndex] = useState(0)
-  /**
-   * The empty query returns the whole remaining roster, so this listbox is full
-   * on first render and row 0 is already the active option. An unguarded
-   * `scrollIntoView` effect on `activeId` would therefore fire **on mount** and
-   * scroll the page to Section 3 the moment it is expanded — `AddItemPanel`
-   * never hits this only because its 2-character threshold leaves it empty
-   * until someone types. So the effect stays inert until the operator actually
-   * moves the cursor with the keyboard, and a hover puts it back to inert —
-   * otherwise the first arrow key would arm it for every mouse move after,
-   * and the list would scroll itself out from under the pointer.
-   */
-  const [open, setOpen] = useState(false)
-  const [cursorMoved, setCursorMoved] = useState(false)
-  const rootRef = useRef<HTMLDivElement | null>(null)
-  const inputRef = useRef<HTMLInputElement | null>(null)
-
-  const excludeIds = useMemo(() => onBooking.map((c) => c.crewId), [onBooking])
-  const options = useMemo(() => searchRoster(query, excludeIds, roster), [query, excludeIds, roster])
-  /**
-   * Whether anyone is left to find at all, which is a different question from
-   * whether this query found someone. The empty state used to answer only the
-   * second: with the whole roster already on the booking, typing anything at
-   * all said "No one matches …", which is true and beside the point — there
-   * was nobody to match. An empty query returns the whole remaining roster, so
-   * this is that count.
-   */
-  const rosterExhausted = useMemo(() => searchRoster('', excludeIds, roster).length === 0, [excludeIds, roster])
-
-  // Clamp the cursor whenever the result set shrinks under it.
-  useEffect(() => {
-    setActiveIndex((i) => (i >= options.length ? 0 : i))
-  }, [options.length])
-
-  const activeId = open && options[activeIndex] ? `${listboxId}-opt-${activeIndex}` : undefined
-
-  useEffect(() => {
-    if (!open || !cursorMoved || !activeId) return
-    document.getElementById(activeId)?.scrollIntoView({ block: 'nearest' })
-  }, [open, cursorMoved, activeId])
-
-  /** Close on outside pointer interaction */
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Node | null
-      if (rootRef.current && !rootRef.current.contains(target)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    return () => document.removeEventListener('pointerdown', onPointerDown)
-  }, [open])
-
-  const commit = (m: CrewMember) => {
-    onAdd(m.id)
-    setQuery('')
-    setActiveIndex(0)
-    setOpen(false)
-    inputRef.current?.focus()
-  }
-
-  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    const count = options.length
-    switch (e.key) {
-      case 'ArrowDown':
-      case 'ArrowUp':
-        e.preventDefault()
-        if (!open) {
-          setOpen(true)
-          return
-        }
-        setCursorMoved(true)
-        setActiveIndex((i) => (count === 0 ? 0 : e.key === 'ArrowDown' ? (i + 1) % count : (i - 1 + count) % count))
-        return
-      case 'Home':
-      case 'End': {
-        if (query !== '') return
-        e.preventDefault()
-        setCursorMoved(true)
-        setActiveIndex(e.key === 'Home' ? 0 : Math.max(0, count - 1))
-        return
-      }
-      case 'Enter': {
-        const m = options[activeIndex]
-        if (!m) return
-        e.preventDefault()
-        commit(m)
-        return
-      }
-      case 'Escape':
-        e.preventDefault()
-        e.stopPropagation()
-        setOpen(false)
-        if (query !== '') {
-          setQuery('')
-          setActiveIndex(0)
-        }
-        setCursorMoved(false)
-        inputRef.current?.blur()
-        return
-      default:
-    }
-  }
-
-  return (
-    <div ref={rootRef} style={{ position: 'relative', marginBottom: 'var(--sp-md)' }}>
-      <Field label="Add crew" labelId={labelId}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <input
-              ref={inputRef}
-              type="text"
-              role="combobox"
-              autoComplete="off"
-              spellCheck={false}
-              aria-expanded={open}
-              aria-controls={listboxId}
-              aria-autocomplete="list"
-              aria-haspopup="listbox"
-              aria-labelledby={labelId}
-              aria-describedby={hintId}
-              {...(activeId ? { 'aria-activedescendant': activeId } : {})}
-              placeholder="Search the roster by name or role…"
-              value={query}
-              onFocus={() => setOpen(true)}
-              onClick={() => setOpen(true)}
-              onChange={(e) => {
-                setQuery(e.target.value)
-                setActiveIndex(0)
-                if (!open) setOpen(true)
-              }}
-              onKeyDown={onKeyDown}
-              style={{ ...inputStyle, paddingLeft: 32, paddingRight: query ? 32 : 10 }}
-            />
-            <span
-              aria-hidden="true"
-              style={{
-                position: 'absolute',
-                left: 10,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                display: 'inline-flex',
-                color: 'var(--muted)',
-                pointerEvents: 'none',
-              }}
-            >
-              <Icon name="search" size={15} />
-            </span>
-            {query && (
-              <button
-                type="button"
-                className="press"
-                aria-label="Clear search query"
-                onClick={() => {
-                  setQuery('')
-                  setActiveIndex(0)
-                  inputRef.current?.focus()
-                }}
-                style={{
-                  position: 'absolute',
-                  right: 8,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--muted)',
-                  cursor: 'pointer',
-                  padding: 4,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 4,
-                }}
-              >
-                <Icon name="close" size={14} />
-              </button>
-            )}
-          </div>
-
-          <button
-            type="button"
-            className="press"
-            onClick={() => {
-              setOpen((o) => {
-                const next = !o
-                if (next) globalThis.requestAnimationFrame(() => inputRef.current?.focus())
-                else inputRef.current?.blur()
-                return next
-              })
-            }}
-            aria-expanded={open}
-            aria-label={open ? 'Hide crew roster' : 'Browse crew roster'}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              height: 38,
-              padding: '0 14px',
-              borderRadius: 'var(--r-btn)',
-              background: open ? 'var(--st-primary-bg)' : 'var(--btn-secondary-bg)',
-              color: open ? 'var(--st-primary-fg)' : 'var(--text)',
-              border: `1px solid ${open ? 'var(--primary)' : 'var(--btn-secondary-border)'}`,
-              fontFamily: 'inherit',
-              fontSize: 'var(--t-meta)',
-              fontWeight: 600,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-          >
-            <span>{open ? 'Hide' : 'Browse'}</span>
-            <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
-          </button>
-        </div>
-      </Field>
-
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Crew roster search results"
-          style={{
-            position: 'absolute',
-            zIndex: 35,
-            top: 'calc(100% + 4px)',
-            left: 0,
-            width: '100%',
-            maxHeight: 260,
-            overflowY: 'auto',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--r-card)',
-            background: 'var(--dropdown)',
-            boxShadow: 'var(--shadow-modal)',
-          }}
-        >
-          <p id={hintId} style={{ margin: '8px 10px 4px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            Up and Down to move, Enter to add, Escape to close. Anyone already on this booking is left out of the list.
-          </p>
-
-          <ul id={listboxId} role="listbox" aria-labelledby={labelId} style={{ listStyle: 'none', margin: 0, padding: 4 }}>
-            {options.map((m, i) => {
-              const active = i === activeIndex
-              const rejected = dbRejectsRole(m.role)
-              const note = rejected ? rejectionNote(m.role) : ''
-              return (
-                <li
-                  key={m.id}
-                  id={`${listboxId}-opt-${i}`}
-                  role="option"
-                  aria-selected={active}
-                  aria-label={`${m.name}, ${m.role}.${
-                    showRates ? ` ${formatMoney(m.dayRatePaisa)} per day.` : ''
-                  }${note ? ` ${note}` : ''} Press Enter to add to this booking.`}
-                  onMouseMove={() => {
-                    setCursorMoved(false)
-                    setActiveIndex(i)
-                  }}
-                  onClick={() => commit(m)}
-                  style={{
-                    display: 'grid',
-                    gap: 2,
-                    minHeight: 'var(--tap)',
-                    alignContent: 'center',
-                    padding: '7px 9px',
-                    borderRadius: 'var(--r-btn)',
-                    cursor: 'pointer',
-                    background: active ? 'var(--hover-row)' : 'transparent',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}>
-                    <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--text2)' }}>
-                      <Icon name="crew" size={15} />
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 'var(--t-ui)',
-                        fontWeight: 600,
-                        color: 'var(--text)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {m.name}
-                    </span>
-                    <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{m.role}</span>
-                    {showRates && (
-                      <span
-                        className="figure"
-                        style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}
-                      >
-                        {formatMoney(m.dayRatePaisa)}/day
-                      </span>
-                    )}
-                  </div>
-                  {note && (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--warn-text)' }}>
-                      <span style={{ display: 'inline-flex', paddingTop: 1, flexShrink: 0 }}>
-                        <Icon name="alert_triangle" size={13} />
-                      </span>
-                      <span style={{ minWidth: 0 }}>{note}</span>
-                    </div>
-                  )}
-                </li>
-              )
-            })}
-            {options.length === 0 && (
-              <li role="presentation" style={{ padding: '10px 9px', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                {rosterExhausted
-                  ? 'Everyone on the roster is already on this booking.'
-                  : `No one on the roster matches “${query.trim()}”. Names and roles are searched.`}
-              </li>
-            )}
-          </ul>
-        </div>
-      )}
-    </div>
-  )
-}
 
 export interface NewRentalProps {
   editBookingId?: string
@@ -4122,7 +3090,6 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
               whiteSpace: 'nowrap',
               borderColor: 'currentColor',
               color: 'inherit',
-              minHeight: 32,
               padding: '0 10px',
               fontSize: 'var(--t-meta)',
             }}
@@ -4947,7 +3914,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
                                         value={c.overtimePaisa > 0 ? c.overtimePaisa / 100 : ''}
                                         placeholder="0"
                                         onChange={(e) => updateCrewExtras(c.crewId, 'overtimePaisa', rupees(Math.max(0, Number(e.target.value) || 0)))}
-                                        style={{ ...inputStyle, height: 32, fontSize: 'var(--t-meta)' }}
+                                        style={{ ...inputStyle, minHeight: 44, fontSize: 'var(--t-meta)' }}
                                       />
                                     </Field>
                                     <Field label="Meals (Rs) *">
@@ -4957,7 +3924,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
                                         value={c.mealsPaisa > 0 ? c.mealsPaisa / 100 : ''}
                                         placeholder="0"
                                         onChange={(e) => updateCrewExtras(c.crewId, 'mealsPaisa', rupees(Math.max(0, Number(e.target.value) || 0)))}
-                                        style={{ ...inputStyle, height: 32, fontSize: 'var(--t-meta)' }}
+                                        style={{ ...inputStyle, minHeight: 44, fontSize: 'var(--t-meta)' }}
                                       />
                                     </Field>
                                     <Field label="Accommodation (Rs) *">
@@ -4967,7 +3934,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
                                         value={c.accommodationPaisa > 0 ? c.accommodationPaisa / 100 : ''}
                                         placeholder="0"
                                         onChange={(e) => updateCrewExtras(c.crewId, 'accommodationPaisa', rupees(Math.max(0, Number(e.target.value) || 0)))}
-                                        style={{ ...inputStyle, height: 32, fontSize: 'var(--t-meta)' }}
+                                        style={{ ...inputStyle, minHeight: 44, fontSize: 'var(--t-meta)' }}
                                       />
                                     </Field>
                                   </div>
@@ -5641,7 +4608,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
                   variant="ghost"
                   size="sm"
                   onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}
-                  style={{ minHeight: 36, padding: '0 8px', fontSize: 'var(--t-meta)' }}
+                  style={{ padding: '0 8px', fontSize: 'var(--t-meta)' }}
                 >
                   Cancel
                 </Button>
@@ -5937,4 +4904,4 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   )
 }
 
-export { NewRental }
+export { NewRental, bookingDays, bookingInstant }

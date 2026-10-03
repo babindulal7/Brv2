@@ -136,3 +136,38 @@ export type { DatePreset, DatePresetsProps } from './DatePresets'
    editable, and nothing pretends to queue. */
 export { DraftEmailModal, EMAIL_SEND_UNAVAILABLE_REASON } from './DraftEmailModal'
 export type { DraftEmailModalProps } from './DraftEmailModal'
+
+/* Form controls and widgets for rental booking */
+export {
+  AddClientButton,
+  Field,
+  MoneyRow,
+  NumberStepper,
+  RowMenu,
+  Section,
+  TouchInset,
+  inputStyle,
+  srOnly,
+} from './BookingFormWidgets'
+
+export { VatToggle } from './VatToggle'
+export type { VatToggleProps } from './VatToggle'
+
+export { DISCOUNT_PRESETS, DiscountChips } from './DiscountChips'
+export type { DiscountChipsProps, DiscountPresetMeta } from './DiscountChips'
+
+export {
+  CrewSearch,
+  ROLES_ACCEPTED_BY_DB,
+  dbRejectsRole,
+  rejectionNote,
+} from './CrewSearch'
+export type { CrewSearchProps, RoleRejectedByDb } from './CrewSearch'
+
+export {
+  PRODUCT_ID_RE,
+  SHOOT_PRESETS,
+  bookingDays,
+  bookingInstant,
+  stableJson,
+} from './newRentalUtils'

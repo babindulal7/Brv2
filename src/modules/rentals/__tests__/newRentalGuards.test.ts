@@ -38,7 +38,8 @@ vi.mock('../../../lib/supabase', () => ({
   newClientUuid: () => '00000000-0000-4000-8000-000000000000',
 }))
 
-import { bookingDays, bookingInstant, confirmWriteRefusals } from '../NewRental'
+import { bookingDays, bookingInstant } from '../booking/newRentalUtils'
+import { confirmWriteRefusals } from '../NewRental'
 
 /** A `products.id`-shaped id — what a live catalogue row carries. */
 const PRODUCT_UUID = '3f1c2b4a-5d6e-4f7a-8b9c-0d1e2f3a4b5c'
