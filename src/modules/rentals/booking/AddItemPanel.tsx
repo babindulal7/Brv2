@@ -73,17 +73,19 @@ import type {
   BookingLineDraft,
   BookingWindow,
   BundleResult,
+  CrewMember,
   EquipmentAvailabilitySource,
   EquipmentModelGroup,
   EquipmentResult,
   QueryGroup,
   ResultKind,
   SortKey,
+  TransportOption,
 } from './itemCatalogue'
 
 /* ── Tabs (§27) ────────────────────────────────────────────────────────── */
 
-type TabKey = 'all' | 'bundles' | 'equipment' | 'services'
+type TabKey = 'all' | 'bundles' | 'equipment' | 'services' | 'crew' | 'transport'
 
 /**
  * Accessories are not a fifth tab. §25 groups them separately in the results
@@ -91,10 +93,12 @@ type TabKey = 'all' | 'bundles' | 'equipment' | 'services'
  * gives each its own heading.
  */
 const TAB_KINDS: Record<TabKey, ReadonlySet<ResultKind>> = {
-  all: new Set<ResultKind>(['bundle', 'equipment', 'accessory', 'service']),
+  all: new Set<ResultKind>(['bundle', 'equipment', 'accessory', 'service', 'crew', 'transport']),
   bundles: new Set<ResultKind>(['bundle']),
   equipment: new Set<ResultKind>(['equipment', 'accessory']),
   services: new Set<ResultKind>(['service']),
+  crew: new Set<ResultKind>(['crew']),
+  transport: new Set<ResultKind>(['transport']),
 }
 
 const TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
@@ -102,6 +106,8 @@ const TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
   { key: 'bundles', label: 'Bundles' },
   { key: 'equipment', label: 'Equipment' },
   { key: 'services', label: 'Services' },
+  { key: 'crew', label: 'Crew' },
+  { key: 'transport', label: 'Transport' },
 ]
 
 /*
@@ -220,6 +226,18 @@ export interface AddItemPanelProps {
    */
   bundles?: readonly BundleResult[]
   /**
+   * The crew pool to search, from `searchRoster` or the full roster.
+   *
+   * Omitted, this panel searches the CREW_ROSTER from data/crew.ts.
+   */
+  crew?: readonly CrewMember[]
+  /**
+   * The transport/delivery pool to search.
+   *
+   * Omitted, this panel searches the default delivery options.
+   */
+  transport?: readonly TransportOption[]
+  /**
    * The state of the windowed availability read behind `equipment` (NR-09).
    *
    * Only the hint line reads it — every row already carries its own verdict.
@@ -252,6 +270,8 @@ export function AddItemPanel({
   existingLineIds,
   equipment,
   bundles,
+  crew,
+  transport,
   availability: availabilitySource,
   onAdd,
   showPrices = true,
@@ -331,8 +351,10 @@ export function AddItemPanel({
         existingLineIds: existing,
         ...(equipment ? { equipment } : {}),
         ...(bundles ? { bundles } : {}),
+        ...(crew ? { crew } : {}),
+        ...(transport ? { transport } : {}),
       }),
-    [bookingWindow, query, tab, category, availability, sort, minQueryChars, existing, equipment, bundles],
+    [bookingWindow, query, tab, category, availability, sort, minQueryChars, existing, equipment, bundles, crew, transport],
   )
 
   const previewResults = query.trim() === '' && category === null && availability === 'any' && !showAllResults

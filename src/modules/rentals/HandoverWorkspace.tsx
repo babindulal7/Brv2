@@ -18,6 +18,7 @@ import { STATUS } from '../../lib/status'
 import type { StatusKey } from '../../lib/status'
 import { statusToken, FLAGS } from '../../lib/workflow'
 import type { BookingStatus, JobState } from '../../lib/workflow'
+import { NON_PACKABLE_LINE_TYPES } from '../../lib/bookingLineTypes'
 import { BarcodeScannerModal, type ScanOutcome } from '../../components/ui/BarcodeScannerModal'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { toBs, formatBs, formatAd, formatAdDateTime } from '../../lib/bs'
@@ -272,6 +273,11 @@ function driverSignatureRequired(deliveryType: string | null): boolean {
  * is multi-session, so a unit an earlier session already took out arrives
  * with `unit_state = 'Picked Up'` and must render as recorded, not as Ready.
  */
+function handoverLines(lines: readonly FloorLine[]): FloorLine[] {
+  const parentIds = new Set(lines.map((l) => l.parentLineId).filter((p): p is string => p !== null))
+  return lines.filter((l) => !NON_PACKABLE_LINE_TYPES.has(l.lineType) && !(l.lineType === 'Bundle' && parentIds.has(l.id)))
+}
+
 function buildRows(floor: FloorBooking): HandRow[] {
   const lineById = new Map(floor.lines.map((l) => [l.id, l]))
   const groupOf = (line: FloorLine): string => {
@@ -281,7 +287,7 @@ function buildRows(floor: FloorBooking): HandRow[] {
   }
 
   const rows: HandRow[] = []
-  for (const line of floor.lines) {
+  for (const line of handoverLines(floor.lines)) {
     const name = line.productName ?? line.description ?? `${line.lineType} line`
     if (line.unitsPresence === 'present' && line.units.length > 0) {
       line.units.forEach((u, i) => {
@@ -655,6 +661,7 @@ export default function HandoverWorkspace({
   }, [floorId])
 
   const rows = useMemo<HandRow[]>(() => (floor ? buildRows(floor) : []), [floor])
+  const serviceLines = useMemo(() => floor?.lines.filter((l) => NON_PACKABLE_LINE_TYPES.has(l.lineType)) ?? [], [floor])
   const rowByKey = useMemo(() => new Map(rows.map((r) => [r.key, r])), [rows])
   /** A mark wins over a prior state (the UI never lets a prior row be marked). */
   const stateOf = (key: string): RowState => marks[key]?.state ?? rowByKey.get(key)?.prior ?? 'Ready'
@@ -1517,6 +1524,42 @@ export default function HandoverWorkspace({
                     <Icon name="users" size={15} />
                     <span>{presence.presenceBanner}</span>
                   </div>
+                )}
+                {serviceLines.length > 0 && (
+                  <Card
+                    title={`Services & Non-Inventory Items (${serviceLines.length})`}
+                    style={{
+                      background: 'var(--card)',
+                      border: '1px solid var(--border)',
+                      marginBottom: 'var(--sp-md)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
+                      {serviceLines.map((sl) => (
+                        <div
+                          key={sl.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 12px',
+                            borderRadius: 'var(--r-sm)',
+                            background: 'var(--surface-sunken)',
+                            fontSize: 'var(--t-meta)',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Icon name="info" size={14} style={{ color: 'var(--muted)' }} />
+                            <span style={{ fontWeight: 600 }}>{sl.productName ?? sl.description ?? `${sl.lineType} line`}</span>
+                            <span style={{ color: 'var(--muted)' }}>({sl.lineType})</span>
+                          </div>
+                          <span style={{ color: 'var(--muted)', fontSize: 'var(--t-caption)' }}>
+                            Exempt from barcode scanning · Rendered as service
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
                 )}
                 <Card
                   title="Equipment"

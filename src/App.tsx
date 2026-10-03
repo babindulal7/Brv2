@@ -45,6 +45,11 @@ const AssetRoiReport    = lazy(() => import('./modules/reports/AssetRoiReport'))
 const PromotionsReports = lazy(() => import('./modules/reports/PromotionsReports'))
 const StaffReports      = lazy(() => import('./modules/reports/StaffReports'))
 const ForecastingReports = lazy(() => import('./modules/reports/ForecastingReports'))
+const RentalReports     = lazy(() => import('./modules/reports/RentalReports'))
+const OperationsReports = lazy(() => import('./modules/reports/OperationsReports'))
+const DamageMaintenanceReports = lazy(() => import('./modules/reports/DamageMaintenanceReports'))
+const SalesVatReports   = lazy(() => import('./modules/reports/SalesVatReports'))
+const ActivityReports   = lazy(() => import('./modules/reports/ActivityReports'))
 const BackupRestore     = lazy(() => import('./modules/admin/BackupRestore'))
 const AuditSettings     = lazy(() => import('./modules/admin/AuditSettings'))
 const ActivityLog       = lazy(() => import('./modules/admin/ActivityLog'))
@@ -604,6 +609,60 @@ export default function App() {
           element={
             <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Working Capital' }]} search="Search reports…">
               <WorkingCapital />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/rentals"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Rental Reports' }]}>
+              <RentalReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/operations"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Operations Reports' }]}>
+              <OperationsReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/damage-maintenance"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Damage & Maintenance' }]}>
+              <DamageMaintenanceReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/sales"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Sales Reports' }]}>
+              <SalesVatReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/vat-tax"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'VAT / Tax Reports' }]}>
+              <SalesVatReports />
+            </Shell>
+          }
+        />
+
+        <Route
+          path="/reports/activity"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Activity Reports' }]}>
+              <ActivityReports />
             </Shell>
           }
         />

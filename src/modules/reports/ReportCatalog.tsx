@@ -34,6 +34,12 @@ import EquipmentPerformance from './EquipmentPerformance'
 import ForecastingReports from './ForecastingReports'
 import CashFlowReport from './CashFlowReport'
 import WorkingCapital from './WorkingCapitalReport'
+import RentalReports from './RentalReports'
+import OperationsReports from './OperationsReports'
+import DamageMaintenanceReports from './DamageMaintenanceReports'
+import SalesVatReports from './SalesVatReports'
+import ActivityReports from './ActivityReports'
+import AssetRoiReport from './AssetRoiReport'
 import './reports.css'
 
 const DEDICATED_REPORTS: Record<string, React.ComponentType> = {
@@ -48,6 +54,13 @@ const DEDICATED_REPORTS: Record<string, React.ComponentType> = {
   '/reports/forecasting': ForecastingReports,
   '/reports/cash-flow': CashFlowReport,
   '/reports/working-capital': WorkingCapital,
+  '/reports/rentals': RentalReports,
+  '/reports/operations': OperationsReports,
+  '/reports/damage-maintenance': DamageMaintenanceReports,
+  '/reports/sales': SalesVatReports,
+  '/reports/vat-tax': SalesVatReports,
+  '/reports/activity': ActivityReports,
+  '/reports/asset-roi': AssetRoiReport,
 }
 
 /**

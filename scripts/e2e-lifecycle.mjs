@@ -1785,6 +1785,170 @@ const STEPS = [
       })
     },
   },
+  {
+    id: 'L23',
+    title: 'extend_booking RPC extends return dates, increments line days, and updates reservations (AUD D5)',
+    expect: 'green',
+    run: async () => {
+      // 1. Create a dedicated test booking in Quote -> Booked stage
+      await as('Coordinator', async () => {
+        await createBooking({
+          key: 'ext_test',
+          window: ['2105-06-01T04:00:00Z', '2105-06-03T04:00:00Z'],
+          actor: 'Coordinator',
+          lines: [
+            {
+              productId: SERIAL_PRODUCT,
+              description: 'Extension Lifecycle Test Camera',
+              qty: 1,
+              days: 2,
+              rate: 3500,
+              units: [UNITS[2]],
+            },
+          ],
+        })
+        await transition('ext_test', 'Quote', 'Booked', 'Coordinator')
+      })
+
+      // 2. Refuses extension by unauthorized role (e.g. Client)
+      await as('Client', async () => {
+        await refuses(
+          'extension by Client',
+          `select extend_booking(jsonb_build_object(
+            'booking_id', $1::uuid,
+            'days', 2,
+            'reason', 'Unauthorized client extension attempt'
+          ))`,
+          [bookingIds['ext_test']],
+          /42501|may not extend/i,
+        )
+      })
+
+      // 3. Coordinator extends booking by 2 days via extend_booking RPC
+      let rpcResult
+      await as('Coordinator', async () => {
+        const res = await q(
+          `select extend_booking(jsonb_build_object(
+            'booking_id', $1::uuid,
+            'days', 2,
+            'reason', 'Production shoot schedule extended by two operational days'
+          )) as data`,
+          [bookingIds['ext_test']],
+        )
+        rpcResult = res.rows[0].data
+      })
+
+      assertEq(rpcResult.success, true, 'extend_booking RPC succeeded')
+      assertEq(rpcResult.days_added, 2, 'two days added in result')
+
+      // 4. Verify bookings.return_at advanced by 2 days
+      const newReturnAt = await one('select return_at from bookings where id = $1', [bookingIds['ext_test']])
+      const diffMs = new Date(newReturnAt).getTime() - new Date('2105-06-03T04:00:00Z').getTime()
+      assertEq(diffMs, 2 * 24 * 60 * 60 * 1000, 'return_at moved forward exactly 2 days')
+
+      // 5. Verify booking_lines.days incremented by 2 (2 + 2 = 4)
+      const newDays = Number(
+        await one(
+          'select days from booking_lines where booking_id = $1 and voided_at is null limit 1',
+          [bookingIds['ext_test']],
+        ),
+      )
+      assertEq(newDays, 4, 'line days incremented to 4')
+
+      // 6. Verify inventory_reservations period upper boundary matches new return_at
+      const reservationUpper = await one(
+        'select upper(period) from inventory_reservations where booking_id = $1 and released_at is null',
+        [bookingIds['ext_test']],
+      )
+      assertEq(
+        new Date(reservationUpper).toISOString(),
+        new Date(newReturnAt).toISOString(),
+        'reservation period matches new return date',
+      )
+
+      // 7. Verify audit event was recorded with actor Coordinator
+      const auditCount = Number(
+        await one(
+          "select count(*) from audit_events where record_id = $1 and reason like '%extended by two operational days%' and actor_id = $2",
+          [bookingIds['ext_test'], U.Coordinator],
+        ),
+      )
+      assert(auditCount >= 1, 'extend_booking emitted audit event attributed to Coordinator')
+    },
+  },
+  {
+    id: 'L24',
+    title: 'void_invoice RPC atomically issues credit note for paid amounts and voids invoice (AUD D6)',
+    expect: 'green',
+    run: async () => {
+      // 1. Create a dedicated test booking and partially paid invoice
+      const voidTestBookingId = crypto.randomUUID()
+      await as('Coordinator', async () => {
+        await q(
+          `insert into bookings (id, client_uuid, booking_no, client_id, branch_id, project_type, delivery_type, stage, pickup_at, return_at, created_by, updated_by)
+           values ($1, gen_random_uuid(), next_document_number('booking'), $2, $3, 'Commercial / Advertisement', 'Client Pickup', 'Quote', now(), now() + interval '2 days', $4, $4)`,
+          [voidTestBookingId, CLIENT, BRANCH, U.Coordinator],
+        )
+      })
+
+      const voidTestInvoiceId = crypto.randomUUID()
+      await as('Accounts', async () => {
+        await q(
+          `insert into invoices (id, client_uuid, invoice_no, booking_id, client_id, branch_id, status, subtotal, total_amount, paid_amount, outstanding_amount, issue_date, due_date, created_by)
+           values ($1, gen_random_uuid(), next_document_number('invoice'), $2, $3, $4, 'Partially Paid', 10000, 10000, 4000, 6000, current_date, current_date + 7, $5)`,
+          [voidTestInvoiceId, voidTestBookingId, CLIENT, BRANCH, U.Accounts],
+        )
+      })
+
+      // 2. Refuses void by unauthorized role (e.g. Technician)
+      await as('Technician', async () => {
+        await refuses(
+          'void by Technician',
+          `select void_invoice(jsonb_build_object(
+            'invoice_id', $1::uuid,
+            'reason', 'Technician attempting unauthorized invoice void'
+          ))`,
+          [voidTestInvoiceId],
+          /gate\.invoice\.void_role/i,
+        )
+      })
+
+      // 3. Accounts voids invoice via void_invoice RPC
+      let voidResult
+      await as('Accounts', async () => {
+        const res = await q(
+          `select void_invoice(jsonb_build_object(
+            'invoice_id', $1::uuid,
+            'reason', 'Client cancelled shoot with agreed refund credit note'
+          )) as data`,
+          [voidTestInvoiceId],
+        )
+        voidResult = res.rows[0].data
+      })
+
+      assertEq(voidResult.status, 'Void', 'void_invoice returned status Void')
+      assert(voidResult.credit_note_no !== null, 'credit note number returned')
+
+      // 4. Verify credit_notes row created for 4000 paid amount
+      const creditRow = (
+        await q('select amount, reason from credit_notes where invoice_id = $1', [voidTestInvoiceId])
+      ).rows[0]
+      assertEq(Number(creditRow.amount), 4000, 'credit note created for exact paid amount')
+
+      // 5. Verify invoice status in DB is Void
+      const invStatus = await one('select status::text from invoices where id = $1', [voidTestInvoiceId])
+      assertEq(invStatus, 'Void', 'invoice status in DB is Void')
+
+      // 6. Verify audit event written
+      const auditCount = Number(
+        await one(
+          "select count(*) from audit_events where record_id = $1 and table_name = 'invoices' and actor_id = $2",
+          [voidTestInvoiceId, U.Accounts],
+        ),
+      )
+      assert(auditCount >= 1, 'void_invoice emitted audit event attributed to Accounts')
+    },
+  },
 ]
 
 /* ── Run ──────────────────────────────────────────────────────────────────── */

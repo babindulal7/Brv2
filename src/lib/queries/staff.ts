@@ -42,12 +42,41 @@ import type { SystemRole } from '../../types/database'
  *
  * ## Who can read it
  *
- * Owner alone. The view carries `where auth_user_role() = 'Owner'` inline
- * (0048's rule), matching `rbac.canManageSettings`. Any other role gets ZERO
- * rows, not masked ones — so a non-Owner caller must render **restricted**,
- * never **empty**. `fetchStaffDirectory` returns that distinction rather than
- * leaving it to be inferred from a row count, which is the mistake
+ * **Any signed-in staff member, and no one else — but the scope is not settled,
+ * so read this before building against it.**
+ *
+ * The predicate has moved three times, and only the last is current:
+ *
+ *   1. 0048 emitted the view with `where auth_user_role() = 'Owner'` inline —
+ *      Owner alone.
+ *   2. 0120 recreated the view and DROPPED the row predicate entirely. From that
+ *      moment the view had no row gate at all, and the only thing narrowing it
+ *      was a grant that `anon` did not hold. So every signed-in role, Client
+ *      included, could list the roster. This is the state the 3 Oct audit found.
+ *   3. `0148_view_anon_leak_closure.sql` (WRITTEN, locally verified, NOT applied
+ *      to live — N-5) re-emits the view with `and auth_is_staff()`, and revokes
+ *      `anon`'s SELECT on every view in `public`.
+ *
+ * `auth_is_staff()` is `auth_user_role() <> 'Client'` (0014), so under 0148 the
+ * roster is readable by every staff role and by nobody unauthenticated. A Client
+ * gets ZERO rows, not masked ones — so a non-staff caller must render
+ * **restricted**, never **empty**. `fetchStaffDirectory` returns that distinction
+ * rather than leaving it to be inferred from a row count, which is the mistake
  * `queries/finance.ts`'s header warns about.
+ *
+ * ### The open question, and why it is not answered here
+ *
+ * This paragraph used to say "Owner alone", and that sentence was the reason the
+ * audit's finding was easy to miss: the code documented a predicate the database
+ * had not carried for weeks.
+ *
+ * Whether the roster should be Owner-only or all-staff is a product decision that
+ * `docs/PERMISSIONS.md` states both ways — P9 and AD2 on one side, §4.3 "all staff"
+ * on the other. 0148 picks `auth_is_staff()` because it strictly narrows (B-1,
+ * "stricter wins") without answering the dispute. If Babin rules the roster
+ * Owner-only, this module's UI gate and `canManageSettings` must move together with
+ * the view predicate, or the screen will offer a list that returns nothing.
+ * Logged as `TODO(decision)` in `docs/OPEN_DECISIONS.md` §7.
  *
  * ## Mock mode
  *

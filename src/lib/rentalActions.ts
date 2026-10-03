@@ -9,6 +9,7 @@ export type RentalPrimaryActionType =
   | 'reset'
   | 'close'
   | 'view'
+  | 'fulfill'
 
 export interface RentalPrimaryActionFacts {
   isCancelled?: boolean | undefined
@@ -16,6 +17,8 @@ export interface RentalPrimaryActionFacts {
   isOverdue?: boolean | undefined
   /** A partial return is in flight — the next action continues receiving, not closing. */
   isPartial?: boolean | undefined
+  /** Booking contains only non-physical lines (Service, Sub-rental, Manual item) */
+  isServiceOnly?: boolean | undefined
   canCloseRental?: boolean | undefined
   canOperate?: boolean | undefined
   cancelledReason?: string | null | undefined
@@ -131,6 +134,7 @@ export function getRentalPrimaryAction(
     isClosed = false,
     isOverdue = false,
     isPartial = false,
+    isServiceOnly = false,
     canCloseRental = true,
     canOperate = true,
     cancelledReason = null,
@@ -191,6 +195,17 @@ export function getRentalPrimaryAction(
 
     case 'Booked': {
       const disabled = !canOperate || Boolean(operationsUnavailable) || Boolean(cancelledReason)
+      if (isServiceOnly) {
+        return {
+          label: 'Complete Service',
+          verb: 'Fulfill',
+          icon: 'check',
+          actionType: 'fulfill',
+          disabled,
+          reason: cancelledReason || operationsUnavailable,
+          isOperable: true,
+        }
+      }
       const route = bookingNo ? jobToRoutePath(bookingNo, 'Pack') : undefined
       return {
         label: 'Start Packing',
@@ -207,6 +222,17 @@ export function getRentalPrimaryAction(
 
     case 'Packed': {
       const disabled = !canOperate || Boolean(operationsUnavailable) || Boolean(cancelledReason)
+      if (isServiceOnly) {
+        return {
+          label: 'Complete Service',
+          verb: 'Fulfill',
+          icon: 'check',
+          actionType: 'fulfill',
+          disabled,
+          reason: cancelledReason || operationsUnavailable,
+          isOperable: true,
+        }
+      }
       const route = bookingNo ? jobToRoutePath(bookingNo, 'Handover') : undefined
       return {
         label: 'Handover',
@@ -223,6 +249,17 @@ export function getRentalPrimaryAction(
 
     case 'On Rent': {
       const disabled = !canOperate || Boolean(operationsUnavailable) || Boolean(cancelledReason)
+      if (isServiceOnly) {
+        return {
+          label: 'Complete Service',
+          verb: 'Fulfill',
+          icon: 'check',
+          actionType: 'fulfill',
+          disabled,
+          reason: cancelledReason || operationsUnavailable,
+          isOperable: true,
+        }
+      }
       const route = bookingNo ? jobToRoutePath(bookingNo, 'Return') : undefined
       if (partial) {
         return {

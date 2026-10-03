@@ -45,10 +45,10 @@
 
 ---
 
-## 6. Non-physical floor transitions and completion (§4.59)
-- **Question:** How should Service, Sub-rental and Manual item lines resolve during Pack/Handover, and how should a booking with no physical lines reach Returned?
-- **Context:** Migration 0139 exempts those line types from Return receipts, while Pack/Handover still require line records in parts of the floor flow. The current Return action also requires a triaged row and a return session.
-- **Current Status:** `TODO(decision)` — define non-physical Pack/Handover handling and choose automatic Handover completion or a named no-equipment completion action; never fabricate physical movement or a return receipt.
+## 6. Non-physical floor transitions and completion (§4.59) — RESOLVED
+- **Decision:** Non-physical lines (`Service`, `Sub-rental`, `Manual item`) are exempt from Pack and Handover physical gates (matching the 0139 Return gate). Services are displayed as informational lines without requiring barcode scans, fake movements, or checklist ticks. Service-only bookings advance via a dedicated `fulfillServiceRental` action (`Booked -> Packed -> On Rent -> Returned`) without opening empty warehouse Pack/Return sessions or fabricating equipment movements.
+- **Implementation:** Migration 0149 (`apply_booking_stage_transition()` with `v_has_physical_lines` and non-physical line exemption in Handover gate), `src/actions/rentals/fulfillServiceRental.ts`, `src/actions/rentals/floorVerb.ts`, `src/lib/rentalActions.ts` (`isServiceOnly`), `src/modules/rentals/HandoverWorkspace.tsx`, and `src/modules/rentals/BookingDetail.tsx`.
+- **Status:** Resolved (3 October 2026, Migration 0149).
 
 ## 7. Who may read the staff roster (`staff_directory_v`)
 - **Question:** Is the staff directory Owner-only, or readable by every signed-in staff member?

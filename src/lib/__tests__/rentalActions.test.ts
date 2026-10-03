@@ -79,4 +79,25 @@ describe('getRentalPrimaryAction', () => {
     expect(reset.job).toBe('Reset')
     expect(reset.route).toBe('/rentals/BR-1052/reset')
   })
+
+  it('routes service-only rentals to fulfill action at operational stages', () => {
+    const booked = getRentalPrimaryAction('Booked', { bookingNo: NO, isServiceOnly: true })
+    expect(booked.label).toBe('Complete Service')
+    expect(booked.verb).toBe('Fulfill')
+    expect(booked.actionType).toBe('fulfill')
+    expect(booked.job).toBeUndefined()
+
+    const packed = getRentalPrimaryAction('Packed', { bookingNo: NO, isServiceOnly: true })
+    expect(packed.label).toBe('Complete Service')
+    expect(packed.actionType).toBe('fulfill')
+
+    const onRent = getRentalPrimaryAction('On Rent', { bookingNo: NO, isServiceOnly: true })
+    expect(onRent.label).toBe('Complete Service')
+    expect(onRent.actionType).toBe('fulfill')
+
+    // At Quote or Returned, regular flow applies
+    expect(getRentalPrimaryAction('Quote', { bookingNo: NO, isServiceOnly: true }).actionType).toBe('confirm')
+    expect(getRentalPrimaryAction('Returned', { bookingNo: NO, isServiceOnly: true }).actionType).toBe('close')
+  })
 })
+

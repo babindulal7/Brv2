@@ -24,6 +24,7 @@ import { STATUS, STATUS_ICON, BRAND, BRAND_ON, BRAND_TEXT, PAYMENT_STATUS_TONE }
 import type { BrandKey } from '../../lib/status'
 import { BOOKING_STATUS, STATUS_ORDER } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
+import { NON_PACKABLE_LINE_TYPES } from '../../lib/bookingLineTypes'
 import BookingOperationsMenu from './BookingOperationsMenu'
 import { useOperationsWorkspace } from '../operations/OperationsWorkspaceContext'
 import { useDomainEvent } from '../../events/useDomainEvent'
@@ -1469,6 +1470,30 @@ function BookingDetailView() {
       .finally(() => setOverriding(false))
   }, [id, user, overrideReason, showSuccessToast, refetchHead])
 
+  const [fulfilling, setFulfilling] = useState(false)
+  const [fulfillError, setFulfillError] = useState<string | null>(null)
+
+  const fulfillService = useCallback(() => {
+    const ctx = actionCtx(user)
+    if (!ctx) {
+      setFulfillError('You must be signed in to fulfill services.')
+      return
+    }
+    setFulfillError(null)
+    setFulfilling(true)
+    const clientUuid = newClientUuid()
+    void import('../../actions/rentals/fulfillServiceRental')
+      .then((m) => m.fulfillServiceRental({ bookingNo: id, clientUuid }, ctx))
+      .then((res) => {
+        showSuccessToast('Service Fulfilled', `${res.bookingNo} is now ${res.toStage}`)
+        refetchHead()
+      })
+      .catch((err: unknown) => {
+        setFulfillError(formatGateError(err))
+      })
+      .finally(() => setFulfilling(false))
+  }, [id, user, showSuccessToast, refetchHead])
+
   const segments: PhoneSegment[] = canBookingMoney ? ['Items', 'Money', 'Docs'] : ['Items', 'Docs']
   const [segment, setSegment] = useState<PhoneSegment>('Items')
   const onPhone = viewport === 'phone'
@@ -1719,6 +1744,8 @@ function BookingDetailView() {
   const operationsUnavailable: string | null =
     cancelledReason ?? (stage === 'Quote' ? 'Operations open once this booking is Booked' : null)
 
+  const isServiceOnly = lines.length > 0 && lines.every((l) => NON_PACKABLE_LINE_TYPES.has(l.lineType))
+
   const primaryAction = getRentalPrimaryAction(stage, {
     isCancelled: booking.isCancelled,
     isClosed: booking.isClosed,
@@ -1728,6 +1755,7 @@ function BookingDetailView() {
       !booking.isCancelled &&
       booking.actualReturnAtAd === null &&
       Boolean(booking.returnAtAd && new Date(booking.returnAtAd) < new Date()),
+    isServiceOnly,
     canCloseRental: canCloseRental(gctx.role),
     canOperate,
     cancelledReason,
@@ -2126,6 +2154,18 @@ function BookingDetailView() {
                       {confirming ? 'Confirming…' : 'Confirm Booking'}
                     </Button>
                   )
+                ) : primaryAction.actionType === 'fulfill' ? (
+                  cancelledReason ? (
+                    <Unavailable reason={cancelledReason}>
+                      <Button icon="check" variant="primary" disabled>
+                        {primaryAction.label}
+                      </Button>
+                    </Unavailable>
+                  ) : (
+                    <Button icon="check" variant="primary" onClick={fulfillService} disabled={fulfilling}>
+                      {fulfilling ? 'Fulfilling…' : primaryAction.label}
+                    </Button>
+                  )
                 ) : primaryAction.actionType === 'close' ? (
                   cancelledReason ? (
                     <Unavailable reason={cancelledReason}>
@@ -2274,6 +2314,26 @@ function BookingDetailView() {
         >
           <Icon name="alert_triangle" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
           <span>{confirmError}</span>
+        </div>
+      )}
+
+      {fulfillError && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 'var(--sp-sm)',
+            padding: '10px 12px',
+            borderRadius: 'var(--r-sm)',
+            border: '1px solid var(--danger)',
+            background: 'var(--st-danger-bg)',
+            fontSize: 'var(--t-meta)',
+            color: 'var(--danger-text)',
+          }}
+        >
+          <Icon name="alert_triangle" size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>{fulfillError}</span>
         </div>
       )}
 

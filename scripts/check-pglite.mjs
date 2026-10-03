@@ -141,7 +141,59 @@ async function auditAnonViewReads(db) {
   return { leaked: rows.map((r) => r.view), checked: total.rows[0].n }
 }
 
+// ── the function-leak gate ───────────────────────────────────────────────────
+//
+// Invariant: no mutating, definer, or business RPC in `public` may be executable
+// by `anon`.
+// anon may only execute:
+//   - auth_* session/role inspection helpers used by RLS
+//   - portal_claim_by_verified_email
+//   - pure mathematical calculators (invoice_vat_amount, etc.)
+async function auditAnonFunctionExecution(db) {
+  const { rows } = await db.query(`
+    select
+      p.proname as fn,
+      pg_get_function_identity_arguments(p.oid) as args,
+      p.prosecdef as is_definer,
+      p.provolatile as volatility
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.prorettype <> 'trigger'::regtype
+      and has_function_privilege('anon', p.oid, 'execute')
+    order by p.proname;
+  `)
+
+  const ALLOWED_ANON_NON_TRIGGER = new Set([
+    'auth_can_approve_damage',
+    'auth_can_approve_late_fee_waiver',
+    'auth_can_approve_purchase',
+    'auth_can_view_money',
+    'auth_client_id',
+    'auth_is_finance_or_admin',
+    'auth_is_manager_or_above',
+    'auth_is_owner',
+    'auth_is_staff',
+    'auth_user_branch_id',
+    'auth_user_id',
+    'auth_user_role',
+    'intel_field_allowed',
+    'invoice_credit',
+    'invoice_discount_amount',
+    'invoice_outstanding',
+    'invoice_vat_amount',
+    'next_booking_stage',
+    'portal_claim_by_verified_email',
+    'retired_stage_to_canonical',
+    'set_request_context',
+  ])
+
+  const leaked = rows.filter((r) => !ALLOWED_ANON_NON_TRIGGER.has(r.fn))
+  return { leaked: leaked.map((r) => `${r.fn}(${r.args})`), checked: rows.length }
+}
+
 const viewAudit = await auditAnonViewReads(db)
+const funcAudit = await auditAnonFunctionExecution(db)
 
 console.log(`\n${applied}/${files.length} applied, ${failures.length} failed`)
 
@@ -160,6 +212,19 @@ if (viewAudit.leaked.length) {
   )
 }
 
+console.log(
+  `function-leak gate: ${funcAudit.checked} public function(s) executable by anon, ` +
+    `${funcAudit.leaked.length} unauthorized`,
+)
+if (funcAudit.leaked.length) {
+  console.log('\n  anon holds EXECUTE on functions that must not be reachable without a session:')
+  for (const fn of funcAudit.leaked) console.log(`    ${fn}`)
+  console.log(
+    '\n  Mutating and sensitive RPCs must have execute revoked from anon and public.\n' +
+      '  Only authenticated users may execute business RPCs.',
+  )
+}
+
 await db.close()
 
 if (failures.length) {
@@ -168,13 +233,17 @@ if (failures.length) {
   process.exit(1)
 }
 if (viewAudit.leaked.length) {
-  console.log('\nThe chain builds, and it still leaks to anon. Both are reported; neither cancels the other.')
+  console.log('\nThe chain builds, and it still leaks views to anon. Both are reported; neither cancels the other.')
   process.exit(1)
 }
 if (viewAudit.checked === 0) {
   // A gate that passes because it examined nothing is not a gate. If the chain
   // ever produced zero views this would be a broken prelude, not a clean bill.
-  console.log('\nNo public views exist, so the leak gate proved nothing. Treat this as a failure.')
+  console.log('\nNo public views exist, so the view leak gate proved nothing. Treat this as a failure.')
   process.exit(1)
 }
-console.log('The chain builds from scratch, and no view is readable by anon. (Not a Supabase environment — see this file’s header.)')
+if (funcAudit.leaked.length) {
+  console.log('\nThe chain builds, and it still leaks RPC functions to anon. Both are reported; neither cancels the other.')
+  process.exit(1)
+}
+console.log('The chain builds from scratch, no view is readable by anon, and no unauthorized RPC is executable by anon.')

@@ -2158,17 +2158,19 @@ function lineIsTerminal(job: SessionJob, row: LineRow | undefined): boolean {
  * call named: a second collection finishes what the first one left.
  */
 async function linesShortOfTerminal(job: SessionJob, live: readonly BookingLineHead[]): Promise<string[]> {
-  /* RULING 2026-09-29: non-physical lines have no Return receipt to await.
+  /* RULING 2026-09-29 & 2026-10-03 (§4.59): non-physical lines (Service, Sub-rental,
+     Manual item) have no physical equipment and need no Pack, Handover, or Return
+     inventory receipts.
      0141 (Option A, OPEN_DECISIONS.md #4): Consumable-tracked lines are
      consumed at Handover and never come back, so they are not awaited either.
      tracking_mode is null when the line names no product — null is not
      Consumable, so such a line stays awaited (fail-closed, like the gate). */
   const liveIds = live
-    .filter(
-      (line) =>
-        job !== 'Return' ||
-        (!NON_PACKABLE_LINE_TYPES.has(line.line_type) && line.tracking_mode !== 'Consumable'),
-    )
+    .filter((line) => {
+      if (NON_PACKABLE_LINE_TYPES.has(line.line_type)) return false
+      if (job === 'Return' && line.tracking_mode === 'Consumable') return false
+      return true
+    })
     .map((line) => line.id)
   const rows = await readLineRows(job, liveIds)
   return liveIds.filter((id) => !lineIsTerminal(job, rows.get(id)))

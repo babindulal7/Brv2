@@ -55,11 +55,14 @@ import { BOX_CATEGORIES, INVENTORY_MODELS, type InventoryModel } from '../../../
 import { ACTIVE_BUNDLES, ALL_CATEGORIES, factsOf, isPriced, type BundleFacts, type BundleLine, type BundleRecord } from '../../../lib/queries/bundles'
 import { bundlesUsing } from '../../../lib/queries/addEquipment'
 import { CATEGORY_OPTIONS, PARENTS, type InvStatus, type ParentRow } from '../../../lib/queries/inventory'
+import { CREW_ROSTER, type CrewMember } from '../../../lib/queries/crew'
 import type { Paisa } from '../../../lib/money'
 /* Type-only, so this module keeps importing nothing that touches IO. */
 import type { ProductWindowAvailability } from '../../../lib/queries/productAvailability'
 import type { StatusKey } from '../../../lib/status'
 import type { IconName } from '../../../components/ui/Icon'
+
+export { CREW_ROSTER, type CrewMember } from '../../../lib/queries/crew'
 
 /* ── The draft a result hands back to the page ─────────────────────────── */
 
@@ -209,11 +212,14 @@ function overlaps(window: { from: number; to: number }, startAd: Date, endAd: Da
 /* ── Equipment rows ────────────────────────────────────────────────────── */
 
 /**
- * §25's four groups. `accessory` is not a fifth catalogue — it is the
+ * §25's six groups. `accessory` is not a fifth catalogue — it is the
  * `equipment` catalogue filtered by the categories the system already calls
  * accessories, so nothing is duplicated and nothing is invented.
+ * 
+ * Crew and Transport are new kinds that unify the search across all
+ * bookable items and people (Equipment, Bundles, Services, Crew, Transport).
  */
-export type ResultKind = 'bundle' | 'equipment' | 'accessory' | 'service'
+export type ResultKind = 'bundle' | 'equipment' | 'accessory' | 'service' | 'crew' | 'transport'
 
 export interface EquipmentResult {
   kind: 'equipment' | 'accessory'
@@ -268,8 +274,6 @@ export interface BundleResult {
   componentSummary: string
   haystack: readonly string[]
 }
-
-export type CatalogueResult = EquipmentResult | BundleResult
 
 /**
  * The categories this catalogue treats as accessories.
@@ -870,6 +874,9 @@ export function inCategory(r: CatalogueResult, category: string): boolean {
   if (r.kind === 'bundle') {
     return r.category === category || r.record.lines.some((l) => l.group === category)
   }
+  if (r.kind === 'crew' || r.kind === 'transport') {
+    return false // Crew and Transport don't have categories
+  }
   return r.category === category
 }
 
@@ -938,7 +945,7 @@ function relevance(r: CatalogueResult, q: string): number {
   if (name.startsWith(n)) return 0
   if (name.includes(n)) return 1
   if (normalise(r.id).includes(n)) return 2
-  if (r.kind !== 'bundle' && r.sku && normalise(r.sku).includes(n)) return 2
+  if (r.kind === 'equipment' && r.sku && normalise(r.sku).includes(n)) return 2
   return 3
 }
 
@@ -971,6 +978,18 @@ export interface QueryOptions {
    * Omitted, it falls back to ACTIVE_BUNDLES.
    */
   bundles?: readonly BundleResult[]
+  /**
+   * The crew pool to search.
+   *
+   * Omitted, it falls back to the CREW_ROSTER from data/crew.ts.
+   */
+  crew?: readonly CrewMember[]
+  /**
+   * The transport/delivery pool to search.
+   *
+   * Omitted, it falls back to the default delivery options.
+   */
+  transport?: readonly TransportOption[]
 }
 
 export interface QueryGroup {
@@ -993,7 +1012,114 @@ const GROUP_ORDER: ReadonlyArray<{ kind: ResultKind; heading: string }> = [
   { kind: 'equipment', heading: 'Equipment' },
   { kind: 'accessory', heading: 'Accessories' },
   { kind: 'service', heading: 'Services' },
+  { kind: 'crew', heading: 'Crew' },
+  { kind: 'transport', heading: 'Transport' },
 ]
+
+/**
+ * Transport option for the catalogue — maps to a delivery method option.
+ */
+export interface TransportOption {
+  id: string
+  name: string
+  type: 'Client Pickup' | 'Babin Delivery'
+  vehicle?: string
+  numberPlate?: string
+  driverName?: string
+  ratePaisa: Paisa
+}
+
+/**
+ * Crew search result — maps a roster member to the catalogue shape.
+ */
+export interface CrewResult {
+  kind: 'crew'
+  id: string
+  name: string
+  role: string
+  state: string
+  phone: string
+  dayRatePaisa: Paisa
+  availability: AvailabilityVerdict
+  haystack: readonly string[]
+}
+
+/**
+ * Transport/Delivery search result — maps a delivery option to the catalogue shape.
+ */
+export interface TransportResult {
+  kind: 'transport'
+  id: string
+  name: string
+  type: 'Client Pickup' | 'Babin Delivery'
+  vehicle?: string
+  numberPlate?: string
+  driverName?: string
+  ratePaisa: Paisa
+  availability: AvailabilityVerdict
+  haystack: readonly string[]
+}
+
+/**
+ * Default transport options for a booking window.
+ * In a live build this would query vehicle/driver availability.
+ */
+function defaultTransportOptions(_w: BookingWindow): TransportOption[] {
+  return [
+    { id: 'pickup', name: 'Client Pickup', type: 'Client Pickup', ratePaisa: 0 as Paisa },
+    { id: 'delivery', name: 'Babin Delivery', type: 'Babin Delivery', ratePaisa: 500000 as Paisa }, // Rs 5,000 base
+  ]
+}
+
+/**
+ * Maps a CrewMember to a CrewResult for the unified catalogue.
+ */
+function crewToResult(m: CrewMember): CrewResult {
+  const available = m.state === 'Available' ? 'available' : 'unavailable'
+  return {
+    kind: 'crew',
+    id: m.id,
+    name: m.name,
+    role: m.role,
+    state: m.state,
+    phone: m.phone,
+    dayRatePaisa: m.dayRatePaisa ?? 0,
+    availability: verdict(available, m.state === 'Available' ? 'Available for work' : `${m.state} — not available`),
+    haystack: [
+      m.name.toLowerCase(),
+      m.role.toLowerCase(),
+      m.phone,
+      m.state.toLowerCase(),
+    ],
+  }
+}
+
+/**
+ * Maps a TransportOption to a TransportResult for the unified catalogue.
+ */
+function transportToResult(t: TransportOption): TransportResult {
+  const haystack: readonly string[] = [
+    t.name.toLowerCase(),
+    t.type.toLowerCase(),
+    t.vehicle?.toLowerCase() ?? '',
+    t.numberPlate?.toLowerCase() ?? '',
+    t.driverName?.toLowerCase() ?? '',
+  ]
+  return {
+    kind: 'transport',
+    id: t.id,
+    name: t.name,
+    type: t.type,
+    vehicle: t.vehicle ?? undefined,
+    numberPlate: t.numberPlate ?? undefined,
+    driverName: t.driverName ?? undefined,
+    ratePaisa: t.ratePaisa,
+    availability: verdict(t.ratePaisa === 0 ? 'available' : 'available', t.type === 'Client Pickup' ? 'Client collects equipment' : 'Babin delivers to location'),
+    haystack,
+  } as TransportResult
+}
+
+export type CatalogueResult = EquipmentResult | BundleResult | CrewResult | TransportResult
 
 /**
  * One query over the whole catalogue (§25). The operator never picks a type
@@ -1007,6 +1133,8 @@ export function runQuery(w: BookingWindow, o: QueryOptions): QueryOutcome {
   const pool: CatalogueResult[] = [
     ...(o.kinds.has('bundle') ? (o.bundles ?? bundleResults(w)) : []),
     ...(o.equipment ?? EQUIPMENT_RESULTS).filter((e) => o.kinds.has(e.kind)),
+    ...(o.kinds.has('crew') ? (o.crew ?? CREW_ROSTER).map(crewToResult) : []),
+    ...(o.kinds.has('transport') ? (o.transport ?? defaultTransportOptions(w)).map(transportToResult) : []),
   ]
 
   const category = o.category
@@ -1022,9 +1150,9 @@ export function runQuery(w: BookingWindow, o: QueryOptions): QueryOutcome {
       case 'name':
         return a.name.localeCompare(b.name) || a.id.localeCompare(b.id)
       case 'price-asc':
-        return a.ratePaisa - b.ratePaisa || a.name.localeCompare(b.name)
+        return ('ratePaisa' in a && 'ratePaisa' in b) ? a.ratePaisa - b.ratePaisa || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)
       case 'price-desc':
-        return b.ratePaisa - a.ratePaisa || a.name.localeCompare(b.name)
+        return ('ratePaisa' in a && 'ratePaisa' in b) ? b.ratePaisa - a.ratePaisa || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)
       default: {
         // Recommended — what you can actually book first, then closest match.
         const onBooking = Number(o.existingLineIds.has(a.id)) - Number(o.existingLineIds.has(b.id))
