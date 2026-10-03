@@ -74,6 +74,7 @@ import type {
   BookingWindow,
   BundleResult,
   CrewMember,
+  CrewResult,
   EquipmentAvailabilitySource,
   EquipmentModelGroup,
   EquipmentResult,
@@ -81,7 +82,9 @@ import type {
   ResultKind,
   SortKey,
   TransportOption,
+  TransportResult,
 } from './itemCatalogue'
+
 
 /* ── Tabs (§27) ────────────────────────────────────────────────────────── */
 
@@ -137,6 +140,8 @@ const AVAILABILITY_FILTERS: ReadonlyArray<{ value: AvailabilityLevel | 'any'; la
 type FlatOption =
   | { type: 'bundle'; groupKind: ResultKind; result: BundleResult; index: number }
   | { type: 'equipmentGroup'; groupKind: ResultKind; group: EquipmentModelGroup; index: number }
+  | { type: 'crew'; groupKind: ResultKind; result: CrewResult; index: number }
+  | { type: 'transport'; groupKind: ResultKind; result: TransportResult; index: number }
 
 /**
  * ⛔ `groupKind` is carried so the list below can be RENDERED from this array
@@ -163,6 +168,14 @@ function flatten(groups: readonly QueryGroup[]): FlatOption[] {
     } else if (g.kind === 'equipment' || g.kind === 'accessory') {
       for (const group of groupEquipmentResults(g.results as EquipmentResult[])) {
         out.push({ type: 'equipmentGroup', groupKind: g.kind, group, index: out.length })
+      }
+    } else if (g.kind === 'crew') {
+      for (const r of g.results) {
+        out.push({ type: 'crew', groupKind: g.kind, result: r as CrewResult, index: out.length })
+      }
+    } else if (g.kind === 'transport') {
+      for (const r of g.results) {
+        out.push({ type: 'transport', groupKind: g.kind, result: r as TransportResult, index: out.length })
       }
     }
   }
@@ -251,6 +264,14 @@ export interface AddItemPanelProps {
   includeCrewAndVehicle?: boolean
   /** Stamp the bundle's saving on each component line. Off — pricing is the page's (§67). */
   applyBundleSaving?: boolean
+  /** Called when a crew member is added from unified search. */
+  onAddCrew?: ((crewId: string) => void) | undefined
+  /** Existing crew IDs on the booking, for duplicate prevention and status display. */
+  existingCrewIds?: readonly string[] | undefined
+  /** Called when a transport/delivery mode is selected from unified search. */
+  onSelectTransport?: ((type: 'Client Pickup' | 'Babin Delivery') => void) | undefined
+  /** The currently selected delivery/transport type on the booking. */
+  selectedTransportType?: ('Client Pickup' | 'Babin Delivery') | undefined
 }
 
 /** What was added, so the page can toast or log it without re-deriving anything. */
@@ -282,6 +303,10 @@ export function AddItemPanel({
   onScan,
   includeCrewAndVehicle = false,
   applyBundleSaving = false,
+  onAddCrew,
+  existingCrewIds = [],
+  onSelectTransport,
+  selectedTransportType,
 }: AddItemPanelProps) {
   const reactId = useId()
   const viewport = useViewport()
@@ -317,6 +342,19 @@ export function AddItemPanel({
   const triggerRef = useRef<HTMLButtonElement | null>(null)
 
   const existing = useMemo(() => new Set(existingLineIds), [existingLineIds])
+  const existingCrew = useMemo(() => new Set(existingCrewIds), [existingCrewIds])
+
+  const recenterSearch = useCallback(() => {
+    if (typeof window === 'undefined' || !rootRef.current) return
+    const rect = rootRef.current.getBoundingClientRect()
+    const targetScrollY = Math.max(0, window.scrollY + rect.top - 60)
+    const prefersReducedMotion =
+      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    window.scrollTo({
+      top: targetScrollY,
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+    })
+  }, [])
 
   const submitScan = async () => {
     const code = scanCode.trim()
@@ -381,7 +419,7 @@ export function AddItemPanel({
   useEffect(() => {
     if (!open || !activeId) return
     const el = document.getElementById(activeId)
-    el?.scrollIntoView({ block: 'nearest' })
+    el?.scrollIntoView?.({ block: 'nearest' })
   }, [open, activeId])
 
   /** Close on outside pointer interaction */
@@ -405,11 +443,12 @@ export function AddItemPanel({
       if (e.key.toLowerCase() !== 'k' || !(e.metaKey || e.ctrlKey)) return
       e.preventDefault()
       setOpen(true)
+      recenterSearch()
       globalThis.requestAnimationFrame(() => inputRef.current?.focus())
     }
     globalThis.addEventListener('keydown', onKey)
     return () => globalThis.removeEventListener('keydown', onKey)
-  }, [disabled])
+  }, [disabled, recenterSearch])
 
   const close = useCallback(() => {
     setOpen(false)
@@ -480,8 +519,15 @@ export function AddItemPanel({
         e.preventDefault()
         // redesign v1 §2 — Enter on a model row is the keyboard equivalent of
         // tapping the model name: auto-pick the least-used free unit.
-        if (opt.type === 'bundle') addBundle(opt.result)
-        else if (opt.group.autoPick) addEquipment(opt.group.autoPick)
+        if (opt.type === 'bundle') {
+          addBundle(opt.result)
+        } else if (opt.type === 'equipmentGroup' && opt.group.autoPick) {
+          addEquipment(opt.group.autoPick)
+        } else if (opt.type === 'crew' && onAddCrew && !existingCrew.has(opt.result.id)) {
+          onAddCrew(opt.result.id)
+        } else if (opt.type === 'transport' && onSelectTransport) {
+          onSelectTransport(opt.result.type)
+        }
         return
       }
       case 'Escape':
@@ -506,7 +552,11 @@ export function AddItemPanel({
         className="press"
         disabled={disabled}
         onClick={() => {
-          setOpen((o) => !o)
+          setOpen((o) => {
+            const next = !o
+            if (next) recenterSearch()
+            return next
+          })
           globalThis.requestAnimationFrame(() => inputRef.current?.focus())
         }}
         aria-expanded={open}
@@ -568,12 +618,21 @@ export function AddItemPanel({
               {...(activeId ? { 'aria-activedescendant': activeId } : {})}
               placeholder="Search equipment, bundles & services by name, SKU, serial, brand, category…"
               value={query}
-              onFocus={() => setOpen(true)}
-              onClick={() => setOpen(true)}
+              onFocus={() => {
+                setOpen(true)
+                recenterSearch()
+              }}
+              onClick={() => {
+                setOpen(true)
+                recenterSearch()
+              }}
               onChange={(e) => {
                 setQuery(e.target.value)
                 setActiveIndex(0)
-                if (!open) setOpen(true)
+                if (!open) {
+                  setOpen(true)
+                  recenterSearch()
+                }
               }}
               onKeyDown={onKeyDown}
               style={{
@@ -656,6 +715,7 @@ export function AddItemPanel({
               setOpen((o) => {
                 const next = !o
                 if (next) {
+                  recenterSearch()
                   globalThis.requestAnimationFrame(() => inputRef.current?.focus())
                 } else {
                   inputRef.current?.blur()
@@ -997,38 +1057,70 @@ export function AddItemPanel({
                           no second grouping pass can disagree with it. */}
                       {options
                         .filter((o) => o.groupKind === g.kind)
-                        .map((o) =>
-                          o.type === 'bundle' ? (
-                            <BundleRow
-                              key={o.result.id}
-                              id={`${listboxId}-opt-${o.index}`}
-                              result={o.result}
-                              active={o.index === activeIndex}
-                              showPrices={showPrices}
-                              onHover={() => setActiveIndex(o.index)}
-                              onAdd={() => addBundle(o.result)}
-                              onView={() => setPreview(o.result.record)}
-                            />
-                          ) : (
-                            // redesign v1 §2 — one row per model, one chip per unit.
-                            // NR-21 — keyed on the group's own identity (a
-                            // product uuid live, the model name in seed), never
-                            // on the display name two products can share.
-                            <EquipmentGroupRow
-                              key={o.group.key}
-                              id={`${listboxId}-opt-${o.index}`}
-                              group={o.group}
-                              active={o.index === activeIndex}
-                              existing={existing}
-                              showPrices={showPrices}
-                              allowOverbooking={allowOverbooking}
-                              onHover={() => setActiveIndex(o.index)}
-                              onAutoPick={() => o.group.autoPick && addEquipment(o.group.autoPick)}
-                              onPickUnit={(unit) => addEquipment(unit)}
-                              onRequestOverride={(unit) => setOverrideUnit(unit)}
-                            />
-                          ),
-                        )}
+                        .map((o) => {
+                          if (o.type === 'bundle') {
+                            return (
+                              <BundleRow
+                                key={o.result.id}
+                                id={`${listboxId}-opt-${o.index}`}
+                                result={o.result}
+                                active={o.index === activeIndex}
+                                showPrices={showPrices}
+                                onHover={() => setActiveIndex(o.index)}
+                                onAdd={() => addBundle(o.result)}
+                                onView={() => setPreview(o.result.record)}
+                              />
+                            )
+                          }
+                          if (o.type === 'equipmentGroup') {
+                            return (
+                              <EquipmentGroupRow
+                                key={o.group.key}
+                                id={`${listboxId}-opt-${o.index}`}
+                                group={o.group}
+                                active={o.index === activeIndex}
+                                existing={existing}
+                                showPrices={showPrices}
+                                allowOverbooking={allowOverbooking}
+                                onHover={() => setActiveIndex(o.index)}
+                                onAutoPick={() => o.group.autoPick && addEquipment(o.group.autoPick)}
+                                onPickUnit={(unit) => addEquipment(unit)}
+                                onRequestOverride={(unit) => setOverrideUnit(unit)}
+                              />
+                            )
+                          }
+                          if (o.type === 'crew') {
+                            const isAssigned = existingCrew.has(o.result.id)
+                            return (
+                              <CrewRow
+                                key={o.result.id}
+                                id={`${listboxId}-opt-${o.index}`}
+                                result={o.result}
+                                active={o.index === activeIndex}
+                                assigned={isAssigned}
+                                showPrices={showPrices}
+                                onHover={() => setActiveIndex(o.index)}
+                                onAdd={() => onAddCrew?.(o.result.id)}
+                              />
+                            )
+                          }
+                          if (o.type === 'transport') {
+                            const isSelected = selectedTransportType === o.result.type
+                            return (
+                              <TransportRow
+                                key={o.result.id}
+                                id={`${listboxId}-opt-${o.index}`}
+                                result={o.result}
+                                active={o.index === activeIndex}
+                                selected={isSelected}
+                                showPrices={showPrices}
+                                onHover={() => setActiveIndex(o.index)}
+                                onSelect={() => onSelectTransport?.(o.result.type)}
+                              />
+                            )
+                          }
+                          return null
+                        })}
                     </ul>
                   )}
                 </li>
@@ -1551,6 +1643,254 @@ function EquipmentGroupRow({
   )
 }
 
+/**
+ * Unified crew search row — name, role, phone, rate/day, availability, and Add to Crew action.
+ */
+function CrewRow({
+  id,
+  result,
+  active,
+  assigned,
+  showPrices,
+  onHover,
+  onAdd,
+}: {
+  id: string
+  result: CrewResult
+  active: boolean
+  assigned: boolean
+  showPrices: boolean
+  onHover: () => void
+  onAdd: () => void
+}) {
+  const { availability } = result
+  return (
+    <li
+      id={id}
+      role="option"
+      aria-selected={active}
+      aria-label={`${result.name}. Crew member, ${result.role}. ${result.phone}. ${availability.label} — ${availability.detail}. ${
+        showPrices ? `${formatMoney(result.dayRatePaisa)} per day. ` : ''
+      }${assigned ? 'Already on booking.' : 'Press Enter to assign to booking.'}`}
+      onMouseMove={onHover}
+      onClick={assigned ? undefined : onAdd}
+      style={{
+        display: 'grid',
+        gap: 'var(--sp-xs)',
+        minHeight: TOUCH,
+        padding: '9px 10px',
+        borderRadius: 'var(--r-btn)',
+        cursor: assigned ? 'default' : 'pointer',
+        background: active ? 'var(--hover-row)' : 'transparent',
+        opacity: assigned ? 0.75 : 1,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}>
+        <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--text2)' }}>
+          <Icon name="users" size={15} />
+        </span>
+        <span
+          style={{
+            fontSize: 'var(--t-ui)',
+            fontWeight: 600,
+            color: 'var(--text)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {result.name}
+        </span>
+        <span
+          style={{
+            flexShrink: 0,
+            fontSize: 'var(--t-meta)',
+            color: 'var(--text2)',
+            fontWeight: 500,
+            background: 'var(--hover-row)',
+            padding: '1px 6px',
+            borderRadius: 'var(--r-badge)',
+          }}
+        >
+          {result.role}
+        </span>
+        <span style={{ flexShrink: 0 }}>
+          <AvailabilityChip verdict={availability} />
+        </span>
+        {assigned && (
+          <span
+            style={{
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 'var(--sp-xs)',
+              height: 20,
+              padding: '0 7px',
+              borderRadius: 'var(--r-badge)',
+              background: 'var(--st-neutral-bg)',
+              color: 'var(--st-neutral-fg)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+            }}
+          >
+            <Icon name="check" size={12} />
+            On booking
+          </span>
+        )}
+        {showPrices && (
+          <span
+            className="figure"
+            style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}
+          >
+            {formatMoney(result.dayRatePaisa)}
+            <span style={{ fontSize: 'var(--t-meta)', fontWeight: 500, color: 'var(--text2)' }}> / day</span>
+          </span>
+        )}
+      </div>
+
+      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        Crew · {result.role} · <span className="identifier">{result.phone}</span> · {result.state}
+      </div>
+
+      <div aria-hidden="true" style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+        <RowButton
+          label={assigned ? 'Assigned' : 'Add to Crew'}
+          icon={assigned ? 'check' : 'plus'}
+          primary={!assigned}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!assigned) onAdd()
+          }}
+        />
+      </div>
+    </li>
+  )
+}
+
+/**
+ * Unified transport search row — delivery mode, description, rate, and Select action.
+ */
+function TransportRow({
+  id,
+  result,
+  active,
+  selected,
+  showPrices,
+  onHover,
+  onSelect,
+}: {
+  id: string
+  result: TransportResult
+  active: boolean
+  selected: boolean
+  showPrices: boolean
+  onHover: () => void
+  onSelect: () => void
+}) {
+  const { availability } = result
+  return (
+    <li
+      id={id}
+      role="option"
+      aria-selected={active}
+      aria-label={`${result.name}. Transport mode: ${result.type}. ${
+        showPrices ? `${formatMoney(result.ratePaisa)}. ` : ''
+      }${selected ? 'Currently selected.' : 'Press Enter to select transport mode.'}`}
+      onMouseMove={onHover}
+      onClick={onSelect}
+      style={{
+        display: 'grid',
+        gap: 'var(--sp-xs)',
+        minHeight: TOUCH,
+        padding: '9px 10px',
+        borderRadius: 'var(--r-btn)',
+        cursor: 'pointer',
+        background: active ? 'var(--hover-row)' : 'transparent',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}>
+        <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--text2)' }}>
+          <Icon name="truck" size={15} />
+        </span>
+        <span
+          style={{
+            fontSize: 'var(--t-ui)',
+            fontWeight: 600,
+            color: 'var(--text)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {result.name}
+        </span>
+        <span
+          style={{
+            flexShrink: 0,
+            fontSize: 'var(--t-meta)',
+            color: 'var(--text2)',
+            fontWeight: 500,
+            background: 'var(--hover-row)',
+            padding: '1px 6px',
+            borderRadius: 'var(--r-badge)',
+          }}
+        >
+          {result.type}
+        </span>
+        <span style={{ flexShrink: 0 }}>
+          <AvailabilityChip verdict={availability} />
+        </span>
+        {selected && (
+          <span
+            style={{
+              flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 'var(--sp-xs)',
+              height: 20,
+              padding: '0 7px',
+              borderRadius: 'var(--r-badge)',
+              background: 'var(--st-primary-bg)',
+              color: 'var(--st-primary-fg)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+            }}
+          >
+            <Icon name="check" size={12} />
+            Selected
+          </span>
+        )}
+        {showPrices && (
+          <span
+            className="figure"
+            style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}
+          >
+            {result.ratePaisa === 0 ? 'Free (Rs 0)' : formatMoney(result.ratePaisa)}
+          </span>
+        )}
+      </div>
+
+      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+        Delivery option · {result.type === 'Client Pickup' ? 'Client collects from warehouse' : 'Dispatched to location via Babin fleet'}
+        {result.vehicle ? ` · Vehicle: ${result.vehicle}` : ''}
+        {result.numberPlate ? ` · ${result.numberPlate}` : ''}
+      </div>
+
+      <div aria-hidden="true" style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+        <RowButton
+          label={selected ? 'Selected' : 'Select Mode'}
+          icon={selected ? 'check' : 'plus'}
+          primary={!selected}
+          onClick={(e) => {
+            e.stopPropagation()
+            onSelect()
+          }}
+        />
+      </div>
+    </li>
+  )
+}
+
 /* ── Small pieces ──────────────────────────────────────────────────────── */
 
 /**
@@ -1582,7 +1922,7 @@ function RowButton({
   onClick,
 }: {
   label: string
-  icon: 'eye' | 'plus'
+  icon: 'eye' | 'plus' | 'check' | 'truck' | 'users'
   primary?: boolean
   onClick: (e: React.MouseEvent) => void
 }) {

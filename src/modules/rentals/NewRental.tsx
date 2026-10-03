@@ -49,7 +49,7 @@ import { listBundleRecords } from '../../lib/queries/bundleRecords'
 import type { BundleRecord } from '../../data/bundles'
 import { planCreationUnits, type CreationUnitPlan } from '../../lib/queries/availability'
 import type { RentalWindow } from '../../lib/availability'
-import { bundleResults, equipmentConflicts, equipmentLineDraft, equipmentResultsFrom, type ConflictCheckLine } from './booking/itemCatalogue'
+import { bundleResults, defaultTransportOptions, equipmentConflicts, equipmentLineDraft, equipmentResultsFrom, type ConflictCheckLine } from './booking/itemCatalogue'
 import type {
   AvailabilityVerdict,
   EquipmentAvailabilitySource,
@@ -3248,9 +3248,21 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
                   ? { equipment: liveEquipment, availability: availabilitySource }
                   : {})}
                 bundles={liveBundleResults}
+                crew={liveCrew && liveCrew.length > 0 ? liveCrew : CREW_ROSTER}
+                transport={defaultTransportOptions(bookingWindow)}
+                existingCrewIds={crew.map((c) => c.crewId)}
+                selectedTransportType={deliveryType}
                 days={days || 1}
                 existingLineIds={lines.map((l) => l.id)}
                 onAdd={addDrafts}
+                onAddCrew={(crewId) => {
+                  addCrew(crewId)
+                  setOpen((prev) => prev.map((v, j) => (j === 3 ? true : v)))
+                }}
+                onSelectTransport={(type) => {
+                  setDeliveryType(type)
+                  setOpen((prev) => prev.map((v, j) => (j === 4 ? true : v)))
+                }}
                 showPrices={canBookingMoney}
                 inputStyle={inputStyle}
                 onScan={addScannedEquipment}

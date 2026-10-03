@@ -1087,11 +1087,11 @@ function crewToResult(m: CrewMember): CrewResult {
     dayRatePaisa: m.dayRatePaisa ?? 0,
     availability: verdict(available, m.state === 'Available' ? 'Available for work' : `${m.state} — not available`),
     haystack: [
-      m.name.toLowerCase(),
-      m.role.toLowerCase(),
+      m.name,
+      m.role,
       m.phone,
-      m.state.toLowerCase(),
-    ],
+      m.state,
+    ].filter(Boolean).map(normalise),
   }
 }
 
@@ -1100,12 +1100,12 @@ function crewToResult(m: CrewMember): CrewResult {
  */
 function transportToResult(t: TransportOption): TransportResult {
   const haystack: readonly string[] = [
-    t.name.toLowerCase(),
-    t.type.toLowerCase(),
-    t.vehicle?.toLowerCase() ?? '',
-    t.numberPlate?.toLowerCase() ?? '',
-    t.driverName?.toLowerCase() ?? '',
-  ]
+    t.name,
+    t.type,
+    t.vehicle ?? '',
+    t.numberPlate ?? '',
+    t.driverName ?? '',
+  ].filter(Boolean).map(normalise)
   return {
     kind: 'transport',
     id: t.id,

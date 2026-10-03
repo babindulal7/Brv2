@@ -1,5 +1,52 @@
 # Progress Log
 
+## 2026-10-03 (i) — Unified Crew & Transport Search and Viewport Auto-Recentering in New Booking
+
+**Did**
+- Unified Crew & Transport Search inside New Rental (`AddItemPanel.tsx`, `itemCatalogue.ts`, `NewRental.tsx`):
+  - Synchronized Crew and Transport catalogue items into unified search alongside Equipment and Bundles (`FlatOption`, `flatten()`, `CrewRow`, and `TransportRow`).
+  - Added "Add to Crew" interaction that assigns the crew member to the booking's crew roster, prevents duplicates by indicating "On booking" / "Assigned", and auto-expands Section 3 (Crew).
+  - Added "Select Mode" transport interaction that sets the booking's delivery mode (`Client Pickup` vs `Babin Delivery`), updates selection state, and auto-expands Section 4 (Delivery).
+  - Added support for both `ratePaisa` and `dayRatePaisa` across unified price sorting (`price-asc` / `price-desc`) in `itemCatalogue.ts`.
+  - Normalised search haystack strings across Crew and Transport models for exact punctuation and multi-word matching.
+- Viewport Auto-Recentering (`recenterSearch` in `AddItemPanel.tsx`):
+  - Implemented smooth auto-recentering whenever the search input is focused or clicked (or when Browse / ⌘K shortcut is triggered), scrolling the search bar to a comfortable ~60px offset from the viewport top. This leaves maximum screen space for the dropdown results without vertical clipping.
+  - Safeguarded `matchMedia` for `prefers-reduced-motion` and `scrollIntoView` for environments without jsdom support.
+- Added comprehensive unit tests in `src/modules/rentals/booking/__tests__/AddItemPanel.unified.test.tsx` verifying recentering and callback dispatching for crew and transport results.
+- Verified the full gate chain: `typecheck` (0 errors), `lint` (0 warnings), `check:pglite` (148/148 applied from scratch, 0 failed), `check:lifecycle` (24/24 green), booking unit tests (5 files / 48 tests passing), `check:contrast` (54/54 passed), and `build` (clean dist + PWA).
+
+**Ruled**
+- In accordance with the Unified Catalogue specification, crew members and delivery options participate in the unified search bar, directly driving their respective booking sections without requiring multiple navigation steps.
+- In accordance with mobile and desktop usability standards, active search controls automatically adjust viewport headroom on activation so options lists are not clipped by the viewport boundary.
+
+**Verified**
+- `npm run typecheck`: PASS, 0 errors.
+- `npm run lint`: PASS, 0 warnings.
+- `npm run check:pglite`: PASS, 148/148 applied, 0 failed.
+- `npm run check:lifecycle`: PASS, 24/24 green, 0 failed.
+- `vitest run src/modules/rentals/booking/__tests__/`: PASS, 5 files / 48 tests passed.
+- `npm run check:contrast`: PASS, 54/54 passed WCAG AA.
+- `npm run build`: PASS, production bundle and PWA service worker generated cleanly.
+- `npm run completion`: counts counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 51 / 51 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 50 | 50 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 148 files · check:pglite 148/148 applied, 0 failed. Suite: 284 files / 3,897 tests pass.
+Gates read from .lifecycle-result.json, written 2026-10-03T09:54:26.132Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live database application and production verification for pending migrations (following corrected `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Babin's decision on `docs/OPEN_DECISIONS.md` §7 (staff roster read scope).
+- Tracked decision reviews for `TODO(decision)` items in `docs/OPEN_DECISIONS.md` (audit C4).
+
 ## 2026-10-03 (h) — Audit findings C1, C6, C8: Migration collision cleanup, env-based script credentials, and auditLogger console gate
 
 **Did**
