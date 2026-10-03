@@ -356,7 +356,7 @@ const orphans = live.filter((r) => !localNames.has(r.name) && !explained.has(r.n
 const SELFTEST = [
   // Renames, by slug: live already ran these under a different name.
   ['0056_0_auth_role_falls_back_to_auth_uid.sql', 'renamed'],
-  ['0056_ruled_sequences_completion.sql', 'renamed'],
+  ['0081_ruled_sequences_completion.sql', 'renamed'],
   ['0059_users_self_read_accepts_auth_uid.sql', 'renamed'],
   ['0069_purchase_approval_owner_manager_only.sql', 'renamed'],
   // The only rename found by ordered prefix rather than slug. Live substituted a

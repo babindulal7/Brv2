@@ -8177,7 +8177,7 @@ Everything below was found by *running* the migration. The version committed in
 
 ### 1 · The pre-condition was live-shaped, and broke the rebuild
 0085 asserted "expect 46 seed bookings in 900-945" straight from SPEC-P0-3 §3.
-A from-scratch database holds **23**, not 46 — `0076_seed_operational_stage_corpus`
+A from-scratch database holds **23**, not 46 — `0082_seed_operational_stage_corpus`
 sizes its corpus against `now()` and yields fewer rows the later it is applied,
 while its own header still claims `B-900 … B-945`. So the migration set no longer
 built from scratch: the exact guarantee `check:rebuild` was written to hold, undone
@@ -9016,7 +9016,7 @@ Proof C: re-applying 0047 to a seeded database died on
 `security_deposits_client_uuid_key`. Not my redesign — this predates it, and
 nobody had ever run a true re-apply (the reviewer's check was a first apply
 onto empty tables). The mechanism, measured: 0047 wrote `DEP-2026-0001`, but
-**`0056_ruled_sequences_completion.sql` rewrites deposit numbers to `DEP-<n>`**
+**`0081_ruled_sequences_completion.sql` rewrites deposit numbers to `DEP-<n>`**
 (its header lists DEP under "NOT RULED, OLD SHAPE" — that is the before-state its
 body then rules). So on a fresh build the seeded rows became `DEP-1…`, and a
 second apply's `on conflict (deposit_no)` arbiter missed while the derived
@@ -10791,7 +10791,7 @@ Full writeup: [`docs/booqable/BRIDGE-AND-CORPUS-STATE.md`](docs/booqable/BRIDGE-
 `bookings.booking_no` is **UNIQUE**. Booking numbers map 1:1 to Booqable order numbers — live
 **`B-898` carries `return_at = 2026-08-31 06:00`, exactly the due-back the gap check reports for
 Booqable #898.** The import covered orders **700–899** (`B-700…B-899`, 200 rows). Then
-`0076_seed_operational_stage_corpus` inserted 46 synthetic rows numbered **`B-900…B-945`** — the
+`0082_seed_operational_stage_corpus` inserted 46 synthetic rows numbered **`B-900…B-945`** — the
 range the next real orders need (the capture probed Booqable **#906** live on 31 Aug).
 
 Importing #900+ now fails on the unique index. **The blocking rows cannot be deleted** (Law 3 /
@@ -10864,7 +10864,7 @@ filing note; indexed in `00-INDEX.md`; its trackable items are now checkboxes in
   repo and `Downloads/`) — then the concurrent session filed v1.1 at 03:13 while this pass was
   running, resolving it. The walk's claims are ahead of, then caught by, the tree — twice.
 - **Several of its gap lines had already moved by filing time:** D4 built 31 Aug;
-  `0076_seed_operational_stage_corpus` applied (Going out 0 → 6, so the walk's "0 due today"
+  `0082_seed_operational_stage_corpus` applied (Going out 0 → 6, so the walk's "0 due today"
   P0 symptom is part-corpus, not all wiring); `facetCounts` wired to `/rentals` on 31 Aug
   ("no facet counts anywhere" no longer holds). Each is annotated in the filed doc/backlog.
 - Footer v3.0.0 = `nav.ts:508` constant (`package.json` 0.1.0 — claim accurate as stated);
@@ -11346,7 +11346,7 @@ Both were caught by reading the live ledger, and both would have shipped a broke
 
 1. **"Live is at 0070; 0071–0073 are drafts awaiting approval."** Live is at **0076**.
    `schema_migrations` shows 0071 (31 Aug 11:57), 0072 (12:01), 0074_drop_discount_gate (12:42),
-   **0075_drop_invoice_lines_discount_gate (13:19)** and **0076_seed_operational_stage_corpus
+   **`0075_drop_invoice_lines_discount_gate (13:19)`** and **`0082_seed_operational_stage_corpus`
    (14:12)** all applied. Nothing is awaiting approval.
 2. **Therefore this file could not be 0075.** It was written as 0075 and **renumbered to 0077**
    — 0075 and 0076 were both taken by the concurrent session *while it was being written*.
@@ -11354,7 +11354,7 @@ Both were caught by reading the live ledger, and both would have shipped a broke
    a second 0074 at 17:57, then 0075 at 18:59, 0076 at 19:58, another 0076 at 20:17.
 
 ⚠ **`0076_booking_line_units_release.sql` is on disk, is NOT in the ledger, and collides with the
-applied `0076_seed_operational_stage_corpus`.** Same collision class as the 0017/0018 one 0019's
+applied `0082_seed_operational_stage_corpus`.** Same collision class as the 0017/0018 one 0019's
 header records from 9 Aug. It needs renumbering before it can apply. Not touched — another
 session's file. **Re-read the ledger before trusting any number in that directory.**
 
@@ -11494,7 +11494,7 @@ filter group without an accordion (Inventory's category rail is the likely first
 ## 2026-08-31 (cont.) — I6 APPLIED as 0076: Today ▸ Going out goes 0 → 6. Renumbered around a live 0074 collision
 **Phase:** cross-phase verification · **Status:** **applied to the live project** on Babin's instruction
 
-> **Applied, and what it changed.** `0076_seed_operational_stage_corpus`, registered
+> **Applied, and what it changed.** `0082_seed_operational_stage_corpus`, registered
 > `20260831141204`. bookings 200 → **246** · `booking_lines` 0 → **92** · Packed **16** ·
 > Booked **30** · **Today ▸ Going out 0 → 6**, Tomorrow 9, Next 7 days 26. Rows `B-900 … B-945`,
 > one per client, 2 lines / 3 items each, values from each product's own `daily_rate`.
@@ -13249,7 +13249,7 @@ boundary, so it cannot reproduce the class of bug this project keeps finding).
 file**; its SQL existed only inside `supabase_migrations.schema_migrations`. Copied out
 verbatim to `0056_0_auth_role_falls_back_to_auth_uid.sql` — nothing reconstructed or inferred.
 
-It is **superseded sixty seconds later** by `0056_auth_role_resolves_without_pre_request_hook`,
+It is **superseded sixty seconds later** by `0073_auth_role_resolves_without_pre_request_hook`,
 which is a `create or replace` of the same function adding `SECURITY DEFINER`, a pinned
 `search_path` and revoked EXECUTE. So a rebuild does not need it; the repo simply no longer
 contains a migration it cannot explain. The `_0_` in the filename sorts it ahead of
@@ -14077,7 +14077,7 @@ in the client is the one nobody updates.
    belong to stubs. They become live questions the moment `createRental` gets a body, and the
    answering rule is now established — mirror the RLS policy on `bookings` (Owner, Admin,
    Manager, Coordinator, Warehouse, per `bookings_insert`).
-4. **The repo cannot rebuild the live database.** `0056_auth_role_falls_back_to_auth_uid` is
+4. **The repo cannot rebuild the live database.** `0056_0_auth_role_falls_back_to_auth_uid` is
    applied with **no source file**, and the seed corpus went in outside the migration table.
 
 ## 2026-08-15 (later) — The year-reset worry is closed; two adjacent numbering bugs are not

@@ -135,7 +135,7 @@ export const SEQUENCES = {
      Do not "fix" it here: changing the emitted shape without the sequence
      change would make the seed disagree with what the database mints. */
   payment: { key: 'payment', code: 'PAY', padding: 4, year: 2026 },
-  /* Deposit IS ruled: 0056_ruled_sequences_completion.sql rewrites every
+  /* Deposit IS ruled: 0081_ruled_sequences_completion.sql rewrites every
      `DEP-YYYY-NNNN` to `DEP-<n>` and then asserts none survive. This spec
      used to emit the retired year-bearing shape, so 0056 rewrote the seeded
      rows on a fresh build and a second apply then missed its own

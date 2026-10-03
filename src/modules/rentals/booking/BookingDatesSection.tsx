@@ -7,6 +7,7 @@ import { DatePresets } from './DatePresets'
 import { SHOOT_PRESETS } from './newRentalUtils'
 
 export interface BookingDatesSectionProps {
+  title?: string
   open: boolean
   onToggle: () => void
   days: number
@@ -26,6 +27,7 @@ export interface BookingDatesSectionProps {
 }
 
 export function BookingDatesSection({
+  title = 'Rental period',
   open,
   onToggle,
   days,
@@ -46,7 +48,7 @@ export function BookingDatesSection({
   return (
     <Section
       id="section-1"
-      title="Dates & Times"
+      title={title}
       badge={
         days > 0 ? (
           <span

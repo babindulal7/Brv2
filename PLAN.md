@@ -2081,7 +2081,7 @@ them is a Supabase dashboard action.
 **(3) This repo cannot rebuild the live database.** Two independent gaps, both verified
 against `supabase_migrations.schema_migrations`:
 
-- `0056_auth_role_falls_back_to_auth_uid` is **applied with no source file** in
+- `0056_0_auth_role_falls_back_to_auth_uid` is **applied with no source file** in
   `supabase/migrations/`. Its SQL exists only in the migration table.
 - The seed corpus went in **outside the migration table** — `0047_seed_reference_corpus.sql`
   is unapplied, yet its rows are live (its first client is `C-34` "Sagarmatha Pictures Pvt.

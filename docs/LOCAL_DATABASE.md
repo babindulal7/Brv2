@@ -96,7 +96,7 @@ clients' names, phones and emails on a laptop — worth a deliberate decision, n
 One half of §4.33(3) is now closed: `0056_auth_role_falls_back_to_auth_uid` was applied to
 production with **no source file**, and its SQL has been recovered out of
 `schema_migrations.statements` into `0056_0_auth_role_falls_back_to_auth_uid.sql`. It is
-superseded sixty seconds later by `0056_auth_role_resolves_without_pre_request_hook.sql`, so a
+superseded sixty seconds later by `0073_auth_role_resolves_without_pre_request_hook.sql`, so a
 rebuild does not need it — but the repo is no longer missing a migration it cannot explain.
 
 ---
