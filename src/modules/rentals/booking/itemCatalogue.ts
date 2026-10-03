@@ -1064,12 +1064,13 @@ export interface TransportResult {
  * Default transport options for a booking window.
  * In a live build this would query vehicle/driver availability.
  */
-function defaultTransportOptions(_w: BookingWindow): TransportOption[] {
+export function defaultTransportOptions(_w: BookingWindow): TransportOption[] {
   return [
     { id: 'pickup', name: 'Client Pickup', type: 'Client Pickup', ratePaisa: 0 as Paisa },
     { id: 'delivery', name: 'Babin Delivery', type: 'Babin Delivery', ratePaisa: 500000 as Paisa }, // Rs 5,000 base
   ]
 }
+
 
 /**
  * Maps a CrewMember to a CrewResult for the unified catalogue.
@@ -1149,10 +1150,16 @@ export function runQuery(w: BookingWindow, o: QueryOptions): QueryOutcome {
     switch (o.sort) {
       case 'name':
         return a.name.localeCompare(b.name) || a.id.localeCompare(b.id)
-      case 'price-asc':
-        return ('ratePaisa' in a && 'ratePaisa' in b) ? a.ratePaisa - b.ratePaisa || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)
-      case 'price-desc':
-        return ('ratePaisa' in a && 'ratePaisa' in b) ? b.ratePaisa - a.ratePaisa || a.name.localeCompare(b.name) : a.name.localeCompare(b.name)
+      case 'price-asc': {
+        const rateA = 'ratePaisa' in a ? a.ratePaisa : a.dayRatePaisa
+        const rateB = 'ratePaisa' in b ? b.ratePaisa : b.dayRatePaisa
+        return rateA - rateB || a.name.localeCompare(b.name)
+      }
+      case 'price-desc': {
+        const rateA = 'ratePaisa' in a ? a.ratePaisa : a.dayRatePaisa
+        const rateB = 'ratePaisa' in b ? b.ratePaisa : b.dayRatePaisa
+        return rateB - rateA || a.name.localeCompare(b.name)
+      }
       default: {
         // Recommended — what you can actually book first, then closest match.
         const onBooking = Number(o.existingLineIds.has(a.id)) - Number(o.existingLineIds.has(b.id))
