@@ -33,6 +33,7 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -464,6 +465,7 @@ export function ClientCombobox({
             showOutstanding={showOutstanding}
             onHover={setActiveIndex}
             onCommit={commit}
+            inputRef={inputRef}
           />
         )}
       </div>
@@ -509,6 +511,7 @@ function ClientListbox({
   showOutstanding,
   onHover,
   onCommit,
+  inputRef,
 }: {
   id: string
   listRef: MutableRefObject<HTMLUListElement | null>
@@ -522,25 +525,46 @@ function ClientListbox({
   showOutstanding: boolean
   onHover: (i: number) => void
   onCommit: (o: Option) => void
+  inputRef: React.RefObject<HTMLInputElement | null>
 }) {
   const noMatches = searching && !options.some((o) => o.kind === 'client')
 
-  return (
+  // Calculate dropdown position from the input element
+  const getDropdownStyle = () => {
+    const input = inputRef?.current
+    if (!input) return { position: 'fixed', zIndex: 50, top: 0, left: 0, opacity: 0 } as CSSProperties
+
+    const rect = input.getBoundingClientRect()
+    const dropdownWidth = Math.max(320, rect.width)
+    const viewportHeight = window.innerHeight
+    const spaceBelow = viewportHeight - rect.bottom
+    const spaceAbove = rect.top
+    const dropdownHeight = 380 // approximate max height
+    const openUpward = spaceBelow < dropdownHeight && spaceAbove > spaceBelow
+
+    return {
+      position: 'fixed',
+      zIndex: 50,
+      top: openUpward ? rect.top - dropdownHeight - 4 : rect.bottom + 4,
+      left: rect.left,
+      width: dropdownWidth,
+      minWidth: 320,
+      maxWidth: Math.min(dropdownWidth, viewportWidth - 32),
+      background: 'var(--dropdown)',
+      border: '1px solid var(--border)',
+      borderRadius: 'var(--r-card)',
+      boxShadow: 'var(--shadow-modal)',
+      overflow: 'hidden',
+    } as CSSProperties
+  }
+
+  const viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1024
+  const dropdownStyle = getDropdownStyle()
+
+  // Portal to document.body to avoid any ancestor overflow clipping
+  return createPortal(
     <div
-      style={{
-        position: 'absolute',
-        zIndex: 40,
-        top: 'calc(100% + 4px)',
-        left: 0,
-        right: 0,
-        minWidth: 320,
-        background: 'var(--dropdown)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--r-card)',
-        boxShadow: 'var(--shadow-modal)',
-        overflow: 'hidden',
-      }}
-      // Keeps the input focused: a mousedown on the panel must not blur it.
+      style={dropdownStyle}
       onMouseDown={(e) => e.preventDefault()}
     >
       <div
@@ -633,7 +657,8 @@ function ClientListbox({
           <span className="figure">{truncated}</span> more match — refine the search to narrow it.
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   )
 }
 
