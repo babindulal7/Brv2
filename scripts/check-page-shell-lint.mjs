@@ -82,6 +82,16 @@ function checkFile(fullPath, relPath) {
         detail: `Developer note or TODO marker leaked into user-facing markup: ${trimmed.slice(0, 80)}`,
       })
     }
+
+    // 3. Check for forbidden native dialogs (window.confirm, window.alert)
+    if (trimmed.includes('window.confirm(') || trimmed.includes('window.alert(')) {
+      violations.push({
+        file: relPath,
+        line: lineNum,
+        type: 'NATIVE_DIALOG_FORBIDDEN',
+        detail: `Browser-native dialogs are forbidden; use ConfirmDialog or Toast instead: ${trimmed.slice(0, 80)}`,
+      })
+    }
   })
 }
 
