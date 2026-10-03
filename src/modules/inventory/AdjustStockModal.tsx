@@ -63,7 +63,7 @@ export function AdjustStockModal({ productId, productName, currentQuantity, onCl
         {error && <div role="alert" style={{ padding: '10px 14px', border: '1px solid var(--danger)', borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)', color: 'var(--st-danger-fg)' }}>{error}</div>}
         <label style={{ display: 'grid', gap: 6, color: 'var(--text)', fontWeight: 600 }}>
           Quantity change <span style={{ color: 'var(--danger)' }}>*</span>
-          <input type="number" step="1" value={delta} onChange={(event) => setDelta(event.target.value)} placeholder="+2 or -3" style={{ minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)' }} />
+          <input type="number" inputMode="numeric" step="1" value={delta} onChange={(event) => setDelta(event.target.value)} placeholder="+2 or -3" style={{ minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)' }} />
         </label>
         <label style={{ display: 'grid', gap: 6, color: 'var(--text)', fontWeight: 600 }}>
           Reason <span style={{ color: 'var(--danger)' }}>*</span>

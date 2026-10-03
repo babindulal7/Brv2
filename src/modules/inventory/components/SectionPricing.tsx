@@ -72,6 +72,7 @@ export function SectionPricing() {
                 <Field label="Minimum rental days">
                   <input
                     type="number"
+                    inputMode="numeric"
                     min={1}
                     value={minRentalDays}
                     onChange={(e) => setMinRentalDays(e.target.value)}
@@ -130,6 +131,7 @@ export function SectionPricing() {
                     >
                       <input
                         type="number"
+                        inputMode="numeric"
                         min={0}
                         max={100}
                         value={depositPercent}
@@ -162,10 +164,10 @@ export function SectionPricing() {
                 <strong style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>Rental settings</strong>
                 <div style={fieldRow}>
                   <Field label="Preparation time (minutes)">
-                    <input type="number" min={0} value={prepMinutes} onChange={(e) => setPrepMinutes(e.target.value)} className="figure" style={inputStyle()} />
+                    <input type="number" inputMode="numeric" min={0} value={prepMinutes} onChange={(e) => setPrepMinutes(e.target.value)} className="figure" style={inputStyle()} />
                   </Field>
                   <Field label="Cleaning time (minutes)">
-                    <input type="number" min={0} value={cleaningMinutes} onChange={(e) => setCleaningMinutes(e.target.value)} className="figure" style={inputStyle()} />
+                    <input type="number" inputMode="numeric" min={0} value={cleaningMinutes} onChange={(e) => setCleaningMinutes(e.target.value)} className="figure" style={inputStyle()} />
                   </Field>
                 </div>
                 <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>

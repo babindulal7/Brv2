@@ -200,7 +200,7 @@ export function CancelRentalModal({
             onChange={(e) => setConfirmed(e.target.checked)}
             style={{ marginTop: 2 }}
           />
-          <span>I confirm that this booking is to be cancelled and all reserved gear released back into stock.</span>
+          <span>I confirm that this booking is to be cancelled and all reserved equipment released back into stock.</span>
         </label>
       </form>
     </Modal>

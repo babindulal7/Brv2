@@ -110,7 +110,7 @@ export default function BundleQuickBuilder() {
       {/* Equipment Selector */}
       <div>
         <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: '8px' }}>
-          Select Gear for this Bundle
+          Select Equipment for this Bundle
         </label>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '8px' }}>
           {CATALOG.map((item) => {
@@ -163,7 +163,7 @@ export default function BundleQuickBuilder() {
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <div style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text)' }}>Package Day-Rate:</div>
-              <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Inclusive of all selected kit gear</div>
+              <div style={{ fontSize: '11px', color: 'var(--text3)' }}>Inclusive of all selected package equipment</div>
             </div>
             <span style={{ fontSize: '22px', fontWeight: 700, color: 'var(--green)' }}>
               {formatMoney(rupees(totals.rate))}<span style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text3)' }}>/day</span>

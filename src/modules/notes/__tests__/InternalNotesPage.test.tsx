@@ -68,7 +68,7 @@ describe('InternalNotesPage', () => {
     )
 
     expect(container.textContent).toContain('Team Dispatch & Shift Notes')
-    expect(container.textContent).toContain('Gear Alerts')
+    expect(container.textContent).toContain('Equipment Alerts')
     expect(container.textContent).toContain('Shift Handovers')
     expect(container.textContent).toContain('Resolved Today')
   })
@@ -81,7 +81,7 @@ describe('InternalNotesPage', () => {
     )
 
     expect(container.textContent).toContain('Post Internal Dispatch Note')
-    expect(container.textContent).toContain('🚨 Gear Defect')
+    expect(container.textContent).toContain('🚨 Equipment Defect')
     expect(container.textContent).toContain('🔄 Shift Handover')
     expect(container.textContent).toContain('🚚 Dispatch Route')
   })
@@ -94,7 +94,7 @@ describe('InternalNotesPage', () => {
     )
 
     const buttons = Array.from(container.querySelectorAll('button'))
-    const tmplBtn = buttons.find(b => b.textContent?.includes('🚨 Gear Defect'))
+    const tmplBtn = buttons.find(b => b.textContent?.includes('🚨 Equipment Defect'))
     expect(tmplBtn).toBeDefined()
 
     act(() => {

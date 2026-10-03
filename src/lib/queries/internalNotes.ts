@@ -8,6 +8,7 @@
 
 export type NoteCategory =
   | 'General'
+  | 'Equipment Alert'
   | 'Gear Alert'
   | 'Shift Handover'
   | 'Client Remark'
@@ -340,7 +341,7 @@ export function getInternalNotesStats(notes?: InternalNote[]): InternalNotesStat
       resolved++
     } else {
       open++
-      if (n.category === 'Gear Alert') gearAlerts++
+      if (n.category === 'Gear Alert' || n.category === 'Equipment Alert') gearAlerts++
       if (n.priority === 'urgent') urgentCount++
       if (n.category === 'Shift Handover') handoverCount++
     }

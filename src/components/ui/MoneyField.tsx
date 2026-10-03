@@ -70,6 +70,7 @@ export const MoneyField: React.FC<MoneyFieldProps> = ({
 
         <input
           type="number"
+          inputMode="numeric"
           step="1"
           min="0"
           value={rupeeValue === 0 ? '' : rupeeValue}

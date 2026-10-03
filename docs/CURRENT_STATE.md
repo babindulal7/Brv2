@@ -1,7 +1,7 @@
 # Babin Rentals OS — Current State
 
-**Evidence Date:** 3 October 2026  
-**Last Verified Status:** Full Audit Remediation Complete (G1–G4 Operational Closures, Security Leaks D1–D7 Closed, A1 Schema Guard Mounted, All Gates Certified)  
+**Evidence Date:** 4 October 2026  
+**Last Verified Status:** Full Audit Remediation Complete (G1–G4 Operational Closures, Security Leaks D1–D7 Closed, A1 Schema Guard Mounted, Cross-Tab Synchronization Active, All Gates Certified)  
 **Verification Environment:** Local PGlite 0.5.8 (WASM), Node v24+, Vitest v3.2.7  
 **Canonical Documentation:** [`docs/CURRENT_STATE.md`](docs/CURRENT_STATE.md) · [`docs/00_READ_FIRST.md`](docs/00_READ_FIRST.md)
 
@@ -15,22 +15,23 @@
 ## 2. Production Readiness Statement
 **Readiness: 100% of Runtime Gates Certified — Awaiting Live Supabase Migration Cutover.**
 
-All runtime suites, typechecks, ESLint checks, database constraint verifications, view/function anon leak gates, and lifecycle tests are green. All 52 backend actions are fully implemented with verified permissions mappings (including `SETTLE_DEPOSIT` / `deposit.release`). All 149 migrations have been authored and verified from scratch under PGlite with zero failures, with anon view access revoked across all 30 views and unauthorized RPC execution blocked. The remaining prerequisite for live release is executing the Docker-free production backup (`scripts/backup-db.ps1`) and applying the ordered pending set per `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md` (Rule N-5).
+All runtime suites, typechecks, ESLint checks, database constraint verifications, view/function anon leak gates, and lifecycle tests are green. All 52 backend actions are fully implemented with verified permissions mappings (including `SETTLE_DEPOSIT` / `deposit.release`). All 150 migrations have been authored and verified from scratch under PGlite with zero failures, with anon view access revoked across all 30 views and unauthorized RPC execution blocked. The remaining prerequisite for live release is executing the Docker-free production backup (`scripts/backup-db.ps1`) and applying the ordered pending set per `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md` (Rule N-5).
 
 ---
 
 ## 3. Current Merge & Release Gates
-All gates verified clean on 3 Oct 2026:
+All gates verified clean on 4 Oct 2026:
 
 | Gate | Command | Result |
 |---|---|---|
 | **Typecheck** | `npm run typecheck` (`tsc --noEmit`) | **PASS (0 errors)** |
 | **Lint** | `npm run lint` (`eslint src --max-warnings 0`) | **PASS (0 errors, 0 warnings)** |
-| **Migrations Rebuild** | `npm run check:pglite` (`node scripts/check-pglite.mjs`) | **PASS (149/149 applied, 0 failed; 30/30 views closed; 0 unauthorized RPCs)** |
+| **Migrations Rebuild** | `npm run check:pglite` (`node scripts/check-pglite.mjs`) | **PASS (150/150 applied, 0 failed; 30/30 views closed; 0 unauthorized RPCs; definer paths pinned)** |
 | **Lifecycle Verification** | `npm run check:lifecycle` (`node scripts/e2e-lifecycle.mjs`) | **PASS (24/24 green, 0 known-red)** |
-| **Test Suite** | `npm run test` (`vitest run`) | **PASS (288 test files, 3,927 passing tests)** |
+| **Test Suite** | `npm run test` (`vitest run`) | **PASS (291 test files, 3,938 passing tests)** |
 | **Contrast Verification** | `npm run check:contrast` (`node scripts/check-contrast.cjs`) | **PASS (54/54 WCAG AA passed)** |
-| **Production Build** | `npm run build` (`tsc --noEmit && vite build`) | **PASS (exit code 0, 59s, 259 PWA assets)** |
+| **Page Shell Lint** | `npm run lint:shell` (`node scripts/check-page-shell-lint.mjs`) | **PASS (580 files checked, 0 violations)** |
+| **Production Build** | `npm run build` (`tsc --noEmit && vite build`) | **PASS (exit code 0, clean build, PWA precache)** |
 
 *Completion Dimensions (`node scripts/completion.mjs`):*  
 Backend: **52/52 (100%)** · Real Data: **51 DB-only / 51 (100%)** · DB Enforcement: 9/9 (100%) · Permissions: 42/42 (100%) · Lifecycle: 24/24 (100%) · **Overall: ≈ 100%**

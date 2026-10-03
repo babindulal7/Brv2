@@ -127,7 +127,7 @@ export function LogCaseModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Log Incident / Discrepancy Case"
-      subtitle="Report gear damages, missing items, or rental discrepancies for manager & finance resolution."
+      subtitle="Report equipment damages, missing items, or rental discrepancies for manager & finance resolution."
       size="md"
       footer={
         <>
@@ -201,7 +201,7 @@ export function LogCaseModal({
             >
               <option value="Low">Low — Routine maintenance/clean</option>
               <option value="Medium">Medium — Inspection finding</option>
-              <option value="High">High — Critical gear conflict</option>
+              <option value="High">High — Critical equipment conflict</option>
               <option value="Critical">Critical — Severe loss / Dispute</option>
             </select>
           </div>

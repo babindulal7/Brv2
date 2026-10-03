@@ -317,7 +317,7 @@ export default function RevenueReport() {
         >
           {([
             ['Revenue Trends', 'trends'],
-            ['Category & Gear', 'categories'],
+            ['Category & Equipment', 'categories'],
             ['Project Types', 'projects'],
             ['Invoices Register', 'invoices'],
           ] as const).map(([label, tab]) => {

@@ -610,6 +610,7 @@ function AddExpenseSheet({
             <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Amount (Rs)</span>
             <input
               type="number"
+              inputMode="numeric"
               min={1}
               // 0 renders as an empty box rather than a typed-looking "0": the
               // state has to be a number for the guard, but the operator must

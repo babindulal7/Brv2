@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { useAuth } from '../../lib/auth'
 import { useOptionalToast } from '../../components/ui/Toast'
 import { toBs, formatBs } from '../../lib/bs'
@@ -34,7 +35,7 @@ import './notes.css'
 
 const CATEGORIES: NoteCategory[] = [
   'Shift Handover',
-  'Gear Alert',
+  'Equipment Alert',
   'Logistics & Transport',
   'Client Remark',
   'General',
@@ -42,8 +43,8 @@ const CATEGORIES: NoteCategory[] = [
 
 const QUICK_TEMPLATES = [
   {
-    label: '🚨 Gear Defect',
-    category: 'Gear Alert' as NoteCategory,
+    label: '🚨 Equipment Defect',
+    category: 'Equipment Alert' as NoteCategory,
     priority: 'urgent' as NotePriority,
     template: 'EQ-SONY-FX6-01 sensor needs wet cleaning before tomorrow shoot.',
   },
@@ -171,21 +172,43 @@ export default function InternalNotesPage() {
     }
   }
 
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean
+    title: string
+    description: string
+    confirmLabel: string
+    onConfirm: () => void
+  } | null>(null)
+
   const handleDelete = (id: string) => {
-    if (window.confirm('Delete this internal note?')) {
-      deleteInternalNote(id)
-      reloadNotes()
-      toast?.showSuccessToast('Note Deleted', 'Removed from internal dispatch log.')
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete this internal note?',
+      description: 'Are you sure you want to permanently delete this internal note from the dispatch log?',
+      confirmLabel: 'Delete Note',
+      onConfirm: () => {
+        setConfirmDialog(null)
+        deleteInternalNote(id)
+        reloadNotes()
+        toast?.showSuccessToast('Note Deleted', 'Removed from internal dispatch log.')
+      },
+    })
   }
 
   const handleClearResolved = () => {
     if (stats.resolved === 0) return
-    if (window.confirm(`Clear all ${stats.resolved} resolved notes?`)) {
-      const count = clearResolvedNotes()
-      reloadNotes()
-      toast?.showSuccessToast('Cleaned Log', `Archived ${count} resolved notes.`)
-    }
+    setConfirmDialog({
+      isOpen: true,
+      title: `Clear all ${stats.resolved} resolved notes?`,
+      description: `This will archive all ${stats.resolved} resolved tasks and clear them from the current view.`,
+      confirmLabel: 'Clear Resolved',
+      onConfirm: () => {
+        setConfirmDialog(null)
+        const count = clearResolvedNotes()
+        reloadNotes()
+        toast?.showSuccessToast('Cleaned Log', `Archived ${count} resolved notes.`)
+      },
+    })
   }
 
   const handleCopyHandover = () => {
@@ -284,6 +307,17 @@ export default function InternalNotesPage() {
 
   return (
     <div className="notes-page-container">
+      {confirmDialog && (
+        <ConfirmDialog
+          isOpen={confirmDialog.isOpen}
+          title={confirmDialog.title}
+          description={confirmDialog.description}
+          confirmLabel={confirmDialog.confirmLabel}
+          variant="danger"
+          onClose={() => setConfirmDialog(null)}
+          onConfirm={confirmDialog.onConfirm}
+        />
+      )}
       {/* Page Header */}
       <div
         style={{
@@ -316,7 +350,7 @@ export default function InternalNotesPage() {
                 Team Dispatch & Shift Notes
               </h1>
               <div style={{ fontSize: 'var(--t-caption)', color: 'var(--muted)', marginTop: 2 }}>
-                Live shift handovers, gear defects & field alerts · {nepaliDateStr}
+                Live shift handovers, equipment alerts & field notices · {nepaliDateStr}
               </div>
             </div>
           </div>
@@ -386,7 +420,7 @@ export default function InternalNotesPage() {
           </div>
           <div>
             <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
-              Gear Alerts
+              Equipment Alerts
             </div>
             <div style={{ fontSize: '20px', fontWeight: 700, color: stats.gearAlerts > 0 ? 'var(--danger)' : 'var(--text)' }}>
               {stats.gearAlerts}
@@ -554,7 +588,7 @@ export default function InternalNotesPage() {
                     handlePost()
                   }
                 }}
-                placeholder="Log gear defect, turnover checklist, booking warning... Use IDs like BR-2613 or EQ-FX6-02 for instant links."
+                placeholder="Log equipment defect, turnover checklist, booking warning... Use IDs like BR-2613 or EQ-FX6-02 for instant links."
                 style={{
                   width: '100%',
                   padding: '10px 12px',
@@ -692,7 +726,7 @@ export default function InternalNotesPage() {
                   type="text"
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  placeholder="Search notes by keyword, booking ID, author, gear tag..."
+                  placeholder="Search notes by keyword, booking ID, author, asset tag..."
                   style={{
                     width: '100%',
                     minHeight: 44,
@@ -896,7 +930,7 @@ export default function InternalNotesPage() {
                 const isUrgent = n.priority === 'urgent'
 
                 const tone: 'danger' | 'primary' | 'warning' | 'neutral' =
-                  n.category === 'Gear Alert'
+                  n.category === 'Gear Alert' || n.category === 'Equipment Alert'
                     ? 'danger'
                     : n.category === 'Shift Handover'
                     ? 'primary'

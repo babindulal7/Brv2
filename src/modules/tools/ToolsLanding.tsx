@@ -90,7 +90,7 @@ const GROUPS: ToolGroup[] = [
     cards: [
       {
         label: 'QR & Barcode Generator',
-        hint: 'Serialized gear asset tags and printable barcode labels',
+        hint: 'Serialized equipment asset tags and printable barcode labels',
         icon: 'barcode',
         tab: 'qr',
         to: '/tools/qr',

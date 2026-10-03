@@ -47,13 +47,14 @@
 import { PGlite } from '@electric-sql/pglite'
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto'
 import { btree_gist } from '@electric-sql/pglite/contrib/btree_gist'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const MIGRATIONS = join(HERE, '..', 'supabase', 'migrations')
-const PRELUDE_PATH = join(HERE, '..', 'supabase', 'pglite-prelude.sql')
+const ROOT = join(HERE, '..')
+const MIGRATIONS = join(ROOT, 'supabase', 'migrations')
+const PRELUDE_PATH = join(ROOT, 'supabase', 'pglite-prelude.sql')
 
 const args = process.argv.slice(2)
 const stopFirst = args.includes('--stop')
@@ -275,4 +276,13 @@ if (definerAudit.unpinned.length) {
   console.log('\nThe chain builds, and it still contains unpinned SECURITY DEFINER functions.')
   process.exit(1)
 }
+const pgliteResult = {
+  applied,
+  total: files.length,
+  failed: failures.length,
+  views_checked: viewAudit.checked,
+  views_leaked: viewAudit.leaked.length,
+  at: new Date().toISOString(),
+}
+writeFileSync(join(ROOT, '.pglite-result.json'), JSON.stringify(pgliteResult, null, 2))
 console.log('The chain builds from scratch, no view is readable by anon, no unauthorized RPC is executable by anon, and all definer search_paths are pinned.')

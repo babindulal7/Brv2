@@ -175,7 +175,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
               </h2>
             </div>
             <div style={{ fontSize: 'var(--t-caption)', color: 'var(--muted)', marginTop: 2 }}>
-              Shift handover scratchpad & gear advisories
+              Shift handover scratchpad & equipment advisories
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -239,7 +239,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                   handlePost()
                 }
               }}
-              placeholder="Post a shift note, gear defect, client remark... (Ctrl+Enter to post)"
+              placeholder="Post a shift note, equipment alert, client remark... (Ctrl+Enter to post)"
               style={{
                 width: '100%',
                 padding: '10px 12px',
@@ -269,7 +269,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                   }}
                 >
                   <option value="General">General</option>
-                  <option value="Gear Alert">Gear Alert</option>
+                  <option value="Equipment Alert">Equipment Alert</option>
                   <option value="Shift Handover">Shift Handover</option>
                   <option value="Logistics & Transport">Logistics</option>
                   <option value="Client Remark">Client Remark</option>
@@ -330,7 +330,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
             background: 'var(--surface-2)',
           }}
         >
-          {(['All', 'Shift Handover', 'Gear Alert', 'Logistics & Transport', 'Client Remark', 'General'] as const).map(cat => (
+          {(['All', 'Shift Handover', 'Equipment Alert', 'Logistics & Transport', 'Client Remark', 'General'] as const).map(cat => (
             <button
               key={cat}
               onClick={() => setFilterCategory(cat)}
@@ -362,7 +362,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
               const isResolved = n.status === 'resolved'
               const isUrgent = n.priority === 'urgent'
               const tone: 'danger' | 'primary' | 'warning' | 'neutral' =
-                n.category === 'Gear Alert'
+                n.category === 'Gear Alert' || n.category === 'Equipment Alert'
                   ? 'danger'
                   : n.category === 'Shift Handover'
                   ? 'primary'

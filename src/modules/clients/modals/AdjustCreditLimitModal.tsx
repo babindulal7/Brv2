@@ -98,17 +98,20 @@ export function AdjustCreditLimitModal({
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+            <label htmlFor="aclm-credit-limit" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
               New Credit Limit (Rs) <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             <input
+              id="aclm-credit-limit"
               type="number"
+              inputMode="numeric"
               min={0}
               value={amountRupees === 0 ? '' : amountRupees}
               placeholder="0"
               onChange={(e) => setAmountRupees(Math.max(0, Number(e.target.value) || 0))}
               style={{
-                height: 36,
+                height: 44,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--border)',

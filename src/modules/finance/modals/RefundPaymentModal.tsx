@@ -109,11 +109,13 @@ export function RefundPaymentModal({
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+          <label htmlFor="rpm-reversal-amount" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
             Reversal amount (Rs) <span style={{ color: 'var(--danger)' }}>*</span>
           </label>
           <input
+            id="rpm-reversal-amount"
             type="number"
+            inputMode="decimal"
             min={0.01}
             step={0.01}
             max={toRupees(paymentAmountPaisa)}
@@ -130,10 +132,11 @@ export function RefundPaymentModal({
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+          <label htmlFor="rpm-reversal-reason" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
             Reason for reversal <span style={{ color: 'var(--danger)' }}>*</span>
           </label>
           <textarea
+            id="rpm-reversal-reason"
             rows={3}
             placeholder="State the correction reason..."
             value={reason}

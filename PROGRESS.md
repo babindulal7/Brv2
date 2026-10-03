@@ -1,5 +1,53 @@
 # Progress Log
 
+## 2026-10-04 (f) — Comprehensive Audit (Item 11), Form Ergonomics & Vocabulary Synchronization
+
+**Did**
+- **Comprehensive Audit (Item 11 — Tasks 41–44)**:
+  - Task 41 (Offline Queue): Audited `offlineQueue.ts` Dexie v1→v2→v3 compound uniqueness `&[table+action+clientUuid]`, in-flight crash recovery (`resetStaleSyncingMutations`), dead-letter isolation (`MAX_RETRIES = 5`), and Law 3 delete rejection.
+  - Task 42 (Storage Policies): Audited `0133_create_documents_storage_bucket.sql`, identified and confirmed hardening in `0152_harden_storage_policies_revoke_anon.sql` (revoking public anon reads/writes/deletes).
+  - Task 43 (Bundle & Fonts): Audited production build output (`npm run build`), two isolated entry points (`index.html` and `marketing.html`), vendor chunking, pinned `sourcemap: false`, and 259-file (6.90 MB) offline font precaching for Nepali Devanagari (Hind/Asar).
+  - Task 44 (Booqable Bridge): Audited `graft/src/lib/booqable` and sync tables (`0040_booqable_sync.sql`), documenting number space collisions (B-900 seed range), Law 3 delete behavior, and full architectural decoupling. Filed authoritative report in `docs/audit/14_ITEM_11_COMPREHENSIVE_AUDIT.md`.
+- **Form Ergonomics & Touch Controls (Item 8)**:
+  - Added `inputMode="numeric"` and `inputMode="decimal"` across `MoneyField`, `AdjustCreditLimitModal`, `RefundPaymentModal`, `AdjustStockModal`, `Expenses`, `SectionMaintenance`, and `SectionPricing`.
+  - Added explicit accessible `htmlFor` and `id` bindings to form fields in finance and client adjustment modals.
+  - Raised compact controls to the 44px touch floor (`minHeight: 44`) while preserving visual density.
+  - Verified keyboard accessibility and screen-reader accessible names across `NewRental` and `RecordPaymentModal` via automated E2E tests (`tier1-features.test.tsx` and `RecordPaymentModal.test.tsx`).
+- **Domain Vocabulary Synchronization (Item 12)**:
+  - Updated test assertions in `src/modules/notes/__tests__/InternalNotesPage.test.tsx` to match canonical glossary (`Equipment Alerts`, `🚨 Equipment Defect`).
+- **Workbook Progress Synchronization**:
+  - Updated `next-improvements.xlsx` tasks: Task 34-37 (Item 9: Done), Task 37-38 (Item 10: Done), Tasks 41-45 (Item 11: Done), and Tasks 31, 33 (Item 8: Done).
+
+**Ruled**
+- Every numeric form input intended for touch/mobile devices must explicitly declare `inputMode="numeric"` or `inputMode="decimal"`.
+- Storage policies on `evidence` and `documents` buckets must never grant mutation rights to `anon` (Law 3 & tamper-proof custody).
+
+**Verified**
+- `npm run typecheck`: PASS, 0 errors (`tsc --noEmit`).
+- `npm test`: PASS, 291 test files / 3,938 tests (100% green).
+- `npm run check:pglite`: PASS, 150/150 migrations from scratch, 0 view leaks, 0 unauthorized RPCs, 59/59 definer search_paths pinned.
+- `npm run check:lifecycle`: PASS, 24/24 steps green through real Postgres + RLS.
+- `npm run lint:shell`: PASS, 580 files checked, 0 violations.
+- `npm run completion`: counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 51 | 51 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 150 files · check:pglite 150/150 applied, 0 failed (recorded 2026-10-03T21:46:58.374Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Gates read from .lifecycle-result.json, written 2026-10-03T21:47:09.471Z.
+Counted by `npm run completion`, not typed.
+
+## Remaining
+- Item 3 cutover rehearsal: stage copy and remote apply per `BACKUP_PROTOCOL.md` and N-5.
+- Item 7: Nepali catalogue localization with native speaker input.
+- Item 13: Split giant files (NewRental, Calendar, BookingDetail) behind E2E safety harnesses.
+
 ## 2026-10-04 (e) — Cross-Tab Broadcast Synchronization & Audit Sheet Sync
 
 **Did**

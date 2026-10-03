@@ -116,7 +116,7 @@ export function CreateSubRentalModal({
       isOpen={isOpen}
       onClose={onClose}
       title={`Create External Sub-Rental — ${bookingId}`}
-      subtitle="Source unstocked gear from external rental partners."
+      subtitle="Source unstocked equipment from external rental partners."
       size="md"
       footer={
         <>

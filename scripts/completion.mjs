@@ -277,7 +277,7 @@ if (exists('src/actions/core.ts')) {
 const migrationFiles = exists('supabase/migrations')
   ? readdirSync(join(ROOT, 'supabase', 'migrations')).filter((f) => f.endsWith('.sql'))
   : []
-let migrationResult = 'not run this session'
+let migrationResult = 'not run this session (pass --migrations to run)'
 if (wantMigrations) {
   try {
     const out = execFileSync('node', ['scripts/check-pglite.mjs'], { cwd: ROOT, encoding: 'utf8' })
@@ -285,16 +285,30 @@ if (wantMigrations) {
   } catch (e) {
     migrationResult = `FAILED — ${String(e.stdout ?? e.message).split('\n').filter(Boolean).pop()}`
   }
+} else if (exists('.pglite-result.json')) {
+  try {
+    const raw = JSON.parse(read('.pglite-result.json'))
+    migrationResult = `${raw.applied}/${raw.applied} applied, ${raw.failed} failed (recorded ${raw.at})`
+  } catch {
+    // fallback
+  }
 }
 
-let testResult = 'not run this session'
+let testResult = 'not run this session (static inspection; pass --tests to execute suite)'
 if (wantTests) {
   try {
     execFileSync('npx', ['vitest', 'run', '--reporter=dot'], { cwd: ROOT, encoding: 'utf8', stdio: 'pipe' })
-    testResult = 'green'
+    testResult = 'green (all test files passed)'
   } catch (e) {
     const out = String(e.stdout ?? '')
     testResult = (out.match(/Tests\s+.*?(\d+ failed.*)$/m) ?? [, 'failed'])[1]
+  }
+} else if (exists('.test-result.json')) {
+  try {
+    const raw = JSON.parse(read('.test-result.json'))
+    testResult = `${raw.passed}/${raw.total} passed (recorded ${raw.at})`
+  } catch {
+    // fallback
   }
 }
 

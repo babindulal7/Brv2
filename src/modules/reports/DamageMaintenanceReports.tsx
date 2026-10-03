@@ -431,7 +431,7 @@ export default function DamageMaintenanceReports() {
               <div>
                 <h3 style={{ fontSize: 'var(--t-h3)', fontWeight: 600 }}>Recorded Damage Findings</h3>
                 <p style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                  Audit log of returned gear issues, assessed liability, and repair disposition.
+                  Audit log of returned equipment issues, assessed liability, and repair disposition.
                 </p>
               </div>
               <Link
