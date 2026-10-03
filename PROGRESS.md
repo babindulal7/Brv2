@@ -1,5 +1,54 @@
 # Progress Log
 
+## 2026-10-03 (f) — UI/UX consistency (E1, E2, E6, E7, E8), Law 15 touch target floors, dead component archival, and C2 NewRental modularization
+
+**Did**
+- Resolved audit P1 (E1): Eliminated hardcoded hex palettes (`#f59e0b`, `#2563eb`, `#16a34a`, `#d97706`, `#1d4ed8`, `#15803d`) in `src/modules/rentals/RentalsList.tsx` row action buttons, standardizing on design system tokens `var(--btn-primary-bg)` and `var(--btn-secondary-bg)`.
+- Resolved audit P1 (E2 / Law 15 44px touch target floors):
+  - In `src/modules/rentals/PackingWorkspace.tsx`: removed sub-44px `height: 28` and `height: 26` overrides on `<Button>` controls.
+  - In `src/modules/rentals/ReturnWorkspace.tsx`: removed `height: 28` on "Start Fresh" button, enforced `minHeight: 44` with `className="tap"` across QC pass/fail, optical inspect buttons, and re-sign controls.
+  - In `src/modules/rentals/NewRental.tsx`: removed `minHeight: 32` and `minHeight: 36` overrides, updated crew extra inputs to `minHeight: 44`.
+  - In `src/modules/rentals/LineItemTree.tsx`: added `TouchTarget` wraps to search clear and unit release controls, updated bulk expand/collapse actions to `minHeight: 44`.
+  - In `src/modules/settings/Tools.tsx` & `src/modules/tools/ToolsLanding.tsx`: enforced `minHeight: 44` on back links, favourites toggles, tabs, and category filters.
+- Resolved audit P2 (E6): Added missing `aria-label` to search clear buttons and density toggle in `src/modules/clients/ClientsDirectory.tsx`.
+- Resolved audit P2 (E7): In accordance with Law 3 (nothing is deleted), archived dead UI components to `src/archive/` (`QuickActionButton.tsx`, `GlobalFilterDrawer.tsx`, `RentalQuickActionDrawer.tsx`, `RentalMoreActionsMenu.tsx`) and cleanly pruned their dead exports from `src/components/ui/index.ts`.
+- Resolved audit P2 (E8): Refactored `TAB_CONFIG` in `src/modules/settings/Settings.tsx` to eliminate hardcoded hex colors (`#a855f7`, `#06b6d4`, `#f59e0b`) and off-token rgba backgrounds, adopting semantic `var(--primary)` and `var(--surface-2)` tokens.
+- Resolved audit P2 (C2): Modularized `src/modules/rentals/NewRental.tsx` by extracting pure utilities (`stableJson`, `bookingInstant`, `bookingDays`, `PRODUCT_ID_RE`, `SHOOT_PRESETS`, `readVatRatePercent`, `DAY`) to `src/modules/rentals/booking/newRentalUtils.ts`, maintaining clean re-exports for backward-compatibility with unit test suites.
+- Completed full verification chain: `typecheck` (0 errors), `lint` (0 warnings), `check:pglite` (148/148 applied, 0 failed; 30 views closed, 0 unauthorized RPCs), `check:lifecycle` (24/24 green), `vitest run` (283 files, 3,895 tests green), `check:contrast` (54/54 passed), and `build` (clean 1m 26s).
+
+**Ruled**
+- In accordance with Law 15, all interactive controls and tap targets must honor a minimum 44px floor across all device viewports.
+- In accordance with Law 3, deprecated or dead UI components are archived under `src/archive/`, never permanently deleted, and are excluded from the bundle index.
+- Design system tokens (`var(--btn-*)`, `var(--primary)`, `var(--surface-*)`) must strictly be used in place of ad-hoc hex palettes.
+
+**Verified**
+- `npm run typecheck`: PASS, 0 errors.
+- `npm run lint`: PASS, 0 warnings.
+- `npm run check:pglite`: PASS, 148/148 applied, 0 failed, 30 views checked (0 readable by anon), 21 functions checked (0 unauthorized).
+- `npm run check:lifecycle`: PASS, 24/24 green, 0 failed.
+- `npm test`: PASS, 283 test files / 3,895 tests passed.
+- `npm run check:contrast`: PASS, 54/54 passed WCAG AA.
+- `npm run build`: PASS, production bundle and PWA service worker generated in 1m 26s.
+- `npm run completion`: counts counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 51 / 51 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 50 | 48 · 2 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 148 files · check:pglite 148/148 applied, 0 failed. Suite: 283 files / 3895 tests pass.
+Gates read from .lifecycle-result.json, written 2026-10-03T07:26:51.771Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live database application and production verification for pending migrations (following corrected `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Babin's decision on `docs/OPEN_DECISIONS.md` §7 (staff roster read scope).
+- Address remaining open audit items (C1, C3, C4, C7).
+
 ## 2026-10-03 (e) — Resolve audit D4–D7: RPC security lockdown (0150), repair cancel/extend/void RPCs, enforce anon function gate, and expand lifecycle to 24/24
 
 **Did**
