@@ -19,7 +19,7 @@ import { useToast } from '../../components/ui/Toast'
 import { useViewport } from '../../lib/device'
 import { useNetwork } from '../../lib/network'
 import { STATUS } from '../../lib/status'
-import { toBs, formatBs, formatAd, getBusinessToday } from '../../lib/bs'
+import { toBs, getBusinessToday } from '../../lib/bs'
 import { rentalDaysBetween } from '../../lib/rentalDays'
 import { validateDiscount } from '../../lib/discount'
 import { PROJECT_TYPES, isProjectType, validateProjectType } from '../../lib/projectTypes'
@@ -66,13 +66,14 @@ import {
   AddClientButton,
   AddClientModal,
   AddItemPanel,
+  BookingDatesSection,
+  BookingSummaryCard,
   ClientCombobox,
   ClientHealthEye,
   ClientHistoryDrawer,
   ClientQuickView,
   CrewSearch,
-  DateTimeField,
-  DatePresets,
+  DeliverySection,
   DiscountChips,
   DraftEmailModal,
   Field,
@@ -83,15 +84,18 @@ import {
   TouchInset,
   VatToggle,
   clientHealth,
+  confirmWriteRefusals,
   dbRejectsRole,
   inputStyle,
   srOnly,
 } from './booking'
 import type {
   AddItemSource,
+  BlockingNotice,
   BookingLineDraft,
   BookingWindow,
 } from './booking'
+
 import {
   DAY,
   readVatRatePercent,
@@ -209,96 +213,9 @@ function lineAmountPaisa(l: Line): Paisa {
 
 
 
-/**
- * One reason Confirm Booking is refused, in the shape the rail's blocking-
- * notices card renders.
- *
- * `action` is one of `runNoticeAction`'s verbs and is **optional**: a refusal
- * the operator cannot act on from this screen gets no button rather than a
- * button that silently does nothing. (§12's "every alert carries exactly one
- * action" governs `alerts`, and every alert-derived notice still carries one.)
- */
-export interface BlockingNotice {
-  text: string
-  action?: string
-}
+export { confirmWriteRefusals } from './booking'
+export type { BlockingNotice, ConfirmWriteState } from './booking'
 
-/** Everything `confirmWriteRefusals` needs to know, and nothing else. */
-export interface ConfirmWriteState {
-  /** Whether a client is chosen at all. `false` is the alert model's own Critical, not ours. */
-  clientSelected: boolean
-  /** The chosen client's `clients.id` uuid — `null` when it came from the seed array. */
-  clientDbId: string | null
-  /** Has the live client read landed? It changes what a missing uuid MEANS. */
-  clientsAreLive: boolean
-  lineCount: number
-  /** The first line whose id is not a `products.id` uuid, by name; `null` if none. */
-  sampleLineName: string | null
-  /** Law 6 — whether this role is shown equipment rates at all. */
-  canBookingMoney: boolean
-  /** AUD-026: Whether the selected client is flagged as Blocked or On-Stop. */
-  clientIsBlocked?: boolean
-}
-
-/**
- * ⛔ NR-10 — the four refusals that used to live ONLY inside the Confirm
- * handler, lifted out so one computation answers both the card and the button.
- *
- * The defect: `confirmBlocked` was `critical.length > 0 || days === 0`, and the
- * handler then refused, in its own body and with its own sentences, on a client
- * with no `dbId`, on zero lines, on a money-blind role and on a line id that is
- * not a uuid. None of those four reached `blockingNotices`, so the rail's card
- * said **"Nothing is blocking this booking · Every requirement for Confirm
- * Booking is met"**, the button was enabled, and the press failed into the
- * inline error line. Two lists describing one rule, and they had already
- * drifted.
- *
- * These are the handler's own refusals, verbatim in substance, re-written as
- * standalone sentences so they read correctly in the card as well as after
- * "Not confirmed — " in the error line.
- *
- * Pure and exported for `__tests__/newRentalGuards.test.ts`.
- */
-export function confirmWriteRefusals(s: ConfirmWriteState): BlockingNotice[] {
-  const out: BlockingNotice[] = []
-  /* Only when a client IS chosen: "No client selected" is already a Critical in
-     the alert model, and stating it twice is its own defect. */
-  if (s.clientSelected && !s.clientDbId) {
-    out.push({
-      text: s.clientsAreLive
-        ? 'The selected client came from sample data and has no database record, so there is nothing to book against. Pick a client from the live list.'
-        : 'The client list has not loaded from the database yet, so the selected client is sample data. Wait for it to load, then re-select the client.',
-      action: 'Select Client',
-    })
-  }
-  if (s.clientIsBlocked) {
-    out.push({
-      text: 'This client is flagged as Blocked from equipment rentals. Quotation or confirmation is restricted without manager override.',
-      action: 'View Client',
-    })
-  }
-  if (s.lineCount === 0) {
-    out.push({
-      text: 'Add at least one equipment item before confirming.',
-      action: 'Open Equipment',
-    })
-  }
-  /* Law 6 — `listInventory({ withMoney: false })` returns no `dailyRate`, so
-     every line this role holds carries `ratePaisa` 0. Sending that would
-     persist the display placeholder as the price of the booking. */
-  if (!s.canBookingMoney) {
-    out.push({
-      text: 'Equipment rates are hidden for your role, so this booking cannot be priced from this screen — every line would be saved at Rs 0. Ask a colleague who can see rates to confirm it.',
-    })
-  }
-  if (s.sampleLineName !== null) {
-    out.push({
-      text: `"${s.sampleLineName}" is a sample row, not a product in the catalogue, so it cannot be saved. Remove it and add the item from the live catalogue.`,
-      action: 'Open Equipment',
-    })
-  }
-  return out
-}
 
 /** A crew member's charge on this booking. `dayRatePaisa` seeds from `CrewMember.dayRatePaisa` but is editable per booking — a rate can be negotiated differently per job. */
 interface CrewLine {
@@ -2860,124 +2777,28 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
    * One Single Consolidated Card: Booking Summary (Bento 2.0 Architecture)
    */
   const bookingSummaryCard = (
-    <Card id="rail-booking-summary" title="Booking Summary">
-      <dl className="new-rental-summary-context">
-        <div><dt>Client</dt><dd>{client?.name || 'Select a client'}</dd></div>
-        <div><dt>Pickup</dt><dd>{pickupAt ? formatAd(new Date(pickupAt)) : 'Choose date'} · {pickupTime || 'Choose time'}</dd></div>
-        <div><dt>Return</dt><dd>{returnAt ? formatAd(new Date(returnAt)) : 'Choose date'} · {returnTime || 'Choose time'}</dd></div>
-        <div><dt>Equipment</dt><dd>{totalUnits} {totalUnits === 1 ? 'item' : 'items'} · {days > 0 ? `${days} ${dayWord}` : 'Check dates'}</dd></div>
-      </dl>
-      {canBookingMoney ? (
-        <>
-          <div className="new-rental-bento-hero-total">
-            <div className="new-rental-bento-hero-total-label">
-              <span>Estimated Rental Total</span>
-              <span style={{ fontSize: 10, color: 'var(--text2)', fontWeight: 600, textTransform: 'none' }}>
-                {days > 0 ? `${days} ${dayWord}` : 'Dates pending'}
-              </span>
-            </div>
-            <div className="new-rental-bento-hero-total-val">
-              {formatMoney(pricing.rentalTotalPaisa)}
-            </div>
-          </div>
-
-          {/* Security Deposit (separate liability guarantee) and Advance Required */}
-          <div
-            style={{
-              marginTop: 10,
-              padding: '8px 10px',
-              borderRadius: 'var(--r-btn)',
-              background: 'var(--card2)',
-              border: '1px solid color-mix(in srgb, var(--border) 70%, transparent)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}
-          >
-            <MoneyRow
-              label="Security Deposit (Refundable)"
-              value={formatMoney(pricing.securityDeposit.requiredPaisa)}
-              tone="var(--text2)"
-            />
-            <MoneyRow
-              label="Advance Required"
-              value={formatMoney(pricing.advanceRequiredPaisa)}
-              tone="var(--text)"
-              strong
-            />
-          </div>
-        </>
-      ) : (
-        <p style={{ margin: '0 0 8px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-          Prices are hidden for your role.
-        </p>
-      )}
-
-      {blockingNotices.length > 0 && (
-        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-          <div
-            data-testid="booking-attention-status"
-            style={{
-              padding: '10px 12px',
-              borderRadius: 'var(--r-btn)',
-              background: 'var(--st-danger-bg)',
-              border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
-              color: 'var(--st-danger-fg)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 'var(--t-meta)' }}>
-              <Icon name="error" size={14} style={{ flexShrink: 0 }} />
-              <span>
-                {blockingNotices.length} {blockingNotices.length === 1 ? 'thing needs' : 'things need'} attention:
-              </span>
-            </div>
-            <ul style={{ listStyle: 'disc', margin: '6px 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)' }}>
-              {blockingNotices.map((n) => (
-                <li key={n.text} style={{ lineHeight: 1.35 }}>
-                  <span>{n.text}</span>
-                  {n.action && (
-                    <button
-                      type="button"
-                      className="press"
-                      onClick={() => runNoticeAction(n.action!)}
-                      style={{
-                        display: 'inline-block',
-                        minHeight: 44,
-                        marginLeft: 6,
-                        padding: '1px 8px',
-                        borderRadius: 'var(--r-badge)',
-                        border: '1px solid var(--st-danger-fg)',
-                        background: 'transparent',
-                        color: 'var(--st-danger-fg)',
-                        fontSize: 'var(--t-th)',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {n.action}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      )}
-      {!editBookingId && isDesktop && (
-        <div style={{ marginTop: 14 }}>
-          <Button
-            variant="primary"
-            onClick={confirmBooking}
-            disabled={confirmBlocked || saveState === 'saving'}
-            title={blockReasonText}
-            style={{ minHeight: 44, width: '100%', fontWeight: 700 }}
-          >
-            {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
-          </Button>
-        </div>
-      )}
-    </Card>
+    <BookingSummaryCard
+      client={client}
+      pickupAt={pickupAt}
+      pickupTime={pickupTime}
+      returnAt={returnAt}
+      returnTime={returnTime}
+      totalUnits={totalUnits}
+      days={days}
+      dayWord={dayWord}
+      canBookingMoney={canBookingMoney}
+      pricing={pricing}
+      blockingNotices={blockingNotices}
+      runNoticeAction={runNoticeAction}
+      editBookingId={editBookingId}
+      isDesktop={isDesktop}
+      confirmBooking={confirmBooking}
+      confirmBlocked={confirmBlocked}
+      saveState={saveState}
+      blockReasonText={blockReasonText}
+    />
   )
+
 
   if (draftLoading || quoteLoading) {
     return (
@@ -3320,85 +3141,28 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
               BS above AD on both. Split out of Client & Schedule because the
               wireframe draws it as its own box at all three widths, and on a
               phone as its own accordion. */}
-          <Section
-            id="section-1"
-            title={SECTIONS[1]}
-            badge={
-              days > 0 ? (
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '2px 8px',
-                    borderRadius: 'var(--r-badge)',
-                    background: 'var(--st-primary-bg)',
-                    color: 'var(--st-primary-fg)',
-                    fontSize: 11,
-                    fontWeight: 600,
-                  }}
-                >
-                  <Icon name="calendar" size={11} /> {days} {dayWord}
-                </span>
-              ) : null
-            }
+          <BookingDatesSection
             open={open[1] ?? true}
             onToggle={() => toggle(1)}
-            summary={
-              days === 0
-                ? 'Return must be later than pickup'
-                : `${pickupBs ? formatBs(pickupBs) : formatAd(new Date(pickup))} → ${days} ${dayWord}`
-            }
-          >
-            <details className="new-rental-preset-disclosure">
-              <summary>Use a shoot preset</summary>
-              <div className="new-rental-shoot-presets" role="group" aria-label="Production shoot presets">
-                {SHOOT_PRESETS.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className="new-rental-preset-chip"
-                    onClick={() => applyShootPreset(p.id)}
-                    title={p.description}
-                  >
-                    <Icon name={p.icon} size={12} />
-                    <span>{p.label}</span>
-                  </button>
-                ))}
-              </div>
-            </details>
+            days={days}
+            dayWord={dayWord}
+            pickup={pickup}
+            pickupBs={pickupBs}
+            pickupTime={pickupTime}
+            ret={ret}
+            returnTime={returnTime}
+            pricingHints={pricingHints}
+            onPickupChange={setPickup}
+            onPickupTimeChange={setPickupTime}
+            onReturnChange={setRet}
+            onReturnTimeChange={setReturnTime}
+            onPresetDatesPick={(out, retDate) => {
+              setPickup(out)
+              setRet(retDate)
+            }}
+            onApplyShootPreset={applyShootPreset}
+          />
 
-            {/* Quick date presets — one-tap common rental durations */}
-            <DatePresets
-              outDate={pickup}
-              onPick={(out, ret) => {
-                setPickup(out)
-                setRet(ret)
-              }}
-              minReturnDate={pickup}
-              priceHints={pricingHints}
-            />
-
-            <div className="new-rental-period-fields" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 11, alignItems: 'start' }}>
-              {/* `DateTimeField` renders its own label and its own BS line, so
-                  it is not wrapped in `Field` (that would double the label).
-                  `lib/bs.ts` is the one Date Engine — nothing here hand-writes
-                  a BS date. */}
-              <DateTimeField label="Out" dateValue={pickup} timeValue={pickupTime} onDateChange={setPickup} onTimeChange={setPickupTime} />
-              {/* §7 — return must be later than pickup. NR-19: "later" is
-                  measured over the date AND the time, so a same-day booking is
-                  a booking and this no longer tells the operator to change a
-                  date that is already correct. */}
-              <DateTimeField
-                label="Return"
-                dateValue={ret}
-                timeValue={returnTime}
-                onDateChange={setRet}
-                onTimeChange={setReturnTime}
-                error={days === 0 ? 'Return must be later than pickup. Change the return date or its time.' : undefined}
-              />
-            </div>
-          </Section>
 
 
         </div>
@@ -3971,207 +3735,41 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
           {/* 01_NEW_RENTAL §1.1 — `＋ Delivery (collapsed → Client Pickup Rs 0)`.
               Its own box, and its summary states the default the wireframe
               annotates so a collapsed section still carries the fact. */}
-          <Section
-            id="section-4"
-            title={SECTIONS[4]}
+          <DeliverySection
             open={open[4] ?? false}
             onToggle={() => toggle(4)}
-            summary={clientPickup ? 'Client Pickup · Rs 0' : `Babin Delivery · ${canBookingMoney ? formatMoney(transportPaisa) : 'charged'}`}
-          >
-            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(2, minmax(0,1fr))', gap: 'var(--sp-md)' }}>
-              {/* Left Column: Delivery Type & Dispatch Details */}
-              <div style={{ minWidth: 0 }}>
-                <Field label="Delivery Type">
-                  <Select
-                    value={deliveryType}
-                    onChange={(e) => setDeliveryType(e.target.value as typeof deliveryType)}
-                    style={inputStyle}
-                  >
-                    <option>Client Pickup</option>
-                    <option>Babin Delivery</option>
-                  </Select>
-                </Field>
+            isPhone={isPhone}
+            clientPickup={clientPickup}
+            deliveryType={deliveryType}
+            setDeliveryType={setDeliveryType}
+            vehicle={vehicle}
+            setVehicle={setVehicle}
+            numberPlate={numberPlate}
+            setNumberPlate={setNumberPlate}
+            driverContact={driverContact}
+            setDriverContact={setDriverContact}
+            pickupLocation={pickupLocation}
+            setPickupLocation={setPickupLocation}
+            returnLocation={returnLocation}
+            setReturnLocation={setReturnLocation}
+            specialInstructions={specialInstructions}
+            setSpecialInstructions={setSpecialInstructions}
+            returnPickupType={returnPickupType}
+            setReturnPickupType={setReturnPickupType}
+            returnPickupAddress={returnPickupAddress}
+            setReturnPickupAddress={setReturnPickupAddress}
+            returnPickupTime={returnPickupTime}
+            setReturnPickupTime={setReturnPickupTime}
+            returnPickupChargePaisa={returnPickupChargePaisa}
+            setReturnPickupChargePaisa={setReturnPickupChargePaisa}
+            deliveryChargePaisa={deliveryChargePaisa}
+            setDeliveryChargePaisa={setDeliveryChargePaisa}
+            fuelChargePaisa={fuelChargePaisa}
+            setFuelChargePaisa={setFuelChargePaisa}
+            transportPaisa={transportPaisa}
+            canBookingMoney={canBookingMoney}
+          />
 
-                {clientPickup ? (
-                  <div
-                    style={{
-                      marginTop: 12,
-                      padding: '12px 14px',
-                      borderRadius: 'var(--r-btn)',
-                      background: 'var(--card2)',
-                      border: '1px solid var(--border)',
-                      display: 'flex',
-                      gap: 10,
-                      alignItems: 'flex-start',
-                      fontSize: 'var(--t-meta)',
-                      color: 'var(--text2)',
-                      lineHeight: 1.45,
-                    }}
-                  >
-                    <span style={{ color: 'var(--muted)', display: 'inline-flex', marginTop: 1, flexShrink: 0 }}>
-                      <Icon name="info" size={15} />
-                    </span>
-                    <div>
-                      <strong style={{ color: 'var(--text)', display: 'block', marginBottom: 2 }}>Client Warehouse Pickup</strong>
-                      Equipment will be collected and returned at the warehouse by the client. No vehicle or driver is required.
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ display: 'grid', gap: 9, marginTop: 12 }}>
-                    <Field label="Vehicle">
-                      <Input
-                        value={vehicle}
-                        onChange={(e) => setVehicle(e.target.value)}
-                        placeholder="Make and model, or the van's name"
-                        style={inputStyle}
-                      />
-                    </Field>
-                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 9 }}>
-                      <Field label="Number Plate">
-                        <Input
-                          value={numberPlate}
-                          onChange={(e) => setNumberPlate(e.target.value)}
-                          placeholder="e.g. BA 2 CHA 1234"
-                          style={inputStyle}
-                        />
-                      </Field>
-                      <Field label="Driver Contact">
-                        <Input
-                          value={driverContact}
-                          onChange={(e) => setDriverContact(e.target.value)}
-                          placeholder="Name and phone"
-                          style={inputStyle}
-                        />
-                      </Field>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 9 }}>
-                      <Field label="Delivery location">
-                        <Input
-                          value={pickupLocation}
-                          onChange={(e) => setPickupLocation(e.target.value)}
-                          placeholder="Address or venue for delivery"
-                          style={inputStyle}
-                        />
-                      </Field>
-                      <Field label="Collection location">
-                        <Input
-                          value={returnLocation}
-                          onChange={(e) => setReturnLocation(e.target.value)}
-                          placeholder="Address or venue for collection"
-                          style={inputStyle}
-                        />
-                      </Field>
-                    </div>
-                    <Field label="Driver instructions">
-                      <textarea
-                        value={specialInstructions}
-                        onChange={(e) => setSpecialInstructions(e.target.value)}
-                        placeholder="Access, contact, parking, timing, or loading instructions"
-                        rows={3}
-                        style={{ ...inputStyle, minHeight: 76, padding: '9px 11px', resize: 'vertical', lineHeight: 1.45 }}
-                      />
-                    </Field>
-
-                    {/* Return Pickup Logistics (§3.3 / §4.58)
-                        Resolved: returnPickupChargePaisa is rolled into the pricing pipeline
-                        and the booking transport total (delivery_charge). Logistics instructions,
-                        pickup address, and timing are recorded in special_instructions and
-                        return_location, and persisted in draft schema. */}
-                    <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                      <Field label="Return Pickup Option">
-                        <Select
-                          value={returnPickupType}
-                          onChange={(e) => setReturnPickupType(e.target.value as typeof returnPickupType)}
-                          style={inputStyle}
-                        >
-                          {/* RULING 2026-09-22 session: explicit values — option text alone set the state to a display label, so the 'Babin Pickup' branch (address/time/fee) and the fee total never engaged, and the review summary printed the wrong line. */}
-                          <option value="Client Return">Client Returns to Warehouse</option>
-                          <option value="Babin Pickup">Babin Rentals Pickup from Location</option>
-                        </Select>
-                      </Field>
-                      {returnPickupType === 'Babin Pickup' && (
-                        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : '1fr 1fr', gap: 9, marginTop: 9 }}>
-                          <Field label="Pickup Address">
-                            <Input
-                              value={returnPickupAddress}
-                              onChange={(e) => setReturnPickupAddress(e.target.value)}
-                              placeholder="Address or venue for pickup"
-                              style={inputStyle}
-                            />
-                          </Field>
-                          <Field label="Return Pickup Time">
-                            <Input
-                              type="time"
-                              value={returnPickupTime}
-                              onChange={(e) => setReturnPickupTime(e.target.value)}
-                              style={inputStyle}
-                            />
-                          </Field>
-                          <Field label="Return Pickup Fee (Rs)">
-                            <Input
-                              type="number"
-                              min={0}
-                              value={returnPickupChargePaisa / 100}
-                              onChange={(e) => setReturnPickupChargePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
-                              placeholder="Fee"
-                              style={inputStyle}
-                            />
-                          </Field>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Right Column: Transport Charges & Total */}
-              <div style={{ ...moneyBlock, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div>
-                  <h3 style={sub}>Transport Charges</h3>
-                  {canBookingMoney ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginTop: 6 }}>
-                      <Field label="Delivery Charge">
-                        <Input
-                          type="number"
-                          min={0}
-                          disabled={clientPickup}
-                          value={clientPickup ? 0 : deliveryChargePaisa / 100}
-                          onChange={(e) => setDeliveryChargePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
-                          style={{ ...inputStyle, opacity: clientPickup ? 0.55 : 1, cursor: clientPickup ? 'not-allowed' : 'text' }}
-                        />
-                      </Field>
-                      <Field label="Fuel Charge">
-                        <Input
-                          type="number"
-                          min={0}
-                          disabled={clientPickup}
-                          value={clientPickup ? 0 : fuelChargePaisa / 100}
-                          onChange={(e) => setFuelChargePaisa(rupees(Math.max(0, Number(e.target.value) || 0)))}
-                          style={{ ...inputStyle, opacity: clientPickup ? 0.55 : 1, cursor: clientPickup ? 'not-allowed' : 'text' }}
-                        />
-                      </Field>
-                    </div>
-                  ) : (
-                    <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                      Transport rates are hidden for your role.
-                    </p>
-                  )}
-
-                  {clientPickup && (
-                    <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                      Client Pickup forces delivery and fuel charges to Rs 0.
-                    </p>
-                  )}
-                </div>
-
-                {canBookingMoney && (
-                  <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                    <MoneyRow label="Transport Total" value={formatMoney(transportPaisa)} strong />
-                  </div>
-                )}
-              </div>
-            </div>
-          </Section>
 
         <div className="new-rental-stage new-rental-stage--pricing">
           {/* Kept deliberately. `WIREFRAME_RULINGS_2026-08-12.md` §1 names

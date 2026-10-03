@@ -1,6 +1,55 @@
 # Progress Log
 
-## 2026-10-03 (f) — UI/UX consistency (E1, E2, E6, E7, E8), Law 15 touch target floors, dead component archival, and C2 NewRental modularization
+## 2026-10-03 (g) — Audit finding C2: Decompose NewRental.tsx (reduced by 1,436 lines) into modular domain subcomponents
+
+**Did**
+- Resolved audit P2 (C2 / NewRental modularization): Decomposed monolithic `src/modules/rentals/NewRental.tsx` from 5,941 lines down to 4,505 lines (1,436 lines removed), extracting domain subcomponents, form controls, and validation guards to `src/modules/rentals/booking/`:
+  - `src/modules/rentals/booking/BookingFormWidgets.tsx`: Reusable form widgets (`TouchInset`, `NumberStepper`, `Field`, `Section`, `MoneyRow`, `RowMenu`, `AddClientButton`, `inputStyle`, `srOnly`).
+  - `src/modules/rentals/booking/VatToggle.tsx`: VAT toggle switch with VAT rate indicator and accessible toggling.
+  - `src/modules/rentals/booking/DiscountChips.tsx`: Discount presets and chips (`DISCOUNT_PRESETS`, `DiscountChips`).
+  - `src/modules/rentals/booking/CrewSearch.tsx`: Crew roster search combobox with role validation helpers (`ROLES_ACCEPTED_BY_DB`, `dbRejectsRole`, `rejectionNote`).
+  - `src/modules/rentals/booking/newRentalGuards.ts`: Guard computations and refusals (`confirmWriteRefusals`, `BlockingNotice`, `ConfirmWriteState`).
+  - `src/modules/rentals/booking/BookingDatesSection.tsx`: Form Section 1 (Dates & Times) with shoot presets, `DatePresets`, and `DateTimeField` controls.
+  - `src/modules/rentals/booking/DeliverySection.tsx`: Form Section 4 (Delivery & Transport) with vehicle, driver, pickup/collection locations, return pickup logistics, and transport charges.
+  - `src/modules/rentals/booking/BookingSummaryCard.tsx`: Consolidated Bento 2.0 right rail Booking Summary card with client context, estimated rental total, security deposit, advance required, attention notices, and primary Confirm button.
+  - `src/modules/rentals/booking/index.ts`: Barrel export of all extracted subcomponents, guards, and types.
+- Updated `src/modules/rentals/__tests__/newRentalGuards.test.ts` to assert on extracted `DeliverySection.tsx?raw` for Return-Pickup select options.
+- Completed full verification chain: `typecheck` (0 errors), `lint` (0 warnings), `check:pglite` (148/148 applied, 0 failed; 30 views closed, 0 unauthorized RPCs), `check:lifecycle` (24/24 green), unit tests (35/35 green), `check:contrast` (54/54 passed), and `build` (23.54s clean).
+
+**Ruled**
+- In accordance with Law 1, presentation subcomponents must remain decoupled from domain business logic; extracted form sections receive state and handlers as props and raise callbacks without internal business side-effects.
+- In accordance with Law 6, money figures and financial totals remain strictly guarded by `canBookingMoney` across all extracted components.
+- In accordance with exactOptionalPropertyTypes, optional props in extracted subcomponents must not pass explicit `undefined` into strictly typed targets.
+
+**Verified**
+- `npm run typecheck`: PASS, 0 errors.
+- `npm run lint`: PASS, 0 warnings.
+- `npm run check:pglite`: PASS, 148/148 applied, 0 failed, 30 views checked (0 readable by anon), 21 functions checked (0 unauthorized).
+- `npm run check:lifecycle`: PASS, 24/24 green, 0 failed.
+- Unit tests (`newRentalBusinessLogic` & `newRentalGuards`): PASS, 35/35 tests passed.
+- `npm run check:contrast`: PASS, 54/54 passed WCAG AA.
+- `npm run build`: PASS, production bundle and PWA service worker generated in 23.54s.
+- `npm run completion`: counts counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 51 / 51 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 50 | 48 · 2 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 148 files · check:pglite 148/148 applied, 0 failed. Suite: 35/35 new rental tests pass.
+Gates read from .lifecycle-result.json, written 2026-10-03T07:43:25.273Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live database application and production verification for pending migrations (following corrected `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Babin's decision on `docs/OPEN_DECISIONS.md` §7 (staff roster read scope).
+- Address remaining open audit items (C1, C4, C7).
+
+
 
 **Did**
 - Resolved audit P1 (E1): Eliminated hardcoded hex palettes (`#f59e0b`, `#2563eb`, `#16a34a`, `#d97706`, `#1d4ed8`, `#15803d`) in `src/modules/rentals/RentalsList.tsx` row action buttons, standardizing on design system tokens `var(--btn-primary-bg)` and `var(--btn-secondary-bg)`.

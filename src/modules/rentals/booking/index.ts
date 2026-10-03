@@ -171,3 +171,20 @@ export {
   bookingInstant,
   stableJson,
 } from './newRentalUtils'
+
+export {
+  confirmWriteRefusals,
+} from './newRentalGuards'
+export type {
+  BlockingNotice,
+  ConfirmWriteState,
+} from './newRentalGuards'
+
+export { BookingDatesSection } from './BookingDatesSection'
+export type { BookingDatesSectionProps } from './BookingDatesSection'
+
+export { DeliverySection } from './DeliverySection'
+export type { DeliverySectionProps } from './DeliverySection'
+
+export { BookingSummaryCard } from './BookingSummaryCard'
+export type { BookingSummaryCardProps } from './BookingSummaryCard'

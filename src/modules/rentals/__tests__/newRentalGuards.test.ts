@@ -173,24 +173,26 @@ describe('bookingDays — NR-19, the length is measured over the instants that g
  * union, display text unchanged.
  */
 import newRentalRaw from '../NewRental.tsx?raw'
+import deliverySectionRaw from '../booking/DeliverySection.tsx?raw'
 
 describe('NR-rpo — the Return-Pickup select speaks the state union', () => {
   it('both options carry an explicit value drawn from the state union', () => {
-    expect(newRentalRaw).toContain('<option value="Client Return">Client Returns to Warehouse</option>')
-    expect(newRentalRaw).toContain('<option value="Babin Pickup">Babin Rentals Pickup from Location</option>')
+    expect(deliverySectionRaw).toContain('<option value="Client Return">Client Returns to Warehouse</option>')
+    expect(deliverySectionRaw).toContain('<option value="Babin Pickup">Babin Rentals Pickup from Location</option>')
   })
 
   it('the state union and the branch condition read the same two literals', () => {
     expect(newRentalRaw).toContain("useState<'Client Return' | 'Babin Pickup'>")
-    expect(newRentalRaw).toContain("returnPickupType === 'Babin Pickup'")
+    expect(deliverySectionRaw).toContain("returnPickupType === 'Babin Pickup'")
   })
 
   it('the no-value option shape does not return next to Return Pickup', () => {
     /* The defect was bare `<option>Client Returns to Warehouse</option>`. */
-    expect(newRentalRaw).not.toContain('<option>Client Returns to Warehouse</option>')
-    expect(newRentalRaw).not.toContain('<option>Babin Rentals Pickup from Location</option>')
+    expect(deliverySectionRaw).not.toContain('<option>Client Returns to Warehouse</option>')
+    expect(deliverySectionRaw).not.toContain('<option>Babin Rentals Pickup from Location</option>')
   })
 })
+
 
 /**
  * # The two half-fixes review caught
