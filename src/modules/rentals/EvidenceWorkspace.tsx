@@ -738,7 +738,7 @@ export default function EvidenceWorkspace() {
                             type="button"
                             onClick={() => setFilter(f)}
                             aria-pressed={on}
-                            style={{ height: 26, padding: '0 9px', borderRadius: 7, border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`, background: on ? 'var(--nav-active-bg)' : 'transparent', color: on ? 'var(--nav-active-accent)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: on ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit' }}
+                            style={{ minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-btn, 7px)', border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`, background: on ? 'var(--nav-active-bg)' : 'transparent', color: on ? 'var(--nav-active-accent)' : 'var(--text2)', fontSize: 'var(--t-meta)', fontWeight: on ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit' }}
                           >
                             {f}
                           </button>

@@ -69,6 +69,7 @@ const NAV_SHORTCUTS: Record<string, { shortcut: string; keywords: string[] }> = 
   '/inventory': { shortcut: 'inv', keywords: ['inv', 'gear', 'stock'] },
   '/clients': { shortcut: 'cl', keywords: ['cl', 'client', 'directory'] },
   '/finance': { shortcut: 'fin', keywords: ['fin', 'money', 'invoices', 'closing'] },
+  '/notes': { shortcut: 'notes', keywords: ['notes', 'internal', 'shift', 'handover', 'dispatch', 'gear', 'alert'] },
   '/tools': { shortcut: 'tools', keywords: ['tools', 'calc', 'pricing'] },
   '/settings': { shortcut: 'set', keywords: ['set', 'settings', 'config'] },
 }
@@ -209,6 +210,16 @@ export const CommandPalette: React.FC = () => {
       shortcut: 'sc',
       keywords: ['sc', 'scan', 'barcode', 'qr'],
       onSelect: toggleScanner,
+    },
+    {
+      id: 'act-team-notes',
+      title: 'Team Internal Notes',
+      subtitle: 'Open shift handovers, gear defect alerts & dispatch log',
+      category: 'Navigation',
+      icon: 'message',
+      shortcut: 'notes',
+      keywords: ['notes', 'internal', 'shift', 'handover', 'dispatch', 'gear', 'alert'],
+      onSelect: () => navigate('/notes'),
     },
     {
       id: 'act-toggle-lang',

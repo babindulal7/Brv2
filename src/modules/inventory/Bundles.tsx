@@ -1508,8 +1508,7 @@ function SummaryCard({ bundle, facts }: { bundle: BundleRecord; facts: BundleFac
       />
       {facts.totalWeightKg === null && (
         <p style={{ margin: '8px 0 0', ...subtle, lineHeight: 1.5 }}>
-          No weight is recorded against these models, so the total is shown as `—` rather than 0.{' '}
-          <span className="identifier">TODO(decision)</span> — where do per-model weights come from?
+          No weight is recorded against these models, so the total is shown as `—` rather than 0.
         </p>
       )}
       <p style={{ margin: '8px 0 0', ...subtle, lineHeight: 1.5 }}>

@@ -1063,6 +1063,9 @@ function BookingDetailView() {
   useDomainEvent<{ bookingNo?: string }>(EVENT_TYPES.RENTAL_RESET_COMPLETED, (p) => {
     if (!p?.bookingNo || p.bookingNo === id) refreshBookingData()
   })
+  useDomainEvent<{ bookingNo?: string }>(EVENT_TYPES.DEPOSIT_SETTLED, (p) => {
+    if (!p?.bookingNo || p.bookingNo === id) refreshBookingData()
+  })
 
   /* ── unit release — §4.38 ruled (a), the serial chip's × ──────────────────
    *
@@ -1493,6 +1496,43 @@ function BookingDetailView() {
       })
       .finally(() => setFulfilling(false))
   }, [id, user, showSuccessToast, refetchHead])
+
+  const handleConfirmSettlement = useCallback(
+    async (summary: import('./modals/ReturnSettlementModal').ReturnSettlementSummary) => {
+      const ctx = actionCtx(user)
+      if (!ctx) {
+        throw new Error('You must be signed in to settle deposits.')
+      }
+      const clientUuid = newClientUuid()
+      const { settleDeposit } = await import('../../actions/finance/settleDeposit')
+      
+      const appliedPaisa = (summary.damageChargesPaisa + summary.lateFeeChargedPaisa) as Paisa
+      const chargeType = summary.damageChargesPaisa > 0 ? 'Damage' : summary.lateFeeChargedPaisa > 0 ? 'Late' : undefined
+      const appliedReason =
+        summary.damageChargesPaisa > 0
+          ? `Settlement: Damage charges assessed during return inspection`
+          : summary.lateFeeChargedPaisa > 0
+            ? `Settlement: Late fee assessed upon return`
+            : undefined
+
+      await settleDeposit(
+        {
+          bookingRef: id,
+          releasePaisa: summary.depositRefundPaisa,
+          appliedPaisa: appliedPaisa > 0 ? appliedPaisa : undefined,
+          chargeType,
+          appliedReason,
+          clientUuid,
+        },
+        ctx,
+      )
+
+      showSuccessToast('Deposit Settled', `Deposit for ${summary.bookingNo} settled successfully.`)
+      setSettlementModalOpen(false)
+      refreshBookingData()
+    },
+    [id, user, showSuccessToast, refreshBookingData],
+  )
 
   const segments: PhoneSegment[] = canBookingMoney ? ['Items', 'Money', 'Docs'] : ['Items', 'Docs']
   const [segment, setSegment] = useState<PhoneSegment>('Items')
@@ -3242,10 +3282,7 @@ function BookingDetailView() {
           dayRateBasis={lateFeeData?.basis ?? 'Derived from rental total'}
           totalItemCount={booking.itemCount}
           itemsWithIssues={returnDamageItems}
-          onConfirmSettlement={() => {
-            setSettlementModalOpen(false)
-            refreshBookingData()
-          }}
+          onConfirmSettlement={handleConfirmSettlement}
         />
       )}
     </PageShell>

@@ -134,10 +134,10 @@ describe('AddItemPanel unified search and recenter', () => {
 
       await act(async () => change('Babin'))
 
-      expect(host.textContent).toContain('Babin Shrestha')
-      expect(host.textContent).toContain('Director of Photography')
+      expect(document.body.textContent).toContain('Babin Shrestha')
+      expect(document.body.textContent).toContain('Director of Photography')
 
-      const crewAddBtn = host.querySelector<HTMLElement>('li[role="option"] [role="presentation"]')
+      const crewAddBtn = document.body.querySelector<HTMLElement>('li[role="option"] [role="presentation"]')
       expect(crewAddBtn).toBeTruthy()
       await act(async () => {
         crewAddBtn?.click()
@@ -146,9 +146,9 @@ describe('AddItemPanel unified search and recenter', () => {
 
       // Search for transport mode
       await act(async () => change('Delivery'))
-      expect(host.textContent).toContain('Babin Delivery')
+      expect(document.body.textContent).toContain('Babin Delivery')
 
-      const deliveryOption = host.querySelector<HTMLElement>('li[role="option"]')
+      const deliveryOption = document.body.querySelector<HTMLElement>('li[role="option"]')
       expect(deliveryOption).toBeTruthy()
 
       await act(async () => {

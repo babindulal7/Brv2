@@ -33,3 +33,6 @@ export function Toolbar({ children, actions, label = 'Page controls' }: {
     </div>
   )
 }
+
+export { PageHeader } from './Page'
+export { PageActions } from './PageActions'

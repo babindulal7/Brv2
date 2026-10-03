@@ -36,6 +36,7 @@
     "check:dump": "node scripts/check-dump.mjs",
     "completion": "node scripts/completion.mjs",
     "lint:progress": "node scripts/lint-progress.mjs",
+    "lint:shell": "node scripts/check-page-shell-lint.mjs",
     "db:local": "node scripts/local-db.mjs",
     "storage:local": "node scripts/local-storage.mjs"
   },

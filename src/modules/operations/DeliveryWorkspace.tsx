@@ -556,11 +556,13 @@ export function DeliveryWorkspace() {
                   Driver Contact Phone
                 </label>
                 <input
-                  type="text"
+                  type="tel"
+                  inputMode="tel"
                   value={driverPhone}
                   onChange={(e) => setDriverPhone(e.target.value)}
                   style={{
                     width: '100%',
+                    minHeight: 'var(--tap)',
                     padding: '8px 12px',
                     borderRadius: '8px',
                     background: 'var(--surface)',
@@ -749,12 +751,14 @@ export function DeliveryWorkspace() {
                     Client Phone
                   </label>
                   <input
-                    type="text"
+                    type="tel"
+                    inputMode="tel"
                     placeholder="+977 98..."
                     value={newClientPhone}
                     onChange={(e) => setNewClientPhone(e.target.value)}
                     style={{
                       width: '100%',
+                      minHeight: 'var(--tap)',
                       padding: '8px',
                       borderRadius: '6px',
                       background: 'var(--surface)',

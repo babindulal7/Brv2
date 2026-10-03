@@ -1155,8 +1155,9 @@ export function AddClientModal({
                     <input
                       id={`${uid}-phone`}
                       ref={phoneRef}
+                      type="tel"
                       value={phone}
-                      inputMode="numeric"
+                      inputMode="tel"
                       autoComplete="tel-national"
                       onChange={(e) => {
                         setPhone(e.target.value)

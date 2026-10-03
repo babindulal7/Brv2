@@ -543,10 +543,11 @@ export function RecordPaymentModal({
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+          <label htmlFor="rpm-invoice" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
             Select Invoice <span style={{ color: 'var(--danger)' }}>*</span>
           </label>
           <select
+            id="rpm-invoice"
             value={invoiceId}
             onChange={(e) => setInvoiceId(e.target.value)}
             style={{
@@ -574,11 +575,13 @@ export function RecordPaymentModal({
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+            <label htmlFor="rpm-amount" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
               Amount (Rs) <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             <input
+              id="rpm-amount"
               type="number"
+              inputMode="numeric"
               min={1}
               /*
                * 0 renders as an empty box, not a typed-looking "0": the state
@@ -620,10 +623,11 @@ export function RecordPaymentModal({
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+            <label htmlFor="rpm-method" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
               Payment Method <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             <select
+              id="rpm-method"
               value={method}
               onChange={(e) => setMethod(e.target.value as PaymentMethod)}
               style={{
@@ -647,7 +651,7 @@ export function RecordPaymentModal({
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+          <label htmlFor="rpm-account" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
             Deposit To Account
           </label>
           {/*
@@ -661,6 +665,7 @@ export function RecordPaymentModal({
              in this modal (`minHeight: var(--tap)`).
           */}
           <select
+            id="rpm-account"
             value={bankAccountId}
             onChange={(e) => {
               accountTouched.current = true
@@ -694,10 +699,11 @@ export function RecordPaymentModal({
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+          <label htmlFor="rpm-reference" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
             Transaction Reference / Txn ID
           </label>
           <input
+            id="rpm-reference"
             type="text"
             placeholder="e.g. TXN-9948123 or Bank Ref #881"
             value={reference}
@@ -715,8 +721,9 @@ export function RecordPaymentModal({
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Notes (Optional)</label>
+          <label htmlFor="rpm-notes" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>Notes (Optional)</label>
           <textarea
+            id="rpm-notes"
             rows={2}
             placeholder="Additional notes for receipt generation..."
             value={notes}

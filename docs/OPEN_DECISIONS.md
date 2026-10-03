@@ -62,3 +62,18 @@
 - **Implementation:** Migration `0151_payment_numbering_short_format.sql` (updates `number_sequences` for `payment` to `padding = 1, include_year = false`).
 - **Status:** Resolved (3 October 2026, Babin ruling, Migration 0151).
 
+---
+
+## 9. Security Deposit Release and Settlement Authority (D1) — RESOLVED
+- **Decision:** Authority is scoped strictly to `Owner · Admin · Manager · Accounts` (`M+ · Accounts`), matching capability `deposit.release` in `docs/PERMISSIONS.md` §4.6. Operations staff (`Warehouse`, `Technician`) and `Coordinator` inspect physical gear and flag missing/damaged items, but liability release and movement recording require management or financial authority.
+- **Implementation:** Capability `deposit.release` enforced in `src/actions/core.ts`, `src/lib/rbac.ts` (`canReleaseDeposit`), and `src/actions/finance/settleDeposit.ts`.
+- **Status:** Resolved (4 October 2026, Babin ruling).
+
+---
+
+## 10. Audit Reason for Security Deposit Penalty Application / Forfeiture (D2) — RESOLVED
+- **Decision:** When any portion of a client's security deposit is applied to damages, late fees, or missing equipment penalties (`Applied` movement), an explicit audit reason of at least 10 characters is mandatory, matching the zero-value close override standard.
+- **Implementation:** Validation in `src/actions/finance/settleDeposit.ts` (`appliedReason.trim().length >= 10`) and tested in `src/actions/finance/__tests__/settleDeposit.test.ts`.
+- **Status:** Resolved (4 October 2026, Babin ruling).
+
+

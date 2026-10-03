@@ -251,7 +251,7 @@ export default function CouponsManager() {
             />
           </div>
 
-          <Button variant="secondary" onClick={handleTestValidate} style={{ minHeight: 40 }}>
+          <Button variant="secondary" onClick={handleTestValidate} style={{ minHeight: 44 }}>
             <Icon name="check" size={16} />
             Simulate Checkout
           </Button>
@@ -461,7 +461,8 @@ export default function CouponsManager() {
                       <Button
                         variant="ghost"
                         onClick={() => handleToggle(c.code)}
-                        style={{ fontSize: 'var(--t-caption)', height: 32, padding: '0 8px' }}
+                        className="tap"
+                        style={{ fontSize: 'var(--t-caption)', minHeight: 'var(--tap)', padding: '0 8px' }}
                       >
                         {c.disabled ? 'Enable' : 'Deactivate'}
                       </Button>

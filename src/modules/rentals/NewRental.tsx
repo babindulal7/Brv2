@@ -1579,6 +1579,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   const [draftLoading, setDraftLoading] = useState<boolean>(() => Boolean(searchParams.get('draft')))
   const [draftLoadError, setDraftLoadError] = useState<string | null>(null)
   const [exitPrompt, setExitPrompt] = useState<'unsaved-new' | 'unsaved-edits' | null>(null)
+  const [reloadPrompt, setReloadPrompt] = useState(false)
   const [draftClientDbId, setDraftClientDbId] = useState<string | null>(null)
   const [savedDraftFingerprint, setSavedDraftFingerprint] = useState<string | null>(null)
   const draftCreateKey = useRef<string | null>(null)
@@ -2879,7 +2880,16 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         <p role="status" style={inlineErrorStyle}>
           <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 1 }} />
           {actionError}
-          {editBookingId && <Button onClick={()=>{if(!quoteDirty || window.confirm('Discard edits and reload the latest booking?'))setQuoteReload(v=>v+1)}}>Reload latest booking</Button>}
+          {editBookingId && (
+            <Button
+              onClick={() => {
+                if (!quoteDirty) setQuoteReload((v) => v + 1)
+                else setReloadPrompt(true)
+              }}
+            >
+              Reload latest booking
+            </Button>
+          )}
         </p>
       )}
 
@@ -3924,9 +3934,11 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
                       )}
 
                       {/* Women DoP / Director toggle */}
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer', fontSize: 'var(--t-meta)' }}>
+                      <label htmlFor="women-dop-eligible" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer', fontSize: 'var(--t-meta)' }}>
                         <input
+                          id="women-dop-eligible"
                           type="checkbox"
+                          aria-label="Women DoP / Director (+5% discount)"
                           checked={womenDopEligible}
                           onChange={(e) => setWomenDopEligible(e.target.checked)}
                           style={{ cursor: 'pointer', width: 16, height: 16 }}
@@ -4067,9 +4079,11 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
                       <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}>{formatMoney(pricing.securityDeposit.recommendedPaisa)}</span>
                     </div>
 
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer', fontSize: 'var(--t-meta)' }}>
+                    <label htmlFor="manual-deposit-override" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer', fontSize: 'var(--t-meta)' }}>
                       <input
+                        id="manual-deposit-override"
                         type="checkbox"
+                        aria-label="Manual security deposit override"
                         checked={manualDepositOverride}
                         onChange={(e) => {
                           setManualDepositOverride(e.target.checked)
@@ -4206,7 +4220,8 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
           label="Save changes"
           onSave={() => void saveQuote()}
           onCancel={() => {
-            if (!quoteDirty || window.confirm('Discard unsaved changes?')) doExit()
+            if (!quoteDirty) doExit()
+            else setExitPrompt('unsaved-edits')
           }}
         />
       ) : (
@@ -4455,6 +4470,20 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         confirmLabel="Leave without saving"
         cancelLabel="Stay here"
         variant="default"
+      />
+
+      <ConfirmDialog
+        isOpen={reloadPrompt}
+        onClose={() => setReloadPrompt(false)}
+        onConfirm={() => {
+          setReloadPrompt(false)
+          setQuoteReload((v) => v + 1)
+        }}
+        title="Discard edits and reload booking?"
+        description="Any unsaved edits on this booking will be discarded and the latest version from the database will be loaded."
+        confirmLabel="Reload booking"
+        cancelLabel="Keep edits"
+        variant="danger"
       />
 
       {/* Confirmed Booking Success Modal */}

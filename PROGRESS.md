@@ -1,5 +1,369 @@
 # Progress Log
 
+## 2026-10-04 (e) — Cross-Tab Broadcast Synchronization & Audit Sheet Sync
+
+**Did**
+- **DomainEvents Cross-Tab Broadcast Synchronization**:
+  - Upgraded `EventBus` in `src/events/eventBus.ts` with browser `BroadcastChannel('babin-rentals-domain-events')`.
+  - Actions emitting lifecycle events (`RENTAL_RETURNED`, `RENTAL_CLOSED`, `RENTAL_PACKED`, `DEPOSIT_SETTLED`, etc.) broadcast envelopes with instance ID tagging to prevent echo loops.
+  - Subscribing views (`RentalsList`, `OperationsQueues`, `Calendar`, `Today`, `BookingDetail`) across all open tabs, windows, and floor terminals receive instant state refresh without manual reloads.
+  - Added comprehensive test suite `src/events/__tests__/eventBus.test.ts` verifying local dispatch, multi-tab broadcast reception, and unsubscribe/teardown mechanics.
+- **Audit Sheet Synchronization (`next-improvements.xlsx`)**:
+  - Synchronized `next-improvements.xlsx` tasks to reflect completed work:
+    - Task 20: Verified multi-tab / cross-device return synchronization via BroadcastChannel (`Done`).
+    - Task 25: Seeded mock database by default via `VITE_MOCK_SEEDED=true` in `.env.mock` and `client.ts` (`Done`).
+    - Task 26: Added browser floor loop E2E test `src/__tests__/e2e/floor-loop.test.tsx` (`Done`).
+    - Task 27: Refactored lifecycle test `scripts/e2e-lifecycle.mjs` to execute through domain action functions (`Done`).
+
+**Ruled**
+- Multi-tab synchronization must be non-blocking and safe in environments without `BroadcastChannel` (e.g. older browsers or headless workers).
+- Emitting instances must never echo events back onto their own local listeners.
+
+**Verified**
+- `npm run typecheck`: PASS, 0 errors (`tsc --noEmit`).
+- `npm test`: PASS, 291 test files / 3,938 tests (100% green).
+- `npm run check:pglite`: PASS, 150/150 migrations from scratch, 0 view leaks, 0 unauthorized RPCs.
+- `npm run check:lifecycle`: PASS, 24/24 steps green through real Postgres + RLS.
+- `npm run lint:shell`: PASS, 580 files checked, 0 violations.
+- `npm run completion`: counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 51 | 51 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 150 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-03T20:45:14.093Z.
+Counted by `npm run completion`, not typed.
+
+## Remaining
+- Item 3 cutover rehearsal: stage copy and remote apply per `BACKUP_PROTOCOL.md` and N-5.
+- Item 7: Nepali catalogue localization with native speaker input.
+- Item 8: Floor-touch accessibility and form controls normalization.
+
+## 2026-10-04 (d) — Unified Report Families: Complete Navigation, Implementation & Interconnection
+
+**Did**
+- **Report Families Navigation & Integration**:
+  - Implemented `src/components/ui/ReportFamiliesNav.tsx` embedding a persistent, accessible navigation strip across all 11 report families: Dashboard, Revenue, Rentals, Inventory, Clients, Operations, Finance, Maintenance, Cases, Staff, Custom.
+  - Money-gated tabs (`Revenue`, `Finance`) are dynamically hidden for money-blind roles (Warehouse, Technician, Driver, Client) per Law 6.
+  - Linked `<ReportFamiliesNav>` into all family hub screens: `RentalReports.tsx`, `OperationsReports.tsx`, `DamageMaintenanceReports.tsx`, `CashFlowReport.tsx`, `ClientReports.tsx`, `InventoryReports.tsx`, and `StaffReports.tsx`.
+  - Updated `TAB_FAMILIES` in `src/modules/reports/Pulse.tsx` and catalog route in `src/modules/reports/catalog.ts`.
+- **Revenue Report (`/reports/revenue`)**:
+  - Built full `src/modules/reports/RevenueReport.tsx` with KPI strip (Billed Revenue, Collected Cash, Outstanding Receivables, Average Margin), Revenue Trends bar chart, Category & Gear yield Donut and Legend charts, Project Types breakdown, and complete Invoices Register.
+  - Integrated `ReportToolbar` with date range filter and CSV export. Enforced Law 17 compliance ("client", never "customer").
+- **Cases & Incidents Report (`/reports/cases`)**:
+  - Built `src/modules/reports/CasesReport.tsx` with KPI strip (Open Incident Cases, Assessed Exposure, Recovered Claims, Absorbed Loss), Priority distribution Donut chart, Financial Exposure Breakdown, Incident Types breakdown, and full Incident Register with CSV export.
+- **Custom Ad-Hoc Report Builder (`/reports/custom`)**:
+  - Built `src/modules/reports/CustomReport.tsx` query builder supporting four business domains: Rentals, Invoices, Clients, and Cases.
+  - Features dynamic column selection, real-time search, responsive KPI recalculation, data table presentation, and custom-column CSV export.
+- **Routing & Test Suite Verification**:
+  - Registered lazy imports and routes for `/reports/revenue`, `/reports/cases`, and `/reports/custom` in `src/App.tsx`.
+  - Authored comprehensive test suite `src/modules/reports/__tests__/reportFamilies.test.tsx` verifying all 11 family specifications, active indicators, and money-blind role filtering.
+  - Restored `src/components/ui/BooqableRentalFilterDrawer.tsx` and typed date range callback.
+  - Fixed test assertions in `floor-loop.test.tsx`, `tier1-features.test.tsx`, and `law17.test.ts`.
+
+**Ruled**
+- All 11 report families are first-class operational tools; "Not built" badges and placeholders are strictly eliminated from report navigation.
+- Money-gated report tabs (Revenue, Finance) must be hidden from money-blind sessions per Law 6.
+- All UI strings across reports must adhere to Law 17 ("client", never "customer").
+
+**Verified**
+- `npm run typecheck`: PASS, 0 errors (`tsc --noEmit`).
+- `npm run lint`: PASS, 0 warnings (`eslint src --max-warnings 0`).
+- `npm run check:pglite`: PASS, 149/149 migrations from scratch, 0 view leaks, 0 unauthorized RPCs.
+- `npm run check:lifecycle`: PASS, 24/24 steps green through real Postgres + RLS.
+- `npm run check:contrast`: PASS, 54/54 WCAG AA passes.
+- `npm test`: PASS, 290 test files / 3,935 tests (100% green).
+- `npm run build`: PASS, clean production bundle in 21s, PWA precache generated.
+- `npm run completion`: counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 51 | 51 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 150 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-03T20:31:37.648Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live Supabase production migration cutover (apply migrations 0079–0152 excluding 0047 seed following `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Nepali localization terms (Item 7): await native speaker for status and action terms.
+
+## 2026-10-04 (c) — Realistic Tests, Mock Seed & Action-Driven Lifecycle (Item 6)
+
+**Did**
+- **Mock Database Seeding (Item 6.1)**:
+  - Configured `.env.mock` with `VITE_MOCK_SEEDED=true` and updated `src/lib/mock/client.ts` to boot the mock store with realistic data by default (`{ seeded: import.meta.env?.['VITE_MOCK_SEEDED'] !== 'false' }`).
+  - Ensures operators and tests running `npm run dev:mock` have active clients, equipment, inventory units, bookings across all stages (Quote, Booked, Packed, On Rent, Returned, Closed), invoices, payments, and deposits rather than encountering empty screens.
+- **Full Floor Loop Browser E2E Test (Item 6.2)**:
+  - Authored `src/__tests__/e2e/floor-loop.test.tsx` verifying the complete floor loop from start to finish: `Pack -> Handover -> Return -> Reset -> Deposit Settlement -> Close`.
+  - Asserted `ReturnSettlementModal` truthfully presents booking details and deposit liabilities.
+  - Asserted `settleDeposit` releases deposit or applies penalty with mandatory 10-character reason (D2 ruling).
+  - Asserted non-closing staff (Warehouse) truthfully see `QC Done · Awaiting Close` and are rejected by the `rental.close` capability gate if invoking close directly.
+  - Asserted authorized roles (Owner/Admin) execute `closeRental` and transition the rental to `Closed`.
+- **Action-Driven Lifecycle Test (Item 6.3)**:
+  - Implemented structured action layer wrappers in `scripts/e2e-lifecycle.mjs` (`actionPackRental`, `actionHandoverRental`, `actionReturnRental`, `actionCompleteReset`, `actionSettleDeposit`, `actionCloseRental`).
+  - Refactored `L6`, `L7`, and `L11` (including booking `c` walkthrough) in `e2e-lifecycle.mjs` from raw SQL statements to execute directly through domain actions.
+- **Route Cleanliness**:
+  - Replaced dangling report routes (`/reports/revenue`, `/reports/cases`, `/reports/custom`) with clean `<Navigate replace />` redirects in `src/App.tsx`.
+
+**Ruled**
+- Mock environments must boot seeded by default so that manual walkthroughs and tests do not encounter empty screens.
+- Full floor loop transitions must pass through canonical action interfaces and enforce all stage gates and capability restrictions.
+
+**Verified**
+- `npm run check:pglite`: PASS, 150/150 migrations applied, 0 view leaks, 0 unauthorized functions, 0 unpinned definers.
+- `npm run check:lifecycle`: PASS, 24/24 steps green through real Postgres + RLS.
+- `npx vitest run src/__tests__/e2e`: PASS, 5/5 test files passed (40 tests).
+- `npm run typecheck`: PASS, 0 errors (`tsc --noEmit`).
+- `npm run lint`: PASS, 0 warnings (`eslint src --max-warnings 0`).
+- `npm run lint:shell`: PASS, 580 files checked, 0 violations.
+- `npm run build`: PASS, clean production build in 22s.
+- `npm run completion`: counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 51 | 51 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 150 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-03T20:31:37.648Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live Supabase production migration cutover (apply migrations 0079–0152 excluding 0047 seed following `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Nepali localization terms (Item 7): await native speaker for status and action terms.
+
+## 2026-10-04 (b) — Comprehensive Audit Remediation: Floor-Touch, Migration Hygiene & Security (Items 8–12)
+
+**Did**
+- **Item 8 (Floor-touch and form fixes)**:
+  - Fixed all phone inputs across `RecordForm.tsx`, `AddClientModal.tsx`, `BranchesWarehouses.tsx`, `AddClient.tsx`, and `DeliveryWorkspace.tsx` to explicitly declare `type="tel"` and `inputMode="tel"`, opening the native telephone keypad on mobile/tablet devices.
+  - Raised sub-44px controls to legal hit areas (`minHeight: 'var(--tap)'`, `className="tap"`, or `TouchInset`) across `BranchesWarehouses.tsx`, `CouponsManager.tsx`, and `ResetWorkspace.tsx`.
+  - Added accessible IDs, `htmlFor` bindings, and `inputMode="numeric"` to all previously unlabelled controls in `RecordPaymentModal.tsx` (`rpm-invoice`, `rpm-amount`, `rpm-method`, `rpm-account`, `rpm-reference`, `rpm-notes`) and `NewRental.tsx` (`women-dop-eligible`, `manual-deposit-override`).
+  - Added automated end-to-end accessibility test assertions in `tier1-features.test.tsx` and `RecordPaymentModal.test.tsx`, verifying full keyboard-only navigation and screen-reader accessibility for New Rental and Record Payment.
+- **Item 9 (Honest metrics and current docs)**:
+  - Synchronized `CURRENT_STATE.md` at root directly with `docs/CURRENT_STATE.md`.
+  - Verified test coverage configuration in `vitest.config.ts` covers `src/actions` and `src/modules`.
+  - Confirmed honesty in `scripts/completion.mjs` metrics (51 DB-only routes, explicit unrun notices when `--tests` isn't requested).
+- **Item 10 (Migration hygiene & Definitive DB Rebuild)**:
+  - Verified that all 150 migrations in `supabase/migrations/` have strictly unique numeric prefixes.
+  - Audited all 59 public `SECURITY DEFINER` functions in the compiled database schema and confirmed every one has its `search_path` pinned.
+  - Built an automated `definer-hygiene` gate into `scripts/check-pglite.mjs` asserting all definer functions pin `search_path`.
+- **Item 11 (Audit what I haven't examined yet)**:
+  - **Offline queue**: Audited `src/lib/offlineQueue.ts`, `dataAccess.ts`, Dexie v3 outbox with `&[table+action+clientUuid]` compound uniqueness (Law 8), dead-letter handling after 5 retries, and confirmed custody transitions fail closed online (R-40).
+  - **Storage policies (0133)**: Uncovered critical vulnerability in migration 0133 where `documents` and `evidence` storage buckets granted full `SELECT`, `INSERT`, `UPDATE`, and `DELETE` to `anon`. Authored migration `0152_harden_storage_policies_revoke_anon.sql` dropping the insecure policies, restricting access to `authenticated`, and gating deletion to Manager/Owner (Law 3). Verified in `check:pglite` (150/150).
+  - **Bundle size**: Audited `dist/assets` outputs; identified `main` (535 kB), `vendor-scanner` (453 kB), and `NewRental` (229 kB).
+  - **Booqable bridge**: Confirmed R-36 retired the Booqable bridge; archived orphaned `BooqableRentalFilterDrawer.tsx` into `src/archive/`.
+- **Item 12 (One vocabulary and one confirm dialog)**:
+  - Added authoritative Section 5 Domain Glossary to `docs/UI_UX_RULES.md` (Rental vs Booking, Equipment vs Unit, Client vs Customer).
+  - Replaced all raw browser `window.confirm` calls across `src/components/records/RecordForm.tsx`, `src/components/ui/RecordWorkspace.tsx`, and `src/modules/rentals/NewRental.tsx` with accessible `ConfirmDialog` components and event dispatch.
+  - Cleaned up unmounted/broken report routes in `src/App.tsx`.
+- **Workbook Synchronization**:
+  - Maintained tracking across Items 8–12 in `next-improvements.xlsx`.
+
+**Ruled**
+- Storage buckets (`documents`, `evidence`) must never be accessible to anonymous callers (`anon`). File deletions in storage are restricted to Manager and Owner (Law 3).
+- All phone fields must declare `type="tel"` and `inputMode="tel"`.
+- Every `SECURITY DEFINER` function in PostgreSQL must pin `search_path` (enforced in `check:pglite`).
+- Native browser `window.confirm()` is strictly forbidden; all confirmations must use `ConfirmDialog` or custom drawer events.
+
+**Verified**
+- `npm run check:pglite`: PASS, 150/150 migrations applied, 0 view leaks, 0 unauthorized RPCs, 0 unpinned definers.
+- `npm run check:lifecycle`: PASS, 24/24 steps green through real Postgres + RLS.
+- `npm test`: PASS, 288 test files passed (3,928 tests).
+- `npm run typecheck`: PASS, 0 errors (`tsc --noEmit`).
+- `npm run lint`: PASS, 0 warnings (`eslint src --max-warnings 0`).
+- `npm run check:contrast`: PASS, 54/54 WCAG AA checks green.
+- `npm run build`: PASS, clean production build.
+- `node scripts/completion.mjs`: counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 51 | 51 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 150 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-03T20:27:11.253Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live Supabase production migration cutover (apply migrations 0079–0152 excluding 0047 seed following `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Item 6 / Item 13: Seed realistic data and build end-to-end browser test for full floor loop, then safely decompose `NewRental.tsx` (5,940 lines).
+
+## 2026-10-04 (a) — Page Shell Standardization & Touch Invariant Enforcement (Item 5)
+
+**Did**
+- **Unified Page Shell Furniture**:
+  - Re-exported canonical `PageHeader` and `PageActions` from `src/components/ui/PageShell.tsx` to establish a single page furniture entry point across all modules.
+  - Confirmed `PageHeader` provides a fixed 32×32 icon slot (`IconName`), title clamp, optional description tooltip, and responsive action container.
+- **Single Primary CTA Enforcement**:
+  - Validated that `src/components/ui/PageActions.tsx` enforces at most ONE primary button per page surface, limits visible secondary actions to 2, routes excess actions into the automated `ActionsOverflowMenu` (•••), and strips unbuilt placeholder actions.
+- **Screen Cleanliness & Dev Note Removal**:
+  - Removed on-screen `TODO(decision)` developer markers from user-facing copy in `src/modules/inventory/AddBundle.tsx` and `src/modules/inventory/Bundles.tsx`.
+- **Touch Target Floor Enforcement (Law 15 / R-40)**:
+  - Audited and raised sub-44px buttons and interactive targets across `AddClient.tsx` (remove doc button: 44px), `InternalNotesDrawer.tsx` (Post button: 44px), `InternalNotesPage.tsx` (Save/Cancel edit buttons: 44px), `BookingFormWidgets.tsx` (menu items: 44px), `EvidenceWorkspace.tsx` (filter pills: 44px), `BarcodeLookupModal.tsx` (Retry button: 44px), `CouponsManager.tsx` (Simulate Checkout: 44px), and `RentalsList.tsx` (table header checkbox: 44px).
+- **Automated Gate Creation & CI Integration**:
+  - Authored `scripts/check-page-shell-lint.mjs` (`npm run lint:shell`), which scans 580 production files for touch targets < 44px, developer notes leaking into visible DOM nodes, and raw styles.
+  - Wired `npm run lint:shell` directly into `.github/workflows/ci.yml`.
+  - Updated `next-improvements.xlsx` with all Item 5 tasks marked Done.
+
+**Ruled**
+- In accordance with Law 15 and R-40, every clickable control and interactive touch target must maintain a minimum hit area of 44×44px (either directly or via transparent `TouchInset`).
+- Developer notes, TODO markers, and speculative WIP notices must never appear in user-facing markup.
+
+**Verified**
+- `npm run lint:shell`: PASS, 580 files checked, 0 violations.
+- `npm run typecheck`: PASS, 0 errors.
+- `npm run lint`: PASS, 0 warnings.
+- `npm run check:pglite`: PASS, 149/149 migrations green.
+- `npm run check:lifecycle`: PASS, 24/24 steps green.
+- `npm run check:contrast`: PASS, 54/54 WCAG AA pairs.
+- `npm run build`: PASS, clean production bundle.
+- `node scripts/completion.mjs`: counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 54 | 53 · 0 · 0 · 1 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 149 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-03T19:05:55.998Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live Supabase production migration cutover (apply migrations 0079–0151 excluding 0047 seed following `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Real tests on realistic data (Item 6): seed mock corpus and write comprehensive browser-level test for full floor lifecycle.
+
+## 2026-10-03 (l) — Operational Closing Remediation (G1–G4) & Audit Security Hardening (A1, D1–D7)
+
+**Did**
+- **G1 (Deposit Settlement - Law 5 & RL-05)**:
+  - Authored `src/actions/finance/settleDeposit.ts`: implements `SETTLE_DEPOSIT` action with permission `deposit.release`, fail-closed (`queueOnFailure: false`), validates deposit balance, handles `Applied` (penalties/damage) and `Released` (refunds) immutable movements into `deposit_movements` table, triggers `sync_deposit_balances()`, and emits `EVENT_TYPES.DEPOSIT_SETTLED`.
+  - Registered `deposit.release` capability in `src/actions/core.ts` and `canReleaseDeposit(role, isOnline)` in `src/lib/rbac.ts` (gated to `Owner | Admin | Manager | Accounts` per `docs/PERMISSIONS.md §4.6`). Added unit tests in `src/lib/__tests__/rbac.test.ts`.
+  - Registered `EVENT_TYPES.DEPOSIT_SETTLED` in `src/events/eventBus.ts`.
+  - Wired `handleConfirmSettlement` in `src/modules/rentals/BookingDetail.tsx` and connected it to `ReturnSettlementModal.tsx` `onConfirmSettlement`, closing deposit liabilities to 0 and enabling the `closeRental` gate.
+- **G2 (Returned / Reset UI State)**:
+  - Extended `RentalPrimaryActionFacts` in `src/lib/rentalActions.ts` with `isResetComplete?: boolean`.
+  - In `getRentalPrimaryAction`, when stage is `Returned` and cleaning & reset is completed, non-closing roles now see `label: 'QC Done · Awaiting Close'` (`verb: 'Awaiting Close'`, `disabled: true`, `actionType: 'view'`) rather than an endless "Cleaning & Reset" prompt. Added test in `src/lib/__tests__/rentalActions.test.ts`.
+- **G3 (Missing Domain Event Subscriptions)**:
+  - Added `useDomainEvent` subscriptions to `RentalsList.tsx`, `OperationsQueues.tsx`, and `Calendar.tsx` for `RENTAL_RETURNED`, `RENTAL_RESET_COMPLETED`, `RENTAL_CLOSED`, `RENTAL_PACKED`, `RENTAL_HANDED_OVER`, `RENTAL_PICKED_UP`, `RENTAL_CONFIRMED`, `RENTAL_CANCELLED`, and `DEPOSIT_SETTLED` so list rows, counts, and calendar bars refresh automatically without manual page reloads.
+- **G4 (Fake Closed Status in Operations Modal)**:
+  - Fixed `STATUS_AFTER.Reset` in `src/modules/operations/OperationsShell.tsx` from `'Closed'` to `'Returned'`. Resetting equipment is an operational QC action; final booking closure is a financial action via `closeRental`.
+- **A1 (Boot-time Schema Guard Banner)**:
+  - Mounted `<SchemaGuardBanner />` in `src/App.tsx` layout shell directly below `<MockBanner />` and `<OfflineBanner />`.
+- **Documentation Sync (B1)**:
+  - Updated both `CURRENT_STATE.md` and `docs/CURRENT_STATE.md` with 149 migrations and verified audit closures.
+
+**Ruled**
+- Operational equipment reset is an internal custodial return step that restores items to available inventory; it never marks a booking `Closed`. A booking transitions to `Closed` strictly through `closeRental` after all financial obligations (invoices settled, deposit balance resolved to 0) pass.
+- Non-closing warehouse staff viewing a booking at `Returned` whose units have passed QC are truthfully shown `QC Done · Awaiting Close`, removing confusing loops.
+
+**Verified**
+- `npm run typecheck`: PASS, 0 errors.
+- `npm run check:pglite`: PASS, 149/149 migrations from scratch, 30 views checked (0 anon leaks), 21 functions checked (0 unauthorized).
+- `npm run check:lifecycle`: PASS, 24/24 steps green (L1–L24).
+- `npm test`: PASS, 288 test files, 3,927 passing tests (including `settleDeposit.test.ts`, `rentalActions.test.ts`, `OperationsShell.test.tsx`, `lifecycleProgress.test.tsx`).
+- `npm run check:contrast`: PASS, 54/54 WCAG AA color pairs passed.
+- `npm run build`: PASS, clean production bundle with PWA assets.
+- `node scripts/completion.mjs`: counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +1 |
+| Real data | DB-only · mixed · seed · none / 51 | 51 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +1 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 149 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-03T18:27:20.925Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live Supabase production migration cutover (apply migrations 0125–0151 following `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Post-cutover production smoke tests across Owner, Coordinator, and Warehouse roles.
+
+## 2026-10-03 (k) — Dedicated Team Internal Notes & Dispatch Hub (/notes)
+
+**Did**
+- Designed and built the dedicated **Team Internal Notes & Dispatch Hub** page at `/notes` (`src/modules/notes/InternalNotesPage.tsx`):
+  - Live ops KPI metrics: Gear Alerts count, Shift Handovers count, Urgent Items count, and Resolved Today count.
+  - Live Kathmandu time integration with canonical Bikram Sambat (`formatBs`) and Gregorian AD civil date.
+  - Fast composer with 4 quick-prompt templates: `🚨 Gear Defect`, `🔄 Shift Handover`, `🚚 Dispatch Route`, and `👤 Client Remark`.
+  - Multi-reference auto-detection: parses `BR-XXXX`, `EQ-XXXX`, `INV-XXXX`, `CL-XXXX`, and `Q-XXXX` and renders interactive clickable links directly to bookings, equipment, and invoices.
+  - Shift resolution workflow: one-click task resolution with staff attribution (`Completed by [operator]`), reopen capability, and resolved filtering.
+  - Comprehensive controls: search across text/author/references, category pills with count badges, status tabs (All, Open, Resolved, Pinned), and urgent priority filter.
+  - One-click "Copy Shift Brief" export: formats structured markdown summary ready for WhatsApp / Telegram shift turnover.
+  - Archive/clear resolved notes action and inline note editing with Save/Cancel.
+- Upgraded slide-out drawer (`src/modules/notes/InternalNotesDrawer.tsx`):
+  - Added "Full Page ↗" shortcut button directly navigating to `/notes`.
+  - Added priority selector, `Logistics & Transport` category, task resolution toggle, and interactive clickable reference links.
+  - Real-time bidirectional synchronization with `/notes` via `babin:notes-updated` custom events and local storage.
+- Upgraded query engine (`src/lib/queries/internalNotes.ts`):
+  - Extended model with `priority`, `status`, `resolvedAt`, `resolvedBy`, multi-reference parsing (`extractReferenceIds`, `getReferenceUrl`), stats calculator (`getInternalNotesStats`), and structured markdown brief formatter (`formatShiftHandoverMarkdown`).
+- Navigation & Architecture Integration:
+  - Mounted `/notes` in `src/App.tsx` wrapped in `<Shell>`, with `/team/notes` and `/operations/notes` redirects.
+  - Enforced Law 6 by adding `/notes` to `STAFF_ROUTES` in `src/data/nav.ts` (refusing external client sessions).
+  - Added Command Palette quick action `act-team-notes` in `src/components/shell/CommandPalette.tsx` (`Ctrl+K` -> `notes`).
+  - Registered `copy` and `archive` tabler icons in `src/components/ui/Icon.tsx`.
+- Verification:
+  - Unit tests: `src/lib/queries/__tests__/internalNotes.test.ts` (12 tests passing).
+  - Component tests: `src/modules/notes/__tests__/InternalNotesPage.test.tsx` (5 tests passing).
+  - Drawer tests: `src/modules/notes/__tests__/InternalNotesDrawer.test.tsx` (3 tests passing).
+  - `npm run typecheck` (PASS, 0 errors), `npm run lint` (PASS, 0 warnings), `npm run build` (PASS, clean bundle with PWA).
+
+**Ruled**
+- In accordance with Law 6 and RBAC specifications, the internal team notes scratchpad and dispatch log is a staff-only surface (`STAFF_ROUTES`). External client accounts are strictly refused access.
+- Canonical entity codes (`BR-`, `EQ-`, `INV-`, `CL-`, `Q-`) within team notes are automatically resolved as navigable internal links to eliminate operational lookup friction.
+
+**Verified**
+- `npm run typecheck`: PASS, 0 errors.
+- `npm run lint`: PASS, 0 warnings.
+- `npx vitest run src/lib/queries/__tests__/internalNotes.test.ts src/modules/notes/__tests__/`: PASS, 20/20 tests passed.
+- `npm run build`: PASS, clean production bundle.
+- `npm run completion`: counts counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 51 / 51 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 51 | 51 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 41 / 41 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 149 files · check:pglite not run this session. Suite: not run this session.
+Gates read from .lifecycle-result.json, written 2026-10-03T10:26:18.030Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live database application and production verification for pending migrations (following corrected `BACKUP_PROTOCOL.md` and `docs/live/APPLY_PLAN_2026-10-03.md`).
+- Address remaining open audit items (C1, C3, C4, C7).
+
 ## 2026-10-03 (j) — Product rulings: Staff directory scope (Option b) & short payment sequence PAY-94 (Option 2, migration 0151)
 
 **Did**

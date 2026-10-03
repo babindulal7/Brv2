@@ -80,6 +80,18 @@ describe('getRentalPrimaryAction', () => {
     expect(reset.route).toBe('/rentals/BR-1052/reset')
   })
 
+  it('shows QC Done · Awaiting Close when reset is complete and caller may not close (G2)', () => {
+    const awaitingClose = getRentalPrimaryAction('Returned', {
+      bookingNo: NO,
+      canCloseRental: false,
+      isResetComplete: true,
+    })
+    expect(awaitingClose.label).toBe('QC Done · Awaiting Close')
+    expect(awaitingClose.verb).toBe('Awaiting Close')
+    expect(awaitingClose.disabled).toBe(true)
+    expect(awaitingClose.isOperable).toBe(false)
+  })
+
   it('routes service-only rentals to fulfill action at operational stages', () => {
     const booked = getRentalPrimaryAction('Booked', { bookingNo: NO, isServiceOnly: true })
     expect(booked.label).toBe('Complete Service')

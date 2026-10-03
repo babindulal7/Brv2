@@ -31,6 +31,8 @@ import { useList } from '../../lib/queries/useList'
 import type { ListQueryResult, ListResult } from '../../lib/queries/useList'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { CALENDAR_BAR_KINDS, calendarWindow, fetchCalendarBars } from '../../lib/queries/calendar'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
 import { listBookings } from '../../lib/queries/bookings'
 import type { BookingListRow } from '../../lib/queries/bookings'
 import { listInvoices } from '../../lib/queries/finance'
@@ -2105,6 +2107,21 @@ export default function Calendar() {
   /* `isFilteredOverride: false` — the window is what this list MEANS, not
      something the operator narrowed. The chips below do the narrowing. */
   const barList = useList<Bar>(fetchCalendarBars, windowFilters, { isFilteredOverride: false })
+
+  const refreshCalendar = useCallback(() => {
+    barList.refetch()
+  }, [barList])
+
+  useDomainEvent(EVENT_TYPES.RENTAL_CREATED, refreshCalendar)
+  useDomainEvent(EVENT_TYPES.RENTAL_CONFIRMED, refreshCalendar)
+  useDomainEvent(EVENT_TYPES.RENTAL_PACKED, refreshCalendar)
+  useDomainEvent(EVENT_TYPES.RENTAL_HANDED_OVER, refreshCalendar)
+  useDomainEvent(EVENT_TYPES.RENTAL_PICKED_UP, refreshCalendar)
+  useDomainEvent(EVENT_TYPES.RENTAL_RETURNED, refreshCalendar)
+  useDomainEvent(EVENT_TYPES.RENTAL_RESET_COMPLETED, refreshCalendar)
+  useDomainEvent(EVENT_TYPES.RENTAL_CLOSED, refreshCalendar)
+  useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refreshCalendar)
+  useDomainEvent(EVENT_TYPES.RENTAL_EXTENDED, refreshCalendar)
 
   /* ── filtering ──────────────────────────────────────────────────────── */
   const q = query.trim().toLowerCase()

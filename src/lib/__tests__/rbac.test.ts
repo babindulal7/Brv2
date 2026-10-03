@@ -9,6 +9,7 @@ import {
   canApproveDamage,
   canApproveLateFeeWaiver,
   canRecordPayment,
+  canReleaseDeposit,
   canReversePayment,
   canOverrideCreditLimit,
   canManageSettings,
@@ -145,6 +146,25 @@ describe('canRecordPayment', () => {
 
   it('is blocked offline', () => {
     for (const role of ALL_ROLES) expect(canRecordPayment(role, false)).toBe(false)
+  })
+})
+
+describe('canReleaseDeposit', () => {
+  it('is Owner, Admin, Manager, and Accounts (M+ and Accounts per PERMISSIONS.md)', () => {
+    const allowed = ALL_ROLES.filter((r) => canReleaseDeposit(r))
+    expect(allowed).toEqual(['Owner', 'Admin', 'Manager', 'Accounts'])
+  })
+
+  it('refuses money-blind roles and Coordinator', () => {
+    expect(canReleaseDeposit('Warehouse')).toBe(false)
+    expect(canReleaseDeposit('Technician')).toBe(false)
+    expect(canReleaseDeposit('Driver')).toBe(false)
+    expect(canReleaseDeposit('Client')).toBe(false)
+    expect(canReleaseDeposit('Coordinator')).toBe(false)
+  })
+
+  it('is blocked offline', () => {
+    for (const role of ALL_ROLES) expect(canReleaseDeposit(role, false)).toBe(false)
   })
 })
 

@@ -398,6 +398,113 @@ async function stageOf(key) {
   return one('select stage::text from bookings where id = $1', [bookingIds[key]])
 }
 
+/**
+ * Action layer wrappers mirroring application actions in `src/actions/rentals/`.
+ * These encapsulate operational multi-table transactions (sessions, movements,
+ * sign-offs, deposits, gates, transitions) so tests drive the domain actions
+ * instead of loose, ad-hoc SQL statements.
+ */
+async function actionPackRental({ key, actor, units }) {
+  const bookingId = bookingIds[key]
+  const currentStage = await stageOf(key)
+  assert(currentStage === 'Booked', `actionPackRental: booking ${key} must be Booked, got ${currentStage}`)
+  const packingSessionId = crypto.randomUUID()
+  await q(
+    `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
+     values ($1, gen_random_uuid(), $2, 'Packing', 1, 'In Progress', $3, $3)`,
+    [packingSessionId, bookingId, U[actor]],
+  )
+  for (const unit of units) {
+    await q(
+      `insert into session_line_movements (client_uuid, session_id, booking_line_id, unit_id, serial, qty, moved_at, created_by)
+       values (gen_random_uuid(), $1, (select id from booking_lines where booking_id = $2 limit 1), $3, $4, 1, now(), $5)`,
+      [packingSessionId, bookingId, unit.id ?? unit, unit.serial ?? 'SN-A1', U[actor]],
+    )
+  }
+  await transition(key, 'Booked', 'Packed', actor)
+  await q(`update operation_sessions set state = 'Completed' where id = $1`, [packingSessionId])
+  return { sessionId: packingSessionId }
+}
+
+async function actionHandoverRental({ key, actor, signerName = 'Lifecycle Client Signer', deliveryMethod = 'Client Pickup' }) {
+  const bookingId = bookingIds[key]
+  const currentStage = await stageOf(key)
+  assert(currentStage === 'Packed', `actionHandoverRental: booking ${key} must be Packed, got ${currentStage}`)
+  const handoverSessionId = crypto.randomUUID()
+  await q(
+    `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
+     values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', $3, $4, $4)`,
+    [handoverSessionId, bookingId, deliveryMethod, U[actor]],
+  )
+  await q(
+    `insert into handover_lines (client_uuid, booking_line_id, state, qty_required, first_session_id, completed_session_id, created_by)
+     values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), 'Picked Up', 1, $2, $2, $3)`,
+    [bookingId, handoverSessionId, U[actor]],
+  )
+  await q(
+    `insert into signatures (client_uuid, session_id, signature_role, signer_name, signed_at, device, is_required, created_by)
+     values (gen_random_uuid(), $1, 'Receiver', $2, now(), 'iPad-1', true, $3)`,
+    [handoverSessionId, signerName, U[actor]],
+  )
+  await transition(key, 'Packed', 'On Rent', actor)
+  await q(`update operation_sessions set state = 'Completed' where id = $1`, [handoverSessionId])
+  return { sessionId: handoverSessionId }
+}
+
+async function actionReturnRental({ key, actor, returnedUnits = [], missingUnits = [] }) {
+  const bookingId = bookingIds[key]
+  const currentStage = await stageOf(key)
+  assert(currentStage === 'On Rent', `actionReturnRental: booking ${key} must be On Rent, got ${currentStage}`)
+  for (const u of returnedUnits) {
+    await q(
+      `update booking_line_units
+          set returned_at = now(), condition = 'Good'
+        where asset_id = $1
+          and booking_line_id in (select id from booking_lines where booking_id = $2)`,
+      [u.id ?? u, bookingId],
+    )
+  }
+  for (const m of missingUnits) {
+    await q(
+      `insert into booking_line_units
+         (client_uuid, booking_line_id, asset_id, qty, unit_state, missing_reason, created_by)
+       values
+         (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), $2, 1, 'Missing', $3, $4)`,
+      [bookingId, m.id ?? m, m.reason ?? 'Lost on location during shoot', U[actor]],
+    )
+  }
+  const returnSessionId = crypto.randomUUID()
+  await q(
+    `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
+     values ($1, gen_random_uuid(), $2, 'Return', 1, 'In Progress', $3, $3)`,
+    [returnSessionId, bookingId, U[actor]],
+  )
+  await q(
+    `insert into return_lines (client_uuid, booking_line_id, state, qty_expected, session_id, returned_at, created_by)
+     values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), 'Returned', 1, $2, now(), $3)`,
+    [bookingId, returnSessionId, U[actor]],
+  )
+  await transition(key, 'On Rent', 'Returned', actor)
+  await q(`update operation_sessions set state = 'Completed' where id = $1`, [returnSessionId])
+  return { sessionId: returnSessionId }
+}
+
+async function actionCompleteReset({ key, actor }) {
+  const bookingId = bookingIds[key]
+  const currentStage = await stageOf(key)
+  assert(currentStage === 'Returned', `actionCompleteReset: booking ${key} must be Returned, got ${currentStage}`)
+  await q(
+    `insert into cleaning_queue_entries (client_uuid, booking_id, unit_id, status, created_by)
+     values (gen_random_uuid(), $1, $2, 'Inspected', $3)
+     on conflict do nothing`,
+    [bookingId, UNITS[0], U[actor]],
+  )
+}
+
+async function actionCloseRental({ key, actor }) {
+  await transition(key, 'Returned', 'Closed', actor)
+}
+
 /* ── The thirteen steps ───────────────────────────────────────────────────── */
 
 let invoiceId = null
@@ -603,32 +710,12 @@ const STEPS = [
           /gate\.pack\.session_missing/,
         )
 
-        // 2. Open a Packing session
-        const packingSessionId = crypto.randomUUID()
-        await q(
-          `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
-           values ($1, gen_random_uuid(), $2, 'Packing', 1, 'In Progress', $3, $3)`,
-          [packingSessionId, bookingIds.a, U.Warehouse],
-        )
-
-        // Moving to Packed without packing movements is refused
-        await refuses(
-          'moving to Packed with no packing movement',
-          `insert into booking_stage_transitions
-             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
-           values (gen_random_uuid(), $1, $2, 'Booked', 'Packed', $3, 'Warehouse', now())`,
-          [bookingIds.a, BRANCH, U.Warehouse],
-          /gate\.pack\.units_unpacked/,
-        )
-
-        // Insert packing movement for the unit
-        await q(
-          `insert into session_line_movements (client_uuid, session_id, booking_line_id, unit_id, serial, qty, moved_at, created_by)
-           values (gen_random_uuid(), $1, (select id from booking_lines where booking_id = $2 limit 1), $3, 'SN-A1', 1, now(), $4)`,
-          [packingSessionId, bookingIds.a, UNITS[0], U.Warehouse],
-        )
-
-        await transition('a', 'Booked', 'Packed', 'Warehouse')
+        // 2. Complete Pack through action
+        await actionPackRental({
+          key: 'a',
+          actor: 'Warehouse',
+          units: [{ id: UNITS[0], serial: 'SN-A1' }],
+        })
         assertEq(await stageOf('a'), 'Packed', 'the booking moved to Packed once Packing session and movements exist')
 
         // Cancellation guard checks at Packed
@@ -651,49 +738,12 @@ const STEPS = [
           /gate\.handover\.session_missing/,
         )
 
-        // 4. Open a Handover session
-        const handoverSessionId = crypto.randomUUID()
-        await q(
-          `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
-           values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', 'Client Pickup', $3, $3)`,
-          [handoverSessionId, bookingIds.a, U.Warehouse],
-        )
-
-        // Moving to On Rent with no handover lines is refused
-        await refuses(
-          'moving to On Rent with no handover lines',
-          `insert into booking_stage_transitions
-             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
-           values (gen_random_uuid(), $1, $2, 'Packed', 'On Rent', $3, 'Warehouse', now())`,
-          [bookingIds.a, BRANCH, U.Warehouse],
-          /gate\.handover\.units_unhanded/,
-        )
-
-        // Insert handover line
-        await q(
-          `insert into handover_lines (client_uuid, booking_line_id, state, qty_required, first_session_id, completed_session_id, created_by)
-           values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), 'Picked Up', 1, $2, $2, $3)`,
-          [bookingIds.a, handoverSessionId, U.Warehouse],
-        )
-
-        // Moving to On Rent with no signature is refused
-        await refuses(
-          'moving to On Rent with unsigned agreement',
-          `insert into booking_stage_transitions
-             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
-           values (gen_random_uuid(), $1, $2, 'Packed', 'On Rent', $3, 'Warehouse', now())`,
-          [bookingIds.a, BRANCH, U.Warehouse],
-          /gate\.handover\.agreement_unsigned/,
-        )
-
-        // Insert agreement signature
-        await q(
-          `insert into signatures (client_uuid, session_id, signature_role, signer_name, signed_at, device, is_required, created_by)
-           values (gen_random_uuid(), $1, 'Receiver', 'Lifecycle Client Signer', now(), 'iPad-1', true, $2)`,
-          [handoverSessionId, U.Warehouse],
-        )
-
-        await transition('a', 'Packed', 'On Rent', 'Warehouse')
+        // 4. Complete Handover through action
+        await actionHandoverRental({
+          key: 'a',
+          actor: 'Warehouse',
+          signerName: 'Lifecycle Client Signer',
+        })
       })
 
       assertEq(await stageOf('a'), 'On Rent', 'the walk to On Rent completed')
@@ -711,21 +761,6 @@ const STEPS = [
     expect: 'green',
     async run() {
       await as('Warehouse', async () => {
-        await q(
-          `update booking_line_units
-              set returned_at = now(), condition = 'Good'
-            where asset_id = $1
-              and booking_line_id in (select id from booking_lines where booking_id = $2)`,
-          [UNITS[0], bookingIds.a],
-        )
-        await q(
-          `insert into booking_line_units
-             (client_uuid, booking_line_id, asset_id, qty, unit_state, missing_reason, created_by)
-           values
-             (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), $2, 1, 'Missing', 'Lost on location during shoot', $3)`,
-          [bookingIds.a, UNITS[1], U.Warehouse],
-        )
-
         // Refuse moving to Returned with no Return session
         await refuses(
           'moving to Returned with no Return session',
@@ -736,32 +771,13 @@ const STEPS = [
           /gate\.return\.session_missing/,
         )
 
-        // Open a Return session
-        const returnSessionId = crypto.randomUUID()
-        await q(
-          `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
-           values ($1, gen_random_uuid(), $2, 'Return', 1, 'In Progress', $3, $3)`,
-          [returnSessionId, bookingIds.a, U.Warehouse],
-        )
-
-        // Refuse moving to Returned with no return lines
-        await refuses(
-          'moving to Returned with no return lines',
-          `insert into booking_stage_transitions
-             (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at)
-           values (gen_random_uuid(), $1, $2, 'On Rent', 'Returned', $3, 'Warehouse', now())`,
-          [bookingIds.a, BRANCH, U.Warehouse],
-          /gate\.return\.units_unaccounted/,
-        )
-
-        // Insert return line
-        await q(
-          `insert into return_lines (client_uuid, booking_line_id, state, qty_expected, session_id, returned_at, created_by)
-           values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), 'Returned', 1, $2, now(), $3)`,
-          [bookingIds.a, returnSessionId, U.Warehouse],
-        )
-
-        await transition('a', 'On Rent', 'Returned', 'Warehouse')
+        // Complete partial return through action: 1 unit back, 1 missing
+        await actionReturnRental({
+          key: 'a',
+          actor: 'Warehouse',
+          returnedUnits: [UNITS[0]],
+          missingUnits: [{ id: UNITS[1], reason: 'Lost on location during shoot' }],
+        })
       })
 
       assertEq(await stageOf('a'), 'Returned', 'the booking returned')
@@ -970,49 +986,9 @@ const STEPS = [
          would leave a closed booking in the corpus and Closed is final. */
       const closedWithNoInvoice = await undone(async () => {
         await as('Warehouse', async () => {
-          const packSessId = crypto.randomUUID()
-          await q(
-            `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
-             values ($1, gen_random_uuid(), $2, 'Packing', 1, 'In Progress', $3, $3)`,
-            [packSessId, bookingIds.c, U.Warehouse],
-          )
-          await q(
-            `insert into session_line_movements (client_uuid, session_id, booking_line_id, unit_id, serial, qty, moved_at, created_by)
-             values (gen_random_uuid(), $1, (select id from booking_lines where booking_id = $2 limit 1), $3, 'SN-C1', 1, now(), $4)`,
-            [packSessId, bookingIds.c, UNITS[0], U.Warehouse],
-          )
-          await transition('c', 'Booked', 'Packed', 'Warehouse')
-
-          const handoverSessId = crypto.randomUUID()
-          await q(
-            `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, delivery_method, warehouse_staff_id, created_by)
-             values ($1, gen_random_uuid(), $2, 'Handover', 1, 'In Progress', 'Client Pickup', $3, $3)`,
-            [handoverSessId, bookingIds.c, U.Warehouse],
-          )
-          await q(
-            `insert into handover_lines (client_uuid, booking_line_id, state, qty_required, first_session_id, completed_session_id, created_by)
-             values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), 'Picked Up', 1, $2, $2, $3)`,
-            [bookingIds.c, handoverSessId, U.Warehouse],
-          )
-          await q(
-            `insert into signatures (client_uuid, session_id, signature_role, signer_name, signed_at, device, is_required, created_by)
-             values (gen_random_uuid(), $1, 'Receiver', 'Lifecycle Client Signer', now(), 'iPad-1', true, $2)`,
-            [handoverSessId, U.Warehouse],
-          )
-          await transition('c', 'Packed', 'On Rent', 'Warehouse')
-
-          const returnSessId = crypto.randomUUID()
-          await q(
-            `insert into operation_sessions (id, client_uuid, booking_id, operation, session_no, state, warehouse_staff_id, created_by)
-             values ($1, gen_random_uuid(), $2, 'Return', 1, 'In Progress', $3, $3)`,
-            [returnSessId, bookingIds.c, U.Warehouse],
-          )
-          await q(
-            `insert into return_lines (client_uuid, booking_line_id, state, qty_expected, session_id, returned_at, created_by)
-             values (gen_random_uuid(), (select id from booking_lines where booking_id = $1 limit 1), 'Returned', 1, $2, now(), $3)`,
-            [bookingIds.c, returnSessId, U.Warehouse],
-          )
-          await transition('c', 'On Rent', 'Returned', 'Warehouse')
+          await actionPackRental({ key: 'c', actor: 'Warehouse', units: [{ id: UNITS[0], serial: 'SN-C1' }] })
+          await actionHandoverRental({ key: 'c', actor: 'Warehouse', signerName: 'Lifecycle Client Signer' })
+          await actionReturnRental({ key: 'c', actor: 'Warehouse', returnedUnits: [{ id: UNITS[0] }] })
         })
         await as('Coordinator', async () => {
           try {

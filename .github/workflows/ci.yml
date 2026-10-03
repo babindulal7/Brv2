@@ -73,6 +73,10 @@ jobs:
       - name: PROGRESS.md carries its Completion and Remaining blocks
         run: npm run lint:progress
 
+      # Item 5: Page shell design invariants (PageHeader, single primary CTA, 44px floor, no dev notes)
+      - name: Page shell design invariants
+        run: npm run lint:shell
+
       # WCAG AA on the SHIPPED theme.css, both themes.
       #
       # This gate existed and was never in this file, which is how three real

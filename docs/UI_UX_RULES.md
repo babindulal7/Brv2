@@ -55,3 +55,23 @@ Ease of use outranks visual flourish while remaining subordinate to non-negotiab
   - The term "customer" is banned from UI copy, buttons, labels, and placeholders. They are always "clients".
 - **Law 16 — No Fake Intelligence:**
   - No speculative or mock AI assistant cards, fake recommendation chips, or fabricated compliance badges. Every UI element must correspond to a live data model or operator action.
+
+---
+
+## 5. Authoritative Domain Glossary (Law 15 Reconciliation)
+
+To eliminate copy drift across modules and floor touchpoints:
+
+- **Rental vs. Booking:**
+  - Use **"Rental"** for the client-facing transaction, commercial lifecycle, order, and operator views (e.g. *New Rental*, *Rental Agreement*, *Active Rentals*).
+  - Use **"Booking"** strictly for internal database reservations, monotonic numbering (e.g. `BK-2026-0001`), and schema-level stage state machines.
+  - Never mix both terms within the same button or header.
+- **Equipment vs. Unit vs. Gear:**
+  - Use **"Equipment"** for inventory catalog records, categories, and generic item listings.
+  - Use **"Unit"** for physical serialized assets or bulk inventory instances in the warehouse.
+  - Banned terms: *Gear*, *Item-kit*, *Hardware*, *Machinery*, *Apparatus*.
+- **Client vs. Customer:**
+  - Exclusively **"Client"**; the term *Customer* is prohibited in all copy, accessibility names, and code identifiers.
+- **Modal Confirmations:**
+  - Browser-native `window.confirm()` or `window.alert()` are strictly prohibited; all destructive or unsaved-state confirmations must use `ConfirmDialog`.
+

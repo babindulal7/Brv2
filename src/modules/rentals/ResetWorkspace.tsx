@@ -1771,7 +1771,7 @@ export default function ResetWorkspace({
                               onChange={(e) => setBatchQcReason(e.target.value)}
                               placeholder="Self-QC reason (min 5 chars)"
                               aria-label="Batch QC reason"
-                              style={{ height: 32, padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+                              style={{ minHeight: 'var(--tap)', padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
                             />
                             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                               {(['Clean & inspected', 'Sole cleaner on shift', 'Routine QC passed'] as const).map((preset) => (
@@ -2001,7 +2001,7 @@ function QcRowControls({
             onChange={(e) => onReasonChange(e.target.value)}
             placeholder="Self-QC reason, audited (min 5)"
             aria-label="Reason for self-performed QC"
-            style={{ height: 26, padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
+            style={{ minHeight: 'var(--tap)', padding: '0 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit' }}
           />
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             {(['Clean & inspected', 'Sole cleaner on shift', 'Routine QC passed'] as const).map((preset) => (

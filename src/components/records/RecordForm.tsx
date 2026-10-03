@@ -10,6 +10,7 @@ import { readRecordEditor, recordEditorOptions } from '../../lib/queries/recordE
 import { listInventory } from '../../lib/queries/inventory'
 import { findClientsByPhoneTail } from '../../lib/queries/clients'
 import { Button, Card, PageHeader } from '../ui/Page'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { RecordWorkspace, RecordSection, RecordActions, useUnsavedRecord } from '../ui/RecordWorkspace'
 import { useToast } from '../ui/Toast'
 
@@ -64,7 +65,30 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
   },[kind])
   const set=(key:string,value:string|boolean)=>{setValues(v=>({...v,[key]:value}));setErrors(e=>{const next={...e};delete next[key];return next})}
   function exit(){if(onDone){onDone();return} if(recordId){const params=new URLSearchParams(location.search);params.delete('action');navigate(`${location.pathname}${params.size?`?${params}`:''}`)}else navigate(kind==='bundle'?'/inventory?tab=bundles':routes[kind])}
-  function cancel(){if(!dirty || window.confirm('Discard unsaved changes?'))exit()}
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean
+    title: string
+    description: string
+    confirmLabel: string
+    onConfirm: () => void
+  } | null>(null)
+
+  function cancel() {
+    if (!dirty) {
+      exit()
+      return
+    }
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Discard unsaved changes?',
+      description: 'You have unsaved changes that will be lost if you leave this page.',
+      confirmLabel: 'Discard',
+      onConfirm: () => {
+        setConfirmDialog(null)
+        exit()
+      },
+    })
+  }
   function focus(key:string){const target=document.getElementById(`record-${key}`);target?.scrollIntoView({block:'center',behavior:'smooth'});target?.focus()}
   async function save(){
     if(submitting.current || !user || !permitted)return
@@ -100,9 +124,38 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
   if(loading)return <Card title="Loading record">Loading saved values…</Card>
   if(recordId && !snapshot)return <Card title="Record not loaded"><p role="alert">{error}</p><Button onClick={()=>setReload(r=>r+1)}>Retry</Button></Card>
   return <><PageHeader title={`${recordId?'Edit':'Add'} ${names[kind]}`}/>
-    {error&&<Card title="Not saved"><p role="alert">{error}</p>{recordId&&<Button onClick={()=>{if(!dirty || window.confirm('Discard your edits and load the latest record?'))setReload(r=>r+1)}}>Reload latest record</Button>}</Card>}
+    {confirmDialog && (
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        description={confirmDialog.description}
+        confirmLabel={confirmDialog.confirmLabel}
+        variant="danger"
+        onClose={() => setConfirmDialog(null)}
+        onConfirm={confirmDialog.onConfirm}
+      />
+    )}
+    {error&&<Card title="Not saved"><p role="alert">{error}</p>{recordId&&<Button onClick={()=>{
+      if(!dirty) { setReload(r=>r+1); return }
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Discard your edits?',
+        description: 'Discard your unsaved edits and reload the latest record?',
+        confirmLabel: 'Reload',
+        onConfirm: () => { setConfirmDialog(null); setReload(r=>r+1) },
+      })
+    }}>Reload latest record</Button>}</Card>}
     {Object.keys(errors).length>0&&<Card title="Check these fields"><div role="alert">{Object.entries(errors).map(([key,message])=><Button key={key} variant="ghost" onClick={()=>focus(key)}>{message}</Button>)}</div></Card>}
-    {duplicate&&<Card title="This phone belongs to an existing client"><p>{duplicate.name}</p><Button onClick={()=>{if(!dirty || window.confirm('Discard unsaved changes?'))navigate(`/clients/${duplicate.id}`)}}>Open existing client</Button></Card>}
+    {duplicate&&<Card title="This phone belongs to an existing client"><p>{duplicate.name}</p><Button onClick={()=>{
+      if(!dirty) { navigate(`/clients/${duplicate.id}`); return }
+      setConfirmDialog({
+        isOpen: true,
+        title: 'Discard unsaved changes?',
+        description: 'Discard current unsaved changes and open the existing client?',
+        confirmLabel: 'Open Client',
+        onConfirm: () => { setConfirmDialog(null); navigate(`/clients/${duplicate.id}`) },
+      })
+    }}>Open existing client</Button></Card>}
     <RecordWorkspace summary={<Card title={`${names[kind]} summary`}><strong>{String(values.name||`New ${kind}`)}</strong><p>{recordId?'Editing the existing record.':'A new record will be created.'}</p>{kind!=='client'&&<p>{rows.length} {kind==='bundle'?'components':'units'}</p>}</Card>} actions={<RecordActions busy={busy} dirty={dirty || !recordId} label={recordId?'Save changes':`Create ${kind}`} onSave={()=>void save()} onCancel={cancel}/> }>
       {sections.map(section=><RecordSection key={section} title={section}><div className="record-fields">{recordFields[kind].filter(f=>f.section===section).map(renderField)}</div>
         {kind==='client'&&section==='Contact'&&<><h3>Primary contact</h3>{rows.map((row,index)=><div className="record-fields" key={String(row.id??index)}>{rowField(row,index,'full_name','Contact name')}{rowField(row,index,'designation','Designation')}{rowField(row,index,'phone','Contact phone')}{rowField(row,index,'email','Contact email')}<Button disabled={busy} onClick={()=>setRows([])}>Remove primary contact</Button></div>)}{!rows.length&&<Button disabled={busy} onClick={()=>setRows([{full_name:'',designation:null,phone:null,email:null}])}>Add primary contact</Button>}</>}

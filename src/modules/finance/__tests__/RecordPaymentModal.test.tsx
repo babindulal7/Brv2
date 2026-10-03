@@ -197,4 +197,31 @@ describe('RecordPaymentModal — the amount default', () => {
     const second = recordPaymentSpy.mock.calls[1]![0] as Record<string, unknown>
     expect(second.clientUuid).toBe(first.clientUuid)
   })
+
+  it('satisfies keyboard accessibility and accessible name bindings for screen readers', async () => {
+    recordPaymentSpy.mockClear()
+    const c = await mount(() => {})
+    const controls = Array.from(c.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea'))
+    expect(controls.length).toBeGreaterThanOrEqual(5)
+    for (const ctrl of controls) {
+      const id = ctrl.getAttribute('id')
+      const ariaLabel = ctrl.getAttribute('aria-label')
+      const ariaLabelledby = ctrl.getAttribute('aria-labelledby')
+      const hasForLabel = id ? Boolean(c.querySelector(`label[for="${id}"]`)) : false
+      expect(Boolean(ariaLabel || ariaLabelledby || hasForLabel)).toBe(true)
+      expect(ctrl.tabIndex).toBeGreaterThanOrEqual(0)
+    }
+
+    const amt = amountInput(c)
+    amt.focus()
+    expect(document.activeElement).toBe(amt)
+    await typeAmount(amt, '1000')
+    const subBtn = submitButton(c)
+    subBtn.focus()
+    expect(document.activeElement).toBe(subBtn)
+    await act(async () => {
+      subBtn.click()
+    })
+    expect(recordPaymentSpy).toHaveBeenCalled()
+  })
 })

@@ -19,6 +19,8 @@ export interface RentalPrimaryActionFacts {
   isPartial?: boolean | undefined
   /** Booking contains only non-physical lines (Service, Sub-rental, Manual item) */
   isServiceOnly?: boolean | undefined
+  /** Whether operational cleaning & reset (QC) has already completed on all units */
+  isResetComplete?: boolean | undefined
   canCloseRental?: boolean | undefined
   canOperate?: boolean | undefined
   cancelledReason?: string | null | undefined
@@ -135,6 +137,7 @@ export function getRentalPrimaryAction(
     isOverdue = false,
     isPartial = false,
     isServiceOnly = false,
+    isResetComplete = false,
     canCloseRental = true,
     canOperate = true,
     cancelledReason = null,
@@ -288,6 +291,7 @@ export function getRentalPrimaryAction(
     }
 
     case 'Returned': {
+      const isResetDone = isResetComplete || (stage ?? '').trim() === 'Reset Complete'
       // If user has permission to close the rental, the primary completion action is Close Rental
       if (canCloseRental) {
         return {
@@ -298,6 +302,18 @@ export function getRentalPrimaryAction(
           disabled: Boolean(cancelledReason),
           reason: cancelledReason,
           isOperable: true,
+        }
+      }
+      // If operational reset/QC is already done, show awaiting close state to non-closers
+      if (isResetDone) {
+        return {
+          label: 'QC Done · Awaiting Close',
+          verb: 'Awaiting Close',
+          icon: 'check',
+          actionType: 'view',
+          disabled: true,
+          reason: 'Equipment cleaning & reset is complete. Rental is awaiting financial settlement and close.',
+          isOperable: false,
         }
       }
       // Otherwise, the next operational job is Cleaning & Reset

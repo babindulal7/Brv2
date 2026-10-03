@@ -62,6 +62,8 @@ import type { ListFilters } from '../../lib/queries/listQuery'
 import { PROJECT_TYPES, displayProjectType } from '../../lib/projectTypes'
 import { LoadingSkeleton } from '../../components/ui/StateViews'
 import { listActiveDrafts, type RentalDraftRecord } from '../../actions/rentals/saveDraft'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
 const NewRental = lazy(() => import('./NewRental'))
 import { CancelRentalModal } from './modals/CancelRentalModal'
 import { FloatingBulkActionBar } from '../../components/ui/QuickActionPanel'
@@ -1468,6 +1470,17 @@ export default function RentalsList() {
     void refreshSubRentals()
   }, [refetchList, refreshSubRentals])
 
+  useDomainEvent(EVENT_TYPES.RENTAL_CREATED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_CONFIRMED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_PACKED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_HANDED_OVER, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_PICKED_UP, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_RETURNED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_RESET_COMPLETED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_CLOSED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refreshAll)
+  useDomainEvent(EVENT_TYPES.DEPOSIT_SETTLED, refreshAll)
+
   /*
    * §11.1 — the derived sub-rental answer is applied HERE rather than in
    * `fetchRentals`, because the id set and the page of rows come from two
@@ -1765,7 +1778,7 @@ export default function RentalsList() {
         quickFilter={chip}
         onSelectQuickFilter={pickChip}
         dateRange={{ from, to }}
-        onChangeDateRange={({ from: nextFrom, to: nextTo }) => setRange(nextFrom, nextTo)}
+        onChangeDateRange={({ from: nextFrom, to: nextTo }: { from: string; to: string }) => setRange(nextFrom, nextTo)}
         subOn={subOn}
         onToggleSub={() => f.setExtra('sub', subOn ? undefined : 'on')}
         money={money}
@@ -2214,7 +2227,7 @@ export default function RentalsList() {
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
                         <th style={{ ...th, width: 44, paddingLeft: 12 }}>
-                          <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 32, minHeight: 36, cursor: 'pointer' }}>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 44, minHeight: 44, cursor: 'pointer' }}>
                             <input
                               type="checkbox"
                               checked={allSelected}

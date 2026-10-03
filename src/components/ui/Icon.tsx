@@ -20,6 +20,8 @@ import {
   IconArrowRight,
   IconArrowBackUp,
   IconExternalLink,
+  IconCopy,
+  IconArchive,
   IconEdit,
   IconDownload,
   IconRefresh,
@@ -104,6 +106,8 @@ const REGISTRY = {
   external_link: IconExternalLink,
   edit: IconEdit,
   filter: IconFilter,
+  copy: IconCopy,
+  archive: IconArchive,
 
   // sidebar nav
   home: IconHome,

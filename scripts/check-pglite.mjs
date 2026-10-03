@@ -192,8 +192,24 @@ async function auditAnonFunctionExecution(db) {
   return { leaked: leaked.map((r) => `${r.fn}(${r.args})`), checked: rows.length }
 }
 
+async function auditSecurityDefinerSearchPath(db) {
+  const { rows } = await db.query(`
+    SELECT p.proname, n.nspname, p.proconfig
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.prosecdef = true;
+  `)
+  const unpinned = rows.filter((r) => {
+    const config = r.proconfig || []
+    return !config.some((c) => c.toLowerCase().startsWith('search_path='))
+  })
+  return { unpinned: unpinned.map((r) => r.proname), checked: rows.length }
+}
+
 const viewAudit = await auditAnonViewReads(db)
 const funcAudit = await auditAnonFunctionExecution(db)
+const definerAudit = await auditSecurityDefinerSearchPath(db)
 
 console.log(`\n${applied}/${files.length} applied, ${failures.length} failed`)
 
@@ -225,6 +241,15 @@ if (funcAudit.leaked.length) {
   )
 }
 
+console.log(
+  `definer-hygiene gate: ${definerAudit.checked} definer function(s) checked, ` +
+    `${definerAudit.unpinned.length} without pinned search_path`,
+)
+if (definerAudit.unpinned.length) {
+  console.log('\n  SECURITY DEFINER functions must pin search_path to prevent escalation:')
+  for (const fn of definerAudit.unpinned) console.log(`    ${fn}`)
+}
+
 await db.close()
 
 if (failures.length) {
@@ -246,4 +271,8 @@ if (funcAudit.leaked.length) {
   console.log('\nThe chain builds, and it still leaks RPC functions to anon. Both are reported; neither cancels the other.')
   process.exit(1)
 }
-console.log('The chain builds from scratch, no view is readable by anon, and no unauthorized RPC is executable by anon.')
+if (definerAudit.unpinned.length) {
+  console.log('\nThe chain builds, and it still contains unpinned SECURITY DEFINER functions.')
+  process.exit(1)
+}
+console.log('The chain builds from scratch, no view is readable by anon, no unauthorized RPC is executable by anon, and all definer search_paths are pinned.')

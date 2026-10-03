@@ -896,8 +896,9 @@ export default function AddClient({ embedded = false, onDone }: AddClientProps =
                     🇳🇵 +977
                   </span>
                   <Input
+                    type="tel"
                     value={phone}
-                    inputMode="numeric"
+                    inputMode="tel"
                     autoComplete="tel-national"
                     onChange={(e) => {
                       setPhone(e.target.value)
@@ -1277,7 +1278,7 @@ export default function AddClient({ embedded = false, onDone }: AddClientProps =
                       type="button"
                       onClick={() => setDocuments((prev) => prev.filter((x) => x.id !== d.id))}
                       aria-label={`Remove ${d.file.name}`}
-                      style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', width: 24, height: 24, borderRadius: 'var(--r-xs)', display: 'grid', placeItems: 'center' }}
+                      style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', minWidth: 44, minHeight: 44, borderRadius: 'var(--r-xs)', display: 'grid', placeItems: 'center' }}
                     >
                       <Icon name="close" size={14} />
                     </button>

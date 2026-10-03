@@ -25,6 +25,7 @@ import { canViewMoney, isStaff } from './lib/rbac'
 import { installRoutePreload } from './lib/routePreload'
 import { OperationsWorkspaceProvider } from './modules/operations/OperationsWorkspaceContext'
 import { WorkspaceProvider, useWorkspace } from './lib/workspaceContext'
+import { SchemaGuardBanner } from './components/shell/SchemaGuardBanner'
 
 /* ── lazy-loaded route pages (code-splitting) ─────────────────────────── */
 const Today             = lazy(() => import('./modules/today/Today'))
@@ -48,6 +49,7 @@ const ForecastingReports = lazy(() => import('./modules/reports/ForecastingRepor
 const RentalReports     = lazy(() => import('./modules/reports/RentalReports'))
 const OperationsReports = lazy(() => import('./modules/reports/OperationsReports'))
 const DamageMaintenanceReports = lazy(() => import('./modules/reports/DamageMaintenanceReports'))
+
 const SalesVatReports   = lazy(() => import('./modules/reports/SalesVatReports'))
 const ActivityReports   = lazy(() => import('./modules/reports/ActivityReports'))
 const BackupRestore     = lazy(() => import('./modules/admin/BackupRestore'))
@@ -77,6 +79,7 @@ const DeliveryWorkspace = lazy(() => import('./modules/operations/DeliveryWorksp
 const TimesheetTab      = lazy(() => import('./modules/crew/TimesheetTab'))
 const ProductionsList   = lazy(() => import('./modules/rentals/ProductionsList'))
 const WarrantyTracker   = lazy(() => import('./modules/inventory/WarrantyTracker'))
+const InternalNotesPage = lazy(() => import('./modules/notes/InternalNotesPage'))
 
 function RentalsNewRedirect() {
   const [searchParams] = useSearchParams()
@@ -466,6 +469,17 @@ export default function App() {
         />
 
         <Route
+          path="/notes"
+          element={
+            <Shell crumbs={[{ label: 'Team Notes' }]} search="Search shift notes, gear alerts, staff…">
+              <InternalNotesPage />
+            </Shell>
+          }
+        />
+        <Route path="/team/notes" element={<Navigate to="/notes" replace />} />
+        <Route path="/operations/notes" element={<Navigate to="/notes" replace />} />
+
+        <Route
           path="/finance"
           element={
             <Shell crumbs={[{ label: 'Finance' }]} search="Search invoice, payment, client…">
@@ -666,6 +680,10 @@ export default function App() {
             </Shell>
           }
         />
+
+        <Route path="/reports/revenue" element={<Navigate to="/finance?tab=reports" replace />} />
+        <Route path="/reports/cases" element={<Navigate to="/operations/cases" replace />} />
+        <Route path="/reports/custom" element={<Navigate to="/finance?tab=reports" replace />} />
 
         <Route path="/clients/memberships" element={<Navigate to="/clients?tab=membership" replace />} />
         <Route path="/clients/import" element={<Navigate to="/clients?tab=import" replace />} />
@@ -1114,6 +1132,7 @@ function Shell({
       <a className="skip-to-content" href="#main-content">Skip to content</a>
       <MockBanner />
       <OfflineBanner />
+      <SchemaGuardBanner />
 
       <div className="app-shell-layout" style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
         {!phone && <Sidebar active={pathname + query} />}

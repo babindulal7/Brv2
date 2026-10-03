@@ -2035,8 +2035,7 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
               </p>
               {breakdown.totalWeightKg === null && (
                 <p style={{ margin: '6px 0 0', ...subtle, lineHeight: 1.5 }}>
-                  No weight is recorded against these models, so the total shows `—` rather than 0.{' '}
-                  <span className="identifier">TODO(decision)</span> — where do per-model weights come from?
+                  No weight is recorded against these models, so the total shows `—` rather than 0.
                 </p>
               )}
             </Card>

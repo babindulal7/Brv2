@@ -1,0 +1,122 @@
+/**
+ * notes.css — Styles for Team Internal Notes & Dispatch Log
+ * Babin Rentals OS
+ */
+
+.notes-page-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-lg);
+  padding: var(--sp-lg);
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .notes-page-container {
+    padding: var(--sp-md);
+    gap: var(--sp-md);
+  }
+}
+
+.notes-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--sp-md);
+}
+
+@media (max-width: 1024px) {
+  .notes-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .notes-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.notes-layout-grid {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: var(--sp-lg);
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .notes-layout-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.note-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+  position: relative;
+}
+
+.note-card:hover {
+  border-color: var(--border2);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+}
+
+.note-card.is-pinned {
+  border-color: var(--accent);
+  background: rgba(28, 92, 196, 0.02);
+}
+
+.note-card.is-resolved {
+  opacity: 0.82;
+  background: var(--surface-2);
+}
+
+.note-card.is-urgent {
+  border-left: 4px solid var(--danger);
+}
+
+.note-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+  transition: all var(--dur-fast) var(--ease);
+}
+
+.note-ref-chip:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.note-template-pill {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--dur-fast) var(--ease);
+}
+
+.note-template-pill:hover {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--accent);
+}

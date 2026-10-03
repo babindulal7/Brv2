@@ -44,6 +44,8 @@ import { Pagination } from '../../components/ui/Pagination'
 import { DataTableShell } from '../../components/ui/DataTable'
 import './operations.css'
 import { useOperationsWorkspace } from './OperationsWorkspaceContext'
+import { useDomainEvent } from '../../events/useDomainEvent'
+import { EVENT_TYPES } from '../../events/eventBus'
 
 
 const th = {
@@ -589,6 +591,15 @@ export default function OperationsQueues() {
     alertsQ.refetch()
     quotesQ.refetch()
   }
+
+  useDomainEvent(EVENT_TYPES.RENTAL_PACKED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_HANDED_OVER, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_PICKED_UP, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_RETURNED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_RESET_COMPLETED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_CONFIRMED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_CLOSED, refreshAll)
+  useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refreshAll)
 
   const [lastLoadedAt, setLastLoadedAt] = useState<number>(() => Date.now())
   useEffect(() => {

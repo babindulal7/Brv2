@@ -1132,28 +1132,33 @@ function AddBranchModal({
   if (!city.trim()) errors.push('City is required.')
   if (!manager.trim()) errors.push('A branch manager is required.')
 
-  const field = (label: string, value: string, set: (v: string) => void, placeholder: string) => (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
-      <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{label}</span>
-      <input
-        value={value}
-        onChange={(e) => set(e.target.value)}
-        placeholder={placeholder}
-        /* Law 15 — the law is the hit area and `--tap` is the token. One field
-           per line in the Add Branch form, so it just grows. */
-        style={{
-          minHeight: 'var(--tap)',
-          padding: '0 9px',
-          borderRadius: 'var(--r-input)',
-          border: '1px solid var(--input-border)',
-          background: 'var(--input-bg)',
-          color: 'var(--text)',
-          fontSize: 'var(--t-meta)',
-          fontFamily: 'inherit',
-        }}
-      />
-    </label>
-  )
+  const field = (label: string, value: string, set: (v: string) => void, placeholder: string) => {
+    const isPhone = label.toLowerCase().includes('phone')
+    return (
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)' }}>
+        <span style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{label}</span>
+        <input
+          type={isPhone ? 'tel' : 'text'}
+          inputMode={isPhone ? 'tel' : undefined}
+          value={value}
+          onChange={(e) => set(e.target.value)}
+          placeholder={placeholder}
+          /* Law 15 — the law is the hit area and `--tap` is the token. One field
+             per line in the Add Branch form, so it just grows. */
+          style={{
+            minHeight: 'var(--tap)',
+            padding: '0 9px',
+            borderRadius: 'var(--r-input)',
+            border: '1px solid var(--input-border)',
+            background: 'var(--input-bg)',
+            color: 'var(--text)',
+            fontSize: 'var(--t-meta)',
+            fontFamily: 'inherit',
+          }}
+        />
+      </label>
+    )
+  }
 
   return (
     <div

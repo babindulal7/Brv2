@@ -80,7 +80,7 @@ export function resetMockData(): void {
 
 /* ── Store + overlay ───────────────────────────────────────────────────── */
 
-const store: Store = buildStore()
+const store: Store = buildStore({ seeded: import.meta.env?.['VITE_MOCK_SEEDED'] !== 'false' })
 const overlay = loadOverlay()
 
 for (const { table, row } of overlay.inserts) (store[table] ??= []).push(row)

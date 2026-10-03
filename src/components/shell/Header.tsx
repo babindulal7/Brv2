@@ -31,6 +31,7 @@ const DEFAULT_PAGE_INFO: Record<string, string> = {
   Analytics: 'Fleet utilization, revenue metrics, and operational performance.',
   Reports: 'Fleet utilization, revenue metrics, and operational performance.',
   'Crew Assist': 'Technician rosters, driver dispatch, and field assignments.',
+  'Team Notes': 'Operational scratchpad, shift handovers, gear defects & field alerts.',
   Tools: 'Calculators, pricing sandbox, and technical utilities.',
   Settings: 'System configuration, warehouse locations, and staff permissions.',
 }

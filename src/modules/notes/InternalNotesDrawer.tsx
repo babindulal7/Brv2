@@ -6,6 +6,7 @@
  * gear alerts, shift handover items, and booking reminders with auto-detected ID tags.
  */
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
@@ -15,10 +16,13 @@ import {
   listInternalNotes,
   addInternalNote,
   togglePinNote,
+  toggleResolveNote,
   deleteInternalNote,
   extractReferenceId,
+  getReferenceUrl,
   type InternalNote,
   type NoteCategory,
+  type NotePriority,
 } from '../../lib/queries/internalNotes'
 
 interface InternalNotesDrawerProps {
@@ -30,9 +34,11 @@ interface InternalNotesDrawerProps {
 export default function InternalNotesDrawer({ isOpen, onClose, initialReference }: InternalNotesDrawerProps) {
   const { user } = useAuth()
   const toast = useOptionalToast()
+  const navigate = useNavigate()
   const [notes, setNotes] = useState<InternalNote[]>(() => listInternalNotes())
   const [draft, setDraft] = useState('')
   const [category, setCategory] = useState<NoteCategory>('General')
+  const [priority, setPriority] = useState<NotePriority>('normal')
   const [filterCategory, setFilterCategory] = useState<string>('All')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -81,6 +87,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
       authorRole,
       text: draft,
       category,
+      priority,
     })
 
     setDraft('')
@@ -90,6 +97,11 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
 
   const handleTogglePin = (id: string) => {
     togglePinNote(id)
+    reloadNotes()
+  }
+
+  const handleToggleResolve = (id: string) => {
+    toggleResolveNote(id, user?.name || 'Operations Staff')
     reloadNotes()
   }
 
@@ -166,24 +178,51 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
               Shift handover scratchpad & gear advisories
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close drawer"
-            style={{
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--text2)',
-              cursor: 'pointer',
-              display: 'grid',
-              placeItems: 'center',
-              width: 36,
-              height: 36,
-              borderRadius: 'var(--r-btn)',
-            }}
-          >
-            <Icon name="x" size={18} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => {
+                onClose()
+                navigate('/notes')
+              }}
+              title="Open dedicated Team Notes page"
+              style={{
+                border: '1px solid var(--border)',
+                background: 'var(--card)',
+                color: 'var(--accent)',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '0 10px',
+                height: 32,
+                borderRadius: 'var(--r-btn)',
+                fontSize: '11px',
+                fontWeight: 700,
+              }}
+            >
+              <Icon name="external_link" size={13} />
+              Full Page
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close drawer"
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--text2)',
+                cursor: 'pointer',
+                display: 'grid',
+                placeItems: 'center',
+                width: 36,
+                height: 36,
+                borderRadius: 'var(--r-btn)',
+              }}
+            >
+              <Icon name="x" size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Note Composer */}
@@ -214,25 +253,44 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
               }}
             />
 
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <select
                   value={category}
                   onChange={e => setCategory(e.target.value as NoteCategory)}
                   style={{
-                    padding: '6px 10px',
+                    padding: '6px 8px',
                     borderRadius: 'var(--r-btn)',
                     border: '1px solid var(--border)',
                     background: 'var(--input-bg)',
                     color: 'var(--text)',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontWeight: 600,
                   }}
                 >
                   <option value="General">General</option>
                   <option value="Gear Alert">Gear Alert</option>
                   <option value="Shift Handover">Shift Handover</option>
+                  <option value="Logistics & Transport">Logistics</option>
                   <option value="Client Remark">Client Remark</option>
+                </select>
+
+                <select
+                  value={priority}
+                  onChange={e => setPriority(e.target.value as NotePriority)}
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: 'var(--r-btn)',
+                    border: '1px solid var(--border)',
+                    background: 'var(--input-bg)',
+                    color: 'var(--text)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                  }}
+                >
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="urgent">🚨 Urgent</option>
                 </select>
 
                 {detectedRef && (
@@ -253,7 +311,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                 )}
               </div>
 
-              <Button variant="primary" type="submit" disabled={!draft.trim()} style={{ height: 32, padding: '0 12px' }}>
+              <Button variant="primary" type="submit" disabled={!draft.trim()} style={{ minHeight: 44, padding: '0 14px' }}>
                 <Icon name="plus" size={14} />
                 Post
               </Button>
@@ -272,7 +330,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
             background: 'var(--surface-2)',
           }}
         >
-          {(['All', 'Shift Handover', 'Gear Alert', 'Client Remark', 'General'] as const).map(cat => (
+          {(['All', 'Shift Handover', 'Gear Alert', 'Logistics & Transport', 'Client Remark', 'General'] as const).map(cat => (
             <button
               key={cat}
               onClick={() => setFilterCategory(cat)}
@@ -288,7 +346,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                 whiteSpace: 'nowrap',
               }}
             >
-              {cat}
+              {cat === 'Logistics & Transport' ? 'Logistics' : cat}
             </button>
           ))}
         </div>
@@ -301,10 +359,14 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
             </div>
           ) : (
             filteredNotes.map(n => {
-              const tone =
+              const isResolved = n.status === 'resolved'
+              const isUrgent = n.priority === 'urgent'
+              const tone: 'danger' | 'primary' | 'warning' | 'neutral' =
                 n.category === 'Gear Alert'
                   ? 'danger'
                   : n.category === 'Shift Handover'
+                  ? 'primary'
+                  : n.category === 'Logistics & Transport'
                   ? 'primary'
                   : n.category === 'Client Remark'
                   ? 'warning'
@@ -324,9 +386,15 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                     padding: '12px 14px',
                     borderRadius: 'var(--r-card)',
                     border: `1px solid ${n.pinned ? 'var(--accent)' : 'var(--border)'}`,
-                    background: n.pinned ? 'rgba(28, 92, 196, 0.03)' : 'var(--card)',
+                    borderLeft: isUrgent && !isResolved ? '4px solid var(--danger)' : undefined,
+                    background: isResolved
+                      ? 'var(--surface-2)'
+                      : n.pinned
+                      ? 'rgba(28, 92, 196, 0.03)'
+                      : 'var(--card)',
                     boxShadow: 'var(--shadow-card)',
                     position: 'relative',
+                    opacity: isResolved ? 0.8 : 1,
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -336,7 +404,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                           width: 26,
                           height: 26,
                           borderRadius: '50%',
-                          background: 'var(--surface-2)',
+                          background: isResolved ? 'var(--card)' : 'var(--surface-2)',
                           border: '1px solid var(--border)',
                           display: 'grid',
                           placeItems: 'center',
@@ -354,7 +422,9 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {isUrgent && !isResolved && <Badge label="URGENT" tone="danger" />}
                       <Badge label={n.category} tone={tone} />
+                      {isResolved && <Badge label="DONE" tone="in" />}
                       <button
                         type="button"
                         onClick={() => handleTogglePin(n.id)}
@@ -390,13 +460,23 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                     </div>
                   </div>
 
-                  <div style={{ fontSize: 'var(--t-body)', color: 'var(--text)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
+                  <div
+                    style={{
+                      fontSize: 'var(--t-body)',
+                      color: isResolved ? 'var(--muted)' : 'var(--text)',
+                      lineHeight: 1.45,
+                      whiteSpace: 'pre-wrap',
+                      textDecoration: isResolved ? 'line-through' : 'none',
+                    }}
+                  >
                     {n.text}
                   </div>
 
-                  {n.referenceId && (
-                    <div style={{ marginTop: 8 }}>
-                      <span
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                    {n.referenceId ? (
+                      <Link
+                        to={getReferenceUrl(n.referenceId)}
+                        onClick={onClose}
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
@@ -409,13 +489,36 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                           fontFamily: 'monospace',
                           fontWeight: 700,
                           color: 'var(--accent)',
+                          textDecoration: 'none',
                         }}
+                        title={`Open ${n.referenceId}`}
                       >
                         <Icon name="receipt" size={11} />
                         {n.referenceId}
-                      </span>
-                    </div>
-                  )}
+                        <Icon name="external_link" size={10} style={{ opacity: 0.7 }} />
+                      </Link>
+                    ) : <span />}
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleResolve(n.id)}
+                      style={{
+                        border: 'none',
+                        background: 'transparent',
+                        color: isResolved ? 'var(--muted)' : 'var(--success-text)',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                        padding: '2px 6px',
+                      }}
+                    >
+                      <Icon name="check" size={12} />
+                      {isResolved ? 'Reopen' : 'Done'}
+                    </button>
+                  </div>
                 </div>
               )
             })

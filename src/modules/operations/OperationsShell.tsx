@@ -36,7 +36,7 @@ const STATUS_AFTER: Record<JobName, BookingStatus> = {
   Pack: 'Packed',
   Handover: 'On Rent',
   Return: 'Returned',
-  Reset: 'Closed',
+  Reset: 'Returned',
 }
 
 export interface WorkspaceActions {

@@ -195,7 +195,7 @@ export function BarcodeLookupModal({ isOpen, onClose }: BarcodeLookupModalProps)
               <Icon name="alert_triangle" size={16} />
               <span>{searchError}</span>
             </div>
-            <Button type="button" onClick={() => void handleSearch()} style={{ minHeight: 30, padding: '0 10px' }}>
+            <Button type="button" onClick={() => void handleSearch()} style={{ minHeight: 44, padding: '0 14px' }}>
               Retry
             </Button>
           </div>

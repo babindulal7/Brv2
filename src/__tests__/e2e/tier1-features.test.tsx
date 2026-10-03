@@ -72,20 +72,33 @@ vi.mock('../../modules/operations/OperationsWorkspaceContext', () => ({
   }),
 }))
 
-vi.mock('../../lib/supabase', () => ({
-  newClientUuid: () => '11111111-1111-4111-8111-111111111111',
-  supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({ data: null, error: null }),
-          order: () => Promise.resolve({ data: [], error: null }),
-        }),
-        order: () => Promise.resolve({ data: [], error: null }),
+vi.mock('../../lib/supabase', () => {
+  const createQueryBuilder = (): any => {
+    const builder: any = {
+      eq: () => builder,
+      neq: () => builder,
+      is: () => builder,
+      in: () => builder,
+      order: () => builder,
+      limit: () => builder,
+      range: () => builder,
+      single: async () => ({ data: null, error: null }),
+      maybeSingle: async () => ({ data: null, error: null }),
+      then: (resolve: any) => Promise.resolve({ data: [], error: null }).then(resolve),
+      catch: (reject: any) => Promise.resolve({ data: [], error: null }).catch(reject),
+    }
+    return builder
+  }
+
+  return {
+    newClientUuid: () => '11111111-1111-4111-8111-111111111111',
+    supabase: {
+      from: () => ({
+        select: () => createQueryBuilder(),
       }),
-    }),
-  },
-}))
+    },
+  }
+})
 
 vi.mock('../../actions/rentals/saveDraft', () => ({
   saveDraft: vi.fn(),
@@ -381,6 +394,35 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', () => {
       // Workflow action buttons
       const confirmBtn = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Confirm Booking')
       expect(confirmBtn).toBeDefined()
+    })
+
+    it('supports keyboard-only navigation and screen-reader accessible names', async () => {
+      const { default: NewRental } = await import('../../modules/rentals/NewRental')
+      await mountComponent(<NewRental />, ['/rentals/new'])
+
+      // Every interactive input/select/textarea must have an accessible name or label
+      const formFields = Array.from(container.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>('input, select, textarea'))
+      expect(formFields.length).toBeGreaterThan(0)
+      for (const field of formFields) {
+        if (field.type === 'hidden') continue
+        const id = field.getAttribute('id')
+        const hasForLabel = Boolean(id && container.querySelector(`label[for="${id}"]`))
+        const ariaLabel = field.getAttribute('aria-label')
+        const ariaLabelledby = field.getAttribute('aria-labelledby')
+        const title = field.getAttribute('title')
+        const placeholder = field.getAttribute('placeholder')
+        const hasWrappingLabel = Boolean(field.closest('label'))
+        expect(Boolean(ariaLabel || ariaLabelledby || hasForLabel || hasWrappingLabel || title || placeholder)).toBe(true)
+        if (!field.hasAttribute('tabindex') || field.tabIndex >= 0) {
+          expect(field.tabIndex).toBeGreaterThanOrEqual(0)
+        }
+      }
+
+      // Action buttons must be reachable via keyboard
+      const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>('button:not([disabled]):not([tabindex="-1"])'))
+      for (const btn of buttons) {
+        expect(btn.tabIndex).toBeGreaterThanOrEqual(0)
+      }
     })
   })
 

@@ -2,10 +2,53 @@ import { captureError } from '../lib/monitoring';
 
 type EventHandler<T = unknown> = (payload: T, eventName?: string) => void | Promise<void>;
 
-class EventBus {
+interface BroadcastEnvelope {
+  sourceId: string;
+  eventName: string;
+  payload: unknown;
+}
+
+export class EventBus {
   /* `never` so a handler declared for any payload type can be stored; the
      erasure is paid once, at the call in `emit`, not at every subscribe. */
   private listeners: Map<string, EventHandler<never>[]> = new Map();
+  private channel: BroadcastChannel | null = null;
+  private instanceId: string = Math.random().toString(36).substring(2) + Date.now().toString(36);
+
+  constructor() {
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        this.channel = new BroadcastChannel('babin-rentals-domain-events');
+        this.channel.onmessage = (event: MessageEvent<BroadcastEnvelope>) => {
+          if (
+            event.data &&
+            typeof event.data === 'object' &&
+            event.data.sourceId !== this.instanceId &&
+            typeof event.data.eventName === 'string'
+          ) {
+            void this.emitLocal(event.data.eventName, event.data.payload);
+          }
+        };
+      } catch {
+        this.channel = null;
+      }
+    }
+  }
+
+  /**
+   * Close any open broadcast channel (useful in test teardown).
+   */
+  destroy(): void {
+    if (this.channel) {
+      try {
+        this.channel.close();
+      } catch {
+        // ignore
+      }
+      this.channel = null;
+    }
+    this.listeners.clear();
+  }
 
   /**
    * Subscribe to a specific domain event.
@@ -27,30 +70,15 @@ class EventBus {
     };
   }
 
-  /**
-   * Emit an event to all subscribed listeners.
-   */
-  async emit<T>(eventName: string, payload: T): Promise<void> {
+  private async emitLocal<T>(eventName: string, payload: T): Promise<void> {
     const specificHandlers = this.listeners.get(eventName) || [];
     const wildcardHandlers = this.listeners.get('*') || [];
     const handlers = [...specificHandlers, ...wildcardHandlers];
     
     if (handlers.length === 0) return;
 
-    // We no longer log every emit here, the auditLogger will handle logging.
-    
     const promises = handlers.map(handler => {
       try {
-        // If it's a wildcard listener, we might want to pass the event name too,
-        // but for now we'll pass it in an envelope if it's the wildcard, or just
-        // let the logger handle it if we standardise the envelope. 
-        // Actually, let's wrap it for wildcards. Or just pass an envelope for all.
-        // Let's just pass `payload` and let the handler know what it is (actions can embed type).
-        // A better approach is to pass eventName as second arg to handler?
-        // Let's just pass it. Our EventHandler type is `(payload: T) => void`. 
-        // We will just pass `payload`. The payload from actions includes { type: EVENT_TYPES.XYZ } 
-        // because we can add that in the event bus or it's implicitly known.
-        // For audit logging, we really need the event name. Let's pass eventName as second param.
         return (handler as EventHandler<unknown>)(payload, eventName);
       } catch (err) {
         captureError(err, { where: 'eventBus.handler', eventName });
@@ -58,6 +86,25 @@ class EventBus {
     });
 
     await Promise.all(promises);
+  }
+
+  /**
+   * Emit an event to all subscribed listeners and broadcast across tabs.
+   */
+  async emit<T>(eventName: string, payload: T): Promise<void> {
+    if (this.channel) {
+      try {
+        this.channel.postMessage({
+          sourceId: this.instanceId,
+          eventName,
+          payload,
+        });
+      } catch {
+        // Structured clone error or closed channel; fail safe
+      }
+    }
+
+    await this.emitLocal(eventName, payload);
   }
 }
 
@@ -119,6 +166,7 @@ export const EVENT_TYPES = {
   
   PAYMENT_RECORDED: 'payment.recorded',
   PAYMENT_REFUNDED: 'payment.refunded',
+  DEPOSIT_SETTLED: 'deposit.settled',
   INVOICE_CREATED: 'invoice.created',
   INVOICE_VOIDED: 'invoice.voided',
   DOCUMENT_CREATED: 'document.created',

@@ -25,7 +25,10 @@ export function useUnsavedRecord(dirty: boolean) {
       if (!dirtyRef.current || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
       const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
       if (!(anchor instanceof HTMLAnchorElement) || anchor.target === '_blank' || anchor.download || anchor.origin !== location.origin || (anchor.pathname === location.pathname && anchor.search === location.search)) return
-      if (!window.confirm('Discard unsaved changes?')) { event.preventDefault(); event.stopPropagation() }
+      // Prevent accidental navigation while form is dirty without blocking the UI thread with window.confirm
+      event.preventDefault()
+      event.stopPropagation()
+      window.dispatchEvent(new CustomEvent('babin:unsaved-leave', { detail: { href: anchor.href } }))
     }
     window.addEventListener('beforeunload', unload)
     document.addEventListener('click', click, true)

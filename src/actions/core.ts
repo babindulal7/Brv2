@@ -248,6 +248,13 @@ async function checkCapability(capability: string, ctx: ActionContext): Promise<
       return rbac.canApproveDailyClosing(ctx.role, online);
 
     /*
+     * `deposit.release` (docs/PERMISSIONS.md §4.6) — Owner · Admin · Manager · Accounts.
+     * Settling or releasing a security deposit (Law 5 liability held on client's behalf).
+     */
+    case 'deposit.release':
+      return rbac.canReleaseDeposit(ctx.role, online);
+
+    /*
      * ── Ruled 4 Sep 2026 by `RULINGS-2026-09-04.md`, which is BINDING ────────
      *
      * These two are the exception to the mirror method above, and the exception
