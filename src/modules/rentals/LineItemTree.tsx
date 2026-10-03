@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
+import { TouchTarget } from '../../components/ui/TouchTarget'
 import type { FloorLine, FloorUnit } from '../../lib/queries/bookings'
 import { isSubRentedLine } from '../../lib/queries/bookings'
 
@@ -196,9 +197,11 @@ export function LineItemTree({
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--muted)' }}
+              style={{ position: 'relative', background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--muted)' }}
               title="Clear search"
+              aria-label="Clear search"
             >
+              <TouchTarget />
               <Icon name="close" size={14} />
             </button>
           )}
@@ -243,10 +246,10 @@ export function LineItemTree({
               <button
                 type="button"
                 onClick={expandAll}
-                className="btn btn--sm"
+                className="btn btn--sm tap"
                 style={{
-                  height: 30,
-                  padding: '0 8px',
+                  minHeight: 44,
+                  padding: '0 10px',
                   fontSize: '0.75rem',
                   background: 'var(--card)',
                   border: '1px solid var(--border)',
@@ -260,10 +263,10 @@ export function LineItemTree({
               <button
                 type="button"
                 onClick={collapseAll}
-                className="btn btn--sm"
+                className="btn btn--sm tap"
                 style={{
-                  height: 30,
-                  padding: '0 8px',
+                  minHeight: 44,
+                  padding: '0 10px',
                   fontSize: '0.75rem',
                   background: 'var(--card)',
                   border: '1px solid var(--border)',
@@ -862,6 +865,7 @@ function UnitBarcodeChip({
           aria-label={`Release ${label}`}
           title={`Release ${label} from booking`}
           style={{
+            position: 'relative',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -876,6 +880,7 @@ function UnitBarcodeChip({
             marginLeft: 2,
           }}
         >
+          <TouchTarget />
           <Icon name="close" size={11} />
         </button>
       )}

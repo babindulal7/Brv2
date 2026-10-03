@@ -1597,6 +1597,7 @@ export function ClientsDirectory({
                   type="button"
                   onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
                   aria-pressed={density === 'compact'}
+                  aria-label={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
                   title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
                   style={{
                     marginLeft: 'auto',

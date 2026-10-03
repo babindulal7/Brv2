@@ -550,9 +550,9 @@ function getPrimaryAction(
     return {
       label: 'Pack Kit',
       icon: 'box',
-      bg: '#f59e0b',
-      fg: '#0f172a',
-      border: '1px solid #d97706',
+      bg: 'var(--btn-primary-bg)',
+      fg: 'var(--btn-primary-fg)',
+      border: '1px solid transparent',
       onClick: () => openOperations(row.bookingNo, row.status, 'Pack'),
     }
   }
@@ -561,9 +561,9 @@ function getPrimaryAction(
     return {
       label: 'Handover',
       icon: 'truck',
-      bg: '#2563eb',
-      fg: '#ffffff',
-      border: '1px solid #1d4ed8',
+      bg: 'var(--btn-primary-bg)',
+      fg: 'var(--btn-primary-fg)',
+      border: '1px solid transparent',
       onClick: () => openOperations(row.bookingNo, row.status, 'Handover'),
     }
   }
@@ -572,9 +572,9 @@ function getPrimaryAction(
     return {
       label: 'Check-In',
       icon: 'return_arrow',
-      bg: '#16a34a',
-      fg: '#ffffff',
-      border: '1px solid #15803d',
+      bg: 'var(--btn-primary-bg)',
+      fg: 'var(--btn-primary-fg)',
+      border: '1px solid transparent',
       onClick: () => openOperations(row.bookingNo, row.status, 'Return'),
     }
   }
@@ -583,9 +583,9 @@ function getPrimaryAction(
     return {
       label: 'Reset & QC',
       icon: 'refresh',
-      bg: 'var(--st-progress-bg)',
-      fg: 'var(--st-progress-fg)',
-      border: '1px solid var(--ready-text)',
+      bg: 'var(--btn-primary-bg)',
+      fg: 'var(--btn-primary-fg)',
+      border: '1px solid transparent',
       onClick: () => openOperations(row.bookingNo, row.status, 'Reset'),
     }
   }

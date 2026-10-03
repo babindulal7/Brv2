@@ -1237,7 +1237,7 @@ export default function PackingWorkspace({
                   variant="ghost"
                   size="sm"
                   onClick={discardRestoredScan}
-                  style={{ fontSize: 'var(--t-meta)', height: 28, minHeight: 28, padding: '0 8px' }}
+                  style={{ fontSize: 'var(--t-meta)', padding: '0 8px' }}
                 >
                   Start Fresh
                 </Button>
@@ -1919,7 +1919,7 @@ export default function PackingWorkspace({
                         variant="ghost"
                         size="sm"
                         onClick={verifyAllKitDependencies}
-                        style={{ fontSize: 'var(--t-meta)', height: 26, minHeight: 26, padding: '0 8px' }}
+                        style={{ fontSize: 'var(--t-meta)', padding: '0 8px' }}
                       >
                         Verify All
                       </Button>

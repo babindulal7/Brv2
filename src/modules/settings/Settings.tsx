@@ -64,29 +64,21 @@ import {
  */
 const TODAY = getBusinessToday()
 
-const TAB_CONFIG: Record<TabKey, { icon: IconName; color: string; bg: string; subtitle: string }> = {
+const TAB_CONFIG: Record<TabKey, { icon: IconName; subtitle: string }> = {
   business: {
     icon: 'briefcase',
-    color: '#3b82f6',
-    bg: 'rgba(59, 130, 246, 0.12)',
     subtitle: 'Identity, VAT & financial policies',
   },
   people: {
     icon: 'users',
-    color: '#a855f7',
-    bg: 'rgba(168, 85, 247, 0.12)',
     subtitle: 'Staff directory & 9-role matrix',
   },
   branches: {
     icon: 'box',
-    color: '#f59e0b',
-    bg: 'rgba(245, 158, 11, 0.12)',
     subtitle: 'Branches, warehouses & fleet',
   },
   system: {
     icon: 'settings',
-    color: '#06b6d4',
-    bg: 'rgba(6, 182, 212, 0.12)',
     subtitle: 'Preferences, security & audit',
   },
 }
@@ -334,7 +326,7 @@ export default function Settings() {
                 >
                   <div
                     className="app-settings-mobile-icon"
-                    style={{ backgroundColor: conf.bg, color: conf.color }}
+                    style={{ backgroundColor: 'var(--surface-2)', color: 'var(--primary)' }}
                   >
                     <Icon name={conf.icon} size={20} />
                   </div>
@@ -404,8 +396,8 @@ export default function Settings() {
                   <div
                     className="app-settings-nav-icon-box"
                     style={{
-                      backgroundColor: on ? conf.color : conf.bg,
-                      color: on ? '#ffffff' : conf.color,
+                      backgroundColor: on ? 'var(--primary)' : 'var(--surface-2)',
+                      color: on ? 'var(--btn-primary-fg, #ffffff)' : 'var(--text2)',
                     }}
                   >
                     <Icon name={conf.icon} size={16} />
@@ -440,8 +432,8 @@ export default function Settings() {
                   <div
                     className="app-settings-tablet-icon"
                     style={{
-                      backgroundColor: on ? conf.color : conf.bg,
-                      color: on ? '#ffffff' : conf.color,
+                      backgroundColor: on ? 'var(--primary)' : 'var(--surface-2)',
+                      color: on ? 'var(--btn-primary-fg, #ffffff)' : 'var(--text2)',
                     }}
                   >
                     <Icon name={conf.icon} size={14} />

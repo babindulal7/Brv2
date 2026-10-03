@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { CSSProperties, ReactNode } from 'react'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
+import { TouchTarget } from '../../components/ui/TouchTarget'
 import { InfoTooltip } from '../../components/ui/InfoTooltip'
 import { Card, Button, Rail, KpiStrip, FooterNote, cardStyle } from '../../components/ui/Page'
 import { ScreenHeader } from '../../components/ui/ScreenHeader'
@@ -1207,8 +1208,9 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 5,
-                height: 34,
-                padding: '0 12px',
+                minHeight: 44,
+                height: 'auto',
+                padding: '0 14px',
                 borderRadius: 'var(--r-btn)',
                 border: '1px solid var(--btn-secondary-border)',
                 background: 'var(--btn-secondary-bg)',
@@ -1282,8 +1284,9 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 5,
-                    height: 30,
-                    padding: '0 10px',
+                    minHeight: 44,
+                    height: 'auto',
+                    padding: '0 12px',
                     borderRadius: 'var(--r-btn)',
                     border: `1px solid ${onlyFavourites ? 'var(--nav-active-accent)' : 'var(--border)'}`,
                     background: onlyFavourites ? 'var(--nav-active-bg)' : 'var(--card)',
@@ -1302,7 +1305,7 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
                   value={group}
                   aria-label="Filter by category"
                   onChange={(e) => setGroup(e.target.value === 'All' ? 'All' : (e.target.value as GroupKey))}
-                  style={{ ...controlStyle, width: 'auto', height: 30 }}
+                  style={{ ...controlStyle, width: 'auto', minHeight: 44, height: 'auto' }}
                 >
                   <option value="All">All Categories</option>
                   {TOOL_GROUPS.filter((g) => tools.some((t) => t.group === g.key)).map((g) => (
@@ -1320,6 +1323,7 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
                     aria-label={`${v} view`}
                     onClick={() => setView(v)}
                     style={{
+                      position: 'relative',
                       width: 30,
                       height: 30,
                       display: 'grid',
@@ -1331,6 +1335,7 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
                       cursor: 'pointer',
                     }}
                   >
+                    <TouchTarget />
                     <Icon name={v === 'grid' ? 'queues' : 'checklist'} size={14} />
                   </button>
                 ))}

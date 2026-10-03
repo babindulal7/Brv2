@@ -1251,7 +1251,7 @@ export default function ReturnWorkspace({
                   variant="ghost"
                   size="sm"
                   onClick={discardRestoredScan}
-                  style={{ fontSize: 'var(--t-meta)', height: 28, minHeight: 28, padding: '0 8px' }}
+                  style={{ fontSize: 'var(--t-meta)', padding: '0 8px' }}
                 >
                   Start Fresh
                 </Button>
@@ -1647,13 +1647,14 @@ export default function ReturnWorkspace({
                                   <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <button
                                       type="button"
+                                      className="tap"
                                       onClick={() => toggleQcStatus(r.key, r.name, qcStatusMap[r.key] !== true)}
                                       style={{
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: 5,
-                                        minHeight: 30,
-                                        padding: '0 8px',
+                                        minHeight: 44,
+                                        padding: '0 10px',
                                         borderRadius: 6,
                                         border: `1px solid ${qcStatusMap[r.key] === true ? 'var(--success, #22c55e)' : qcStatusMap[r.key] === false ? 'var(--danger, #ef4444)' : 'var(--border)'}`,
                                         background: qcStatusMap[r.key] === true ? 'color-mix(in srgb, var(--success, #22c55e) 15%, transparent)' : qcStatusMap[r.key] === false ? 'color-mix(in srgb, var(--danger, #ef4444) 15%, transparent)' : 'var(--card2)',
@@ -1745,8 +1746,8 @@ export default function ReturnWorkspace({
                                             display: 'inline-flex',
                                             alignItems: 'center',
                                             gap: 4,
-                                            minHeight: 24,
-                                            padding: '1px 6px',
+                                            minHeight: 44,
+                                            padding: '2px 8px',
                                             borderRadius: 4,
                                             border: `1px solid ${qcStatusMap[r.key] === true ? 'var(--success, #22c55e)' : qcStatusMap[r.key] === false ? 'var(--danger, #ef4444)' : 'var(--border)'}`,
                                             background: qcStatusMap[r.key] === true ? 'color-mix(in srgb, var(--success, #22c55e) 15%, transparent)' : qcStatusMap[r.key] === false ? 'color-mix(in srgb, var(--danger, #ef4444) 15%, transparent)' : 'var(--card2)',
@@ -2382,7 +2383,7 @@ function SigRow({
           title="Re-sign"
           style={{
             ...capture,
-            minHeight: 36,
+            minHeight: 44,
             padding: '0 10px',
             fontSize: 'var(--t-meta)',
             color: 'var(--text2)',
