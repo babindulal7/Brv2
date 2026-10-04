@@ -384,3 +384,45 @@ describe('FilterSection — Collapsible Filter Group', () => {
     expect(actionFired).toBe(true)
   })
 })
+
+describe('FilterDrawer — positioning, portal, and overflow containment', () => {
+  it('portals to document.body when portal is true', () => {
+    mount(<FilterDrawer id="f" open onClose={() => {}} portal={true}><p>facets</p></FilterDrawer>)
+    expect(container.innerHTML).toBe('')
+    const portaled = document.body.querySelector('.filter-overlay')
+    expect(portaled).not.toBeNull()
+    expect((portaled as HTMLElement).style.position).toBe('fixed')
+  })
+
+  it('contains overflow so panel animation does not spill over navigation', () => {
+    mount(<FilterDrawer id="f" open onClose={() => {}}><p>facets</p></FilterDrawer>)
+    const wrapper = container.firstElementChild as HTMLElement
+    expect(wrapper.style.overflow).toBe('hidden')
+  })
+
+  it('measures header bottom when app-global-header exists in DOM', () => {
+    const fakeHeader = document.createElement('header')
+    fakeHeader.className = 'app-global-header'
+    fakeHeader.getBoundingClientRect = () => ({
+      bottom: 75,
+      top: 15,
+      height: 60,
+      width: 1000,
+      left: 0,
+      right: 1000,
+      x: 0,
+      y: 15,
+      toJSON: () => {},
+    })
+    document.body.appendChild(fakeHeader)
+
+    try {
+      mount(<FilterDrawer id="f" open onClose={() => {}}><p>facets</p></FilterDrawer>)
+      const wrapper = container.firstElementChild as HTMLElement
+      expect(wrapper.style.top).toBe('75px')
+    } finally {
+      fakeHeader.remove()
+    }
+  })
+})
+

@@ -26,6 +26,7 @@ import type { GateContext } from '../../lib/fieldGating'
 import type { SystemRole } from '../../types/database'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { Bundles } from './Bundles'
+import { SubRental } from '../operations/SubRental'
 import { Maintenance } from './Maintenance'
 import StockCheck from './StockCheck'
 import { LoadingSkeleton } from '../../components/ui/StateViews'
@@ -1731,6 +1732,8 @@ export default function Inventory() {
           </Suspense>
       ) : tab === 'Bundles' ? (
         <Bundles filtersOpen={filtersOpen} onFiltersClose={() => setFiltersOpen(false)} />
+      ) : tab === 'Sub-Rentals' ? (
+        <SubRental embedded />
       ) : tab === 'Maintenance' ? (
         <Maintenance />
       ) : tab === 'Stock Check' ? (

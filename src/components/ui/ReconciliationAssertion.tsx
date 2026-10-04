@@ -121,7 +121,7 @@ export const ReconciliationAssertion: React.FC<ReconciliationAssertionProps> = (
           </h4>
         </div>
 
-        <span style={{ fontSize: 'var(--t-meta)', fontFamily: 'monospace', color: 'var(--muted)' }}>
+        <span style={{ fontSize: 'var(--t-meta)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', color: 'var(--muted)' }}>
           {isReconciled ? 'Zero Drift' : 'Drift Detected'}
         </span>
       </div>
@@ -138,15 +138,15 @@ export const ReconciliationAssertion: React.FC<ReconciliationAssertionProps> = (
       >
         <div>
           <span style={{ color: 'var(--muted)', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>Rental Total</span>
-          <span style={{ color: 'var(--text)', fontFamily: 'monospace', fontWeight: 600 }}>{formatPaisa(rentalTotal)}</span>
+          <span style={{ color: 'var(--text)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatPaisa(rentalTotal)}</span>
         </div>
         <div>
           <span style={{ color: 'var(--muted)', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>Payments</span>
-          <span style={{ color: 'var(--st-in-fg)', fontFamily: 'monospace', fontWeight: 600 }}>{formatPaisa(payments)}</span>
+          <span style={{ color: 'var(--st-in-fg)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatPaisa(payments)}</span>
         </div>
         <div>
           <span style={{ color: 'var(--muted)', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>Outstanding</span>
-          <span style={{ color: 'var(--st-out-fg)', fontFamily: 'monospace', fontWeight: 600 }}>{formatPaisa(outstanding)}</span>
+          <span style={{ color: 'var(--st-out-fg)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{formatPaisa(outstanding)}</span>
         </div>
         <div>
           <span style={{ color: 'var(--muted)', display: 'block', fontSize: '10px', textTransform: 'uppercase' }}>Status</span>

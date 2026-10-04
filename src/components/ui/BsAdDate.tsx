@@ -15,12 +15,12 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
   className = '',
 }) => {
   if (!date) {
-    return <span style={{ color: 'var(--muted)', fontFamily: 'monospace', fontSize: 'var(--t-ui)' }}>—</span>
+    return <span style={{ color: 'var(--muted)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--t-ui)' }}>—</span>
   }
 
   const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
   if (isNaN(d.getTime())) {
-    return <span style={{ color: 'var(--muted)', fontFamily: 'monospace', fontSize: 'var(--t-ui)' }}>—</span>
+    return <span style={{ color: 'var(--muted)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--t-ui)' }}>—</span>
   }
 
   const bs = toBs(d)
@@ -89,7 +89,7 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
         {/* No parenthetical when BS is unavailable — the primary IS the AD date,
             and repeating it would read as two different dates. */}
         {bsFormatted && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>({adFormatted})</span>}
-        {timeFormatted && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontFamily: 'monospace' }}>{timeFormatted}</span>}
+        {timeFormatted && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{timeFormatted}</span>}
       </span>
     )
   }

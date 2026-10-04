@@ -274,7 +274,7 @@
 .new-rental-compact-summary strong {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
-  font-family: var(--font-mono, JetBrains Mono, monospace);
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
   font-size: 14px;
   color: var(--brand, var(--text));
 }

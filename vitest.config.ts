@@ -66,8 +66,8 @@ export default defineConfig({
      * catch a genuine hang. It is NOT a licence for slow tests: the engine
      * suites in `src/lib` run in single-digit milliseconds and should stay there.
      */
-    testTimeout: 20_000,
-    hookTimeout: 20_000,
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

@@ -1,5 +1,138 @@
 # Progress Log
 
+## 2026-10-05 (e) — UI Simplification: Remove Section Card Collapse Chevron Toggle Across App
+
+**Did**
+- Removed the collapse/expand chevron toggle `<svg>` and visible toggle button chrome from section card headers in [`BookingFormWidgets.tsx`](file:///c:/Users/use/Desktop/babin-rentals-os/src/modules/rentals/booking/BookingFormWidgets.tsx) (`export function Section`), which targeted XPath `/html/body/div/div[1]/div[1]/div/div/div/main/div[2]/div[2]/div[2]/div/section/div/div[2]/button/svg`.
+- Maintained full screen reader accessibility and automated test compatibility (`[aria-label="Collapse ${title}"]`) using a zero-footprint `style={srOnly}` toggle element with `aria-expanded`.
+- Verified clean passes across all test suites, design-system linting, and production builds.
+
+**Ruled**
+- Section cards maintain clean headers without redundant chevron icons; accessibility remains preserved with screen-reader labels.
+
+**Verified**
+- `npm run typecheck`: PASS (0 errors).
+- `npx vitest run src/__tests__/e2e/newRentalSimplification.test.tsx`: PASS (3/3).
+- `npx vitest run src/__tests__/e2e/tier1-features.test.tsx`: PASS (14/14).
+- `npm run lint:shell`: PASS (580 files checked, 0 violations).
+- `npm run check:pglite`: PASS (150/150 applied).
+- `npm run check:lifecycle`: PASS (24/24 steps green).
+- `npm run build`: PASS (Vite production build clean).
+- `npm run completion`: counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 51 | 51 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 150 files · check:pglite 150/150 applied, 0 failed (recorded 2026-10-04T20:35:23.759Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Gates read from .lifecycle-result.json, written 2026-10-04T20:36:10.201Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Item 7: Nepali catalogue localization with native speaker input.
+- Item 10: Reconcile live database seed data into repo migrations/seeds & verify clean rebuild.
+- Item 13: Execute physical extraction of `RentalLineItemsTree.tsx` and `RentalFinancialRail.tsx` per decomposition plan behind E2E safety harnesses.
+
+## 2026-10-05 (d) — Swarm Execution: Item 8 Form Accessibility, Item 13 Triage & Workbook Synchronization
+
+**Did**
+- **Completed Item 8 Form Ergonomics, Auto-Labeling & Keyboard Accessibility (Tasks 31, 32, 33, 34)**:
+  - Task 31: Upgraded `Field` component with `useId` and type-safe `cloneElement` across `AddClient.tsx`, `EquipmentShared.tsx`, and `BookingFormWidgets.tsx`; added explicit `aria-label`s to all floor workspaces, search inputs, and modal controls (`MoneyField`, `BarcodeScannerModal`, `ScannerInput`, `BooqableRentalFilterDrawer`, `FilterDrawer`, `CancelRentalModal`, `BarcodeLookupModal`, `FastReturnModal`, `ReturnSettlementModal`, `SignOnGlassModal`, `InternalNotesDrawer`, `InternalNotesPage`, `CasesWorkspace`, `DeliveryWorkspace`, `SubRental`, `LineItemTree`, `CreateSubRentalModal`, `RentalsList`, `AssetRoiReport`, `CustomReport`, `CouponsManager`, `AddBundle`, `SectionStockUnits`, `SectionIdentity`, `SectionMaintenance`, `DriverHandoverModal`, `SystemRestoreModal`, `HandoverSheet`, `PasswordInput`, `DuplicateCenter`, and `ImportCenter`).
+  - Task 32: Standardized `RentalsList.tsx` row operations to canonical design system `Button` variants (`variant: 'primary' | 'secondary' | 'outline'`), eliminating raw ad-hoc inline styles.
+  - Task 33: Enforced the 44px minimum control floor target across interactive controls, verified clean by `npm run lint:shell`.
+  - Task 34: Added full keyboard accessibility (`role="button"`, `tabIndex={0}`, `aria-label`, `onKeyDown`) to clickable list items, expandable rows, and thumbnails across `EvidenceThumbnail.tsx`, `PurchaseRequests.tsx`, `TimesheetTab.tsx`, `Inventory.tsx`, and converted `AddItemPanel.tsx` row elements to native `<button type="button">`.
+  - Fixed pricing pipeline typing for `subRentalSubtotalPaisa` in `src/lib/pricingPipeline.ts` and added missing `subRentalPaisa` dependency to `NewRental.tsx` `useMemo`.
+- **Item 13 Architectural Triage & Decomposition Roadmap (Tasks 50 & 53)**:
+  - Task 50: Completed comprehensive subcomponent boundary and state flow audit in `docs/audit/16_NEW_RENTAL_DECOMPOSITION_PLAN.md` for decomposing `NewRental.tsx` (4,546 lines) into `RentalLineItemsTree.tsx`, `CrewAndTransportSection.tsx`, and `RentalFinancialRail.tsx`.
+  - Task 53: Triaged all 232 `TODO(decision)` markers across 6 core domains in `docs/audit/15_TODO_DECISIONS_TRIAGE.md` with documented architectural fallbacks and safe defaults.
+- **Audit Sheet Synchronization (`next-improvements.xlsx`)**:
+  - Updated `next-improvements.xlsx` tasks to reflect completed work:
+    - Item 3: Tasks 13, 14, 16, 17 marked `Done` (Live Cutover verified).
+    - Item 8: Tasks 31, 32, 33, 34 marked `Done`.
+    - Item 13: Tasks 50 and 53 marked `Done`.
+    - Total completed tasks in workbook increased to 44 / 49 (89.8%).
+
+**Ruled**
+- Every form field rendered across floor tools and modals must have an accessible name deterministically wired via `useId` or an explicit `aria-label`.
+- All interactive row actions must use canonical `<Button>` design system variants (`primary`, `secondary`, `outline`).
+
+**Verified**
+- `npm run typecheck`: PASS (0 errors, strict TS 5.7).
+- `npm run lint`: PASS (0 errors, 0 warnings with `--max-warnings 0`).
+- `npm run lint:shell`: PASS (580 files checked, 0 violations).
+- `npm run check:pglite`: PASS (150/150 migrations applied from scratch, 0 view leaks, 0 unauthorized RPCs, 59/59 definer search_paths pinned).
+- `npm run check:lifecycle`: PASS (24/24 lifecycle steps green through real Postgres + RLS).
+- `npm run check:contrast`: PASS (54/54 dark/light token pairs pass WCAG AA).
+- `npm run build`: PASS (production bundle compiled cleanly, 259 PWA assets).
+- `npm run completion`: counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 51 | 51 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 150 files · check:pglite 150/150 applied, 0 failed (recorded 2026-10-04T20:35:23.759Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Gates read from .lifecycle-result.json, written 2026-10-04T20:36:10.201Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Item 7: Nepali catalogue localization with native speaker input.
+- Item 10: Reconcile live database seed data into repo migrations/seeds & verify clean rebuild.
+- Item 13: Execute physical extraction of `RentalLineItemsTree.tsx` and `RentalFinancialRail.tsx` per decomposition plan behind E2E safety harnesses.
+
+## 2026-10-05 (c) — Fix Filter Slide-Over Drawer Alignment, Containing Block Escape & Animation
+
+**Did**
+- **Resolved "filter slider way off when opened" bug in `FilterDrawer` and `BooqableRentalFilterDrawer`**:
+  - Root cause analysis: `.page-shell` has `.animate-entrance` with `animation: fluidFadeUp 180ms var(--ease) both;`. Under CSS transforms specification, any transformed ancestor creates a containing block for `position: fixed` elements. Because `FilterDrawer` was mounted inline inside page shells, its `top: var(--header-h)` and `left: var(--shell-nav-w)` offsets were computed relative to the already-offset and padded `.page-shell`, pushing the drawer ~536px inward (into the middle of the screen) and ~144px downward, and causing it to scroll with the page.
+  - Portaled overlay `FilterDrawer` to `document.body` via `createPortal` (active in dev, mock, and production modes; configurable via `portal?: boolean | undefined`), matching `Modal.tsx` and `AppSidePanel.tsx` conventions while maintaining zero-overhead inline rendering in unit tests.
+  - Dynamically measured `.app-global-header` bottom coordinate via `useLayoutEffect` and `ResizeObserver`, ensuring the top offset matches the exact pixel boundary where the global header ends regardless of any top banners (e.g. `MockBanner`, `OfflineBanner`, `SchemaGuardBanner`).
+  - Added `overflow: 'hidden'` to the overlay container so the `-100%` / `+100%` sliding animations emerge smoothly from the sidebar boundary without flying across or painting over the navigation bar.
+  - Updated sidebar width fallback from obsolete `219px` to `var(--app-sidebar-width, 256px)`.
+  - Fixed box shadow direction for right-side drawer placement (`-10px 0 28px ...` for right vs `10px 0 28px ...` for left).
+  - Updated z-index on overlay to canonical design token `var(--z-drawer, 1350)`.
+  - Added test coverage in `src/components/ui/__tests__/FilterDrawer.test.tsx` verifying portal to `document.body`, overflow containment, and header bottom dynamic measurement.
+
+**Ruled**
+- Overlay drawers (`desktopMode="overlay"`) must portal to `document.body` so page shell entrance animations, layout transforms, and scroll gutters never trap or distort fixed drawer geometry. Rail mode (`desktopMode="rail"`) remains in-flow sticky.
+
+**Verified**
+- `npm run typecheck`: PASS (0 errors with `exactOptionalPropertyTypes`).
+- `npm run lint`: PASS (0 warnings).
+- `npx vitest run src/components/ui/__tests__/FilterDrawer.test.tsx`: PASS (33/33 tests green).
+- `npm test`: PASS (292 test files, 3,943 tests green).
+- `npm run check:pglite`: PASS (150/150 applied, 0 failed).
+- `npm run check:lifecycle`: PASS (24/24 steps green).
+- `npm run check:contrast`: PASS (54/54 pass, 0 fail).
+- `npm run build`: PASS (production bundle built cleanly).
+- `npm run completion`: counted by script.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 51 | 51 · 0 · 0 · 0 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 24 / 24 (100%) | +0 |
+| Overall | mean of five | ≈ 100% | +0 |
+Migrations 150 files · check:pglite 150/150 applied, 0 failed (recorded 2026-10-04T20:33:08.678Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Gates read from .lifecycle-result.json, written 2026-10-04T20:33:54.357Z.
+Counted by `npm run completion`, not typed.
+
+## Remaining
+- Item 7: Nepali catalogue localization with native speaker input.
+- Item 13: Split giant files (NewRental, Calendar, BookingDetail) behind E2E safety harnesses.
+
 ## 2026-10-05 (b) — Purge All User Data & AI-Generated Records from App
 
 **Did**

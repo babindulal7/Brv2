@@ -38,7 +38,8 @@ export const QuantityChip: React.FC<QuantityChipProps> = ({
           alignItems: 'center',
           gap: 6,
           fontSize: 'var(--t-meta)',
-          fontFamily: 'monospace',
+          fontFamily: 'var(--font-id, sans-serif)',
+          fontVariantNumeric: 'tabular-nums',
           userSelect: 'none',
         }}
       >

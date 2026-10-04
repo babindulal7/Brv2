@@ -72,7 +72,8 @@ export function DataAgeBadge({
           color: 'var(--muted)',
           fontSize: '11px',
           fontWeight: 600,
-          fontFamily: 'var(--font-mono, monospace)',
+          fontFamily: 'var(--font-id, sans-serif)',
+          fontVariantNumeric: 'tabular-nums',
           ...style,
         }}
         title="No data has been loaded yet"
@@ -128,7 +129,7 @@ export function DataAgeBadge({
             : 'var(--text2)',
           fontSize: '11px',
           fontWeight: 600,
-          fontFamily: 'var(--font-mono, monospace)',
+          fontFamily: 'var(--font-id, sans-serif)',
           fontVariantNumeric: 'tabular-nums',
         }}
         title={titleText}

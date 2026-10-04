@@ -82,6 +82,7 @@ export const PROMO_CODES: Record<string, PromoCodeDefinition> = {
 export interface PricingPipelineInput {
   equipmentSubtotalPaisa: Paisa
   bundleSubtotalPaisa: Paisa
+  subRentalSubtotalPaisa?: Paisa | undefined
   servicesSubtotalPaisa: Paisa
   crewSubtotalPaisa: Paisa
   deliveryChargePaisa: Paisa
@@ -125,6 +126,7 @@ export interface PricingPipelineResult {
   // Step 1 - 5: Subtotals
   equipmentSubtotalPaisa: Paisa
   bundleSubtotalPaisa: Paisa
+  subRentalSubtotalPaisa: Paisa
   servicesSubtotalPaisa: Paisa
   crewSubtotalPaisa: Paisa
   deliverySubtotalPaisa: Paisa
@@ -370,6 +372,7 @@ export function calculatePricingPipeline(input: PricingPipelineInput): PricingPi
   // 1 - 5: Subtotals
   const equipmentSubtotalPaisa = Math.max(0, input.equipmentSubtotalPaisa) as Paisa
   const bundleSubtotalPaisa = Math.max(0, input.bundleSubtotalPaisa) as Paisa
+  const subRentalSubtotalPaisa = Math.max(0, input.subRentalSubtotalPaisa ?? 0) as Paisa
   const servicesSubtotalPaisa = Math.max(0, input.servicesSubtotalPaisa) as Paisa
   const crewSubtotalPaisa = Math.max(0, input.crewSubtotalPaisa) as Paisa
   const deliverySubtotalPaisa = Math.max(0, input.deliveryChargePaisa + input.fuelChargePaisa) as Paisa
@@ -377,6 +380,7 @@ export function calculatePricingPipeline(input: PricingPipelineInput): PricingPi
   const grossSubtotalPaisa = (
     equipmentSubtotalPaisa +
     bundleSubtotalPaisa +
+    subRentalSubtotalPaisa +
     servicesSubtotalPaisa +
     crewSubtotalPaisa +
     deliverySubtotalPaisa
@@ -433,6 +437,7 @@ export function calculatePricingPipeline(input: PricingPipelineInput): PricingPi
   return {
     equipmentSubtotalPaisa,
     bundleSubtotalPaisa,
+    subRentalSubtotalPaisa,
     servicesSubtotalPaisa,
     crewSubtotalPaisa,
     deliverySubtotalPaisa,

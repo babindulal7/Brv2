@@ -371,7 +371,7 @@ function SupplierDirectoryTable({
   )
 }
 
-export function SubRental() {
+export function SubRental({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate()
 
   const { user } = useAuth()
@@ -494,19 +494,21 @@ export function SubRental() {
 
   return (
     <PageShell width="full">
-      <PageHeader
-        breadcrumb={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-            <Link to="/operations" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <Icon name="chevron_left" size={14} />
-              Operations
-            </Link>
-            <span>›</span>
-            <span style={{ color: 'var(--text)', fontWeight: 600 }}>Sub-Rentals</span>
-          </div>
-        }
-        title="Sub-Rentals"
-      />
+      {!embedded && (
+        <PageHeader
+          breadcrumb={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+              <Link to="/operations" style={{ color: 'var(--link)', textDecoration: 'none', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Icon name="chevron_left" size={14} />
+                Operations
+              </Link>
+              <span>›</span>
+              <span style={{ color: 'var(--text)', fontWeight: 600 }}>Sub-Rentals</span>
+            </div>
+          }
+          title="Sub-Rentals"
+        />
+      )}
 
       <div style={{ marginBottom: 'var(--sp-md)' }}>
         <SegmentedControl

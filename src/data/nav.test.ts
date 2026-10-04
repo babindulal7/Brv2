@@ -260,8 +260,8 @@ describe('SPEC_TABS records what each updated spec ruled', () => {
     expect(SPEC_TABS['/clients']).toEqual(['Clients', 'Memberships'])
   })
 
-  it('07_INVENTORY — four tabs; Warehouses moved to Settings', () => {
-    expect(SPEC_TABS['/inventory']).toEqual(['Equipment', 'Bundles', 'Stock Check', 'Maintenance'])
+  it('07_INVENTORY — five tabs; Sub-Rentals after Bundles', () => {
+    expect(SPEC_TABS['/inventory']).toEqual(['Equipment', 'Bundles', 'Sub-Rentals', 'Stock Check', 'Maintenance'])
   })
 
   it('09_FINANCE — six tabs, Closing elevated, Documents is primary', () => {

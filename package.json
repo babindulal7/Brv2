@@ -39,7 +39,8 @@
     "lint:shell": "node scripts/check-page-shell-lint.mjs",
     "db:local": "node scripts/local-db.mjs",
     "storage:local": "node scripts/local-storage.mjs",
-    "data:wipe": "node scripts/wipe-user-data.mjs"
+    "data:wipe": "node scripts/wipe-user-data.mjs",
+    "check:anon": "node scripts/check-anon-exposure.mjs"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",

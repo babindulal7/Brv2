@@ -137,7 +137,7 @@ describe('AddItemPanel unified search and recenter', () => {
       expect(document.body.textContent).toContain('Babin Shrestha')
       expect(document.body.textContent).toContain('Director of Photography')
 
-      const crewAddBtn = document.body.querySelector<HTMLElement>('li[role="option"] [role="presentation"]')
+      const crewAddBtn = document.body.querySelector<HTMLElement>('li[role="option"] button, li[role="option"] [role="presentation"]')
       expect(crewAddBtn).toBeTruthy()
       await act(async () => {
         crewAddBtn?.click()

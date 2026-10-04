@@ -27,6 +27,7 @@ import {
   canWriteBookingDesk,
   canPerformOperations,
   canRecordPayment,
+  canCloseRental,
   type Role as SystemRole,
 } from '../../lib/rbac'
 import { STATUS_ORDER } from '../../lib/workflow'
@@ -516,7 +517,8 @@ interface PrimaryActionConfig {
 function getPrimaryAction(
   row: RentalListRow,
   openOperations: (bookingNo: string, status: BookingStatus, job: 'Pack' | 'Handover' | 'Return' | 'Reset') => void,
-  navigate: (path: string) => void
+  navigate: (path: string) => void,
+  canClose: boolean = false,
 ): PrimaryActionConfig | null {
   if (row.isCancelled) {
     return null
@@ -570,6 +572,14 @@ function getPrimaryAction(
   }
 
   if (statusStr === 'Returned') {
+    if (canClose) {
+      return {
+        label: 'Close Rental',
+        icon: 'check',
+        variant: 'primary',
+        onClick: () => navigate(`/rentals/${row.bookingNo}`),
+      }
+    }
     return {
       label: 'Reset & QC',
       icon: 'refresh',
@@ -600,12 +610,14 @@ function RowOperations({
   onInspect?: ((row: RentalListRow) => void) | undefined
 }) {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { openOperations } = useOperationsWorkspace()
   const [open, setOpen] = useState(false)
   const [up, setUp] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const ref = useDismiss(open, () => setOpen(false), menuRef)
-  const primary = getPrimaryAction(row, openOperations, navigate)
+  const canClose = user ? canCloseRental(user.role) : false
+  const primary = getPrimaryAction(row, openOperations, navigate, canClose)
 
   /**
    * The table scrolls horizontally, and CSS resolves the *other* axis to `auto`

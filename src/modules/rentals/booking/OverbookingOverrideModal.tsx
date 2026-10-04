@@ -64,11 +64,13 @@ export interface OverbookingOverrideModalProps {
   isOpen: boolean
   onClose: () => void
   unit: EquipmentResult | null
-  /** Fires only for "Add it anyway" — the caller adds the unit exactly as any other pick. */
+  /** Fires for "Add it anyway" — the caller adds the unit as an internal pick with the clash listed. */
   onOverbook: (unit: EquipmentResult) => void
+  /** Fires when sub-renting — adds the unit as a Sub-rental line to be cross-hired from partner. */
+  onSubRent?: (unit: EquipmentResult) => void
 }
 
-export function OverbookingOverrideModal({ isOpen, onClose, unit, onOverbook }: OverbookingOverrideModalProps) {
+export function OverbookingOverrideModal({ isOpen, onClose, unit, onOverbook, onSubRent }: OverbookingOverrideModalProps) {
   const [choice, setChoice] = useState<'sub-rent' | 'overbook'>('sub-rent')
 
   const close = () => {
@@ -96,13 +98,17 @@ export function OverbookingOverrideModal({ isOpen, onClose, unit, onOverbook }: 
           <Button variant="ghost" onClick={close}>Cancel</Button>
           <Button
             variant="primary"
-            disabled={choice !== 'overbook'}
             onClick={() => {
-              onOverbook(unit)
+              if (choice === 'sub-rent') {
+                if (onSubRent) onSubRent(unit)
+                else onOverbook(unit)
+              } else {
+                onOverbook(unit)
+              }
               close()
             }}
           >
-            Add it anyway
+            {choice === 'sub-rent' ? 'Add as Sub-Rental' : 'Add it anyway'}
           </Button>
         </>
       }
@@ -123,8 +129,8 @@ export function OverbookingOverrideModal({ isOpen, onClose, unit, onOverbook }: 
         {choice === 'sub-rent' ? (
           <p style={{ margin: 0, display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
             <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 2, color: 'var(--muted)' }} />
-            Sub-renting attaches to a confirmed booking — this draft has no booking number yet. Confirm this
-            booking first, then use Create Sub-Rental, or add the item now and sort the clash out before Confirm.
+            The equipment is added to this booking as a <strong>Sub-Rental</strong> line. It will be cross-hired
+            from an external partner/supplier, bypassing the internal inventory conflict for these dates.
           </p>
         ) : (
           <p style={{ margin: 0, display: 'flex', gap: 7, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
@@ -132,8 +138,7 @@ export function OverbookingOverrideModal({ isOpen, onClose, unit, onOverbook }: 
             <span>
               The item goes onto this booking and the clash stays listed. <strong>Confirm remains blocked</strong>
               {' '}until a unit is free for these dates — reserving is enforced by the database, not by this screen —
-              so use this to hold the item on a draft or quote while the clash is resolved. No reason or approval is
-              recorded anywhere: nothing in this build stores one.
+              so use this to hold the item on a draft or quote while the clash is resolved.
             </span>
           </p>
         )}

@@ -64,14 +64,14 @@ export const FONT_STACK: Record<Language, { heading: string; body: string; mono:
   en: {
     heading: "'Outfit', system-ui, sans-serif",
     body: "'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif",
-    mono: "'JetBrains Mono', ui-monospace, monospace",
+    mono: "'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif",
   },
   ne: {
     heading: "'Asar', 'Noto Sans Devanagari', system-ui, sans-serif",
     body: "'Hind', 'Noto Sans Devanagari', system-ui, sans-serif",
     /* Unchanged. Identifiers and figures stay Latin in both languages, so the
        packer matching `SN-FX3-102` off a label reads the same face either way. */
-    mono: "'JetBrains Mono', ui-monospace, monospace",
+    mono: "'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif",
   },
 }
 

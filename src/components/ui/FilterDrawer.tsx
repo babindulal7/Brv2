@@ -1,5 +1,6 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import Icon from './Icon'
 import { useViewport, useCapability } from '../../lib/device'
 
@@ -115,6 +116,12 @@ export interface FilterDrawerProps {
   standardFooter?: boolean
   onApply?: () => void
   applyLabel?: string
+  /**
+   * Portal overlay drawers to `document.body` so transformed page parents
+   * (e.g. `.page-shell.animate-entrance`) cannot trap fixed positioning.
+   * Defaults to true except in test runs (`import.meta.env.MODE === 'test'`).
+   */
+  portal?: boolean | undefined
 }
 
 export function FilterDrawer({
@@ -134,6 +141,7 @@ export function FilterDrawer({
   standardFooter,
   onApply,
   applyLabel,
+  portal,
 }: FilterDrawerProps) {
   const viewport = useViewport()
   const phone = viewport === 'phone'
@@ -143,6 +151,7 @@ export function FilterDrawer({
   const { reducedMotion } = useCapability()
   const panelRef = useRef<HTMLDivElement | null>(null)
   const restoreFocusTo = useRef<HTMLElement | null>(null)
+  const [headerBottom, setHeaderBottom] = useState<number | null>(null)
 
   /**
    * `open` is the caller's intent; this is what is on screen.
@@ -176,6 +185,20 @@ export function FilterDrawer({
     return () => window.clearTimeout(t)
   }, [open, mounted, reducedMotion])
 
+  useLayoutEffect(() => {
+    if (!mounted || phone || rail) return
+    const measureHeader = () => {
+      const header = document.querySelector('.app-global-header')
+      if (header) {
+        const rect = header.getBoundingClientRect()
+        setHeaderBottom(rect.bottom)
+      }
+    }
+    measureHeader()
+    window.addEventListener('resize', measureHeader)
+    return () => window.removeEventListener('resize', measureHeader)
+  }, [mounted, phone, rail])
+
   useEffect(() => {
     if (!open) return
     restoreFocusTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -208,7 +231,7 @@ export function FilterDrawer({
   const enter = phone ? 'drawer-in-up' : side === 'left' ? 'drawer-in-left' : 'drawer-in-right'
   const exit = phone ? 'drawer-out-down' : side === 'left' ? 'drawer-out-left' : 'drawer-out-right'
 
-  return (
+  const content = (
     <div
       className={rail ? 'filter-rail' : 'filter-overlay'}
       style={rail
@@ -227,13 +250,20 @@ export function FilterDrawer({
         : {
             position: 'fixed',
             inset: 0,
-            top: phone ? 0 : 'var(--header-h)',
-            left: !phone && side === 'left' ? 'var(--shell-nav-w, 219px)' : 0,
-            zIndex: 60,
+            top: phone
+              ? 0
+              : headerBottom !== null
+                ? `${headerBottom}px`
+                : 'var(--header-h)',
+            left: !phone && side === 'left' ? 'var(--shell-nav-w, var(--app-sidebar-width, 256px))' : 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 'var(--z-drawer, 1350)' as unknown as number,
             display: 'flex',
             alignItems: phone ? 'flex-end' : 'stretch',
             justifyContent: phone ? 'center' : side === 'left' ? 'flex-start' : 'flex-end',
             pointerEvents: phone ? 'auto' : 'none',
+            overflow: 'hidden',
           }}
     >
       {/* Scrim on phone only — see the header note. */}
@@ -263,7 +293,11 @@ export function FilterDrawer({
           position: 'relative',
           zIndex: 1,
           pointerEvents: 'auto',
-          width: rail ? '100%' : phone ? '100%' : `min(${width}px, calc(100vw - var(--shell-nav-w, 219px)))`,
+          width: rail
+            ? '100%'
+            : phone
+              ? '100%'
+              : `min(${width}px, calc(100vw - var(--shell-nav-w, var(--app-sidebar-width, 256px))))`,
           maxHeight: phone ? '85vh' : 'none',
           // Full height on desktop so the scroll lives INSIDE the body and the
           // Clear all footer stays pinned rather than scrolling away.
@@ -277,7 +311,13 @@ export function FilterDrawer({
           borderRight: rail ? '1px solid var(--border)' : phone || side === 'right' ? 'none' : '1px solid var(--border)',
           borderTop: phone ? '1px solid var(--border)' : 'none',
           borderRadius: phone ? 'var(--r-modal) var(--r-modal) 0 0' : 0,
-          boxShadow: rail ? 'none' : phone ? 'var(--shadow-modal)' : '10px 0 28px color-mix(in srgb, var(--text) 8%, transparent)',
+          boxShadow: rail
+            ? 'none'
+            : phone
+              ? 'var(--shadow-modal)'
+              : side === 'left'
+                ? '10px 0 28px color-mix(in srgb, var(--text) 8%, transparent)'
+                : '-10px 0 28px color-mix(in srgb, var(--text) 8%, transparent)',
           outline: 'none',
           // §20. `both` holds the last frame, so a panel mid-exit stays off the
           // edge for the rest of its timer instead of snapping back into view.
@@ -480,6 +520,9 @@ export function FilterDrawer({
       </div>
     </div>
   )
+
+  const shouldPortal = !rail && (portal ?? (import.meta.env.MODE !== 'test'))
+  return shouldPortal && typeof document !== 'undefined' ? createPortal(content, document.body) : content
 }
 
 /**

@@ -257,24 +257,9 @@ export function Section({
           }}
           aria-expanded={open}
           aria-label={`${open ? 'Collapse' : 'Expand'} ${title}`}
-          className="press"
-          style={{
-            marginLeft: open && action ? 6 : 'auto',
-            position: 'relative',
-            width: 34,
-            height: 34,
-            borderRadius: 'var(--r-btn)',
-            border: 'none',
-            background: 'var(--surface)',
-            color: 'var(--muted)',
-            cursor: 'pointer',
-            display: 'grid',
-            placeItems: 'center',
-            flexShrink: 0,
-          }}
+          style={srOnly}
         >
-          <TouchInset />
-          <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} />
+          {open ? 'Collapse' : 'Expand'} {title}
         </button>
       </div>
       <div hidden={!open} style={{ padding: 'var(--sp-md) var(--sp-lg)' }}>{children}</div>

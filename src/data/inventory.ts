@@ -275,7 +275,7 @@ export const CONDITION_INK: Record<Condition, string> = {
  * tab is what it lists. Matches `data/nav.ts`'s `SPEC_TABS['/inventory']`,
  * which `data/nav.test.ts:236` pins.
  */
-export const TABS = ['Equipment', 'Bundles', 'Stock Check', 'Maintenance'] as const
+export const TABS = ['Equipment', 'Bundles', 'Sub-Rentals', 'Stock Check', 'Maintenance'] as const
 export type InventoryTab = (typeof TABS)[number]
 
 /**
@@ -296,12 +296,14 @@ export type InventoryTab = (typeof TABS)[number]
 export const TAB_SLUG: Record<InventoryTab, string> = {
   Equipment: 'equipment',
   Bundles: 'bundles',
+  'Sub-Rentals': 'sub-rentals',
   'Stock Check': 'stock-check',
   Maintenance: 'maintenance',
 }
 
 /** `?tab=` → the tab, or `Equipment` for a missing or unknown value. */
 export function tabFromSlug(slug: string | null): InventoryTab {
+  if (slug === 'sub-rentals' || slug === 'sub-rental' || slug === 'subrental') return 'Sub-Rentals'
   return TABS.find((t) => TAB_SLUG[t] === slug) ?? 'Equipment'
 }
 

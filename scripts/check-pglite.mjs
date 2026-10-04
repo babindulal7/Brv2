@@ -184,7 +184,6 @@ async function auditAnonFunctionExecution(db) {
     'invoice_outstanding',
     'invoice_vat_amount',
     'next_booking_stage',
-    'portal_claim_by_verified_email',
     'retired_stage_to_canonical',
     'set_request_context',
   ])

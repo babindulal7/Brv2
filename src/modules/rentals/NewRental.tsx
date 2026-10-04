@@ -813,8 +813,9 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   const [returnLocation, setReturnLocation] = useState('')
   const [specialInstructions, setSpecialInstructions] = useState('')
   const [customLineOpen, setCustomLineOpen] = useState(false)
-  const [customLineType, setCustomLineType] = useState<'Service' | 'Manual item'>('Service')
+  const [customLineType, setCustomLineType] = useState<'Service' | 'Manual item' | 'Sub-rental'>('Service')
   const [customLineName, setCustomLineName] = useState('')
+  const [customLineVendor, setCustomLineVendor] = useState('')
   const [customLineRate, setCustomLineRate] = useState('')
   const [customLineQty, setCustomLineQty] = useState(1)
   const [customLineError, setCustomLineError] = useState<string | null>(null)
@@ -1021,6 +1022,14 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     () => bundleLines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa,
     [bundleLines],
   )
+  const subRentalLines = useMemo(
+    () => lines.filter((l) => l.lineType === 'Sub-rental'),
+    [lines],
+  )
+  const subRentalPaisa = useMemo(
+    () => subRentalLines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa,
+    [subRentalLines],
+  )
   const servicePaisa = useMemo(
     () => lines.filter((l) => l.lineType === 'Service' || l.lineType === 'Manual item').reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa,
     [lines],
@@ -1041,10 +1050,10 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   )
 
   const recommendedDepositPaisa = useMemo<Paisa>(() => {
-    const totalGear = equipmentPaisa + bundlePaisa
+    const totalGear = equipmentPaisa + bundlePaisa + subRentalPaisa
     if (totalGear <= 0) return 0 as Paisa
     return Math.max(500000, Math.round(totalGear)) as Paisa
-  }, [equipmentPaisa, bundlePaisa])
+  }, [equipmentPaisa, bundlePaisa, subRentalPaisa])
 
   const manualDepositPaisa = useMemo<Paisa | null>(() => {
     if (!manualDepositOverride) return null
@@ -1058,6 +1067,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     return calculatePricingPipeline({
       equipmentSubtotalPaisa: equipmentPaisa,
       bundleSubtotalPaisa: bundlePaisa,
+      subRentalSubtotalPaisa: subRentalPaisa,
       servicesSubtotalPaisa: servicePaisa,
       crewSubtotalPaisa: crewChargesPaisa,
       deliveryChargePaisa: ((clientPickup ? 0 : deliveryChargePaisa) + returnTransportPaisa) as Paisa,
@@ -1081,6 +1091,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   }, [
     equipmentPaisa,
     bundlePaisa,
+    subRentalPaisa,
     servicePaisa,
     crewChargesPaisa,
     clientPickup,
@@ -1402,6 +1413,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   const addCustomLine = useCallback(() => {
     const name = customLineName.trim()
     const rate = Number(customLineRate)
+    const vendor = customLineVendor.trim()
     if (!name) {
       setCustomLineError('Enter a description for this line.')
       return
@@ -1410,28 +1422,30 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
       setCustomLineError('Enter a rate of Rs 0 or more.')
       return
     }
+    const isSub = customLineType === 'Sub-rental'
     setLines((prev) => [
       ...prev,
       {
         id: newClientUuid(),
         lineType: customLineType,
-        name,
+        name: isSub && vendor ? `${name} (${vendor})` : name,
         serial: '—',
-        category: customLineType === 'Service' ? 'Service' : 'Manual charge',
+        category: isSub ? 'Sub-rental' : customLineType === 'Service' ? 'Service' : 'Manual charge',
         ratePaisa: rupees(rate) as Paisa,
         days: Math.max(1, days || 1),
         qty: Math.max(1, Math.round(customLineQty) || 1),
         discountPct: 0,
-        location: 'Not inventory-tracked',
+        location: isSub ? (vendor ? `Vendor: ${vendor}` : 'Sub-rented') : 'Not inventory-tracked',
         committedTo: '—',
       },
     ])
     setCustomLineError(null)
     setCustomLineName('')
+    setCustomLineVendor('')
     setCustomLineRate('')
     setCustomLineQty(1)
     setCustomLineOpen(false)
-  }, [customLineName, customLineRate, customLineQty, customLineType, days])
+  }, [customLineName, customLineRate, customLineQty, customLineType, customLineVendor, days])
 
   /** Resolve a scanned physical-unit code back to its canonical product before
    * adding it. The booking line remains product-based; the normal creation
@@ -2645,7 +2659,24 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
             )}
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1, fontSize: 'var(--t-th)', color: 'var(--text2)', flexWrap: 'wrap' }}>
-            {l.lineType === 'Service' || l.lineType === 'Manual item' ? (
+            {l.lineType === 'Sub-rental' ? (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  padding: '1px 6px',
+                  borderRadius: 'var(--r-badge)',
+                  background: 'var(--gold-soft, rgba(217, 119, 6, 0.15))',
+                  color: 'var(--gold, #d97706)',
+                  fontWeight: 700,
+                  fontSize: 'var(--t-th)',
+                }}
+              >
+                <Icon name="box" size={10} />
+                Sub-rental
+              </span>
+            ) : l.lineType === 'Service' || l.lineType === 'Manual item' ? (
               <span>{l.lineType}</span>
             ) : l.serial !== '—' ? (
               <Link className="identifier" to={`/inventory/${l.serial}`} style={{ color: 'inherit', textDecoration: 'none' }} title={`Open unit ${l.serial} in Inventory`}>
@@ -3283,24 +3314,35 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
               <div style={{ margin: '0 0 12px', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                   <div>
-                    <strong style={{ fontSize: 'var(--t-ui)' }}>Services & custom charges</strong>
+                    <strong style={{ fontSize: 'var(--t-ui)' }}>Services, sub-rentals &amp; custom charges</strong>
                   </div>
-                  <Button icon="plus" variant="secondary" onClick={() => setCustomLineOpen((open) => !open)}>
-                    {customLineOpen ? 'Close custom line' : 'Add custom line'}
-                  </Button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <Button icon="box" variant="secondary" onClick={() => { setCustomLineType('Sub-rental'); setCustomLineOpen(true) }}>
+                      + Add sub-rental
+                    </Button>
+                    <Button icon="plus" variant="secondary" onClick={() => setCustomLineOpen((open) => !open)}>
+                      {customLineOpen ? 'Close line form' : 'Add custom line'}
+                    </Button>
+                  </div>
                 </div>
 
                 {customLineOpen && (
                   <div style={{ marginTop: 10, padding: 12, borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'minmax(0,1.6fr) minmax(150px,0.7fr) minmax(100px,0.45fr) minmax(130px,0.6fr)', gap: 9, alignItems: 'end' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : customLineType === 'Sub-rental' ? 'minmax(0,1.2fr) minmax(130px,1fr) minmax(150px,1.2fr) minmax(70px,0.4fr) minmax(110px,0.7fr)' : 'minmax(0,1.6fr) minmax(150px,0.7fr) minmax(100px,0.45fr) minmax(130px,0.6fr)', gap: 9, alignItems: 'end' }}>
                       <Field label="Line type">
                         <Select value={customLineType} onChange={(e) => setCustomLineType(e.target.value as typeof customLineType)} style={inputStyle}>
                           <option value="Service">Service</option>
                           <option value="Manual item">Manual charge</option>
+                          <option value="Sub-rental">Sub-rental (Partner gear)</option>
                         </Select>
                       </Field>
-                      <Field label="Description">
-                        <Input value={customLineName} onChange={(e) => setCustomLineName(e.target.value)} placeholder="e.g. Operator overtime" style={inputStyle} />
+                      {customLineType === 'Sub-rental' && (
+                        <Field label="Partner / Supplier">
+                          <Input value={customLineVendor} onChange={(e) => setCustomLineVendor(e.target.value)} placeholder="e.g. GearHouse KTM" style={inputStyle} />
+                        </Field>
+                      )}
+                      <Field label={customLineType === 'Sub-rental' ? 'Equipment name' : 'Description'}>
+                        <Input value={customLineName} onChange={(e) => setCustomLineName(e.target.value)} placeholder={customLineType === 'Sub-rental' ? 'e.g. Master Prime 50mm' : 'e.g. Operator overtime'} style={inputStyle} />
                       </Field>
                       <Field label="Qty">
                         <Input type="number" min={1} value={customLineQty} onChange={(e) => setCustomLineQty(Math.max(1, Number(e.target.value) || 1))} style={inputStyle} />
@@ -3312,7 +3354,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
                     {customLineError && <p role="alert" style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)' }}>{customLineError}</p>}
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
                       <Button variant="ghost" onClick={() => { setCustomLineOpen(false); setCustomLineError(null) }}>Cancel</Button>
-                      <Button icon="plus" onClick={addCustomLine}>Add line</Button>
+                      <Button icon="plus" onClick={addCustomLine}>{customLineType === 'Sub-rental' ? 'Add sub-rental' : 'Add line'}</Button>
                     </div>
                   </div>
                 )}
@@ -3834,7 +3876,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
                   {[
                     { l: 'Equipment Rental', v: formatMoney(pricing.equipmentSubtotalPaisa) },
                     { l: 'Bundles', v: pricing.bundleSubtotalPaisa > 0 ? formatMoney(pricing.bundleSubtotalPaisa) : '—' },
-                    { l: 'Sub-Rental', v: '—' },
+                    { l: 'Sub-Rental', v: pricing.subRentalSubtotalPaisa > 0 ? formatMoney(pricing.subRentalSubtotalPaisa) : '—' },
                     { l: 'Services & custom lines', v: pricing.servicesSubtotalPaisa > 0 ? formatMoney(pricing.servicesSubtotalPaisa) : '—' },
                     ...(canCrewMoney ? [{ l: 'Crew Charges', v: pricing.crewSubtotalPaisa > 0 ? formatMoney(pricing.crewSubtotalPaisa) : '—' }] : []),
                     { l: 'Transport', v: pricing.deliverySubtotalPaisa > 0 ? formatMoney(pricing.deliverySubtotalPaisa) : '—' },

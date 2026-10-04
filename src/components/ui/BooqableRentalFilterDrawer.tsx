@@ -38,6 +38,8 @@ export interface BooqableRentalFilterDrawerProps {
   money?: boolean
   /** Live stage counts */
   stageCounts?: Record<string, number | null>
+  /** Portal to document.body (defaults to true except in test runs) */
+  portal?: boolean | undefined
 }
 
 interface PresetOption {
@@ -77,6 +79,7 @@ export function BooqableRentalFilterDrawer({
   onToggleSub,
   money = false,
   stageCounts = {},
+  portal,
 }: BooqableRentalFilterDrawerProps) {
   const generatedDrawerId = useId()
   const drawerId = id ?? generatedDrawerId
@@ -388,7 +391,26 @@ export function BooqableRentalFilterDrawer({
 
   if (embedded) return open ? <>{content}<div style={{ display: 'flex', gap: 8, paddingTop: 12, borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}><Button onClick={onClearAll}>Clear All</Button><Button variant="primary" onClick={onClose}>{resultCount !== null ? `Show ${resultCount} Results` : 'Apply'}</Button></div></> : null
 
-  return <FilterDrawer id={drawerId} open={open} onClose={onClose} side="left" desktopMode="overlay" width={360} resultCount={resultCount} noun={resultCount === 1 ? 'rental' : 'rentals'} activeCount={activeCount} onClearAll={onClearAll} standardFooter onApply={onClose} applyLabel={resultCount !== null ? `Show ${resultCount} Results` : 'Apply'}>{content}</FilterDrawer>
+  return (
+    <FilterDrawer
+      id={drawerId}
+      open={open}
+      onClose={onClose}
+      portal={portal}
+      side="left"
+      desktopMode="overlay"
+      width={360}
+      resultCount={resultCount}
+      noun={resultCount === 1 ? 'rental' : 'rentals'}
+      activeCount={activeCount}
+      onClearAll={onClearAll}
+      standardFooter
+      onApply={onClose}
+      applyLabel={resultCount !== null ? `Show ${resultCount} Results` : 'Apply'}
+    >
+      {content}
+    </FilterDrawer>
+  )
 }
 
 /**

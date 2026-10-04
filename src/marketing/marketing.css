@@ -28,7 +28,7 @@
 
   --font-display: "Outfit", ui-sans-serif, system-ui, sans-serif;
   --font-body: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  --font-mono: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
 }
 
 html {

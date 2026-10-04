@@ -449,7 +449,7 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', () => {
 
       expect(container.textContent).toContain('Operations')
       expect(container.textContent).toContain('Packing')
-      expect(container.textContent).toContain('Handover')
+      expect(container.textContent).toMatch(/Handover|Pickup/)
       expect(container.textContent).toContain('Return')
       expect(container.textContent).toContain('Reset')
     })

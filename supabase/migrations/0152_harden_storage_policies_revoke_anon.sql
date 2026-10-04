@@ -45,4 +45,14 @@ begin
       to authenticated
       using (bucket_id in ('documents', 'evidence') and auth_is_manager_or_above());
   end if;
+
+  -- Revoke anon on portal_claim_by_verified_email (D7 hardening)
+  if exists (
+    select 1 from pg_proc p
+    where p.pronamespace = 'public'::regnamespace
+      and p.proname = 'portal_claim_by_verified_email'
+  ) then
+    revoke execute on function public.portal_claim_by_verified_email() from anon, public;
+    grant execute on function public.portal_claim_by_verified_email() to authenticated, service_role;
+  end if;
 end $$;

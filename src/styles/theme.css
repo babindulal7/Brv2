@@ -803,9 +803,10 @@ body,
 
 :root {
   --font-display: 'Outfit', system-ui, sans-serif;
-  --font-body: 'Outfit', 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
-  --font-id: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
+  --font-body: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-id: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-num: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
   /* Declared, not loaded — §4.3.7 keeps Devanagari off the English path. */
   --font-ne-display: 'Asar', serif;
   --font-ne-body: 'Hind', system-ui, sans-serif;
@@ -1081,19 +1082,16 @@ h3,
   text-wrap: balance;
 }
 
-/* §4.3.2 — "tabular-nums is not optional. Without it a column of money does
-   not align and the eye cannot scan down it." */
+/* §4.3.2 — tabular-nums for numeric columns and figures */
 .kpi-value {
-  font-family: var(--font-display);
+  font-family: var(--font-num, var(--font-id));
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 /*
-  §4.3.4 — **identifiers only**: serials, booking IDs, QR payloads, PAN.
-  "and only they do." A packer matching `SN-FX3-102` off a label under warehouse
-  light needs `1`/`l`/`I` and `0`/`O` separated and the width fixed, so a
-  mistyped serial shows as a length difference before anyone reads a character.
+  §4.3.4 — identifiers & numbers: serials, booking IDs, QR payloads, PAN.
+  Source Sans 3 with tabular figures gives a clean, modern look while aligning numbers perfectly.
 */
 .identifier,
 .serial,
@@ -1103,21 +1101,19 @@ h3,
 }
 
 /*
-  §4.3.1 — a *figure* is not an identifier. Money, counts, percentages and
-  times keep the body face and only take tabular figures, because §4.3.2 bars
-  Outfit below 16px and these sit at 12–15. The class used to be `.mono` and
-  applied JetBrains to every number; that was the pre-v2.2 rule.
+  §4.3.1 — figures, money, counts, percentages, and times.
 */
 .figure,
 td,
 .money {
+  font-family: var(--font-num, var(--font-id));
   font-variant-numeric: tabular-nums;
 }
 
-/* §4.3.6 — the KPI band is the one place figures take the display face. */
+/* §4.3.6 — KPI values and prominent figures */
 .kpi-value,
 .figure-lg {
-  font-family: var(--font-display);
+  font-family: var(--font-num, var(--font-id));
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }

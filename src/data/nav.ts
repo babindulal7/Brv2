@@ -421,7 +421,7 @@ export const SPEC_TABS: Record<string, string[]> = {
      "Warehouses now lives in Settings ▸ Branches & Warehouses"). The first tab
      is "Equipment", not "Inventory" — the page is Inventory, the tab is what it
      lists. */
-  '/inventory': ['Equipment', 'Bundles', 'Stock Check', 'Maintenance'],
+  '/inventory': ['Equipment', 'Bundles', 'Sub-Rentals', 'Stock Check', 'Maintenance'],
 
   /* Finance tabs: Dashboard · Invoices · Payments · Expenses · Closing · Reports.
      Documents is a dedicated primary module in Business & Back Office. */

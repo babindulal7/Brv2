@@ -369,9 +369,9 @@ export const space = {
 
 export const fontFamilies = {
   display: ['Outfit', 'system-ui', 'sans-serif'],
-  body: ['Outfit', 'Source Sans 3', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
-  mono: ['JetBrains Mono Variable', 'JetBrains Mono', 'ui-monospace', 'SF Mono', 'monospace'],
-  id: ['JetBrains Mono Variable', 'JetBrains Mono', 'ui-monospace', 'SF Mono', 'monospace'],
+  body: ['Source Sans 3', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+  mono: ['Source Sans 3', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+  id: ['Source Sans 3', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
   neDisplay: ['Asar', 'serif'],
   neBody: ['Hind', 'system-ui', 'sans-serif'],
 } as const;

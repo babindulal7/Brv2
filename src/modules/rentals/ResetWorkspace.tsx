@@ -16,7 +16,8 @@ import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { captureError } from '../../lib/monitoring'
 import { formatBsOrAd, formatAd } from '../../lib/bs'
-import { newClientUuid } from '../../lib/supabase'
+import { newClientUuid, supabase } from '../../lib/supabase'
+import { DomainEvents, EVENT_TYPES } from '../../events/eventBus'
 import { fetchFloorBooking, type FloorBooking, type FloorLine } from '../../lib/queries/bookings'
 import type { ResetEntryInput } from '../../actions/rentals/floorVerb'
 import { SHARED_CLEAN_TASKS, DAMAGE_TYPES, SEVERITIES, PROBLEM_ROUTE, QUEUE_FILTERS } from '../../lib/queries/reset'
@@ -379,6 +380,64 @@ export default function ResetWorkspace({
   const recOf = (key: string): RowRec => marks[key] ?? FRESH
   const setRec = (key: string, patch: Partial<RowRec>) =>
     setMarks((p) => ({ ...p, [key]: { ...(p[key] ?? FRESH), ...patch } }))
+
+  useEffect(() => {
+    if (!floorId || rows.length === 0) return
+    let active = true
+
+    // Check if session storage has completed reset for this booking
+    const isCachedCompleted = sessionStorage.getItem(`reset_completed:${floorId}`) === 'true'
+    if (isCachedCompleted) {
+      setMarks((prev) => {
+        const next = { ...prev }
+        for (const r of rows) {
+          if (!next[r.key]) {
+            next[r.key] = {
+              queueState: 'Ready',
+              ticks: [...ROW_TASKS],
+              cleanedBy: actor ?? undefined,
+              qcBy: actor ?? undefined,
+              problem: 'No Problems',
+            }
+          }
+        }
+        return next
+      })
+    }
+
+    supabase
+      .from('cleaning_queue_entries')
+      .select('unit_id, clean_completed_at, reset_completed_at, problem_state, cleaned_by, qc_by, qc_skip_reason, qc_fail_reason')
+      .eq('booking_id', floorId)
+      .then(({ data }) => {
+        if (!active || !data || data.length === 0) return
+        setMarks((prev) => {
+          const next = { ...prev }
+          for (const entry of data) {
+            const matchingRow = rows.find((r) => r.assetId === entry.unit_id)
+            if (matchingRow) {
+              const isReady = entry.reset_completed_at !== null
+              const isQC = entry.clean_completed_at !== null && !isReady
+              next[matchingRow.key] = {
+                queueState: isReady ? 'Ready' : isQC ? 'QC' : 'Waiting',
+                ticks: isReady || isQC ? [...ROW_TASKS] : [],
+                cleanedBy: entry.cleaned_by ?? undefined,
+                qcBy: entry.qc_by ?? undefined,
+                qcSkipReason: entry.qc_skip_reason ?? undefined,
+                qcFailReason: entry.qc_fail_reason ?? undefined,
+                problem: (entry.problem_state as ProblemState) ?? 'No Problems',
+              }
+            }
+          }
+          return next
+        })
+      })
+      .catch(() => {})
+
+    return () => {
+      active = false
+    }
+  }, [floorId, rows, actor])
 
   /* ── derived tallies, all over the real rows ─────────────────────────── */
   const activeRows = rows.filter((r) => recOf(r.key).problem === 'No Problems')
@@ -830,6 +889,8 @@ export default function ResetWorkspace({
       // If all items are quantity-tracked, per 0003:899 and floorVerb.ts:1808-1811,
       // quantity items carry no cleaning_queue_entries in Postgres.
       // Floor verification is complete.
+      sessionStorage.setItem(`reset_completed:${floor.id}`, 'true')
+      void DomainEvents.emit(EVENT_TYPES.RENTAL_RESET_COMPLETED, { bookingNo: floor.bookingNo })
       setDispatching(false)
       if (onConfirmSuccess) {
         onConfirmSuccess()
@@ -906,6 +967,8 @@ export default function ResetWorkspace({
         ),
       )
       .then(() => {
+        sessionStorage.setItem(`reset_completed:${floor.id}`, 'true')
+        void DomainEvents.emit(EVENT_TYPES.RENTAL_RESET_COMPLETED, { bookingNo: floor.bookingNo })
         if (onConfirmSuccess) {
           onConfirmSuccess()
         } else {
