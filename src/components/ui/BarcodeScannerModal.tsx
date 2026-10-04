@@ -526,7 +526,7 @@ export function BarcodeScannerModal({
             <span>Continuous mode (keeps scanner ready)</span>
           </label>
           {scanLatencyMs !== null && (
-            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'monospace' }}>
+            <span style={{ fontSize: '11px', color: 'var(--muted)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>
               Latency: {scanLatencyMs}ms (SLA &lt;2s)
             </span>
           )}
@@ -556,7 +556,8 @@ export function BarcodeScannerModal({
                   background: 'var(--card)',
                   color: 'var(--text)',
                   fontSize: 'var(--t-ui)',
-                  fontFamily: 'monospace',
+                  fontFamily: 'var(--font-id, sans-serif)',
+                  fontVariantNumeric: 'tabular-nums',
                 }}
               />
               <div style={{ position: 'absolute', left: 10, top: 12, color: 'var(--muted)' }}>
@@ -654,7 +655,8 @@ export function BarcodeScannerModal({
                     background: 'var(--card2)',
                     color: i.isAccessory ? 'var(--muted)' : 'var(--text)',
                     fontSize: 'var(--t-meta)',
-                    fontFamily: 'monospace',
+                    fontFamily: 'var(--font-id, sans-serif)',
+                    fontVariantNumeric: 'tabular-nums',
                     cursor: 'pointer',
                     textDecoration: i.isAccessory ? 'line-through' : 'none',
                   }}
@@ -694,7 +696,7 @@ export function BarcodeScannerModal({
                     color: log.success ? 'var(--st-in-fg)' : 'var(--st-danger-fg)',
                   }}
                 >
-                  <span style={{ color: 'var(--muted)', fontSize: 'var(--t-meta)', fontFamily: 'monospace' }}>
+                  <span style={{ color: 'var(--muted)', fontSize: 'var(--t-meta)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>
                     {log.time}
                   </span>
                   <span style={{ fontWeight: 500 }}>{log.text}</span>

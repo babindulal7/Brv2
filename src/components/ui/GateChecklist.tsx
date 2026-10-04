@@ -192,7 +192,7 @@ export const GateChecklist: React.FC<GateChecklistProps> = ({
                 a padlock and a billing state; it gets no financial cell. */}
             {item.isFinancial && userCanSeeMoney && item.financialAmount !== undefined && (
               <div style={{ flexShrink: 0, textAlign: 'right' }}>
-                <span style={{ fontSize: 'var(--t-meta)', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text)' }}>
+                <span style={{ fontSize: 'var(--t-meta)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 'var(--text)' }}>
                   {formatPaisa(item.financialAmount)}
                 </span>
               </div>
