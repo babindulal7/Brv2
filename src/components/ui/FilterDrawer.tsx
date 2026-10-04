@@ -905,6 +905,7 @@ export function FilterOptionList({
               >
                 <input
                   type="checkbox"
+                  aria-label={`Filter by ${text}`}
                   checked={on}
                   onChange={() => onToggle(o.value)}
                   style={{ width: 16, height: 16, flexShrink: 0, accentColor: 'var(--primary)' }}

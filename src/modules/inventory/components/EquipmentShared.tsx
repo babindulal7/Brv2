@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import { cloneElement, isValidElement, useId, type CSSProperties, type ReactElement, type ReactNode } from 'react';
 import Icon from '../../../components/ui/Icon';
 import type { IconName } from '../../../components/ui/Icon';
 import { cardStyle } from '../../../components/ui/Page';
@@ -29,6 +29,7 @@ export const fieldRow: CSSProperties = {
 
 export function Field({
   label,
+  id: propId,
   required,
   error,
   hint,
@@ -36,12 +37,27 @@ export function Field({
   span,
 }: {
   label: string
+  id?: string | undefined
   required?: boolean
   error?: string | null | undefined
   hint?: string | undefined
   children: ReactNode
   span?: number | undefined
 }) {
+  const autoId = useId()
+  const fieldId = propId || autoId
+
+  let content = children
+  if (isValidElement(children)) {
+    const childProps = children.props as Record<string, unknown>
+    if (!childProps.id && !childProps['aria-label'] && !childProps.label) {
+      content = cloneElement(children as ReactElement<Record<string, unknown>>, {
+        id: fieldId,
+        'aria-label': label,
+      })
+    }
+  }
+
   return (
     <div
       style={{
@@ -53,12 +69,12 @@ export function Field({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+        <label htmlFor={fieldId} style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
           {label} {required && <span style={{ color: 'var(--danger-text)' }}>*</span>}
         </label>
         {hint && <InfoTooltip content={hint} />}
       </div>
-      {children}
+      {content}
       {error ? (
         <span style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
           <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 1 }} />

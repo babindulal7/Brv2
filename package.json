@@ -38,7 +38,8 @@
     "lint:progress": "node scripts/lint-progress.mjs",
     "lint:shell": "node scripts/check-page-shell-lint.mjs",
     "db:local": "node scripts/local-db.mjs",
-    "storage:local": "node scripts/local-storage.mjs"
+    "storage:local": "node scripts/local-storage.mjs",
+    "data:wipe": "node scripts/wipe-user-data.mjs"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
@@ -72,6 +73,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^15.15.0",
     "jsdom": "^30.0.1",
+    "pg": "^8.23.1",
     "supabase": "^2.114.0",
     "tailwindcss": "^4.1.11",
     "typescript": "^5.7.2",

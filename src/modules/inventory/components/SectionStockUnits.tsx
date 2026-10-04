@@ -165,6 +165,7 @@ export function SectionStockUnits() {
                             </td>
                             <td style={td}>
                               <select
+                                aria-label={`Condition for unit ${u.serial || u.id}`}
                                 value={u.condition}
                                 onChange={(e) => patchUnit(u.id, { condition: e.target.value as IntakeCondition })}
                                 style={inputStyle()}
@@ -225,6 +226,7 @@ export function SectionStockUnits() {
                 <input
                   ref={csvInput}
                   type="file"
+                  aria-label="Import serials CSV"
                   accept=".csv,text/csv,text/plain"
                   onChange={(e) => {
                     importCsv(e.target.files?.[0] ?? null)
@@ -250,6 +252,7 @@ export function SectionStockUnits() {
                     </button>
                     <input
                       type="number"
+                      aria-label="Total Quantity"
                       min={1}
                       value={quantity}
                       onChange={(e) => {

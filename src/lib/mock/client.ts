@@ -75,12 +75,29 @@ export function resetMockData(): void {
   try {
     localStorage.removeItem(OVERLAY_KEY)
     localStorage.removeItem(SESSION_KEY)
+    localStorage.setItem('babin_data_wiped', 'true')
+    localStorage.setItem('babin_internal_notes_v1', JSON.stringify([]))
+
+    const toRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && (k.startsWith('babin.mock.') || k.startsWith('sb-') || k.startsWith('babin-active-') || k.startsWith('babin-today-'))) {
+        toRemove.push(k)
+      }
+    }
+    toRemove.forEach((k) => localStorage.removeItem(k))
+
+    if (typeof indexedDB !== 'undefined') {
+      try { indexedDB.deleteDatabase('babin.mock.storage.v1') } catch {}
+      try { indexedDB.deleteDatabase('BabinOfflineQueue') } catch {}
+    }
   } catch { /* ignore */ }
 }
 
 /* ── Store + overlay ───────────────────────────────────────────────────── */
 
-const store: Store = buildStore({ seeded: import.meta.env?.['VITE_MOCK_SEEDED'] !== 'false' })
+const isWiped = typeof localStorage !== 'undefined' && localStorage.getItem('babin_data_wiped') === 'true'
+const store: Store = buildStore({ seeded: !isWiped && import.meta.env?.['VITE_MOCK_SEEDED'] === 'true' })
 const overlay = loadOverlay()
 
 for (const { table, row } of overlay.inserts) (store[table] ??= []).push(row)

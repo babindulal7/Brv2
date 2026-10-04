@@ -527,6 +527,7 @@ export function DriverHandoverModal({
               <span>{photoData ? 'Replace Photo' : 'Capture Photo'}</span>
               <input
                 type="file"
+                aria-label="Capture delivery drop-off photo"
                 accept="image/*"
                 capture="environment"
                 onChange={handlePhotoUpload}

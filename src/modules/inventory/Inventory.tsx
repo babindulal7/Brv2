@@ -582,7 +582,19 @@ function ParentRowView({
   return (
     <>
       <tr
+        role="row"
+        tabIndex={0}
+        aria-label={`Inspect ${row.name}`}
         onClick={() => onInspect(row)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            const tag = (e.target as HTMLElement)?.tagName?.toLowerCase()
+            if (tag !== 'input' && tag !== 'button' && tag !== 'a') {
+              e.preventDefault()
+              onInspect(row)
+            }
+          }
+        }}
         className={[
           'inventory-parent-row',
           isInspected ? 'is-inspected' : '',
@@ -1110,6 +1122,7 @@ function FilterRail({
                   >
                     <input
                       type="checkbox"
+                      aria-label={`Filter by ${o}`}
                       checked={Boolean(chosen?.has(o))}
                       onChange={() => onToggle(r.key, o)}
                       style={{ accentColor: 'var(--nav-active-accent)' }}

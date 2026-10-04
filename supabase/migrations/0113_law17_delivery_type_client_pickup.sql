@@ -11,6 +11,15 @@
 
 begin;
 
-alter type delivery_type rename value 'Customer Pickup' to 'Client Pickup';
+do $$
+begin
+  if exists (
+    select 1 from pg_enum e
+    join pg_type t on t.oid = e.enumtypid
+    where t.typname = 'delivery_type' and e.enumlabel = 'Customer Pickup'
+  ) then
+    alter type delivery_type rename value 'Customer Pickup' to 'Client Pickup';
+  end if;
+end $$;
 
 commit;

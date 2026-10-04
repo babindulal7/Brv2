@@ -954,15 +954,27 @@ function MockBanner() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
         <Icon name="error" size={16} />
         <span style={{ minWidth: 0 }}>
-          Mock mode (clean database) — all pre-seeded demo records removed. Login with owner@babinrentals.com.
+          Mock mode (clean database) — all user data & AI-generated records removed. Login with owner@babinrentals.com.
         </span>
       </div>
       <button
         type="button"
         onClick={() => {
           try {
-            localStorage.removeItem('babin.mock.overlay.v1')
-            localStorage.removeItem('babin.mock.session.v1')
+            localStorage.setItem('babin_data_wiped', 'true')
+            localStorage.setItem('babin_internal_notes_v1', JSON.stringify([]))
+            const toRemove: string[] = []
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i)
+              if (k && (k.startsWith('babin.mock.') || k.startsWith('sb-') || k.startsWith('babin-active-') || k.startsWith('babin-today-'))) {
+                toRemove.push(k)
+              }
+            }
+            toRemove.forEach((k) => localStorage.removeItem(k))
+            if (typeof indexedDB !== 'undefined') {
+              try { indexedDB.deleteDatabase('babin.mock.storage.v1') } catch {}
+              try { indexedDB.deleteDatabase('BabinOfflineQueue') } catch {}
+            }
             window.location.reload()
           } catch {
             /* ignore */
@@ -980,7 +992,7 @@ function MockBanner() {
           whiteSpace: 'nowrap',
         }}
       >
-        Reset Local Cache
+        Wipe All User Data
       </button>
     </div>
   )

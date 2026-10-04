@@ -243,7 +243,7 @@ begin
                           delivery_type, pickup_at, return_at, created_by, updated_by)
     values (gen_random_uuid(), '9999001', v_branch,
             (select client_id from bookings where id = v_id), 'Quote', now(),
-            'Customer Pickup', now() + interval '1 day', now() + interval '3 days', v_actor, v_actor);
+            'Babin Delivery', now() + interval '1 day', now() + interval '3 days', v_actor, v_actor);
   exception when others then
     v_blocked := true;
     v_err := sqlerrm;

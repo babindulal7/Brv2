@@ -507,9 +507,7 @@ const OPS_MENU_H = 245
 interface PrimaryActionConfig {
   label: string
   icon: IconName
-  bg: string
-  fg: string
-  border?: string
+  variant: 'primary' | 'secondary' | 'outline'
   onClick: (e: React.MouseEvent) => void
   disabled?: boolean
   tooltip?: string
@@ -530,9 +528,7 @@ function getPrimaryAction(
     return {
       label: 'Edit Draft',
       icon: 'edit',
-      bg: 'var(--card)',
-      fg: 'var(--text)',
-      border: '1px solid var(--border)',
+      variant: 'outline',
       onClick: () => navigate(`/rentals?action=new&draft=${row.id}`),
     }
   }
@@ -541,9 +537,7 @@ function getPrimaryAction(
     return {
       label: 'Open Quote',
       icon: 'file',
-      bg: 'var(--card)',
-      fg: 'var(--text)',
-      border: '1px solid var(--border)',
+      variant: 'outline',
       onClick: () => navigate(`/rentals/${row.bookingNo}`),
     }
   }
@@ -552,9 +546,7 @@ function getPrimaryAction(
     return {
       label: 'Pack Kit',
       icon: 'box',
-      bg: 'var(--btn-primary-bg)',
-      fg: 'var(--btn-primary-fg)',
-      border: '1px solid transparent',
+      variant: 'primary',
       onClick: () => openOperations(row.bookingNo, row.status, 'Pack'),
     }
   }
@@ -563,9 +555,7 @@ function getPrimaryAction(
     return {
       label: 'Handover',
       icon: 'truck',
-      bg: 'var(--btn-primary-bg)',
-      fg: 'var(--btn-primary-fg)',
-      border: '1px solid transparent',
+      variant: 'primary',
       onClick: () => openOperations(row.bookingNo, row.status, 'Handover'),
     }
   }
@@ -574,9 +564,7 @@ function getPrimaryAction(
     return {
       label: 'Check-In',
       icon: 'return_arrow',
-      bg: 'var(--btn-primary-bg)',
-      fg: 'var(--btn-primary-fg)',
-      border: '1px solid transparent',
+      variant: 'primary',
       onClick: () => openOperations(row.bookingNo, row.status, 'Return'),
     }
   }
@@ -585,9 +573,7 @@ function getPrimaryAction(
     return {
       label: 'Reset & QC',
       icon: 'refresh',
-      bg: 'var(--btn-primary-bg)',
-      fg: 'var(--btn-primary-fg)',
-      border: '1px solid transparent',
+      variant: 'primary',
       onClick: () => openOperations(row.bookingNo, row.status, 'Reset'),
     }
   }
@@ -596,9 +582,7 @@ function getPrimaryAction(
     return {
       label: 'Dossier',
       icon: 'external_link',
-      bg: 'transparent',
-      fg: 'var(--muted)',
-      border: '1px solid var(--border)',
+      variant: 'outline',
       onClick: () => navigate(`/rentals/${row.bookingNo}`),
     }
   }
@@ -642,35 +626,27 @@ function RowOperations({
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
       {primary && (
-        <button
+        <Button
           type="button"
+          size="sm"
+          variant={primary.variant}
           onClick={primary.onClick}
           disabled={primary.disabled}
           title={primary.tooltip || primary.label}
+          icon={primary.icon}
           style={{
             position: 'relative',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-            padding: '3px 9px',
             height: 28,
             minHeight: 28,
+            padding: '3px 9px',
             fontSize: 'var(--t-meta, 12px)',
             fontWeight: 700,
-            borderRadius: 'var(--r-xs, 4px)',
-            background: primary.bg,
-            color: primary.fg,
-            border: primary.border || 'none',
-            cursor: primary.disabled ? 'not-allowed' : 'pointer',
             whiteSpace: 'nowrap',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
-            transition: 'filter 0.1s ease, background-color 0.1s ease',
           }}
         >
           <TouchTarget />
-          <Icon name={primary.icon} size={12} style={{ color: primary.fg }} />
           <span>{primary.label}</span>
-        </button>
+        </Button>
       )}
 
       <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
@@ -890,7 +866,12 @@ function ColumnMenu({
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--hover-card)')}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
             >
-              <input type="checkbox" checked={!hidden.has(c)} onChange={() => toggle(c)} />
+              <input
+                type="checkbox"
+                aria-label={`Show ${c} column`}
+                checked={!hidden.has(c)}
+                onChange={() => toggle(c)}
+              />
               <span style={{ flex: 1 }}>{c}</span>
             </label>
           ))}

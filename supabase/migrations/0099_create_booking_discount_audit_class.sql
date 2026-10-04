@@ -510,7 +510,7 @@ begin
           'client_id',     v_client,
           'pickup_at',     '2099-12-01T04:00:00Z',
           'return_at',     '2099-12-03T04:00:00Z',
-          'delivery_type', 'Customer Pickup',
+          'delivery_type', 'Babin Delivery',
           'lines', jsonb_build_array(jsonb_build_object(
             'client_uuid', gen_random_uuid(),
             'line_type',   'Equipment',

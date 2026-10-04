@@ -67,7 +67,7 @@ export interface Queue {
 
 export const QUEUES: Queue[] = [
   { job: 'Pack', title: 'Packing', action: 'Pack against the list', icon: 'box' },
-  { job: 'Handover', title: 'Handover', action: 'Complete the handover', icon: 'truck' },
+  { job: 'Handover', title: 'Pickup', action: 'Complete pickup', icon: 'truck' },
   { job: 'Return', title: 'Return & Inspection', action: 'Receive, count and inspect', icon: 'return_arrow' },
   { job: 'Reset', title: 'Reset', action: 'Clean, reset, re-shelf', icon: 'sparkles' },
   { job: 'Cases', title: 'Cases', action: 'Resolve missing and damage', icon: 'eye' },

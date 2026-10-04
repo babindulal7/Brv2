@@ -84,6 +84,7 @@ export function SectionMaintenance() {
                 <input
                   ref={docInput}
                   type="file"
+                  aria-label="Attach maintenance documents"
                   multiple
                   accept=".pdf,.jpg,.jpeg,.png"
                   onChange={(e) => {

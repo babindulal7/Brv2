@@ -202,6 +202,7 @@ export function BooqableRentalFilterDrawer({
                 >
                   <input
                     type="checkbox"
+                    aria-label={`Filter by status: ${stage}`}
                     checked={isChecked}
                     onChange={() => onToggleStatus(stage)}
                     style={{
@@ -348,6 +349,7 @@ export function BooqableRentalFilterDrawer({
           >
             <input
               type="checkbox"
+              aria-label="Filter sub-rentals only"
               checked={subOn}
               onChange={onToggleSub}
               style={{

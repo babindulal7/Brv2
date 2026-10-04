@@ -159,6 +159,7 @@ export function SystemRestoreModal({ isOpen, onClose, restorePointId, restorePoi
             </p>
             <input 
               type="text" 
+              aria-label="Two-factor authentication code"
               maxLength={6}
               value={authCode}
               onChange={(e) => setAuthCode(e.target.value.replace(/\D/g, ''))}

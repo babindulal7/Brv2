@@ -220,13 +220,15 @@ export function CreateSubRentalModal({
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
+            <label htmlFor="sub-rental-vendor-cost" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
               Vendor Sub-Rental Cost (Rs) <span style={{ color: 'var(--danger)' }}>*</span>
             </label>
             {/* 0 renders as an empty box, never a typed-looking "0": the state
                 must be a number for the guards and `rupees()`, but the operator
                 has to see a field they are required to fill. */}
             <input
+              id="sub-rental-vendor-cost"
+              aria-label="Vendor Sub-Rental Cost in Rupees"
               type="number"
               min={1}
               value={vendorCost === 0 ? '' : vendorCost}

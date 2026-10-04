@@ -539,6 +539,7 @@ export function BarcodeScannerModal({
               <input
                 ref={inputRef}
                 type="text"
+                aria-label="Scan barcode or type serial number"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Scan barcode / QR / type serial or asset tag (e.g. SN-884192, CAM-001)..."

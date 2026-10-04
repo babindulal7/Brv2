@@ -156,6 +156,7 @@ function GroupCard({
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', marginBottom: 10 }}>
                 <input
                   type="radio"
+                  aria-label={`Keep client ${c.name} as survivor`}
                   name={`survivor-${group.key}`}
                   checked={selected}
                   onChange={() => setSurvivorId(c.id)}

@@ -127,6 +127,8 @@ export interface RpcProbe extends SchemaObjectRef {
 
 export interface RelationProbe extends SchemaObjectRef {
   kind: 'column' | 'table'
+  /** For kind: 'column', the table to select from. For kind: 'table', defaults to `name`. */
+  table?: string
   /** Column list for `kind: 'column'`; `'id'` is used for a table. */
   columns: string
 }
@@ -164,6 +166,7 @@ export const SCHEMA_PROBES: readonly (RpcProbe | RelationProbe)[] = [
   {
     migration: '0144',
     name: 'project_type',
+    table: 'bookings',
     kind: 'column',
     impact: 'categorised project types',
     columns: 'id, project_type',
@@ -183,7 +186,8 @@ async function runRpc(spec: RpcProbe): Promise<SchemaProbeVerdict> {
 
 async function runRelation(spec: RelationProbe): Promise<SchemaProbeVerdict> {
   try {
-    const { error } = await supabase.from(spec.name).select(spec.columns).limit(1)
+    const target = spec.table ?? spec.name
+    const { error } = await supabase.from(target).select(spec.columns).limit(1)
     return classify(error, spec.kind)
   } catch {
     return 'unknown'

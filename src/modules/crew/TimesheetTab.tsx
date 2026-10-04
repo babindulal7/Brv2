@@ -286,12 +286,22 @@ export default function TimesheetTab() {
                   return (
                     <tbody key={row.name}>
                       <tr
+                        role="row"
+                        tabIndex={0}
+                        aria-expanded={isOpen}
+                        aria-label={`Timesheet details for ${row.name}`}
                         style={{
                           borderBottom: isOpen ? 'none' : '1px solid var(--border)',
                           cursor: 'pointer',
                           transition: 'background 0.1s',
                         }}
                         onClick={() => setOpenIdx(isOpen ? null : i)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setOpenIdx(isOpen ? null : i)
+                          }
+                        }}
                       >
                         <td style={{ padding: '10px 16px', fontWeight: 500, whiteSpace: 'nowrap' }}>{row.name}</td>
                         <td style={{ padding: '10px 8px', color: 'var(--text2)' }}>{row.role}</td>

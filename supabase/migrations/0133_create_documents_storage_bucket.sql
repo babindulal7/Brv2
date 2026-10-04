@@ -19,7 +19,11 @@ end $$;
 do $$
 begin
   if exists (select 1 from information_schema.tables where table_schema = 'storage' and table_name = 'objects') then
-    alter table storage.objects enable row level security;
+    begin
+      alter table storage.objects enable row level security;
+    exception when insufficient_privilege then
+      null;
+    end;
 
     -- SELECT policy
     if not exists (

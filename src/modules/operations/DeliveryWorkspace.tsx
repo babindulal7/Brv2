@@ -283,6 +283,7 @@ export function DeliveryWorkspace() {
           <div style={{ minWidth: '260px' }}>
             <input
               type="text"
+              aria-label="Search dispatches, bookings, addresses, or riders"
               placeholder="Search dispatch, booking, address, rider…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}

@@ -207,6 +207,7 @@ export function SectionIdentity() {
                 <input
                   ref={thumbInput}
                   type="file"
+                  aria-label="Upload thumbnail image"
                   accept="image/jpeg,image/png,image/webp"
                   onChange={(e) => {
                     addImages(e.target.files, 'thumb')
@@ -302,6 +303,7 @@ export function SectionIdentity() {
                 <input
                   ref={galleryInput}
                   type="file"
+                  aria-label="Upload gallery images"
                   multiple
                   accept="image/jpeg,image/png,image/webp"
                   onChange={(e) => {

@@ -1471,6 +1471,7 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder="Search equipment by name, SKU, brand…"
+                    aria-label="Search equipment by name, SKU, brand"
                     style={{ ...controlBase, paddingLeft: 29 }}
                   />
                 </span>

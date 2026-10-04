@@ -347,6 +347,7 @@ export default function CustomReport() {
           <Icon name="search" size={16} style={{ color: 'var(--muted)' }} />
           <input
             type="search"
+            aria-label={`Filter ${domain} records`}
             placeholder={`Filter ${domain} records…`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}

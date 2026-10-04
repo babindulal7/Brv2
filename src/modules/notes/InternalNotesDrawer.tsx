@@ -231,6 +231,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
             <textarea
               ref={textareaRef}
               rows={3}
+              aria-label="Internal note draft"
               value={draft}
               onChange={e => setDraft(e.target.value)}
               onKeyDown={e => {
@@ -257,6 +258,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <select
                   value={category}
+                  aria-label="Note category"
                   onChange={e => setCategory(e.target.value as NoteCategory)}
                   style={{
                     padding: '6px 8px',
@@ -277,6 +279,7 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
 
                 <select
                   value={priority}
+                  aria-label="Note priority"
                   onChange={e => setPriority(e.target.value as NotePriority)}
                   style={{
                     padding: '6px 8px',

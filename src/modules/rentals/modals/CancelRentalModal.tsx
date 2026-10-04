@@ -168,6 +168,8 @@ export function CancelRentalModal({
             </span>
           </div>
           <textarea
+            id="cancel-reason"
+            aria-label="Cancellation reason"
             rows={3}
             placeholder="State the operational reason for cancelling this booking (client cancelled shoot, scheduling conflict, etc.)..."
             value={reason}
@@ -196,6 +198,7 @@ export function CancelRentalModal({
         >
           <input
             type="checkbox"
+            aria-label="I confirm that this booking is to be cancelled and all reserved equipment released back into stock"
             checked={confirmed}
             onChange={(e) => setConfirmed(e.target.checked)}
             style={{ marginTop: 2 }}

@@ -313,6 +313,7 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
           <input
             ref={fileInputRef}
             type="file"
+            aria-label="Upload CSV file"
             accept=".csv,text/csv"
             onChange={(e) => {
               const file = e.target.files?.[0]
@@ -394,6 +395,7 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                         <td style={{ ...td, color: 'var(--muted)' }}>{dataRows[0]?.[colIndex] || '—'}</td>
                         <td style={td}>
                           <Select
+                            aria-label={`Map column ${h || `Column ${colIndex + 1}`}`}
                             value={mapping[colIndex] ?? 'skip'}
                             onChange={(e) => setMapping((prev) => ({ ...prev, [colIndex]: e.target.value as ImportTargetField }))}
                             style={{ ...inputStyle, width: '100%' }}
@@ -476,6 +478,7 @@ export default function ImportCenter({ embedded = false }: ImportCenterProps = {
                             <td style={{ ...td, width: 30 }}>
                               <input
                                 type="checkbox"
+                                aria-label={`Include row ${r.rowIndex} (${r.record?.name || 'unnamed'})`}
                                 checked={!skipped}
                                 onChange={() =>
                                   setSkippedRows((prev) => {

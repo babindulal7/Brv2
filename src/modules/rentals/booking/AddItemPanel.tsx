@@ -1927,9 +1927,10 @@ function RowButton({
   onClick: (e: React.MouseEvent) => void
 }) {
   return (
-    <span
-      role="presentation"
+    <button
+      type="button"
       onClick={onClick}
+      aria-label={label}
       style={{
         position: 'relative',
         display: 'inline-flex',
@@ -1950,7 +1951,7 @@ function RowButton({
       <TouchInset />
       <Icon name={icon} size={13} />
       {label}
-    </span>
+    </button>
   )
 }
 

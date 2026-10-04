@@ -216,6 +216,7 @@ export default function AssetRoiReport() {
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           type="text"
+          aria-label="Search by asset tag, serial, or model"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by asset tag, serial, or model..."
@@ -235,6 +236,7 @@ export default function AssetRoiReport() {
             Category:
           </span>
           <select
+            aria-label="Filter by category"
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
             style={{

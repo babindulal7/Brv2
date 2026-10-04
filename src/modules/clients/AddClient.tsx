@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import { cloneElement, isValidElement, useEffect, useId, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -143,27 +143,39 @@ const inputStyle = (hasError?: boolean): CSSProperties => ({
 
 function Field({
   label,
+  id: propId,
   required,
   error,
   help,
   children,
 }: {
   label: string
+  id?: string | undefined
   required?: boolean
-  /* `| undefined` is explicit because tsconfig sets exactOptionalPropertyTypes:
-     callers read `errors[field]`, which is `string | undefined` on a miss, and
-     without it every call site would need a `?? null`. */
   error?: string | null | undefined
-  /** Standing rule for the field, shown until an error takes its place. */
   help?: ReactNode
   children: ReactNode
 }) {
+  const autoId = useId()
+  const fieldId = propId || autoId
+
+  let content = children
+  if (isValidElement(children)) {
+    const childProps = children.props as Record<string, unknown>
+    if (!childProps.id && !childProps['aria-label'] && !childProps.label) {
+      content = cloneElement(children as ReactElement<Record<string, unknown>>, {
+        id: fieldId,
+        'aria-label': label,
+      })
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-      <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+      <label htmlFor={fieldId} style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
         {label} {required && <span style={{ color: 'var(--danger-text)' }}>*</span>}
       </label>
-      {children}
+      {content}
       {error ? (
         <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)', fontSize: 'var(--t-th)', color: 'var(--danger-text)' }}>
           <Icon name="error" size={12} />
@@ -897,6 +909,7 @@ export default function AddClient({ embedded = false, onDone }: AddClientProps =
                   </span>
                   <Input
                     type="tel"
+                    aria-label="Primary Phone"
                     value={phone}
                     inputMode="tel"
                     autoComplete="tel-national"
@@ -996,11 +1009,11 @@ export default function AddClient({ embedded = false, onDone }: AddClientProps =
               {clientType === 'Individual' && (
                 <Field label="Government ID">
                   <div style={{ display: 'flex', gap: 'var(--sp-sm)' }}>
-                    <Select value={govIdType} onChange={(e) => setGovIdType(e.target.value)} style={{ ...inputStyle(), width: 120, flexShrink: 0 }}>
+                    <Select value={govIdType} aria-label="Government ID Type" onChange={(e) => setGovIdType(e.target.value)} style={{ ...inputStyle(), width: 120, flexShrink: 0 }}>
                       <option value="Citizenship">Citizenship</option>
                       <option value="Passport">Passport</option>
                     </Select>
-                    <Input value={businessRegNo} onChange={(e) => setBusinessRegNo(e.target.value)} placeholder="ID Number" style={{ ...inputStyle(), flex: 1 }} />
+                    <Input value={businessRegNo} aria-label="Government ID Number" onChange={(e) => setBusinessRegNo(e.target.value)} placeholder="ID Number" style={{ ...inputStyle(), flex: 1 }} />
                   </div>
                 </Field>
               )}
@@ -1179,6 +1192,7 @@ export default function AddClient({ embedded = false, onDone }: AddClientProps =
                     >
                       <input
                         type="checkbox"
+                        aria-label={`Preferred communication: ${m}`}
                         checked={preferredMethods.includes(m)}
                         onChange={() => togglePreferred(m)}
                         style={{ width: 16, height: 16, flexShrink: 0, accentColor: 'var(--nav-active-accent)' }}
@@ -1192,6 +1206,7 @@ export default function AddClient({ embedded = false, onDone }: AddClientProps =
                 <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>Notes (Optional)</label>
                 <textarea
                   value={notes}
+                  aria-label="Client Notes"
                   maxLength={300}
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Any additional notes about this client…"
@@ -1246,6 +1261,7 @@ export default function AddClient({ embedded = false, onDone }: AddClientProps =
             <input
               ref={fileInputRef}
               type="file"
+              aria-label="Upload client documents"
               multiple
               accept=".pdf,.jpg,.jpeg,.png"
               onChange={(e) => {

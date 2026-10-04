@@ -413,6 +413,16 @@ export default function PurchaseRequests() {
                     <tr
                       key={pr.id}
                       onClick={() => selectPr(pr.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          selectPr(pr.id)
+                        }
+                      }}
+                      tabIndex={0}
+                      role="row"
+                      aria-selected={isSel}
+                      aria-label={`Purchase request ${pr.prNo} for ${pr.fleetItemName}`}
                       className={`inventory-parent-row ${isSel ? 'is-selected' : ''}`}
                     >
                       <td style={{ padding: '12px' }}>

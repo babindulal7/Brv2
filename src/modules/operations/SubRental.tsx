@@ -665,6 +665,7 @@ export function SubRental() {
                   <th style={{ width: 36, padding: '12px 14px' }}>
                     <input
                       type="checkbox"
+                      aria-label="Select all sub-rentals"
                       checked={selectedRowIds.size === filteredData.length && filteredData.length > 0}
                       onChange={(e) => handleSelectAll(e.target.checked)}
                       style={{ accentColor: 'var(--nav-active-accent)' }}
@@ -689,6 +690,7 @@ export function SubRental() {
                       <td style={{ padding: '12px 14px' }}>
                         <input
                           type="checkbox"
+                          aria-label={`Select sub-rental ${c.id}`}
                           checked={selectedRowIds.has(c.id)}
                           onChange={() => handleToggleRow(c.id)}
                           style={{ accentColor: 'var(--nav-active-accent)' }}

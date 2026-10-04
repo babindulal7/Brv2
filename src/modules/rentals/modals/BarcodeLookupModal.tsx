@@ -205,6 +205,7 @@ export function BarcodeLookupModal({ isOpen, onClose }: BarcodeLookupModalProps)
           <input
             type="text"
             autoFocus
+            aria-label="Enter barcode, serial number, or booking number"
             placeholder="Enter barcode, serial #, or booking #…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}

@@ -181,6 +181,7 @@ export function LineItemTree({
           <Icon name="search" size={15} style={{ color: 'var(--muted, #71717a)' }} />
           <input
             type="search"
+            aria-label="Filter equipment, barcode serial, or flight case"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Filter equipment, barcode serial, flight case..."

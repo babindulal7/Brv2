@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useId } from 'react'
 import type { Role } from '../../lib/rbac'
 import { canViewMoney } from '../../lib/rbac'
 import { toRupees, rupees, type Paisa } from '../../lib/money'
@@ -12,6 +12,7 @@ export interface MoneyFieldProps {
   helperText?: string
   disabled?: boolean
   className?: string
+  id?: string
 }
 
 export const MoneyField: React.FC<MoneyFieldProps> = ({
@@ -23,7 +24,11 @@ export const MoneyField: React.FC<MoneyFieldProps> = ({
   helperText,
   disabled = false,
   className = '',
+  id,
 }) => {
+  const generatedId = useId()
+  const fieldId = id || generatedId
+
   // Law 6: Warehouse sees no money
   if (!canViewMoney(role)) {
     return null
@@ -41,6 +46,7 @@ export const MoneyField: React.FC<MoneyFieldProps> = ({
     <div className={className || undefined} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
       {label && (
         <label
+          htmlFor={fieldId}
           style={{
             fontSize: 'var(--t-th)',
             fontWeight: 600,
@@ -69,6 +75,8 @@ export const MoneyField: React.FC<MoneyFieldProps> = ({
         </span>
 
         <input
+          id={fieldId}
+          aria-label={label || 'Amount in Rupees'}
           type="number"
           inputMode="numeric"
           step="1"

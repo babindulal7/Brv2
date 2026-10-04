@@ -580,6 +580,7 @@ export default function InternalNotesPage() {
               <textarea
                 ref={textareaRef}
                 rows={4}
+                aria-label="Internal note draft"
                 value={draft}
                 onChange={e => setDraft(e.target.value)}
                 onKeyDown={e => {
@@ -724,6 +725,7 @@ export default function InternalNotesPage() {
               <div style={{ flex: 1, minWidth: 200, position: 'relative' }}>
                 <input
                   type="text"
+                  aria-label="Search notes"
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
                   placeholder="Search notes by keyword, booking ID, author, asset tag..."
@@ -812,6 +814,7 @@ export default function InternalNotesPage() {
 
               {/* Sort Selector */}
               <select
+                aria-label="Sort notes by"
                 value={sortBy}
                 onChange={e => setSortBy(e.target.value as typeof sortBy)}
                 style={{
@@ -1077,6 +1080,7 @@ export default function InternalNotesPage() {
                       <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
                         <textarea
                           rows={3}
+                          aria-label="Edit note content"
                           value={editDraft}
                           onChange={e => setEditDraft(e.target.value)}
                           style={{
@@ -1093,6 +1097,7 @@ export default function InternalNotesPage() {
                         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                           <select
                             value={editCategory}
+                            aria-label="Edit note category"
                             onChange={e => setEditCategory(e.target.value as NoteCategory)}
                             style={{
                               padding: '4px 8px',
@@ -1109,6 +1114,7 @@ export default function InternalNotesPage() {
                           </select>
                           <select
                             value={editPriority}
+                            aria-label="Edit note priority"
                             onChange={e => setEditPriority(e.target.value as NotePriority)}
                             style={{
                               padding: '4px 8px',

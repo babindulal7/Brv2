@@ -537,6 +537,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
                   <th style={{ width: 36, padding: '12px 14px' }}>
                     <input
                       type="checkbox"
+                      aria-label="Select all cases"
                       checked={selectedRowIds.size === filteredCases.length && filteredCases.length > 0}
                       onChange={(e) => handleSelectAll(e.target.checked)}
                       style={{ accentColor: 'var(--nav-active-accent)' }}
@@ -561,6 +562,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
                     <td style={{ padding: '12px 14px' }}>
                       <input
                         type="checkbox"
+                        aria-label={`Select case ${c.id}`}
                         checked={selectedRowIds.has(c.id)}
                         onChange={() => handleToggleRow(c.id)}
                         style={{ accentColor: 'var(--nav-active-accent)' }}

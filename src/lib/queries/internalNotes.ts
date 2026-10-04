@@ -125,8 +125,12 @@ export const INTERNAL_NOTES_SEED: InternalNote[] = [
 
 export function listInternalNotes(): InternalNote[] {
   try {
+    const isWiped = typeof localStorage !== 'undefined' && localStorage.getItem('babin_data_wiped') === 'true'
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
     if (!raw) {
+      if (isWiped) {
+        return []
+      }
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(INTERNAL_NOTES_SEED))
       }
@@ -140,7 +144,7 @@ export function listInternalNotes(): InternalNote[] {
       priority: n.priority || 'normal',
     }))
   } catch {
-    return [...INTERNAL_NOTES_SEED]
+    return []
   }
 }
 

@@ -335,10 +335,12 @@ export function SignOnGlassModal({
         {/* Signer Legal Identity */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
           <div>
-            <label style={{ display: 'block', fontSize: 'var(--t-meta, 12px)', fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}>
+            <label htmlFor="signer-name" style={{ display: 'block', fontSize: 'var(--t-meta, 12px)', fontWeight: 600, color: 'var(--text2)', marginBottom: 6 }}>
               Signer Legal Full Name <span style={{ color: 'var(--danger, #ef4444)' }}>*</span>
             </label>
             <input
+              id="signer-name"
+              aria-label="Signer Legal Full Name"
               type="text"
               value={signerName}
               onChange={(e) => setSignerName(e.target.value)}

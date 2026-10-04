@@ -607,7 +607,7 @@ begin
     else
       insert into bookings (client_uuid, booking_no, branch_id, client_id, delivery_type,
                             pickup_at, return_at, created_by, updated_by)
-      values (gen_random_uuid(), '999999901', v_branch, v_client, 'Customer Pickup',
+      values (gen_random_uuid(), '999999901', v_branch, v_client, 'Babin Delivery',
               '2099-01-10T04:00:00Z', '2099-01-12T04:00:00Z', v_actor, v_actor)
       returning id into v_booking;
 
@@ -636,7 +636,7 @@ begin
       begin
         insert into bookings (client_uuid, booking_no, branch_id, client_id, delivery_type,
                               pickup_at, return_at, created_by, updated_by)
-        values (gen_random_uuid(), '999999902', v_branch, v_client, 'Customer Pickup',
+        values (gen_random_uuid(), '999999902', v_branch, v_client, 'Babin Delivery',
                 '2099-01-11T04:00:00Z', '2099-01-13T04:00:00Z', v_actor, v_actor)
         returning id into v_booking2;
 
@@ -705,7 +705,7 @@ begin
       begin
         insert into bookings (client_uuid, booking_no, branch_id, client_id, delivery_type,
                               pickup_at, return_at, created_by, updated_by)
-        values (gen_random_uuid(), '999999903', v_branch, v_client, 'Customer Pickup',
+        values (gen_random_uuid(), '999999903', v_branch, v_client, 'Babin Delivery',
                 '2099-06-01T04:00:00Z', '2099-06-03T04:00:00Z', v_actor, v_actor)
         returning id into v_booking3;
 
@@ -727,7 +727,7 @@ begin
 
         insert into bookings (client_uuid, booking_no, branch_id, client_id, delivery_type,
                               pickup_at, return_at, created_by, updated_by)
-        values (gen_random_uuid(), '999999904', v_branch, v_client, 'Customer Pickup',
+        values (gen_random_uuid(), '999999904', v_branch, v_client, 'Babin Delivery',
                 '2099-06-01T04:00:00Z', '2099-06-03T04:00:00Z', v_actor, v_actor)
         returning id into v_booking4;
 

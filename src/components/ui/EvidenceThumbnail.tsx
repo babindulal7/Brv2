@@ -36,7 +36,16 @@ export const EvidenceThumbnail: React.FC<EvidenceThumbnailProps> = ({
   return (
     <>
       <div
+        role="button"
+        tabIndex={0}
+        aria-label={`View evidence: ${evidence.title}`}
         onClick={() => setIsOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setIsOpen(true)
+          }
+        }}
         className={className || undefined}
         style={{
           width: sizePx,

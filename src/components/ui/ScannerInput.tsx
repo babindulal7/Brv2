@@ -66,6 +66,7 @@ export const ScannerInput: React.FC<ScannerInputProps> = ({
         <input
           ref={inputRef}
           type="text"
+          aria-label={placeholder || 'Scan barcode or enter asset code'}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}

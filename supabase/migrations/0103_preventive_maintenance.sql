@@ -419,7 +419,7 @@ begin
       for v_n in 1..5 loop
         insert into bookings (client_uuid, booking_no, branch_id, client_id, delivery_type,
                               pickup_at, return_at, created_by, updated_by)
-        values (gen_random_uuid(), '99990103' || v_n::text, v_branch, v_client, 'Customer Pickup',
+        values (gen_random_uuid(), '99990103' || v_n::text, v_branch, v_client, 'Babin Delivery',
                 now() - make_interval(days => 20 - v_n), now() - make_interval(days => 10 - v_n), v_actor, v_actor)
         returning id into v_booking;
 

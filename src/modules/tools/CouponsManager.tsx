@@ -325,6 +325,7 @@ export default function CouponsManager() {
         <div style={{ position: 'relative', width: 260 }}>
           <input
             type="text"
+            aria-label="Search coupon code or author"
             placeholder="Search code or author..."
             value={search}
             onChange={e => setSearch(e.target.value)}

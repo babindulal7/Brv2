@@ -586,6 +586,7 @@ export function FastReturnModal({
                     >
                       <input
                         type="checkbox"
+                        aria-label={`Select ${item.name} for return`}
                         disabled={item.alreadyReturned}
                         checked={item.selected}
                         onChange={() => toggleItemSelection(item.key)}
@@ -641,6 +642,7 @@ export function FastReturnModal({
                     <div style={{ marginTop: 8, display: 'grid', gap: 6, paddingLeft: 24 }}>
                       <input
                         type="text"
+                        aria-label={`Reason missing for ${item.name}`}
                         placeholder="Reason missing (min 10 chars, e.g. Left on site)..."
                         value={item.missingReason}
                         onChange={(e) => updateItemMissingReason(item.key, e.target.value)}

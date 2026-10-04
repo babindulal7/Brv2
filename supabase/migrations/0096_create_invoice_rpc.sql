@@ -600,6 +600,8 @@ begin
   end if;
 
   begin
+    perform set_config('app.in_create_booking', 'on', true);
+
     -- ── Scratch actors. Neither the live project nor 0012 seeds an Accounts
     --    row, so the role this function exists to serve has to be built.
     insert into users (id, client_uuid, employee_code, email, full_name, mobile, primary_role, branch_id)

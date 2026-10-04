@@ -28,6 +28,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
       <div className="auth-password-wrapper" style={{ position: 'relative' }}>
         <Input
           ref={ref}
+          aria-label={props['aria-label'] || 'Password'}
           type={visible ? 'text' : 'password'}
           style={{ paddingRight: 44, ...style }}
           onKeyDown={(e) => {

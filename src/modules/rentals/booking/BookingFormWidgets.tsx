@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { cloneElement, isValidElement, useEffect, useId, useRef, useState } from 'react'
 import Icon from '../../../components/ui/Icon'
 import type { IconName } from '../../../components/ui/Icon'
 import { cardStyle } from '../../../components/ui/Page'
@@ -110,6 +110,7 @@ export function Field({
   error,
   helper,
   labelId,
+  id,
 }: {
   label: string
   children: React.ReactNode
@@ -129,12 +130,24 @@ export function Field({
    * meant for the eye, so those callers wire `aria-labelledby` instead.
    */
   labelId?: string | undefined
+  id?: string | undefined
 }) {
+  const generatedId = useId()
+  const fieldId = id || `field-${generatedId}`
   const errorId = error ? `field-error-${label.replace(/\s+/g, '-').toLowerCase()}` : undefined
+
+  const childElem = isValidElement<Record<string, unknown>>(children) ? children : null
+  const enhancedChildren = childElem
+    ? cloneElement(childElem, {
+        id: (childElem.props['id'] as string | undefined) || fieldId,
+        'aria-label': (childElem.props['aria-label'] as string | undefined) || label,
+      })
+    : children
+
   const body = (
     <>
       <span id={labelId} style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', marginBottom: 3 }}>{label}</span>
-      {children}
+      {enhancedChildren}
       {error ? (
         <span id={errorId} role="alert" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--danger-text)', marginTop: 3 }}>
           {error}
@@ -145,7 +158,7 @@ export function Field({
     </>
   )
   if (labelId) return <div style={{ display: 'block', minWidth: 0 }}>{body}</div>
-  return <label style={{ display: 'block', minWidth: 0 }}>{body}</label>
+  return <label htmlFor={fieldId} style={{ display: 'block', minWidth: 0 }}>{body}</label>
 }
 
 /**
@@ -181,7 +194,17 @@ export function Section({
   return (
     <section id={id} className={`new-rental-section-card ${open ? 'is-active' : ''}`} style={{ ...cardStyle, minWidth: 0, padding: 0 }}>
       <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        aria-label={`Toggle ${title} section`}
         onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onToggle()
+          }
+        }}
         style={{
           display: 'flex',
           alignItems: 'center',
