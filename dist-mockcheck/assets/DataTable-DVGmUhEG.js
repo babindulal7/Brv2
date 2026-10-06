@@ -1,1 +1,0 @@
-import{j as t}from"./600-DTxaqykr.js";import"./vendor-react-BHn1km6U.js";function i({ariaLabel:a,children:e,className:l,...r}){return t.jsx("div",{className:["data-table-shell","rsp-table-scroll",l].filter(Boolean).join(" "),role:"region","aria-label":a,tabIndex:0,...r,children:e})}export{i as D};

@@ -1,1 +1,0 @@
-function a(t,n){if(!t||!n)return null;const r=Date.parse(t),e=Date.parse(n);if(!Number.isFinite(r)||!Number.isFinite(e)||e<=r)return null;const S=Math.floor((r-9e5)/864e5),_=Math.floor((e-1-9e5)/864e5);return Math.max(1,_-S+1)}function i(t,n="—"){return t===null?n:`${t} Day${t===1?"":"s"}`}export{i as f,a as r};

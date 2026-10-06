@@ -1,1 +1,0 @@
-const e="br.bookingRules.allowOverbooking";function n(){return typeof window>"u"?!1:window.localStorage.getItem(e)==="true"}function t(){return n()}function r(o){typeof window>"u"||window.localStorage.setItem(e,o?"true":"false")}export{t as g,r as s};

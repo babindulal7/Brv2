@@ -1,1 +1,0 @@
-import{r as u}from"./vendor-react-BHn1km6U.js";function f(e,n,t=8){return e.bottom+n+t>window.innerHeight&&e.top-n-t>0}function l(e,n=8){const t=u.useRef(null),[s,i]=u.useState(!1);function c(){var o;const r=(o=t.current)==null?void 0:o.getBoundingClientRect();r&&i(f(r,e,n))}return{ref:t,up:s,measure:c}}export{f as s,l as u};
