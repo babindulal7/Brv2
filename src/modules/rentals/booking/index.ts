@@ -188,3 +188,18 @@ export type { DeliverySectionProps } from './DeliverySection'
 
 export { BookingSummaryCard } from './BookingSummaryCard'
 export type { BookingSummaryCardProps } from './BookingSummaryCard'
+
+/* New Rental Section 5 — Pricing & Terms rail (Item 13 decomposition).
+ * Read-only pipeline breakdown + controlled discount/promo/VAT/deposit
+ * inputs. No arithmetic inside; Law 5/Law 6 enforced at the root. */
+export { RentalFinancialRail } from './RentalFinancialRail'
+export type { PromoNotice, RentalFinancialRailProps } from './RentalFinancialRail'
+
+export { RentalLineItemsTree, groupLines, isNested, lineAmountPaisa } from './RentalLineItemsTree'
+export type { Line, LineGroup, RentalLineItemsTreeProps } from './RentalLineItemsTree'
+
+export { CrewSection } from './CrewSection'
+export type { CrewLine, CrewSectionProps } from './CrewSection'
+
+export { RentalPricingSection } from './RentalPricingSection'
+export type { RentalPricingSectionProps } from './RentalPricingSection'

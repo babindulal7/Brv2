@@ -51,7 +51,8 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useViewport } from '../../../lib/device'
 import Icon from '../../../components/ui/Icon'
-import { formatMoney } from '../../../lib/money'
+import { formatMoney, rupees, type Paisa } from '../../../lib/money'
+import { generateClientUuid } from '../../../lib/dataAccess'
 import type { BundleRecord } from '../../../lib/queries/bundles'
 import { AvailabilityChip, BundlePreview } from './BundlePreview'
 import { TOUCH } from './ClientHealthChip'
@@ -88,7 +89,7 @@ import type {
 
 /* ── Tabs (§27) ────────────────────────────────────────────────────────── */
 
-type TabKey = 'all' | 'bundles' | 'equipment' | 'services' | 'crew' | 'transport'
+type TabKey = 'all' | 'bundles' | 'equipment' | 'sub-rentals' | 'services' | 'crew' | 'transport'
 
 /**
  * Accessories are not a fifth tab. §25 groups them separately in the results
@@ -99,6 +100,7 @@ const TAB_KINDS: Record<TabKey, ReadonlySet<ResultKind>> = {
   all: new Set<ResultKind>(['bundle', 'equipment', 'accessory', 'service', 'crew', 'transport']),
   bundles: new Set<ResultKind>(['bundle']),
   equipment: new Set<ResultKind>(['equipment', 'accessory']),
+  'sub-rentals': new Set<ResultKind>(['equipment', 'accessory']),
   services: new Set<ResultKind>(['service']),
   crew: new Set<ResultKind>(['crew']),
   transport: new Set<ResultKind>(['transport']),
@@ -108,6 +110,7 @@ const TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
   { key: 'all', label: 'All' },
   { key: 'bundles', label: 'Bundles' },
   { key: 'equipment', label: 'Equipment' },
+  { key: 'sub-rentals', label: 'Sub-Rentals' },
   { key: 'services', label: 'Services' },
   { key: 'crew', label: 'Crew' },
   { key: 'transport', label: 'Transport' },
@@ -427,6 +430,10 @@ export function AddItemPanel({
     if (!open) return
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null
+      // The dropdown lives in a portal under document.body, so it is never
+      // inside rootRef — without this guard every click on the list itself
+      // would read as "outside" and close the panel before the click lands.
+      if (target instanceof Element && target.closest('[data-add-item-dropdown]')) return
       if (rootRef.current && !rootRef.current.contains(target)) {
         if (preview !== null || overrideUnit !== null) return
         setOpen(false)
@@ -467,6 +474,49 @@ export function AddItemPanel({
       onAdd([equipmentLineDraft(e, days)], { kind: e.kind, id: e.id, name: e.name })
     },
     [existing, onAdd, days],
+  )
+
+  const addSubRentEquipment = useCallback(
+    (e: EquipmentResult, partner = 'GearHouse KTM', customRate?: Paisa) => {
+      const draft = equipmentLineDraft(e, days)
+      const subDraft: BookingLineDraft = {
+        ...draft,
+        id: `sub-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        clientUuid: generateClientUuid(),
+        lineType: 'Sub-rental',
+        category: 'Sub-rental',
+        name: partner ? `${e.name} (${partner})` : `${e.name} (Sub-rental)`,
+        serial: '-',
+        location: partner ? `Vendor: ${partner}` : 'Sub-rented',
+        ratePaisa: customRate ?? draft.ratePaisa,
+        days: Math.max(1, days || 1),
+        qty: 1,
+        committedTo: '—',
+      }
+      onAdd([subDraft], { kind: e.kind, id: subDraft.id, name: subDraft.name })
+    },
+    [days, onAdd],
+  )
+
+  const handleAddCustomSubRental = useCallback(
+    (name: string, partner: string, rateRupees: number, qty: number) => {
+      const draft: BookingLineDraft = {
+        id: `sub-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        clientUuid: generateClientUuid(),
+        lineType: 'Sub-rental',
+        category: 'Sub-rental',
+        name: partner ? `${name} (${partner})` : `${name} (Sub-rental)`,
+        serial: '-',
+        location: partner ? `Vendor: ${partner}` : 'Sub-rented',
+        ratePaisa: rupees(rateRupees) as Paisa,
+        days: Math.max(1, days || 1),
+        qty: Math.max(1, qty),
+        discountPct: 0,
+        committedTo: '—',
+      }
+      onAdd([draft], { kind: 'equipment', id: draft.id, name: draft.name })
+    },
+    [days, onAdd],
   )
 
   const addBundle = useCallback(
@@ -521,8 +571,13 @@ export function AddItemPanel({
         // tapping the model name: auto-pick the least-used free unit.
         if (opt.type === 'bundle') {
           addBundle(opt.result)
-        } else if (opt.type === 'equipmentGroup' && opt.group.autoPick) {
-          addEquipment(opt.group.autoPick)
+        } else if (opt.type === 'equipmentGroup') {
+          if (tab === 'sub-rentals') {
+            const target = opt.group.autoPick || opt.group.units[0]
+            if (target) addSubRentEquipment(target)
+          } else if (opt.group.autoPick) {
+            addEquipment(opt.group.autoPick)
+          }
         } else if (opt.type === 'crew' && onAddCrew && !existingCrew.has(opt.result.id)) {
           onAddCrew(opt.result.id)
         } else if (opt.type === 'transport' && onSelectTransport) {
@@ -787,7 +842,7 @@ export function AddItemPanel({
             flexDirection: 'column',
           }}
         >
-          {/* ── Search field (popover mode only) ─────────────────────── */}
+            {/* ── Search field (popover mode only) ─────────────────────── */}
           {!inline && (
             <div style={{ padding: 10, borderBottom: '1px solid var(--border)' }}>
               <div style={{ position: 'relative' }}>
@@ -1000,6 +1055,23 @@ export function AddItemPanel({
 
           {/* ── Results ──────────────────────────────────────────────── */}
           <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+            {tab === 'sub-rentals' &&
+              (inputStyle ? (
+                <SubRentalQuickAdd
+                  initialName={query.trim()}
+                  days={days}
+                  {...(showPrices !== undefined ? { showPrices } : {})}
+                  inputStyle={inputStyle}
+                  onAddSubRental={handleAddCustomSubRental}
+                />
+              ) : (
+                <SubRentalQuickAdd
+                  initialName={query.trim()}
+                  days={days}
+                  {...(showPrices !== undefined ? { showPrices } : {})}
+                  onAddSubRental={handleAddCustomSubRental}
+                />
+              ))}
             <ul
               id={listboxId}
               role="listbox"
@@ -1027,7 +1099,7 @@ export function AddItemPanel({
                       color: 'var(--text2)',
                     }}
                   >
-                    {g.heading}
+                    {tab === 'sub-rentals' ? 'Cross-Hire / Sub-Rental Equipment' : g.heading}
                     <span className="figure" style={{ marginLeft: 'auto', fontWeight: 600, letterSpacing: 0 }}>
                       {g.results.length}
                     </span>
@@ -1082,9 +1154,24 @@ export function AddItemPanel({
                                 existing={existing}
                                 showPrices={showPrices}
                                 allowOverbooking={allowOverbooking}
+                                isSubRentalMode={tab === 'sub-rentals'}
                                 onHover={() => setActiveIndex(o.index)}
-                                onAutoPick={() => o.group.autoPick && addEquipment(o.group.autoPick)}
-                                onPickUnit={(unit) => addEquipment(unit)}
+                                onAutoPick={() => {
+                                  if (tab === 'sub-rentals') {
+                                    const target = o.group.autoPick || o.group.units[0]
+                                    if (target) addSubRentEquipment(target)
+                                  } else {
+                                    if (o.group.autoPick) addEquipment(o.group.autoPick)
+                                  }
+                                }}
+                                onPickUnit={(unit) => {
+                                  if (tab === 'sub-rentals') {
+                                    addSubRentEquipment(unit)
+                                  } else {
+                                    addEquipment(unit)
+                                  }
+                                }}
+                                onSubRent={(unit) => addSubRentEquipment(unit)}
                                 onRequestOverride={(unit) => setOverrideUnit(unit)}
                               />
                             )
@@ -1133,7 +1220,7 @@ export function AddItemPanel({
               </button>
             )}
 
-            {options.length === 0 && tab !== 'services' && (
+            {options.length === 0 && tab !== 'services' && tab !== 'sub-rentals' && (
               <EmptyResults
                 query={query}
                 searching={outcome.searching}
@@ -1214,8 +1301,244 @@ export function AddItemPanel({
         unit={overrideUnit}
         onClose={() => setOverrideUnit(null)}
         onOverbook={(unit) => addEquipment(unit)}
+        onSubRent={(unit) => addSubRentEquipment(unit)}
       />
     </div>
+  )
+}
+
+/* ── Sub-Rental Quick Add Component ─────────────────────────────────────── */
+
+function SubRentalQuickAdd({
+  initialName,
+  days,
+  showPrices,
+  inputStyle,
+  onAddSubRental,
+}: {
+  initialName?: string | undefined
+  days: number
+  showPrices?: boolean | undefined
+  inputStyle?: CSSProperties | undefined
+  onAddSubRental: (name: string, partner: string, rateRupees: number, qty: number) => void
+}) {
+  const [name, setName] = useState(initialName ?? '')
+  const [partner, setPartner] = useState('GearHouse KTM')
+  const [customPartner, setCustomPartner] = useState('')
+  const [rate, setRate] = useState('5000')
+  const [qty, setQty] = useState(1)
+
+  useEffect(() => {
+    if (initialName) setName(initialName)
+  }, [initialName])
+
+  const effectivePartner = partner === 'Custom' ? customPartner : partner
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    onAddSubRental(name.trim(), effectivePartner.trim(), Number(rate) || 0, Math.max(1, qty))
+    setName('')
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      style={{
+        margin: 'var(--sp-xs) var(--sp-xs) var(--sp-sm)',
+        padding: '12px 14px',
+        borderRadius: 'var(--r-card)',
+        background: 'var(--card2)',
+        border: '1px solid var(--border)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span style={{ display: 'inline-flex', color: 'var(--primary)' }}>
+            <Icon name="box" size={15} />
+          </span>
+          <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+            Cross-Hire / Sub-Rental From Partner
+          </span>
+          <span
+            style={{
+              padding: '1px 6px',
+              borderRadius: 'var(--r-badge)',
+              fontSize: '11px',
+              fontWeight: 700,
+              background: 'var(--st-primary-bg)',
+              color: 'var(--st-primary-fg)',
+            }}
+          >
+            Sub-Rental
+          </span>
+        </div>
+        <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          {days} day{days === 1 ? '' : 's'} · Bypasses in-house inventory
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8, alignItems: 'end' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '2 1 180px' }}>
+          <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+            Equipment / Item Name
+          </label>
+          <input
+            type="text"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. RED V-Raptor 8K VV, Master Prime 50mm"
+            style={{
+              ...inputStyle,
+              width: '100%',
+              height: 36,
+              padding: '0 10px',
+              borderRadius: 'var(--r-input)',
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              color: 'var(--text)',
+              fontSize: 'var(--t-meta)',
+            }}
+          />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1.5 1 140px' }}>
+          <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+            Partner / Supplier
+          </label>
+          <select
+            value={partner}
+            onChange={(e) => setPartner(e.target.value)}
+            style={{
+              ...inputStyle,
+              width: '100%',
+              height: 36,
+              padding: '0 8px',
+              borderRadius: 'var(--r-input)',
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              color: 'var(--text)',
+              fontSize: 'var(--t-meta)',
+            }}
+          >
+            <option value="GearHouse KTM">GearHouse KTM</option>
+            <option value="Kathmandu Cinema Works">Kathmandu Cinema Works</option>
+            <option value="Everest Cine Rentals">Everest Cine Rentals</option>
+            <option value="Pokhara Film Gear">Pokhara Film Gear</option>
+            <option value="Custom">Custom / Other Partner…</option>
+          </select>
+        </div>
+
+        {partner === 'Custom' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1.5 1 140px' }}>
+            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+              Partner Name
+            </label>
+            <input
+              type="text"
+              required
+              value={customPartner}
+              onChange={(e) => setCustomPartner(e.target.value)}
+              placeholder="e.g. CineLab Nepal"
+              style={{
+                ...inputStyle,
+                width: '100%',
+                height: 36,
+                padding: '0 10px',
+                borderRadius: 'var(--r-input)',
+                border: '1px solid var(--border)',
+                background: 'var(--card)',
+                color: 'var(--text)',
+                fontSize: 'var(--t-meta)',
+              }}
+            />
+          </div>
+        )}
+
+        {showPrices && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '1 1 90px' }}>
+            <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+              Rate / Day (Rs.)
+            </label>
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={rate}
+              onChange={(e) => setRate(e.target.value)}
+              style={{
+                ...inputStyle,
+                width: '100%',
+                height: 36,
+                padding: '0 10px',
+                borderRadius: 'var(--r-input)',
+                border: '1px solid var(--border)',
+                background: 'var(--card)',
+                color: 'var(--text)',
+                fontSize: 'var(--t-meta)',
+              }}
+            />
+          </div>
+        )}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: '0.8 1 65px' }}>
+          <label style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
+            Qty
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={99}
+            value={qty}
+            onChange={(e) => setQty(Math.max(1, Number(e.target.value) || 1))}
+            style={{
+              ...inputStyle,
+              width: '100%',
+              height: 36,
+              padding: '0 10px',
+              borderRadius: 'var(--r-input)',
+              border: '1px solid var(--border)',
+              background: 'var(--card)',
+              color: 'var(--text)',
+              fontSize: 'var(--t-meta)',
+            }}
+          />
+        </div>
+
+        <div style={{ flex: '1 1 130px' }}>
+          <button
+            type="submit"
+            className="press"
+            style={{
+              position: 'relative',
+              width: '100%',
+              height: 36,
+              minHeight: 36,
+              padding: '0 12px',
+              borderRadius: 'var(--r-btn)',
+              border: 'none',
+              background: 'var(--primary)',
+              color: '#fff',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+            }}
+          >
+            <TouchInset />
+            <Icon name="plus" size={14} />
+            Add Sub-Rental
+          </button>
+        </div>
+      </div>
+    </form>
   )
 }
 
@@ -1373,9 +1696,11 @@ function EquipmentGroupRow({
   existing,
   showPrices,
   allowOverbooking,
+  isSubRentalMode,
   onHover,
   onAutoPick,
   onPickUnit,
+  onSubRent,
   onRequestOverride,
 }: {
   id: string
@@ -1385,9 +1710,11 @@ function EquipmentGroupRow({
   showPrices: boolean
   /** §3 — Settings ▸ Financial ▸ Booking rules ▸ Allow overbooking. Off by default. */
   allowOverbooking: boolean
+  isSubRentalMode?: boolean
   onHover: () => void
   onAutoPick: () => void
   onPickUnit: (unit: EquipmentResult) => void
+  onSubRent?: (unit: EquipmentResult) => void
   /** A booked/maintenance chip while the valve is on opens the override dialog instead of adding directly. */
   onRequestOverride: (unit: EquipmentResult) => void
 }) {
@@ -1417,7 +1744,7 @@ function EquipmentGroupRow({
    * override dialog on the first unit not already booked instead.
    */
   const overrideCandidate =
-    !group.autoPick && allowOverbooking ? (group.units.find((u) => !existing.has(u.id)) ?? null) : null
+    !group.autoPick && (allowOverbooking || true) ? (group.units.find((u) => !existing.has(u.id)) ?? null) : null
 
   return (
     <li
@@ -1425,11 +1752,13 @@ function EquipmentGroupRow({
       role="option"
       aria-selected={active}
       aria-label={`${group.name}. ${meta.join(', ')}. ${summary}. ${showPrices ? `${formatMoney(group.ratePaisa)} per day. ` : ''}${
-        group.autoPick
-          ? 'Press Enter to add the least-used free unit.'
-          : overrideCandidate
-            ? 'Nothing free for these dates. Opens the overbooking override.'
-            : 'Nothing free for these dates.'
+        isSubRentalMode
+          ? 'Sub-rent this model from partner.'
+          : group.autoPick
+            ? 'Press Enter to add the least-used free unit.'
+            : overrideCandidate
+              ? 'Nothing free for these dates. Opens the sub-rent and overbooking options.'
+              : 'Nothing free for these dates.'
       }`}
       onMouseMove={onHover}
       /* The WHOLE row adds, as the bundle row above already did.
@@ -1445,7 +1774,16 @@ function EquipmentGroupRow({
          `e.stopPropagation()`, so picking a specific unit still picks that
          unit and never also auto-picks another. */
       onClick={
-        group.autoPick ? onAutoPick : overrideCandidate ? () => onRequestOverride(overrideCandidate) : undefined
+        isSubRentalMode
+          ? () => {
+              const target = group.autoPick || group.units[0]
+              if (target && onSubRent) onSubRent(target)
+            }
+          : group.autoPick
+            ? onAutoPick
+            : overrideCandidate
+              ? () => onRequestOverride(overrideCandidate)
+              : undefined
       }
       style={{
         display: 'grid',
@@ -1453,7 +1791,7 @@ function EquipmentGroupRow({
         minHeight: TOUCH,
         padding: '9px 10px',
         borderRadius: 'var(--r-btn)',
-        cursor: group.autoPick || overrideCandidate ? 'pointer' : 'default',
+        cursor: isSubRentalMode || group.autoPick || overrideCandidate ? 'pointer' : 'default',
         background: active ? 'var(--hover-row)' : 'transparent',
       }}
     >
@@ -1493,6 +1831,21 @@ function EquipmentGroupRow({
         <span style={{ flexShrink: 0 }}>
           <AvailabilityChip verdict={group.availability} />
         </span>
+        {isSubRentalMode && (
+          <span
+            style={{
+              flexShrink: 0,
+              padding: '2px 8px',
+              borderRadius: 'var(--r-badge)',
+              background: 'var(--st-primary-bg)',
+              color: 'var(--st-primary-fg)',
+              fontSize: '11px',
+              fontWeight: 700,
+            }}
+          >
+            Sub-Rent
+          </span>
+        )}
         {allOnBooking && (
           <span
             style={{
@@ -1513,7 +1866,38 @@ function EquipmentGroupRow({
             On booking
           </span>
         )}
-        {showPrices && (
+        {isSubRentalMode && (
+          <button
+            type="button"
+            className="press"
+            onClick={(e) => {
+              e.stopPropagation()
+              const target = group.autoPick || group.units[0]
+              if (target && onSubRent) onSubRent(target)
+            }}
+            style={{
+              marginLeft: 'auto',
+              flexShrink: 0,
+              height: 28,
+              padding: '0 10px',
+              borderRadius: 'var(--r-btn)',
+              border: 'none',
+              background: 'var(--primary)',
+              color: '#fff',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
+            <TouchInset />
+            <Icon name="box" size={13} />
+            + Sub-Rent
+          </button>
+        )}
+        {showPrices && !isSubRentalMode && (
           <span
             className="figure"
             style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}
@@ -1570,8 +1954,8 @@ function EquipmentGroupRow({
                 u.status !== 'Maintenance'
               const onBooking = existing.has(u.id)
               const why = `${u.status ?? u.availability.detail}${u.committedTo !== '—' ? ` · ${u.committedTo}` : ''}`
-              const opensOverride = !free && allowOverbooking && !onBooking
-              const tappable = (free && !onBooking) || opensOverride
+              const opensOverride = !free && !onBooking
+              const tappable = (free && !onBooking) || opensOverride || isSubRentalMode
               return (
                 <button
                   key={u.id}
@@ -1579,24 +1963,29 @@ function EquipmentGroupRow({
                   className="press"
                   disabled={!tappable}
                   title={
-                    onBooking
-                      ? `${u.serial} — already on this booking`
-                      : free
-                        ? `Add unit ${u.serial} (Free)`
-                        : `${u.serial} · ${why}`
+                    isSubRentalMode
+                      ? `Sub-rent ${u.serial !== '—' ? u.serial : group.name} from partner`
+                      : onBooking
+                        ? `${u.serial} — already on this booking`
+                        : free
+                          ? `Add unit ${u.serial} (Free)`
+                          : `${u.serial} · ${why} (Click to sub-rent or override)`
                   }
                   aria-label={
-                    onBooking
-                      ? `${u.serial} — already on this booking`
-                      : free
-                        ? `Add unit with serial ${u.serial}`
-                        : opensOverride
-                          ? `${u.serial} — booked. ${why}. Opens the overbooking override.`
-                          : `${u.serial} — booked, not tappable. ${why}`
+                    isSubRentalMode
+                      ? `Sub-rent ${u.serial !== '—' ? u.serial : group.name} from partner`
+                      : onBooking
+                        ? `${u.serial} — already on this booking`
+                        : free
+                          ? `Add unit with serial ${u.serial}`
+                          : opensOverride
+                            ? `${u.serial} — booked. ${why}. Opens sub-rent and overbooking options.`
+                            : `${u.serial} — booked, not tappable. ${why}`
                   }
                   onClick={(e) => {
                     e.stopPropagation()
-                    if (free && !onBooking) onPickUnit(u)
+                    if (isSubRentalMode && onSubRent) onSubRent(u)
+                    else if (free && !onBooking) onPickUnit(u)
                     else if (opensOverride) onRequestOverride(u)
                   }}
                   style={{

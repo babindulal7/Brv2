@@ -1,24 +1,21 @@
+import { transportInstructions } from '../../lib/bookingTransportForm'
 import { RecordActions, useUnsavedRecord } from '../../components/ui/RecordWorkspace'
 import { readQuoteEditor, quoteToDraft, type QuoteSnapshot } from '../../lib/queries/quoteEditor'
-import { updateRentalQuote } from '../../actions/rentals/updateRentalQuote'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { prepareQuoteSave, updateRentalQuote, type QuoteSaveAttempt } from '../../actions/rentals/updateRentalQuote'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useLocation, Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { ConfirmDialog, Input, Select, Modal } from '../../components/ui'
-import { DataTableShell } from '../../components/ui/DataTable'
 import { Card, PageHeader, Rail } from '../../components/ui/Page'
 import { Button } from '../../components/ui/Button'
 import { PageShell } from '../../components/ui/PageShell'
-import { PageActions } from '../../components/ui/PageActions'
-import { BAR_BOX } from '../../components/shell/BottomBar'
 import './rentals.css'
 import './new-rental-flow.css'
 import { EmptyState, LoadingSkeleton } from '../../components/ui/StateViews'
 import { useToast } from '../../components/ui/Toast'
 import { useViewport } from '../../lib/device'
 import { useNetwork } from '../../lib/network'
-import { STATUS } from '../../lib/status'
 import { toBs, getBusinessToday } from '../../lib/bs'
 import { rentalDaysBetween } from '../../lib/rentalDays'
 import { validateDiscount } from '../../lib/discount'
@@ -26,10 +23,9 @@ import { PROJECT_TYPES, isProjectType, validateProjectType } from '../../lib/pro
 import {
   calculatePricingPipeline,
   type PricingPipelineResult,
-  DISCOUNT_STACKING_CAP_PERCENT,
   PROMO_CODES,
 } from '../../lib/pricingPipeline'
-import { formatMoney, rupees, roundHalfUp, toRupees } from '../../lib/money'
+import { formatMoney, rupees, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { listClientRecords, type ClientRecord } from '../../lib/queries/clients'
 import { updateClient } from '../../actions/clients/updateClient'
@@ -43,7 +39,7 @@ import {
 } from '../../actions/rentals/saveDraft'
 import type { CrewRoleDb } from '../../types/database'
 import { supabase, newClientUuid } from '../../lib/supabase'
-import { listInventory, INV_STYLE, type InvStatus } from '../../lib/queries/inventory'
+import { listInventory, type InvStatus } from '../../lib/queries/inventory'
 import { readProductAvailability } from '../../lib/queries/productAvailability'
 import { listBundleRecords } from '../../lib/queries/bundleRecords'
 import type { BundleRecord } from '../../data/bundles'
@@ -51,7 +47,6 @@ import { planCreationUnits, type CreationUnitPlan } from '../../lib/queries/avai
 import type { RentalWindow } from '../../lib/availability'
 import { bundleResults, defaultTransportOptions, equipmentConflicts, equipmentLineDraft, equipmentResultsFrom, type ConflictCheckLine } from './booking/itemCatalogue'
 import type {
-  AvailabilityVerdict,
   EquipmentAvailabilitySource,
   LiveEquipmentRow,
 } from './booking/itemCatalogue'
@@ -61,7 +56,6 @@ import type { ActionContext } from '../../actions/core'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
 import { IntelCard } from '../../components/ui/IntelCard'
 import { clientGlance, clientDetailGroups } from '../../data/clientIntel'
-import { newRentalEquipmentGlance, newRentalEquipmentDetail } from '../../data/newRentalEquipmentIntel'
 import {
   AddClientButton,
   AddClientModal,
@@ -72,29 +66,28 @@ import {
   ClientHealthEye,
   ClientHistoryDrawer,
   ClientQuickView,
-  CrewSearch,
+  CrewSection,
   DeliverySection,
-  DiscountChips,
   DraftEmailModal,
   Field,
-  MoneyRow,
-  NumberStepper,
-  RowMenu,
+  RentalLineItemsTree,
+  RentalPricingSection,
   Section,
-  TouchInset,
-  VatToggle,
   clientHealth,
   confirmWriteRefusals,
   dbRejectsRole,
   inputStyle,
-  srOnly,
+  lineAmountPaisa,
+  type AddItemSource,
+  type BlockingNotice,
+  type BookingLineDraft,
+  type BookingWindow,
+  type ConfirmWriteState,
+  type Line,
+  type CrewLine,
 } from './booking'
-import type {
-  AddItemSource,
-  BlockingNotice,
-  BookingLineDraft,
-  BookingWindow,
-} from './booking'
+export type { Line, CrewLine, BlockingNotice, ConfirmWriteState }
+export { lineAmountPaisa, confirmWriteRefusals }
 
 import {
   DAY,
@@ -106,147 +99,7 @@ import {
   SHOOT_PRESETS,
 } from './booking/newRentalUtils'
 
-/**
- * **New Rental — Booking Workspace**, built from render `6989CD12` and
- * `04 Operations/Booking Workflow.md` v2.3 (Build Locked), then refined
- * against the "New Booking" spec v1.0 (10 Aug 2026).
- *
- * §2 / §3 / §19: **the five sections are not a wizard.** Any section may be
- * worked at any time, in any order. There is no Previous, no Next, and exactly
- * **one** primary action on the page. An earlier build of this screen was a
- * Back/Next stepper, which is the specific thing §0 corrects. The refinement
- * pass below is deliberately a *refinement*: spec §2 and §70 both say "do not
- * rebuild the New Booking page", so every section, every figure, every write
- * and every blocking rule survives it unchanged (§67).
- *
- * §4.1 — at stage `Draft` the primary is `Confirm Booking` and Operations is
- * disabled. §5.1 — breadcrumb only, no Back button.
- *
- * **Cross-module connection — "New Booking" spec v1.0, 10 Aug 2026.** Client,
- * Equipment and Crew previously came from local, independently-invented
- * arrays that duplicated (and drifted from) the real `data/clients.ts` /
- * `data/inventory.ts` / `data/crew.ts` this app already has — the exact
- * defect the spec's §34 "never duplicate master data" rule names. Pricing
- * likewise duplicated `lib/money.ts`'s canonical `price()` by hand. All four
- * are now real connections.
- *
- * **What the v1.0 refinement changed** (structure, sections, workflow, data,
- * business logic, buttons, operations and integrations all held constant):
- * the client `<select>` became `ClientCombobox` + the §11 health eye + the
- * §15/§18 `AddClientModal` + the §20 `ClientHistoryDrawer`; the `Add Item…`
- * `<select>` became the §23–35 `AddItemPanel`; the header gained a real
- * button hierarchy (§4); the equipment table, the financial blocks, the
- * alerts and the rail were re-typeset for density and hierarchy (§36–60);
- * and the page became responsive on the existing `useViewport()` bands (§65).
- */
-
-
-/*
-
- * `CatalogueItem` and `EQUIPMENT_CATALOGUE` lived here — the demo catalogue,
- * flattened from `PARENTS` at module load, with product NAMES and unit SERIALS
- * for ids. Both are gone: `AddItemPanel` now searches a pool of real products
- * passed in as `equipment`, and it keeps its own seed fallback in
- * `booking/itemCatalogue.ts` for the moment before the read lands. Keeping a
- * second copy here would be a second definition of what this screen can book.
- */
-
-interface Line {
-  bookingLineId?: string | undefined
-  id: string
-  clientUuid?: string | undefined
-  parentClientUuid?: string | null | undefined
-  /** Inventory lines omit this legacy-safe default; custom work is explicit. */
-  lineType?: 'Equipment' | 'Bundle' | 'Accessory' | 'Service' | 'Sub-rental' | 'Manual item' | undefined
-  isIncluded?: boolean | undefined
-  productId?: string | null | undefined
-  bundleId?: string | null | undefined
-  bundleCode?: string | undefined
-  bundleName?: string | undefined
-  name: string
-  serial: string
-  category: string
-  ratePaisa: Paisa
-  /** §8.3 — Days is mandatory. A per-booking line stores 1 explicitly. */
-  days: number
-  /**
-   * Has the operator set this line's Days by hand?
-   *
-   * `AddItemPanel` stamps every draft with the booking's length at the moment
-   * it is added, and before NR-19 that number was never looked at again: a
-   * booking built over 3–5 Sep and then moved to 3–12 Sep kept 2 on every line
-   * it already held, and those stale counts are what `booking_lines.days` was
-   * written from — the length the client is billed over. The effect beside
-   * `lines` re-stamps the booking's length onto its lines when the window
-   * changes.
-   *
-   * This flag is what keeps that re-stamp from being destructive. A line whose
-   * Days the operator deliberately shortened (the §36 stepper below) is a
-   * per-line fact, not a copy of the header, so it is left exactly where they
-   * put it. Absent, never `false`, on a line nobody has touched.
-   */
-  daysOverridden?: boolean | undefined
-  qty: number
-  discountPct: number
-  location: string
-  /**
-   * The physical unit's own `inventory_state` - **absent for a live line**.
-   *
-   * NR-09: a live catalogue row is a PRODUCT and `products` carries no
-   * `inventory_state`, so a value here was fabricated from a count of where
-   * that product's units sat at that instant. Nothing gates on this any more;
-   * availability for the booking's window is `conflictSummary` below.
-   * `booking/itemCatalogue.ts`'s `BookingLineDraft.status` is the same field
-   * and carries the longer note.
-   */
-  status?: InvStatus | undefined
-  committedTo: string
-}
-
-/** §10.1 — line amount, rounded once at the end (half-up), same convention `lib/money.ts`'s `price()` uses internally. */
-function lineAmountPaisa(l: Line): Paisa {
-  return roundHalfUp(l.qty * l.days * l.ratePaisa * (1 - l.discountPct / 100)) as Paisa
-}
-
-
-
-
-
-
-export { confirmWriteRefusals } from './booking'
-export type { BlockingNotice, ConfirmWriteState } from './booking'
-
-
-/** A crew member's charge on this booking. `dayRatePaisa` seeds from `CrewMember.dayRatePaisa` but is editable per booking — a rate can be negotiated differently per job. */
-interface CrewLine {
-  crewId: string
-  name: string
-  /* `CrewRole`, not `string`: every line here is seeded from a `CrewMember`,
-     and the page has to be able to ask whether the database accepts this role
-     (`dbRejectsRole`) — a question only the roster's own vocabulary can
-     answer. `string` let that check be called on anything. */
-  role: CrewRole
-  phone: string
-  dayRatePaisa: Paisa
-  overtimePaisa: Paisa
-  accommodationPaisa: Paisa
-  mealsPaisa: Paisa
-}
-
-// redesign v1 §6 — "Documents & Review" is no longer a section in the body;
-// it moved into the rail as the Review + Documents cards, so the checklist
-// that decides whether Confirm is ready sits beside Confirm instead of a
-// screen away from it.
-/**
- * 01_NEW_RENTAL §1.1 draws five boxes down the main column — CLIENT · DATES ·
- * EQUIPMENT · ＋Crew · ＋Delivery — so Client & Schedule splits into Client and
- * Dates, and Crew & Transport splits into Crew and Delivery. Pricing &
- * Payments is **not** in the drawing and stays anyway: the wireframes are a
- * layout spec, not a content inventory (`WIREFRAME_RULINGS_2026-08-12.md` §1
- * names this section explicitly as kept), and the rail is a summary of it
- * rather than a replacement for it.
- */
-const SECTIONS = [
+export const SECTIONS = [
   'Client',
   'Rental period',
   'Equipment, Bundles & Services',
@@ -254,49 +107,6 @@ const SECTIONS = [
   'Delivery',
   'Pricing & Terms',
 ] as const
-
-
-
-/**
- * §60 — one table vocabulary for the whole page. Column headers sit at the
- * `--t-th` floor in `--text2` (7.0:1 on `--th-bg`), rows at `--t-meta`, and
- * rows carry a single hairline rule rather than a box each.
- */
-const th = { textAlign: 'left' as const, padding: '7px 9px', fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', letterSpacing: '0.03em', textTransform: 'uppercase' as const, whiteSpace: 'nowrap' as const, borderBottom: '1px solid var(--border)' }
-/*
- * `height` on a `<td>` behaves as a MINIMUM, so this is the §7.3 row floor
- * ("rows >= 56px") expressed with the token rather than padding arithmetic.
- * Horizontal padding is untouched and so is every glyph, which is the whole
- * distinction §7.4 and §60 are protecting: a 44px BOX per cell would turn the
- * equipment grid back into the form it moved away from, but a 56px ROW does
- * not paint anything — it only stops the row being shorter than the targets it
- * already contains.
- *
- * And it already contains them. `Stepper`'s `TouchInset` and the row's remove
- * button both stamp `height: var(--tap)` — 44px — on a 20/26px glyph, inside a
- * row that measured 7 + 20 + 7 = 34px. Each of those targets hung ~5px past its
- * own row at each edge, vertically adjacent rows overlapped by ~10px, and an
- * absolutely positioned target wins the hit test with the LATER row in the DOM
- * taking the tap. So a tap near a row boundary changed the WRONG line's qty or
- * days, or removed the WRONG line. Same failure, same fix as commit 7d38cdf on
- * the floor workspaces.
- *
- * A correction to the `Stepper` comment below, in its own spirit: its X half —
- * Qty's "+" and Days's "−" overlapping across 18px of cell padding — stands and
- * is still open, and closing it is a table-layout decision, not a hit-area one.
- * Its Y half ("Y is the free axis here and Y is what is taken") was measured
- * against the two glyphs inside one stepper and stopped at the row's own box,
- * the same way the claim it replaced stopped at the stepper's box. The nearest
- * neighbour on Y is the next ROW. Y is only free once the row is at least 56,
- * which is what this line now guarantees.
- */
-const td = { height: 'var(--row-min-h)', padding: '7px 9px', fontSize: 'var(--t-meta)', color: 'var(--text)', whiteSpace: 'nowrap' as const }
-
-/** §59 / §60 — the one sub-heading used inside every section body. */
-const sub = { margin: '0 0 8px', fontSize: 'var(--t-th)', fontWeight: 700, color: 'var(--text2)', letterSpacing: '0.04em', textTransform: 'uppercase' } as const
-
-/** §43–47 — the block shell that separates Rental Charges / Deposit / Payments without drawing another box around them. */
-const moneyBlock = { background: 'var(--card2)', borderRadius: 'var(--r-card)', padding: 'var(--sp-md)', minWidth: 0 } as const
 
 /**
  * Law 12 — **the** inline error line for this page, lifted out of the block-reason
@@ -328,62 +138,6 @@ const inlineInfoStyle = {
   lineHeight: 1.4,
 } as const
 
-
-
-/* ── Equipment grouping — 01_NEW_RENTAL Notes: "Equipment list renders
- *    parent-first with children nested." ─────────────────────────────────── */
-
-interface LineGroup {
-  key: string
-  kind: 'bundle' | 'model'
-  /** The parent row's name — a bundle name, or the model name off its units. */
-  label: string
-  lines: Line[]
-}
-
-/**
- * Parent-first grouping. The key already exists in the data — a line added as
- * part of a bundle carries `bundleCode`/`bundleName` (stamped in `addDrafts`),
- * and every serialised unit of one model shares that model's `name`. Only the
- * *rendering* was flat, so this derives the tree and invents nothing.
- *
- * Insertion order is preserved: a group takes the position of its first line,
- * so adding a second unit of a model never reshuffles the table.
- */
-function groupLines(lines: readonly Line[]): LineGroup[] {
-  const order: string[] = []
-  const byKey = new Map<string, LineGroup>()
-  for (const l of lines) {
-    const key = l.bundleCode ? `bundle:${l.bundleCode}` : `model:${l.name}`
-    let g = byKey.get(key)
-    if (!g) {
-      g = {
-        key,
-        kind: l.bundleCode ? 'bundle' : 'model',
-        label: l.bundleCode ? (l.bundleName ?? l.bundleCode) : l.name,
-        lines: [],
-      }
-      byKey.set(key, g)
-      order.push(key)
-    }
-    g.lines.push(l)
-  }
-  return order.map((k) => byKey.get(k)).filter((g): g is LineGroup => g !== undefined)
-}
-
-/**
- * A bundle always nests (parent → children is what a bundle *is*). A model
- * nests once it holds more than one physical unit; a single line would
- * otherwise be a parent row with one identical child under it.
- */
-function isNested(g: LineGroup): boolean {
-  return g.kind === 'bundle' || g.lines.length > 1
-}
-
-
-
-
-
 export interface NewRentalProps {
   editBookingId?: string
 
@@ -393,13 +147,18 @@ export interface NewRentalProps {
 
 export default function NewRental({ embedded = false, onDone, editBookingId }: NewRentalProps = {}) {
   const navigate = useNavigate()
+  const location = useLocation()
   const doExit = useCallback(() => {
     if (onDone) {
       onDone()
     } else {
-      navigate(editBookingId ? `/rentals/${editBookingId}` : '/rentals')
+      if (editBookingId) {
+        const params = new URLSearchParams(location.search)
+        params.delete('action')
+        navigate(`${location.pathname}${params.size ? `?${params}` : ''}`)
+      } else navigate('/rentals')
     }
-  }, [onDone, navigate, editBookingId])
+  }, [onDone, navigate, editBookingId, location.pathname, location.search])
   const viewport = useViewport()
   const isDesktop = viewport === 'desktop'
   const isPhone = viewport === 'phone'
@@ -561,7 +320,6 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
    * add-client control in the trailing slot, §15 — is reachable on purpose
    * rather than by accident.
    */
-  const location = useLocation()
   const quoteBridge = (location.state as { quote?: { lines?: Array<{ label: string; qty: number; days: number; ratePaisa: number }>; discountPct?: number } } | null)?.quote
   const [searchParams, setSearchParams] = useSearchParams()
   const [selectedClientId, setSelectedClientId] = useState<string | null>(
@@ -773,16 +531,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
    * holds nothing (TODO_SWEEP_2026-09-02.md A8).
    */
   const [crew, setCrew] = useState<CrewLine[]>(() => [])
-  /** redesign v1 §7.5 — Overtime and Meals were clipped at this table's width;
-   *  they now live behind a per-row expand instead of two columns of their own. */
-  const [expandedCrew, setExpandedCrew] = useState<Set<string>>(new Set())
-  const toggleCrewExpanded = (crewId: string) =>
-    setExpandedCrew((prev) => {
-      const next = new Set(prev)
-      if (next.has(crewId)) next.delete(crewId)
-      else next.add(crewId)
-      return next
-    })
+
   const [deliveryChargePaisa, setDeliveryChargePaisa] = useState<Paisa>(rupees(0) as Paisa)
   const [fuelChargePaisa, setFuelChargePaisa] = useState<Paisa>(rupees(0) as Paisa)
   /*
@@ -839,6 +588,8 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   const [promoNotice, setPromoNotice] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null)
 
   const [manualDepositOverride, setManualDepositOverride] = useState(false)
+  const [savedDepositPaisa, setSavedDepositPaisa] = useState<Paisa | null>(null)
+  const [quoteSnapshot, setQuoteSnapshot] = useState<QuoteSnapshot | null>(null)
   const [manualDepositAmount, setManualDepositAmount] = useState<string>('')
   const [depositOverrideReason, setDepositOverrideReason] = useState('')
   const [depositAuthorizedBy, setDepositAuthorizedBy] = useState('')
@@ -1035,12 +786,13 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     [lines],
   )
   const crewChargesPaisa = useMemo(
-    () => crew.reduce((s, c) => s + c.dayRatePaisa * days + c.overtimePaisa + c.accommodationPaisa + c.mealsPaisa, 0) as Paisa,
+    () => crew.reduce((s, c) => s + c.dayRatePaisa * (c.days ?? days) + c.overtimePaisa + c.accommodationPaisa + c.mealsPaisa, 0) as Paisa,
     [crew, days],
   )
   // §9.2 — Client Pickup forces both transport charges to zero.
   const clientPickup = deliveryType === 'Client Pickup'
-  const outgoingTransportPaisa = clientPickup ? 0 : deliveryChargePaisa + fuelChargePaisa
+  const quoteFuelPaisa = clientPickup && quoteSnapshot?.values.delivery_type !== 'Client Pickup' ? (0 as Paisa) : fuelChargePaisa
+  const outgoingTransportPaisa = (clientPickup ? 0 : deliveryChargePaisa) + quoteFuelPaisa
   const returnTransportPaisa = returnPickupType === 'Client Return' ? 0 : returnPickupChargePaisa
   const transportPaisa = (outgoingTransportPaisa + returnTransportPaisa) as Paisa
 
@@ -1071,7 +823,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
       servicesSubtotalPaisa: servicePaisa,
       crewSubtotalPaisa: crewChargesPaisa,
       deliveryChargePaisa: ((clientPickup ? 0 : deliveryChargePaisa) + returnTransportPaisa) as Paisa,
-      fuelChargePaisa: clientPickup ? (0 as Paisa) : fuelChargePaisa,
+      fuelChargePaisa: quoteFuelPaisa,
       discounts: {
         manualDiscountPercent: discountPct,
         manualDiscountReason: manualDiscountReason.trim() || null,
@@ -1082,7 +834,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
       },
       vatEnabled: vatOn,
       vatRatePercent,
-      recommendedDepositPaisa,
+      recommendedDepositPaisa: savedDepositPaisa ?? recommendedDepositPaisa,
       manualDepositOverridePaisa: manualDepositPaisa,
       depositOverrideReason: manualDepositOverride ? depositOverrideReason.trim() || null : null,
       depositAuthorizedBy: manualDepositOverride ? depositAuthorizedBy.trim() || null : null,
@@ -1096,7 +848,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     crewChargesPaisa,
     clientPickup,
     deliveryChargePaisa,
-    fuelChargePaisa,
+    quoteFuelPaisa,
     returnTransportPaisa,
     discountPct,
     manualDiscountReason,
@@ -1107,6 +859,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     vatOn,
     vatRatePercent,
     recommendedDepositPaisa,
+    savedDepositPaisa,
     manualDepositOverride,
     manualDepositPaisa,
     depositOverrideReason,
@@ -1324,7 +1077,6 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
    * next press fails.
    */
   const confirmBlocked = blockingNotices.length > 0
-  const blockReasonText = confirmBlocked ? blockingNotices.map((n) => n.text).join('. ') : undefined
 
   const pickupBs = toBs(new Date(pickup))
 
@@ -1498,11 +1250,6 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   /** Take one person off the booking. `CrewSearch` offers them again immediately. */
   const removeCrew = (crewId: string) => {
     setCrew((p) => p.filter((c) => c.crewId !== crewId))
-    setExpandedCrew((p) => {
-      const next = new Set(p)
-      next.delete(crewId)
-      return next
-    })
   }
 
   const updateCrewExtras = (
@@ -1549,12 +1296,11 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
    *    NR-13 renamed what the footer says about it, because nothing on this
    *    page persists a draft. 'error' exists so a rejected save cannot fall
    *    back into that quiet state; see the footer's own note. */
-  const [quoteSnapshot,setQuoteSnapshot]=useState<QuoteSnapshot|null>(null)
   const [quoteLoading,setQuoteLoading]=useState(Boolean(editBookingId))
   const [quoteReload,setQuoteReload]=useState(0)
   const quoteInitial=useRef<string|null>(null)
   const quoteSaving=useRef(false)
-  const quoteKey=useRef<{fingerprint:string;key:string}|null>(null)
+  const quoteAttempt = useRef<QuoteSaveAttempt | null>(null)
   const [saveState, setSaveState] = useState<'saved' | 'saving' | 'error'>('saved')
   /**
    * **Law 8.** One key per Confirm press, reused by every retry of that press
@@ -1628,6 +1374,9 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         isIncluded:line.isIncluded,
         ...(line.lineType !== undefined ? { lineType: line.lineType } : {}),
         name: line.name,
+        lineNote: line.lineNote,
+        serviceBasis: line.serviceBasis,
+        supplierCost: line.supplierCost,
         serial: line.serial,
         category: line.category,
         ratePaisa: Number(line.ratePaisa),
@@ -1671,34 +1420,22 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     ],
   )
   const draftFingerprint = useMemo(() => stableJson(draftData), [draftData])
-  const draftHasUnsavedChanges = savedDraftFingerprint !== draftFingerprint
+  const initialDraftFingerprint = useRef(draftFingerprint)
+  const draftHasUnsavedChanges = (savedDraftFingerprint ?? initialDraftFingerprint.current) !== draftFingerprint
 
   const handleExit = useCallback(() => {
     if (draftId && draftHasUnsavedChanges) {
       setExitPrompt('unsaved-edits')
       return
     }
-    const isDirtyNew = !draftId && Boolean(selectedClientId || lines.length > 0 || project.trim() !== '')
+    const isDirtyNew = !draftId && draftHasUnsavedChanges
     if (isDirtyNew) {
       setExitPrompt('unsaved-new')
       return
     }
     doExit()
-  }, [draftId, draftHasUnsavedChanges, selectedClientId, lines.length, project, doExit])
+  }, [draftId, draftHasUnsavedChanges, doExit])
 
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      const isDirty = draftId
-        ? draftHasUnsavedChanges
-        : Boolean(selectedClientId || lines.length > 0 || project.trim() !== '')
-      if (isDirty) {
-        e.preventDefault()
-        e.returnValue = ''
-      }
-    }
-    window.addEventListener('beforeunload', handleBeforeUnload)
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [draftId, draftHasUnsavedChanges, selectedClientId, lines.length, project])
 
   useEffect(() => {
     if (client?.dbId) setDraftClientDbId(client.dbId)
@@ -1769,9 +1506,9 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         setVehicle(data.vehicle)
         setNumberPlate(data.numberPlate)
         setDriverContact(data.driverContact)
-        if (data.returnPickupType) setReturnPickupType(data.returnPickupType)
-        if (data.returnPickupAddress) setReturnPickupAddress(data.returnPickupAddress)
-        if (data.returnPickupTime) setReturnPickupTime(data.returnPickupTime)
+        setReturnPickupType(data.returnPickupType ?? 'Client Return')
+        setReturnPickupAddress(data.returnPickupAddress ?? '')
+        setReturnPickupTime(data.returnPickupTime ?? '18:00')
         if (typeof data.returnPickupChargePaisa === 'number') {
           setReturnPickupChargePaisa(data.returnPickupChargePaisa)
         }
@@ -1800,6 +1537,12 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
       if(!active)return
       const data=quoteToDraft(snapshot)
       setQuoteSnapshot(snapshot);setDraftBookingNo(snapshot.code);quoteInitial.current=null
+      setSavedDepositPaisa(rupees(Number(snapshot.values.deposit_required)))
+      setManualDepositOverride(false)
+      setManualDepositAmount('')
+      setDepositOverrideReason('')
+      setDepositAuthorizedBy('')
+      quoteAttempt.current = null
         setSelectedClientId(data.selectedClientId)
         setDraftClientDbId(data.clientDbId)
         setProject(data.project)
@@ -1838,9 +1581,9 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         setVehicle(data.vehicle)
         setNumberPlate(data.numberPlate)
         setDriverContact(data.driverContact)
-        if (data.returnPickupType) setReturnPickupType(data.returnPickupType)
-        if (data.returnPickupAddress) setReturnPickupAddress(data.returnPickupAddress)
-        if (data.returnPickupTime) setReturnPickupTime(data.returnPickupTime)
+        setReturnPickupType(data.returnPickupType ?? 'Client Return')
+        setReturnPickupAddress(data.returnPickupAddress ?? '')
+        setReturnPickupTime(data.returnPickupTime ?? '18:00')
         if (typeof data.returnPickupChargePaisa === 'number') {
           setReturnPickupChargePaisa(data.returnPickupChargePaisa)
         }
@@ -1853,9 +1596,10 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     }).catch((error:unknown)=>{if(active){setQuoteLoading(false);setActionError(error instanceof Error?error.message:String(error))}})
     return()=>{active=false}
   },[editBookingId,quoteReload])
-  if(editBookingId && quoteSnapshot && !quoteLoading && quoteInitial.current===null && client)quoteInitial.current=draftFingerprint
-  const quoteDirty=quoteInitial.current!==null && quoteInitial.current!==draftFingerprint
-  useUnsavedRecord(Boolean(editBookingId && quoteDirty))
+  const quoteFingerprint = JSON.stringify([draftFingerprint, pricing.securityDeposit.requiredPaisa])
+  if(editBookingId && quoteSnapshot && !quoteLoading && quoteInitial.current===null && client)quoteInitial.current=quoteFingerprint
+  const quoteDirty=quoteInitial.current!==null && quoteInitial.current!==quoteFingerprint
+  useUnsavedRecord(editBookingId ? quoteDirty : draftHasUnsavedChanges)
   const saveQuote = useCallback(async () => {
     if (!quoteSnapshot || quoteSaving.current) return
     const ctx = dispatchContext()
@@ -1863,21 +1607,16 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     quoteSaving.current = true
     setSaveState('saving')
     setActionError(null)
-    if (quoteKey.current?.fingerprint !== draftFingerprint) quoteKey.current = { fingerprint: draftFingerprint, key: newClientUuid() }
     try {
-      const payload = { ...draftData, lines: draftData.lines.map((line) => ({ ...line, clientUuid: line.clientUuid ?? newClientUuid() })) }
-      await updateRentalQuote(
-        {
+      quoteAttempt.current = prepareQuoteSave({
           bookingId: quoteSnapshot.id,
           expectedRevision: quoteSnapshot.revision,
-          clientUuid: quoteKey.current!.key,
-          draft: payload,
+          draft: draftData,
           snapshot: quoteSnapshot,
           depositPaisa: pricing.securityDeposit.requiredPaisa,
-        },
-        ctx,
-      )
-      quoteInitial.current = draftFingerprint
+        }, quoteAttempt.current)
+      await updateRentalQuote(quoteAttempt.current.input, ctx)
+      quoteInitial.current = quoteFingerprint
       showSuccessToast('Booking saved', quoteSnapshot.code)
       doExit()
     } catch (error) {
@@ -1886,7 +1625,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     } finally {
       quoteSaving.current = false
     }
-  }, [quoteSnapshot, dispatchContext, draftFingerprint, draftData, pricing.securityDeposit.requiredPaisa, showSuccessToast, doExit])
+  }, [quoteSnapshot, dispatchContext, quoteFingerprint, draftData, pricing.securityDeposit.requiredPaisa, showSuccessToast, doExit])
 
 
   const retryLoadDraft = useCallback(() => {
@@ -2166,16 +1905,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
                     vehicle: vehicle.trim() === '' ? null : vehicle.trim(),
                     numberPlate: numberPlate.trim() === '' ? null : numberPlate.trim(),
                     driverContact: driverContact.trim() === '' ? null : driverContact.trim(),
-                    specialInstructions: [
-                      specialInstructions.trim() || null,
-                      returnPickupType === 'Babin Pickup'
-                        ? `Return Pickup: Babin Pickup from "${returnPickupAddress.trim() || 'Client Location'}" at ${
-                            returnPickupTime || '18:00'
-                          }${returnPickupChargePaisa > 0 ? ` (Return Pickup Fee: Rs ${returnPickupChargePaisa / 100})` : ''}`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(' | ') || null,
+                    specialInstructions: transportInstructions({ specialInstructions, returnPickupType, returnPickupAddress, returnPickupTime, returnPickupChargePaisa }),
                   },
                 }),
             lines: lines.map((l, i) => {
@@ -2421,7 +2151,6 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   const bundleCount = useMemo(() => new Set(lines.map((l) => l.bundleCode).filter(Boolean)).size, [lines])
   const totalUnits = lines.reduce((s, l) => s + l.qty, 0)
   /** 01_NEW_RENTAL Notes — "renders parent-first with children nested". */
-  const lineGroups = useMemo(() => groupLines(lines), [lines])
 
   /** redesign v1 §6 — the rail's Review card jumps to the section that owns
    *  the fact, opening it first if it was collapsed (§65 collapses lower
@@ -2512,279 +2241,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
    * persisted booking yet for a document to belong to.
    */
 
-  /* ── §36–38 — the equipment table's columns, declared once so the header,
-   *    the alignment and the empty-state colSpan cannot drift apart. ─────── */
-  // redesign v1 §7.4 — Location no longer has its own column; it moved onto
-  // the Item cell's second line, where it has room to read in full instead
-  // of truncating.
-  const equipmentColumns: Array<{ key: string; align: 'left' | 'right' }> = canBookingMoney
-    ? [
-        { key: 'Item', align: 'left' },
-        { key: 'Category', align: 'left' },
-        { key: 'Qty', align: 'right' },
-        { key: 'Days', align: 'right' },
-        { key: 'Rate / day', align: 'right' },
-        { key: 'Disc.', align: 'right' },
-        { key: 'Amount', align: 'right' },
-        { key: 'Availability', align: 'left' },
-        { key: '', align: 'right' },
-      ]
-    : [
-        { key: 'Item', align: 'left' },
-        { key: 'Category', align: 'left' },
-        { key: 'Qty', align: 'right' },
-        { key: 'Days', align: 'right' },
-        { key: 'Availability', align: 'left' },
-        { key: '', align: 'right' },
-      ]
-
-  /**
-   * One equipment line as a table row.
-   *
-   * `child` is what the wireframe draws as `└ child tick`: the row indents
-   * under its parent and drops the bundle chip (the parent row already carries
-   * the bundle's name). The `└` itself is `aria-hidden` decoration — a glyph is
-   * not an accessible name — and the relationship is stated in words for
-   * assistive tech instead.
-   *
-   * A row that is *not* nested is a parent in its own right, so it carries the
-   * wireframe's `⋮`; a nested child carries the compact remove, because
-   * "remove all of these" already lives on the group's menu.
-   */
-  /**
-   * Section 38's availability pill for one line - icon + label + colour, never
-   * the colour alone (Law 11), and never a status the line does not have.
-   *
-   * Two sources, in this order, because they answer different questions:
-   *
-   *  - a line that IS a physical unit (seed catalogue, bundle component) has a
-   *    real `inventory_state` and shows it, exactly as before;
-   *  - a live line is a product with no unit status at all, so it shows the
-   *    windowed verdict `conflictSummary` computed - the same computation the
-   *    section's conflict strip prints, so a row can never read "Available"
-   *    under a strip that names it as a conflict.
-   *
-   * `rank` is worst-wins, used by the group parent row below.
-   */
-  const linePill = (
-    l: Line,
-  ): { label: string; title: string; bg: string; fg: string; icon: IconName; rank: number } => {
-    if (l.lineType === 'Service' || l.lineType === 'Manual item') {
-      return {
-        label: 'Not inventory-tracked',
-        title: `${l.lineType} — no serial assignment or availability check applies.`,
-        bg: 'var(--st-neutral-bg)',
-        fg: 'var(--st-neutral-fg)',
-        icon: 'info',
-        rank: 0,
-      }
-    }
-    if (l.status) {
-      const inv = INV_STYLE[l.status]
-      return {
-        label: l.status,
-        title: l.committedTo !== '—' ? `${l.status} — committed to ${l.committedTo}` : l.status,
-        bg: inv.bg === 'transparent' ? 'var(--st-in-bg)' : inv.bg,
-        fg: inv.bg === 'transparent' ? 'var(--st-in-fg)' : inv.fg,
-        icon: inv.icon,
-        rank: l.status === 'In Stock' ? 0 : 3,
-      }
-    }
-    const v: AvailabilityVerdict | undefined = conflictSummary.verdictByLineId.get(l.id)
-    if (v === undefined) {
-      /* Unreachable while `conflictSummary` is built from `lines` - every line
-         gets an entry. Rendered rather than asserted, because a crash in a
-         table cell is a worse failure than an honest "we do not know". */
-      return {
-        label: 'Not checked',
-        title: 'No availability answer for this line',
-        bg: 'var(--st-neutral-bg)',
-        fg: 'var(--st-neutral-fg)',
-        icon: 'info',
-        rank: 1,
-      }
-    }
-    const t = STATUS[v.tone]
-    return {
-      label: v.label,
-      title: v.detail,
-      bg: t.bg,
-      fg: t.fg,
-      icon: v.icon,
-      rank: v.level === 'available' ? 0 : v.level === 'unknown' ? 1 : v.level === 'partial' ? 2 : 3,
-    }
-  }
-
-  const equipmentRow = (
-    l: Line,
-    child: boolean,
-    groupLabel: string,
-    menuItems?: Array<{ label: string; icon: IconName; onClick: () => void }>,
-  ) => {
-    const pill = linePill(l)
-    const intelRow = l.productId ? liveEquipment?.find((candidate) => candidate.productKey === l.productId) : undefined
-    return (
-      <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
-        {/* §36 — item name strong, serial small and secondary underneath it.
-            redesign v1 §7.4 — Location sits on the row's second line rather
-            than a column of its own that truncated at this width. */}
-        <td style={{ ...td, whiteSpace: 'normal', maxWidth: 260, paddingLeft: child ? 26 : 9 }}>
-          <span style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-            {child && (
-              <span aria-hidden="true" style={{ color: 'var(--muted)', fontSize: 'var(--t-th)', flexShrink: 0 }}>
-                └
-              </span>
-            )}
-            {intelRow && l.productId ? (
-              <IntelCard
-                glance={newRentalEquipmentGlance(intelRow)}
-                detail={newRentalEquipmentDetail(intelRow)}
-                detailTitle={l.name}
-                entityType="equipment"
-                entityId={l.productId}
-                context="new-rental"
-                gateContext={gctx}
-                actionContext={user ? { userId: user.id, role: user.role } : null}
-              >
-                <span data-intel-identifier className="identifier" style={{ fontSize: child ? 'var(--t-meta)' : 'var(--t-ui)', fontWeight: 600, color: 'var(--link)', lineHeight: 1.25 }}>
-                  {child && <span style={srOnly}>Part of {groupLabel}: </span>}
-                  {l.name}
-                </span>
-              </IntelCard>
-            ) : (
-              <span style={{ fontSize: child ? 'var(--t-meta)' : 'var(--t-ui)', fontWeight: 600, color: 'var(--text)', lineHeight: 1.25 }}>
-                {child && <span style={srOnly}>Part of {groupLabel}: </span>}
-                {l.name}
-              </span>
-            )}
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1, fontSize: 'var(--t-th)', color: 'var(--text2)', flexWrap: 'wrap' }}>
-            {l.lineType === 'Sub-rental' ? (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 3,
-                  padding: '1px 6px',
-                  borderRadius: 'var(--r-badge)',
-                  background: 'var(--gold-soft, rgba(217, 119, 6, 0.15))',
-                  color: 'var(--gold, #d97706)',
-                  fontWeight: 700,
-                  fontSize: 'var(--t-th)',
-                }}
-              >
-                <Icon name="box" size={10} />
-                Sub-rental
-              </span>
-            ) : l.lineType === 'Service' || l.lineType === 'Manual item' ? (
-              <span>{l.lineType}</span>
-            ) : l.serial !== '—' ? (
-              <Link className="identifier" to={`/inventory/${l.serial}`} style={{ color: 'inherit', textDecoration: 'none' }} title={`Open unit ${l.serial} in Inventory`}>
-                {l.serial}
-              </Link>
-            ) : (
-              <span>Bulk stock — no serial</span>
-            )}
-            <span aria-hidden style={{ opacity: 0.5 }}>·</span>
-            <span>{l.location}</span>
-            {/* Nested under its bundle already — repeating the bundle name on
-                every child was the same word five times in one card. */}
-            {l.bundleName && !child && (
-              <span
-                title={`Added as part of the ${l.bundleName} bundle`}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '0 5px', borderRadius: 'var(--r-badge)', background: 'var(--st-primary-bg)', color: 'var(--st-primary-fg)', fontWeight: 700 }}
-              >
-                <Icon name="package" size={10} />
-                {l.bundleName}
-              </span>
-            )}
-          </span>
-        </td>
-        {/* §36 — category muted. */}
-        <td style={{ ...td, color: 'var(--text2)' }}>{l.category}</td>
-        {/* redesign v1 §7.4 — qty as a stepper, not a boxed input. A serialized
-            row is one physical unit; quantity only varies for bulk stock. */}
-        <td style={{ ...td, textAlign: 'right' }} title={l.serial !== '—' ? 'One serialized unit per row' : undefined}>
-          <NumberStepper
-            value={l.qty}
-            disabled={l.serial !== '—'}
-            label={`quantity for ${l.name}`}
-            onChange={(n) => setLines((p) => p.map((x) => (x.id === l.id ? { ...x, qty: n } : x)))}
-          />
-        </td>
-        {/* §8.3 — Days is mandatory and explicit on every line, now a stepper.
-            Editing it marks the line (NR-19): the booking's own length is
-            re-stamped onto lines that have not been set by hand, and this is
-            the hand. */}
-        <td style={{ ...td, textAlign: 'right' }}>
-          <NumberStepper
-            value={l.days}
-            label={`days for ${l.name}`}
-            onChange={(n) => setLines((p) => p.map((x) => (x.id === l.id ? { ...x, days: n, daysOverridden: true } : x)))}
-          />
-        </td>
-        {canBookingMoney && (
-          <>
-            {/* §37 — rate right-aligned, discount a compact badge, amount bold. */}
-            <td className="figure" style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{formatMoney(l.ratePaisa)}</td>
-            <td style={{ ...td, textAlign: 'right' }}>
-              {l.discountPct > 0 ? (
-                <span
-                  className="figure"
-                  title={`${l.discountPct}% line discount`}
-                  style={{ display: 'inline-flex', alignItems: 'center', height: 18, padding: '0 6px', borderRadius: 'var(--r-badge)', background: 'var(--st-neutral-bg)', color: 'var(--st-neutral-fg)', fontSize: 'var(--t-th)', fontWeight: 700 }}
-                >
-                  −{l.discountPct}%
-                </span>
-              ) : (
-                <span style={{ color: 'var(--muted)' }}>—</span>
-              )}
-            </td>
-            <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(lineAmountPaisa(l))}</td>
-          </>
-        )}
-        {/* §38 — availability is a status pill: icon + label + colour, never colour alone. */}
-        <td style={td}>
-          <span
-            title={pill.title}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 'var(--sp-xs)',
-              height: 20,
-              padding: '0 7px',
-              borderRadius: 'var(--r-badge)',
-              fontSize: 'var(--t-th)',
-              fontWeight: 700,
-              background: pill.bg,
-              color: pill.fg,
-            }}
-          >
-            <Icon name={pill.icon} size={11} />
-            {pill.label}
-          </span>
-        </td>
-        <td style={{ ...td, width: 34, textAlign: 'right' }}>
-          {menuItems ? (
-            <RowMenu label={`Actions for ${l.name}`} items={menuItems} />
-          ) : (
-            <button
-              type="button"
-              className="press"
-              aria-label={`Remove ${l.name} from this booking`}
-              title={`Remove ${l.name}`}
-              onClick={() => setLines((p) => p.filter((x) => x.id !== l.id))}
-              style={{ position: 'relative', width: 26, height: 26, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}
-            >
-              <TouchInset />
-              <Icon name="close" size={13} />
-            </button>
-          )}
-        </td>
-      </tr>
-    )
-  }
-
+  
   /**
    * 01_NEW_RENTAL §1.1 — the rail's SUMMARY card, in the spec's own order:
    *
@@ -2822,12 +2279,6 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
       pricing={pricing}
       blockingNotices={blockingNotices}
       runNoticeAction={runNoticeAction}
-      editBookingId={editBookingId}
-      isDesktop={isDesktop}
-      confirmBooking={confirmBooking}
-      confirmBlocked={confirmBlocked}
-      saveState={saveState}
-      blockReasonText={blockReasonText}
     />
   )
 
@@ -2887,22 +2338,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
             </div>
           }
           title={editBookingId ? `Edit ${draftBookingNo ?? 'booking'}` : draftBookingNo ? `Draft #${draftBookingNo}` : 'New Rental'}
-          actions={
-            !editBookingId && isDesktop ? (
-              <PageActions
-                secondary={
-                  <Button
-                    variant="outline"
-                    icon="file"
-                    onClick={() => saveDraft()}
-                    disabled={saveState === 'saving'}
-                  >
-                    {saveState === 'saving' ? 'Saving…' : 'Save as draft'}
-                  </Button>
-                }
-              />
-            ) : undefined
-          }
+
         />
       }
     >
@@ -3442,359 +2878,41 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
               </div>
             )}
 
-            {lines.length === 0 ? (
-              <div className="new-rental-empty-products">
-                <Icon name="box" size={22} />
-                <p>Search above to add equipment or a bundle.</p>
-              </div>
-            ) : (
-            <DataTableShell ariaLabel="Booking equipment and bundles">
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-                <thead>
-                  <tr style={{ background: 'var(--th-bg)' }}>
-                    {equipmentColumns.map((c, i) => (
-                      <th key={c.key || `col-${i}`} scope="col" style={{ ...th, textAlign: c.align }}>
-                        {c.key}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* 01_NEW_RENTAL Notes — "Equipment list renders parent-first
-                      with children nested." The key already exists in the data:
-                      a bundle stamps `bundleCode`/`bundleName` on every line it
-                      contributes, and each serialised unit of one model shares
-                      that model's name. Only the rendering was flat. */}
-                  {lineGroups.map((g) => {
-                    const nested = isNested(g)
-                    const isCollapsed = Boolean(collapsedBundles[g.key])
-                    const groupUnits = g.lines.reduce((s, l) => s + l.qty, 0)
-                    const dayValues = Array.from(new Set(g.lines.map((l) => l.days)))
-                    const minDays = Math.min(...dayValues)
-                    const maxDays = Math.max(...dayValues)
-                    const groupAmountPaisa = g.lines.reduce((s, l) => s + lineAmountPaisa(l), 0) as Paisa
-                    /* The parent states the group's WORST availability - one
-                       blocked unit blocks the group, and a green pill over a
-                       blocked child would be the lie. Same `linePill` the child
-                       rows use, so the two can never disagree. */
-                    const parentPill = g.lines
-                      .map(linePill)
-                      .reduce((worst, x) => (x.rank > worst.rank ? x : worst))
-                    const menuItems = [
-                      {
-                        label: nested ? `Remove all ${g.lines.length} lines` : 'Remove from this booking',
-                        icon: 'close' as IconName,
-                        onClick: () => setLines((p) => p.filter((x) => !g.lines.some((y) => y.id === x.id))),
-                      },
-                      ...(!nested && g.lines[0] && g.lines[0].serial !== '—'
-                        ? [{ label: 'Open in Inventory', icon: 'external_link' as IconName, onClick: () => navigate(`/inventory/${g.lines[0]?.serial ?? ''}`) }]
-                        : []),
-                    ]
-
-                    return (
-                      <Fragment key={g.key}>
-                        {nested ? (
-                          <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--card2)' }}>
-                            <td style={{ ...td, whiteSpace: 'normal', maxWidth: 260 }}>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <button
-                                  type="button"
-                                  className="new-rental-bundle-toggle"
-                                  onClick={() => setCollapsedBundles((prev) => ({ ...prev, [g.key]: !prev[g.key] }))}
-                                  aria-label={isCollapsed ? `Expand ${g.label}` : `Collapse ${g.label}`}
-                                  title={isCollapsed ? 'Expand components' : 'Collapse components'}
-                                >
-                                  <Icon name={isCollapsed ? 'chevron_right' : 'chevron_down'} size={12} />
-                                </button>
-                                <Icon name={g.kind === 'bundle' ? 'package' : 'box'} size={13} style={{ color: 'var(--text2)', flexShrink: 0 }} />
-                                <span style={{ fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', lineHeight: 1.25 }}>{g.label}</span>
-                              </span>
-                              <span style={{ display: 'block', marginTop: 1, marginLeft: 28, fontSize: 'var(--t-th)', color: 'var(--text2)' }}>
-                                {g.kind === 'bundle'
-                                  ? `Bundle · ${g.lines.length} component${g.lines.length === 1 ? '' : 's'}${isCollapsed ? ' (collapsed)' : ''}`
-                                  : `${g.lines.length} units${isCollapsed ? ' (collapsed)' : ''}`}
-                              </span>
-                            </td>
-                            <td style={{ ...td, color: 'var(--text2)' }}>{g.lines[0]?.category ?? '—'}</td>
-                            <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{groupUnits}</td>
-                            <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
-                              {minDays === maxDays ? minDays : `${minDays}–${maxDays}`}
-                            </td>
-                            {canBookingMoney && (
-                              <>
-                                <td style={{ ...td, textAlign: 'right', color: 'var(--muted)' }}>—</td>
-                                <td style={{ ...td, textAlign: 'right', color: 'var(--muted)' }}>—</td>
-                                <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(groupAmountPaisa)}</td>
-                              </>
-                            )}
-                            {/* Law 11 — icon + label + colour, never the colour alone. */}
-                            <td style={td}>
-                              <span
-                                title={parentPill.title}
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 'var(--sp-xs)',
-                                  height: 20,
-                                  padding: '0 7px',
-                                  borderRadius: 'var(--r-badge)',
-                                  fontSize: 'var(--t-th)',
-                                  fontWeight: 700,
-                                  background: parentPill.bg,
-                                  color: parentPill.fg,
-                                }}
-                              >
-                                <Icon name={parentPill.icon} size={11} />
-                                {parentPill.label}
-                              </span>
-                            </td>
-                            <td style={{ ...td, width: 34, textAlign: 'right' }}>
-                              <RowMenu label={`Actions for ${g.label}`} items={menuItems} />
-                            </td>
-                          </tr>
-                        ) : null}
-                        {(!nested || !isCollapsed) && g.lines.map((l) => equipmentRow(l, nested, g.label, nested ? undefined : menuItems))}
-                      </Fragment>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </DataTableShell>
-            )}
-
-            {/* §39 — items / bundles / rental days / line subtotal. Packed,
-                Missing, Cases and Weight are Packing's fields, not booking
-                creation's; they were reporting an em dash on every draft here.
-                §8.6 — an unset value is still an em dash, never a zero. */}
-            <div style={{ display: 'flex', gap: 'var(--sp-lg)', flexWrap: 'wrap', alignItems: 'baseline', marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)' }}>
-              {[
-                { l: 'Items', v: lines.length === 0 ? '—' : `${totalUnits}` },
-                { l: 'Bundles', v: bundleCount === 0 ? '—' : String(bundleCount) },
-                { l: 'Rental Days', v: days === 0 ? '—' : String(days) },
-              ].map((x) => (
-                <span key={x.l} style={{ display: 'inline-flex', gap: 5 }}>
-                  <span style={{ color: 'var(--text2)' }}>{x.l}</span>
-                  <span className="figure" style={{ fontWeight: 700, color: x.v === '—' ? 'var(--muted)' : 'var(--text)' }}>{x.v}</span>
-                </span>
-              ))}
-              {canBookingMoney && (
-                <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 7, alignItems: 'baseline' }}>
-                  <span style={{ color: 'var(--text2)' }}>Line Subtotal</span>
-                  <span className="figure" style={{ fontWeight: 700, fontSize: 'var(--t-ui)' }}>
-                    {formatMoney((pricing.equipmentSubtotalPaisa + pricing.bundleSubtotalPaisa + pricing.servicesSubtotalPaisa) as Paisa)}
-                  </span>
-                </span>
-              )}
-            </div>
+            <RentalLineItemsTree
+              lines={lines}
+              setLines={setLines}
+              collapsedBundles={collapsedBundles}
+              setCollapsedBundles={setCollapsedBundles}
+              canBookingMoney={canBookingMoney}
+              conflictSummary={conflictSummary}
+              liveEquipment={liveEquipment}
+              gateContext={gctx}
+              user={user}
+              navigate={navigate}
+              totalUnits={totalUnits}
+              bundleCount={bundleCount}
+              days={days}
+              pricing={pricing}
+            />
           </Section>
 
         </div>
 
-          <Section
-            id="section-3"
-            title={SECTIONS[3]}
-            badge={
-              crew.length > 0 ? (
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '2px 8px',
-                    borderRadius: 'var(--r-badge)',
-                    background: 'var(--st-primary-bg)',
-                    color: 'var(--st-primary-fg)',
-                    fontSize: 11,
-                    fontWeight: 600,
-                  }}
-                >
-                  {crew.length} {crew.length === 1 ? 'member' : 'members'}
-                </span>
-              ) : null
-            }
+          <CrewSection
             open={open[3] ?? false}
             onToggle={() => toggle(3)}
-            summary={crew.length === 0 ? 'Optional / None' : `${crew.length} crew`}
-          >
-            <div>
-              {/* Babin, 4 Sep 2026 — "same for crew and transport": no
-                  `Add Member…` dropdown in the header slot, the search field is
-                  the control and it sits in the section itself. */}
-              {/*
-                * Law 12, and the same notice Section 2 carries for its
-                * equipment pool: say what the list actually is before the
-                * operator spends time on it.
-                *
-                * `CREW_ROSTER` is an array literal in `data/crew.ts` — the
-                * twelve people, their phone numbers and every `dayRatePaisa`
-                * on this screen are invented there, and nothing on this page
-                * reads a crew table. What Confirm *does* write is stated
-                * exactly: `createRental` sends each row's name, role, phone
-                * and rate to `booking_crew_lines`, with `crew_member_id` null
-                * (this page has no staff id to send), and `actions/crew/
-                * bookCrew.ts` — the action that would reserve a person — is a
-                * stub the dispatcher refuses. So the booking gets priced crew;
-                * nobody's own calendar hears about it.
-                */}
-              {(!liveCrew || liveCrew.length === 0) && (
-                <p style={{ margin: '0 0 var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--warn-text)', lineHeight: 1.5 }}>
-                  This is a <strong>sample roster</strong> — the people and the day rates they are priced at are invented in
-                  the app, not read from the database. Adding someone puts their name, role and rate on this booking when it
-                  is confirmed; it does not link a staff record, and it reserves nobody, because booking a crew member's own
-                  calendar is not built yet.
-                </p>
-              )}
-              <CrewSearch
-                onBooking={crew}
-                onAdd={addCrew}
-                showRates={canCrewMoney}
-                roster={liveCrew && liveCrew.length > 0 ? liveCrew : CREW_ROSTER}
-              />
-              <div style={{ minWidth: 0 }}>
-                <DataTableShell ariaLabel="Assigned crew">
-                  <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
-                    <thead>
-                      <tr style={{ background: 'var(--th-bg)' }}>
-                        {(canCrewMoney ? ['Name', 'Role', 'Day Rate', 'Days', 'Amount', '', ''] : ['Name', 'Role', '']).map((h, i) => (
-                          <th key={h === '' ? `blank-${i}` : h} scope="col" style={{ ...th, textAlign: i >= 2 && i <= 4 ? 'right' : 'left' }}>
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {crew.map((c) => {
-                        const expanded = expandedCrew.has(c.crewId)
-                        const hasExtras = c.overtimePaisa > 0 || c.mealsPaisa > 0 || c.accommodationPaisa > 0
-                        return (
-                          <Fragment key={c.crewId}>
-                            <tr style={{ borderBottom: expanded ? 'none' : '1px solid var(--border)' }}>
-                              <td style={{ ...td, fontWeight: 600 }}>
-                                <Link to={`/crew`} style={{ color: 'inherit', textDecoration: 'none' }} title={`Open ${c.name} in Crew Assist`}>
-                                  {c.name}
-                                </Link>
-                              </td>
-                              <td style={{ ...td, color: 'var(--text2)' }}>{c.role}</td>
-                              {canCrewMoney && (
-                                <>
-                                  <td className="figure" style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{formatMoney(c.dayRatePaisa)}</td>
-                                  <td className="figure" style={{ ...td, textAlign: 'right' }}>{days}</td>
-                                  <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>
-                                    {formatMoney((c.dayRatePaisa * days + c.overtimePaisa + c.accommodationPaisa + c.mealsPaisa) as Paisa)}
-                                  </td>
-                                  {/* redesign v1 §7.5 — Overtime/Meals/Accommodation live behind this
-                                      per-row expand instead of two columns clipped at this width. */}
-                                  <td style={{ ...td, width: 30, textAlign: 'right' }}>
-                                    <button
-                                      type="button"
-                                      className="press"
-                                      aria-label={`${expanded ? 'Hide' : 'Show'} overtime, meals and accommodation for ${c.name}`}
-                                      aria-expanded={expanded}
-                                      onClick={() => toggleCrewExpanded(c.crewId)}
-                                      style={{
-                                        position: 'relative',
-                                        width: 22,
-                                        height: 22,
-                                        display: 'grid',
-                                        placeItems: 'center',
-                                        borderRadius: 'var(--r-xs)',
-                                        border: 'none',
-                                        background: hasExtras ? 'var(--st-primary-bg)' : 'transparent',
-                                        color: hasExtras ? 'var(--st-primary-fg)' : expanded ? 'var(--text)' : 'var(--muted)',
-                                        cursor: 'pointer',
-                                      }}
-                                    >
-                                      <TouchInset />
-                                      <Icon name={expanded ? 'chevron_up' : 'chevron_down'} size={13} />
-                                    </button>
-                                  </td>
-                                </>
-                              )}
-                              {/* Off the booking, one at a time.
-                                  `Clear crew` below empties the whole list, and
-                                  `CrewSearch` hides anyone already added, so
-                                  without this a single wrong pick — a role the
-                                  database rejects, say — could be blocked but
-                                  not undone. Rendered in both money bands: a
-                                  money-blind operator staffs a booking too. */}
-                              <td style={{ ...td, width: 30, textAlign: 'right' }}>
-                                <button
-                                  type="button"
-                                  className="press"
-                                  aria-label={`Remove ${c.name} from this booking`}
-                                  title={`Remove ${c.name}`}
-                                  onClick={() => removeCrew(c.crewId)}
-                                  style={{ position: 'relative', width: 22, height: 22, display: 'grid', placeItems: 'center', borderRadius: 'var(--r-xs)', border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}
-                                >
-                                  <TouchInset />
-                                  <Icon name="close" size={13} />
-                                </button>
-                              </td>
-                            </tr>
-                            {canCrewMoney && expanded && (
-                              <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                                <td colSpan={7} style={{ ...td, background: 'var(--card2)', padding: '10px 12px' }}>
-                                  <div style={{ display: 'grid', gridTemplateColumns: isPhone ? '1fr' : 'repeat(3, minmax(0, 180px))', gap: 12, alignItems: 'center' }}>
-                                    <Field label="Overtime (Rs) *">
-                                      <Input
-                                        type="number"
-                                        min={0}
-                                        value={c.overtimePaisa > 0 ? c.overtimePaisa / 100 : ''}
-                                        placeholder="0"
-                                        onChange={(e) => updateCrewExtras(c.crewId, 'overtimePaisa', rupees(Math.max(0, Number(e.target.value) || 0)))}
-                                        style={{ ...inputStyle, minHeight: 44, fontSize: 'var(--t-meta)' }}
-                                      />
-                                    </Field>
-                                    <Field label="Meals (Rs) *">
-                                      <Input
-                                        type="number"
-                                        min={0}
-                                        value={c.mealsPaisa > 0 ? c.mealsPaisa / 100 : ''}
-                                        placeholder="0"
-                                        onChange={(e) => updateCrewExtras(c.crewId, 'mealsPaisa', rupees(Math.max(0, Number(e.target.value) || 0)))}
-                                        style={{ ...inputStyle, minHeight: 44, fontSize: 'var(--t-meta)' }}
-                                      />
-                                    </Field>
-                                    <Field label="Accommodation (Rs) *">
-                                      <Input
-                                        type="number"
-                                        min={0}
-                                        value={c.accommodationPaisa > 0 ? c.accommodationPaisa / 100 : ''}
-                                        placeholder="0"
-                                        onChange={(e) => updateCrewExtras(c.crewId, 'accommodationPaisa', rupees(Math.max(0, Number(e.target.value) || 0)))}
-                                        style={{ ...inputStyle, minHeight: 44, fontSize: 'var(--t-meta)' }}
-                                      />
-                                    </Field>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </Fragment>
-                        )
-                      })}
-                      {canCrewMoney && (
-                        <tr>
-                          <td colSpan={4} style={{ ...td, fontWeight: 700, color: 'var(--text2)' }}>Crew Subtotal</td>
-                          <td className="figure" style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{formatMoney(crewChargesPaisa)}</td>
-                          <td style={td} />
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </DataTableShell>
-                {crew.length === 0 && (
-                  <div style={{ marginTop: 10 }}>
-                    <EmptyState title="No crew assigned" description="Add a crew member to staff this booking." />
-                  </div>
-                )}
-                {crew.length > 0 && (
-                  <div style={{ marginTop: 9 }}>
-                    <Button onClick={() => setCrew([])}>Clear crew</Button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </Section>
+            crew={crew}
+            days={days}
+            canCrewMoney={canCrewMoney}
+            liveCrew={liveCrew}
+            onAddCrew={addCrew}
+            onRemoveCrew={removeCrew}
+            onClearCrew={() => setCrew([])}
+            onUpdateCrewExtras={updateCrewExtras}
+            crewChargesPaisa={crewChargesPaisa}
+            isPhone={isPhone}
+            title={SECTIONS[3]}
+          />
 
           {/* 01_NEW_RENTAL §1.1 — `＋ Delivery (collapsed → Client Pickup Rs 0)`.
               Its own box, and its summary states the default the wireframe
@@ -3842,360 +2960,41 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
               section, it does not replace it. */}
           {/* Part C — Pricing & Terms Simplification */}
           {canBookingMoney && (
-            <Section
-              id="section-5"
-              title={SECTIONS[5]}
-              badge={
-                pricing.rentalTotalPaisa > 0 ? (
-                  <span
-                    className="figure"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      padding: '2px 8px',
-                      borderRadius: 'var(--r-badge)',
-                      background: 'var(--st-success-bg)',
-                      color: 'var(--st-success-fg)',
-                      fontSize: 11,
-                      fontWeight: 700,
-                    }}
-                  >
-                    {formatMoney(pricing.rentalTotalPaisa)}
-                  </span>
-                ) : null
-              }
+            <RentalPricingSection
               open={open[5] ?? true}
               onToggle={() => toggle(5)}
-              summary={`${formatMoney(pricing.rentalTotalPaisa)} total`}
-            >
-              <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(2, minmax(0,1fr))' : '1fr', gap: 'var(--sp-md)' }}>
-                {/* Column 1: Rental Charges Breakdown */}
-                <div style={moneyBlock}>
-                  <h3 style={sub}>Rental Charges</h3>
-                  {[
-                    { l: 'Equipment Rental', v: formatMoney(pricing.equipmentSubtotalPaisa) },
-                    { l: 'Bundles', v: pricing.bundleSubtotalPaisa > 0 ? formatMoney(pricing.bundleSubtotalPaisa) : '—' },
-                    { l: 'Sub-Rental', v: pricing.subRentalSubtotalPaisa > 0 ? formatMoney(pricing.subRentalSubtotalPaisa) : '—' },
-                    { l: 'Services & custom lines', v: pricing.servicesSubtotalPaisa > 0 ? formatMoney(pricing.servicesSubtotalPaisa) : '—' },
-                    ...(canCrewMoney ? [{ l: 'Crew Charges', v: pricing.crewSubtotalPaisa > 0 ? formatMoney(pricing.crewSubtotalPaisa) : '—' }] : []),
-                    { l: 'Transport', v: pricing.deliverySubtotalPaisa > 0 ? formatMoney(pricing.deliverySubtotalPaisa) : '—' },
-                  ].map((r) => (
-                    <MoneyRow key={r.l} label={r.l} value={r.v} {...(r.v === '—' ? { tone: 'var(--muted)' } : {})} />
-                  ))}
-                  <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
-                    <MoneyRow label="Subtotal" value={formatMoney(pricing.grossSubtotalPaisa)} />
-                    <MoneyRow
-                      label={
-                        pricing.discounts.appliedPercent > 0
-                          ? `Discount (${pricing.discounts.appliedPercent}%${pricing.discounts.capped ? ' - CAPPED' : ''})`
-                          : 'Discount'
-                      }
-                      value={pricing.discounts.discountPaisa > 0 ? `− ${formatMoney(pricing.discounts.discountPaisa)}` : '—'}
-                      {...(pricing.discounts.discountPaisa > 0 ? { tone: 'var(--danger-text)' } : {})}
-                    />
-                    <MoneyRow label="Taxable Amount" value={formatMoney(pricing.taxableSubtotalPaisa)} />
-                    <MoneyRow
-                      label={vatOn ? `VAT (${pricing.vatRatePercent}%)` : 'VAT — off for this booking'}
-                      value={vatOn ? formatMoney(pricing.vatPaisa) : '—'}
-                      {...(vatOn ? {} : { tone: 'var(--muted)' })}
-                    />
-                  </div>
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                    <MoneyRow label="RENTAL TOTAL" value={formatMoney(pricing.rentalTotalPaisa)} big />
-                  </div>
-                  <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                    <MoneyRow
-                      label="Security Deposit (Refundable)"
-                      value={formatMoney(pricing.securityDeposit.requiredPaisa)}
-                      tone="var(--text2)"
-                    />
-                    <p style={{ margin: '2px 0 8px', fontSize: '11px', color: 'var(--muted)' }}>
-                      Held as a separate liability guarantee. Not taxable, not rental revenue.
-                    </p>
-                    <MoneyRow
-                      label={`Advance Required (${pricing.advanceRequiredPaisa === pricing.rentalTotalPaisa && pricing.rentalTotalPaisa <= 500000 ? '100%' : pricing.rentalTotalPaisa <= 1000000 ? 'Rs 5,000' : '50%'})`}
-                      value={formatMoney(pricing.advanceRequiredPaisa)}
-                      tone="var(--st-primary-fg)"
-                      strong
-                    />
-                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
-                      Tier policy: ≤ Rs 5,000 (100%) · ≤ Rs 10,000 (Rs 5,000) · &gt; Rs 10,000 (50%)
-                    </p>
-                  </div>
-                </div>
-
-                {/* Column 2: Discounts, VAT & Security Deposit Policy */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-                  <div style={moneyBlock}>
-                    <h3 style={sub}>Discounts & Taxes</h3>
-                    <div style={{ marginTop: 8 }}>
-                      <Field label="Manual Discount % *">
-                        <Input
-                          type="number"
-                          min={0}
-                          max={DISCOUNT_STACKING_CAP_PERCENT}
-                          value={discountPct}
-                          onChange={(e) => setDiscountPct(Math.min(DISCOUNT_STACKING_CAP_PERCENT, Math.max(0, Number(e.target.value) || 0)))}
-                          style={inputStyle}
-                        />
-                      </Field>
-                      <div style={{ marginTop: 8 }}>
-                        <DiscountChips
-                          percent={discountPct}
-                          onPercent={setDiscountPct}
-                          amount={formatMoney(pricing.discounts.discountPaisa)}
-                          onSelectPreset={(pct, reason) => {
-                            setDiscountPct(pct)
-                            if (reason && (!manualDiscountReason || manualDiscountReason.trim() === '')) {
-                              setManualDiscountReason(reason)
-                            }
-                          }}
-                        />
-                      </div>
-
-                      {discountPct > 0 && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
-                          <Field label="Discount Reason *">
-                            <Input
-                              value={manualDiscountReason}
-                              onChange={(e) => setManualDiscountReason(e.target.value)}
-                              placeholder="e.g. Director courtesy"
-                              style={inputStyle}
-                            />
-                          </Field>
-                          <Field label="Authorized By *">
-                            <Input
-                              value={manualDiscountAuthorizedBy}
-                              onChange={(e) => setManualDiscountAuthorizedBy(e.target.value)}
-                              placeholder="e.g. Babin"
-                              style={inputStyle}
-                            />
-                          </Field>
-                        </div>
-                      )}
-
-                      {/* Women DoP / Director toggle */}
-                      <label htmlFor="women-dop-eligible" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer', fontSize: 'var(--t-meta)' }}>
-                        <input
-                          id="women-dop-eligible"
-                          type="checkbox"
-                          aria-label="Women DoP / Director (+5% discount)"
-                          checked={womenDopEligible}
-                          onChange={(e) => setWomenDopEligible(e.target.checked)}
-                          style={{ cursor: 'pointer', width: 16, height: 16 }}
-                        />
-                        <span>
-                          <strong>Women DoP / Director (+5% discount)</strong>
-                          <span style={{ display: 'block', color: 'var(--muted)', fontSize: '11px' }}>
-                            Encouraging women cinematographers & filmmakers in Nepal.
-                          </span>
-                        </span>
-                      </label>
-
-                      {/* Student bundle indicator */}
-                      {isStudentBundle && (
-                        <div style={{ marginTop: 10, padding: '6px 10px', borderRadius: 'var(--r-btn)', background: 'var(--st-info-bg, #eff6ff)', color: 'var(--st-info-fg, #1e40af)', fontSize: '12px' }}>
-                          <Icon name="info" size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
-                          Student/College bundle detected — subsidized flat rate lines are protected from stacking discounts.
-                        </div>
-                      )}
-
-                      {/* Promo code */}
-                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                        <Field label="Promo Code *">
-                          <div style={{ display: 'flex', gap: 8 }}>
-                            <Input
-                              value={promoCodeInput}
-                              onChange={(e) => {
-                                setPromoCodeInput(e.target.value.toUpperCase())
-                                setPromoNotice(null)
-                              }}
-                              placeholder="e.g. NEPALFILM, MONSOON26"
-                              style={{ ...inputStyle, textTransform: 'uppercase' }}
-                            />
-                            <Button
-                              variant="secondary"
-                              type="button"
-                              onClick={() => {
-                                const code = promoCodeInput.trim().toUpperCase()
-                                if (!code) {
-                                  setPromoNotice({ tone: 'danger', text: 'Enter a promo code.' })
-                                  return
-                                }
-                                const promo = PROMO_CODES[code]
-                                if (!promo) {
-                                  setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is invalid or expired.` })
-                                  return
-                                }
-                                if (!promo.active) {
-                                  setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is no longer active.` })
-                                  return
-                                }
-                                if (pickupAt) {
-                                  const pickupIso = pickupAt.toISOString()
-                                  if (promo.validFrom && pickupIso < promo.validFrom) {
-                                    setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is not valid until ${promo.validFrom}.` })
-                                    return
-                                  }
-                                  if (promo.validTo && pickupIso > promo.validTo) {
-                                    setPromoNotice({ tone: 'danger', text: `Promo code "${code}" expired on ${promo.validTo}.` })
-                                    return
-                                  }
-                                }
-                                if (promo.minSpendPaisa && pricing.grossSubtotalPaisa < promo.minSpendPaisa) {
-                                  setPromoNotice({
-                                    tone: 'danger',
-                                    text: `Promo "${code}" requires minimum rental spend of ${formatMoney(promo.minSpendPaisa)}.`,
-                                  })
-                                  return
-                                }
-                                setPromoCodeApplied(code)
-                                setPromoNotice({
-                                  tone: 'success',
-                                  text: `Promo "${code}" applied: ${promo.discountPercent}% off${promo.description ? ` (${promo.description})` : ''}.`,
-                                })
-                              }}
-                            >
-                              Apply
-                            </Button>
-                            {promoCodeApplied && (
-                              <Button
-                                variant="ghost"
-                                type="button"
-                                onClick={() => {
-                                  setPromoCodeApplied(null)
-                                  setPromoCodeInput('')
-                                  setPromoNotice(null)
-                                }}
-                              >
-                                Clear
-                              </Button>
-                            )}
-                          </div>
-                        </Field>
-                        {promoNotice && (
-                          <div
-                            style={{
-                              marginTop: 6,
-                              fontSize: '12px',
-                              color: promoNotice.tone === 'success' ? 'var(--st-success-fg, #065f46)' : 'var(--danger-text)',
-                            }}
-                          >
-                            {promoNotice.text}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Stacking cap indicator */}
-                      {pricing.discounts.capped && (
-                        <div style={{ marginTop: 10, padding: '6px 10px', borderRadius: 'var(--r-btn)', background: 'var(--st-warning-bg, #fffbeb)', color: 'var(--st-warning-fg, #92400e)', fontSize: '12px' }}>
-                          <Icon name="alert_triangle" size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
-                          Discounts capped at 25% maximum per company policy.
-                        </div>
-                      )}
-
-                      {/* Validation errors */}
-                      {pricing.discounts.validationErrors.length > 0 && (
-                        <div style={{ marginTop: 9, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
-                          {pricing.discounts.validationErrors.map((err, i) => (
-                            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
-                              <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
-                              {err}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                      <VatToggle ratePercent={vatRatePercent} on={vatOn} onChange={setVatOn} />
-                    </div>
-                  </div>
-
-                  {/* Security Deposit Block */}
-                  <div style={moneyBlock}>
-                    <h3 style={sub}>Security Deposit</h3>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-                      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Recommended Deposit</span>
-                      <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600 }}>{formatMoney(pricing.securityDeposit.recommendedPaisa)}</span>
-                    </div>
-
-                    <label htmlFor="manual-deposit-override" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer', fontSize: 'var(--t-meta)' }}>
-                      <input
-                        id="manual-deposit-override"
-                        type="checkbox"
-                        aria-label="Manual security deposit override"
-                        checked={manualDepositOverride}
-                        onChange={(e) => {
-                          setManualDepositOverride(e.target.checked)
-                          if (!e.target.checked) {
-                            setManualDepositAmount('')
-                            setDepositOverrideReason('')
-                            setDepositAuthorizedBy('')
-                          } else {
-                            setManualDepositAmount(String(toRupees(pricing.securityDeposit.recommendedPaisa)))
-                          }
-                        }}
-                        style={{ cursor: 'pointer', width: 16, height: 16 }}
-                      />
-                      <span>Manual Deposit Override</span>
-                    </label>
-
-                    {manualDepositOverride && (
-                      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <Field label="Override Amount (Rs) *">
-                          <Input
-                            type="number"
-                            min={0}
-                            value={manualDepositAmount}
-                            onChange={(e) => setManualDepositAmount(e.target.value)}
-                            placeholder="0"
-                            style={inputStyle}
-                          />
-                        </Field>
-                        <Field label="Override Reason *">
-                          <Input
-                            value={depositOverrideReason}
-                            onChange={(e) => setDepositOverrideReason(e.target.value)}
-                            placeholder="e.g. Low risk repeat client with corporate guarantee"
-                            style={inputStyle}
-                          />
-                        </Field>
-                        <Field label="Authorized By *">
-                          <Input
-                            value={depositAuthorizedBy}
-                            onChange={(e) => setDepositAuthorizedBy(e.target.value)}
-                            placeholder="e.g. Managing Director Babin"
-                            style={inputStyle}
-                          />
-                        </Field>
-                      </div>
-                    )}
-
-                    {pricing.securityDeposit.validationErrors.length > 0 && (
-                      <div style={{ marginTop: 9, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
-                        {pricing.securityDeposit.validationErrors.map((err, i) => (
-                          <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--st-danger-fg)', lineHeight: 1.4 }}>
-                            <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
-                            {err}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-                      <strong>Security Deposit Policy:</strong> Any security deposit required is held as a separate liability guarantee.
-                      It is never credited towards rental charges and does not reduce rental outstanding.
-                    </p>
-                    <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-                      <strong>Payment Recording:</strong> New Rental creates the booking reservation.
-                      Advance payments and security deposits are officially recorded with receipt numbers directly on the <strong>Booking Detail</strong> page once the booking and invoice are created.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </Section>
+              isDesktop={isDesktop}
+              pricing={pricing}
+              canCrewMoney={canCrewMoney}
+              vatOn={vatOn}
+              setVatOn={setVatOn}
+              vatRatePercent={vatRatePercent}
+              discountPct={discountPct}
+              setDiscountPct={setDiscountPct}
+              manualDiscountReason={manualDiscountReason}
+              setManualDiscountReason={setManualDiscountReason}
+              manualDiscountAuthorizedBy={manualDiscountAuthorizedBy}
+              setManualDiscountAuthorizedBy={setManualDiscountAuthorizedBy}
+              womenDopEligible={womenDopEligible}
+              setWomenDopEligible={setWomenDopEligible}
+              isStudentBundle={isStudentBundle}
+              promoCodeInput={promoCodeInput}
+              setPromoCodeInput={setPromoCodeInput}
+              promoCodeApplied={promoCodeApplied}
+              setPromoCodeApplied={setPromoCodeApplied}
+              promoNotice={promoNotice}
+              setPromoNotice={setPromoNotice}
+              pickupAt={pickupAt}
+              manualDepositOverride={manualDepositOverride}
+              setManualDepositOverride={setManualDepositOverride}
+              manualDepositAmount={manualDepositAmount}
+              setManualDepositAmount={setManualDepositAmount}
+              depositOverrideReason={depositOverrideReason}
+              setDepositOverrideReason={setDepositOverrideReason}
+              depositAuthorizedBy={depositAuthorizedBy}
+              setDepositAuthorizedBy={setDepositAuthorizedBy}
+              title={SECTIONS[5]}
+            />
           )}
 
         </div>
@@ -4255,128 +3054,24 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         </div>
       )}
 
-      {editBookingId ? (
-        <RecordActions
-          busy={saveState === 'saving'}
-          dirty={quoteDirty}
-          label="Save changes"
-          onSave={() => void saveQuote()}
-          onCancel={() => {
+      <RecordActions
+        busy={saveState === 'saving'}
+        dirty={editBookingId ? quoteDirty : true}
+        statusText={editBookingId ? undefined : draftHasUnsavedChanges ? 'Unsaved changes' : draftId ? 'Draft saved' : 'New booking'}
+        disabled={!editBookingId && confirmBlocked}
+        label={editBookingId ? 'Save changes' : 'Confirm Booking'}
+        onSave={() => { if (editBookingId) void saveQuote(); else void confirmBooking() }}
+        onCancel={() => {
+          if (editBookingId) {
             if (!quoteDirty) doExit()
             else setExitPrompt('unsaved-edits')
-          }}
-        />
-      ) : (
-        <>
-          {isPhone && (
-            <nav className="new-rental-mobile-actions" style={{ bottom: BAR_BOX }} aria-label="Rental workflow actions">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 6, gap: 8 }}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}
-                  style={{ padding: '0 8px', fontSize: 'var(--t-meta)' }}
-                >
-                  Cancel
-                </Button>
-                <span className="new-rental-mobile-state">{draftPersisted ? 'Draft' : 'New booking'}</span>
-              </div>
-              <button type="button" className="new-rental-compact-summary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} aria-label="Review rental summary">
-                <span>{client?.name ?? 'No client selected'} · {totalUnits} items</span>
-                {canBookingMoney && <strong>{formatMoney(pricing.rentalTotalPaisa)}</strong>}
-              </button>
-              <div className="new-rental-mobile-action-buttons">
-                <Button variant="outline" onClick={() => saveDraft()} disabled={saveState === 'saving'}>
-                  {saveState === 'saving' ? 'Saving…' : 'Save draft'}
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={confirmBooking}
-                  disabled={confirmBlocked || saveState === 'saving'}
-                  title={blockReasonText}
-                >
-                  {saveState === 'saving' ? 'Confirming…' : 'Confirm booking'}
-                </Button>
-              </div>
-            </nav>
-          )}
-
-          {!isPhone && !isDesktop && (
-            <aside
-              aria-label="Rental confirmation bar"
-              style={{
-                position: 'sticky',
-                bottom: 0,
-                zIndex: 30,
-                background: 'color-mix(in srgb, var(--surface, var(--card)) 86%, transparent)',
-                borderTop: '1px solid color-mix(in srgb, var(--border) 75%, transparent)',
-                padding: '12px 20px',
-                margin: 'var(--sp-md) calc(-1 * var(--page-padding)) 0',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: 'var(--sp-md)',
-                boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 -8px 24px rgba(0, 0, 0, 0.08)',
-                backdropFilter: 'blur(16px)',
-                WebkitBackdropFilter: 'blur(16px)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Button
-                  variant="outline"
-                  onClick={() => setCancelIntent(draftPersisted ? 'cancel' : 'discard')}
-                  style={{ minHeight: 44, padding: '0 16px' }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => saveDraft()}
-                  disabled={saveState === 'saving'}
-                  style={{ minHeight: 44, padding: '0 16px', fontWeight: 600 }}
-                >
-                  {saveState === 'saving' ? 'Saving…' : 'Save Draft'}
-                </Button>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
-                {blockingNotices.length > 0 && (
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '5px 12px',
-                      borderRadius: 'var(--r-badge)',
-                      background: 'var(--st-danger-bg)',
-                      border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
-                      color: 'var(--st-danger-fg)',
-                      fontSize: 'var(--t-meta)',
-                      fontWeight: 600,
-                    }}
-                  >
-                    <Icon name="alert_triangle" size={14} />
-                    {blockingNotices.length} blocking {blockingNotices.length === 1 ? 'item' : 'items'}
-                  </span>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {canBookingMoney && <strong className="new-rental-footer-total">{formatMoney(pricing.rentalTotalPaisa)}</strong>}
-                <Button
-                  variant="primary"
-                  onClick={confirmBooking}
-                  disabled={confirmBlocked || saveState === 'saving'}
-                  title={blockReasonText}
-                  style={{ minHeight: 44, padding: '0 20px', fontWeight: 600 }}
-                >
-                  {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
-                </Button>
-              </div>
-            </aside>
-          )}
-        </>
-      )}
+          } else handleExit()
+        }}
+        extra={<>
+          {isPhone && <Button variant="ghost" aria-label="Review rental summary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Summary</Button>}
+          {!editBookingId && <Button variant="outline" onClick={() => void saveDraft()} disabled={saveState === 'saving'}>Save draft</Button>}
+        </>}
+      />
       {/* ── Disclosures. None of these route; the booking stays behind them. ── */}
       {client && (
         <ClientQuickView
