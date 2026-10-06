@@ -564,3 +564,12 @@ export function canManageSettings(role: SystemRole): boolean {
 export function canPublishTeamViews(role: SystemRole): boolean {
   return role === 'Owner' || role === 'Admin' || role === 'Manager'
 }
+
+/**
+ * Client phone, email and tax-id in an exported file (Booqable adoption spec G5 — their finance export
+ * shipped seven PII columns to anyone). RULING 2026-10-07: Owner · Admin · Manager. Everyone else may still
+ * export the directory, without those three columns. Stricter-wins (B-1); a new gate, no existing one moved.
+ */
+export function canExportClientPii(role: SystemRole): boolean {
+  return role === 'Owner' || role === 'Admin' || role === 'Manager'
+}

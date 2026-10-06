@@ -13,6 +13,8 @@ import {
   canReversePayment,
   canOverrideCreditLimit,
   canManageSettings,
+  canPublishTeamViews,
+  canExportClientPii,
   canConfirmRental,
   canCreateClient,
   canBlockClient,
@@ -213,6 +215,13 @@ describe('canManageSettings', () => {
   it('is Owner alone', () => {
     const allowed = ALL_ROLES.filter((r) => canManageSettings(r))
     expect(allowed).toEqual(['Owner'])
+  })
+})
+
+describe('canPublishTeamViews and canExportClientPii (7 Oct 2026)', () => {
+  it('are Owner, Admin and Manager — and nobody else, Client included', () => {
+    expect(ALL_ROLES.filter((r) => canPublishTeamViews(r))).toEqual(['Owner', 'Admin', 'Manager'])
+    expect(ALL_ROLES.filter((r) => canExportClientPii(r))).toEqual(['Owner', 'Admin', 'Manager'])
   })
 })
 

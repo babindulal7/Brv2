@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect, useCallback } from 'react'
+import { recordExport } from '../../lib/exportAudit'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CreateDocumentModal } from './CreateDocumentModal'
 import './documents.css'
@@ -416,6 +417,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
         .map(cell)
         .join(','),
     )
+    recordExport({ list: 'documents', module: 'Operations', rowCount: rows.length, columns: head })
     const blob = new Blob([[head.map(cell).join(','), ...body].join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

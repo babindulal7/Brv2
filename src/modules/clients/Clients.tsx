@@ -1,4 +1,7 @@
 import { useState } from 'react'
+import { recordExport } from '../../lib/exportAudit'
+import { canExportClientPii } from '../../lib/rbac'
+import { useAuth } from '../../lib/auth'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { useViewport } from '../../lib/device'
@@ -60,6 +63,7 @@ export default function Clients() {
   const viewport = useViewport()
   const phone = viewport === 'phone'
   const money = useCanViewMoney()
+  const { user } = useAuth()
   const { showSuccessToast } = useToast()
   const [params, setParams] = useSearchParams()
   const [directoryFiltersOpen, setDirectoryFiltersOpen] = useState(false)
@@ -96,14 +100,14 @@ export default function Clients() {
 
   /** Full directory export as CSV. Escaped cells; dates in both calendars. */
   const exportCsv = () => {
+    /* G5 (RULING 2026-10-07): phone, email and PAN leave the building only with Owner · Admin · Manager. */
+    const pii = canExportClientPii(user?.role ?? 'Client')
     const headers = [
       'Client ID',
       'Name',
       'Type',
       'Membership',
-      'Phone',
-      'Email',
-      'PAN',
+      ...(pii ? ['Phone', 'Email', 'PAN'] : []),
       'Active Rentals',
       ...(money ? ['Outstanding (Rs)', 'Deposit Held (Rs)'] : []),
       'Last Rental (BS)',
@@ -115,9 +119,7 @@ export default function Clients() {
         c.name,
         c.clientType,
         c.membership,
-        c.phone,
-        c.email,
-        c.pan ?? '',
+        ...(pii ? [c.phone, c.email, c.pan ?? ''] : []),
         c.currentRentalsCount,
         ...(money ? [formatMoney(c.outstandingPaisa), formatMoney(c.depositHeldPaisa)] : []),
         c.lastRentalBs,
@@ -126,6 +128,7 @@ export default function Clients() {
         .map(csvCell)
         .join(','),
     )
+    recordExport({ list: 'clients', module: 'Clients', rowCount: clients.length, columns: headers, includesPii: pii })
     const blob = new Blob([[headers.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

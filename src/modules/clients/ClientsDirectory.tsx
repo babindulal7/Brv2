@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { recordExport } from '../../lib/exportAudit'
+import { canExportClientPii } from '../../lib/rbac'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -836,14 +838,14 @@ export function ClientsDirectory({
     // has no source in `client_directory_v`, the mapper never sets it, and the
     // directory only ever holds mapped rows, so every cell under that header
     // was blank on every row.
+    /* G5 (RULING 2026-10-07): phone, email and PAN leave the building only with Owner · Admin · Manager. */
+    const pii = canExportClientPii(user?.role ?? 'Client')
     const headers = [
       'Client ID',
       'Name',
       'Type',
       'Membership',
-      'Phone',
-      'Email',
-      'PAN',
+      ...(pii ? ['Phone', 'Email', 'PAN'] : []),
       ...(money ? ['Outstanding (Rs)', 'Deposit Held (Rs)'] : []),
       'Status',
     ]
@@ -853,9 +855,7 @@ export function ClientsDirectory({
         c.name,
         c.clientType,
         c.membership,
-        c.phone,
-        c.email,
-        c.pan ?? '',
+        ...(pii ? [c.phone, c.email, c.pan ?? ''] : []),
         ...(money ? [formatMoney(c.outstandingPaisa), formatMoney(c.depositHeldPaisa)] : []),
         /* NOT "Active": since CL-04 that word means "has a booking that is
            neither Closed nor cancelled", and this column is about the block
@@ -866,6 +866,7 @@ export function ClientsDirectory({
         .map(csvCell)
         .join(','),
     )
+    recordExport({ list: 'clients.selected', module: 'Clients', rowCount: selectedClients.length, columns: headers, includesPii: pii })
     const blob = new Blob([[headers.join(','), ...lines].join('\r\n')], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

@@ -1,4 +1,5 @@
 import { Pagination } from '../../components/ui/Pagination'
+import { recordExport } from '../../lib/exportAudit'
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -285,6 +286,7 @@ function Menu({
 /* ── export ────────────────────────────────────────────────────────────── */
 
 function download(name: string, rows: string[][]) {
+  recordExport({ list: `bundles.${name.replace(/\.csv$/, '')}`, module: 'Inventory', rowCount: Math.max(0, rows.length - 1), ...(rows[0] ? { columns: rows[0] } : {}) })
   const csv = rows.map((cells) => cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n')
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')
