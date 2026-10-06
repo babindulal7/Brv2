@@ -48,7 +48,9 @@ export async function listSharedViews(listKey: string): Promise<SharedListView[]
     .eq('list_key', listKey)
     .order('created_at', { ascending: true })
   if (error) throw new Error(error.message)
-  return ((data ?? []) as unknown as ViewRow[]).map(rowToView)
+  return ((data ?? []) as unknown as ViewRow[])
+    .filter((r) => typeof r?.id === 'string' && typeof r.name === 'string' && typeof r.query === 'string')
+    .map(rowToView)
 }
 
 function unwrap(message: string): string {

@@ -51,13 +51,18 @@ export function useSettingsLoad(): SettingsLoadResult {
 
     void (async () => {
       try {
-        /* Best-effort: offline, the screen shows the last values this device had. */
-        await hydrateSharedSettings().catch(() => undefined)
         const settings = readSettings()
         /* The stored language is applied before the page is declared ready, so
            a Nepali session never paints an English first frame. */
         await applyLanguage(languageCodeOf(settings.language))
         if (live) setLoad({ status: 'ready', settings })
+        /* Best-effort and AFTER the first paint: offline, the screen shows what this device had; once the
+           shared values arrive they replace it. Never blocks the page on the network. */
+        void hydrateSharedSettings()
+          .then(() => {
+            if (live) setLoad({ status: 'ready', settings: readSettings() })
+          })
+          .catch(() => undefined)
       } catch (e) {
         if (!live) return
         setLoad({

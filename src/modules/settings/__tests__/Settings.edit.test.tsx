@@ -20,7 +20,16 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { ToastProvider } from '../../../components/ui/Toast'
-import { readSettings, resetSettings } from '../../../lib/settingsStore'
+import { readSettings, resetSettings, writeSettings } from '../../../lib/settingsStore'
+
+/* The save path goes to the database (0158, `set_setting`) — covered under PGlite by `npm run test:settings`.
+   Here the screen's contract is: it saves through `saveSettings` and re-reads the store. The seam writes the
+   same device store so the persistence assertions below still mean something. */
+vi.mock('../../../lib/settingsSync', () => ({
+  hydrateSharedSettings: () => Promise.resolve(),
+  saveSettings: async (p: Parameters<typeof writeSettings>[0]) => writeSettings(p),
+  resetSharedSettings: () => Promise.resolve(),
+}))
 
 const role = { current: 'Owner' as string }
 
