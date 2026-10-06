@@ -124,6 +124,8 @@ export interface BundleRecord {
   tags: string[]
   archived?: boolean
   booking?: BundleBooking
+  /** G4 — whole kits free for the booking's dates, and what limits them. Absent = no availability source. */
+  kitCapacity?: import('../lib/bundleCapacityView').BundleKitCapacity | null
   /**
    * Hover Intel System v2.1 — Bundle card, Identity group.
    *
