@@ -28,6 +28,7 @@ import {
   canPerformOperations,
   canRecordPayment,
   canCloseRental,
+  canPublishTeamViews,
   type Role as SystemRole,
 } from '../../lib/rbac'
 import { STATUS_ORDER } from '../../lib/workflow'
@@ -1963,7 +1964,10 @@ export default function RentalsList() {
                 {countedTitle}
               </span>
               <SavedViewsMenu
-                storageKey={savedViewStorageKey}
+                listKey="rentals"
+                legacyStorageKey={savedViewStorageKey}
+                canPublish={canPublishTeamViews(user?.role ?? 'Client')}
+                userId={user?.id ?? null}
                 currentQuery={savedViewQuery}
                 currentHiddenColumns={[...hiddenCols]}
                 onApply={applySavedView}

@@ -2,7 +2,6 @@
 /** G1 (0158): shared settings overlay the device's own copy; device-local keys never leave the device. */
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
-  readSettings,
   writeSettings,
   getSetting,
   getSettingForLocation,

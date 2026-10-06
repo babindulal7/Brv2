@@ -2,18 +2,25 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Icon from './Icon'
 import { Modal } from './Modal'
 import { Button } from './Page'
-import { readLocal, writeLocal } from '../../lib/safeStorage'
+import {
+  listSharedViews,
+  migrateLocalViews,
+  retireSharedView,
+  saveSharedView,
+  type SharedListView,
+} from '../../lib/savedViews'
 
-export interface SavedListView {
-  id: string
-  name: string
-  query: string
-  hiddenColumns: string[]
-  createdAt: string
-}
+export type SavedListView = Pick<SharedListView, 'id' | 'name' | 'query' | 'hiddenColumns'>
 
 interface SavedViewsMenuProps {
-  storageKey: string
+  /** Which list these views belong to — `saved_views.list_key`. */
+  listKey: string
+  /** The pre-G2 localStorage key; its views are moved into the database once, as private views. */
+  legacyStorageKey?: string
+  /** Manager and above may publish a team view (the database enforces the same). */
+  canPublish: boolean
+  /** The signed-in user — decides which views may be removed. */
+  userId: string | null
   currentQuery: string
   currentHiddenColumns: readonly string[]
   onApply: (view: SavedListView | null) => void
@@ -32,49 +39,48 @@ export function normaliseSavedViewQuery(query: string): string {
   return saved.toString()
 }
 
-function parseViews(value: string | null): SavedListView[] {
-  if (!value) return []
-  try {
-    const parsed: unknown = JSON.parse(value)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((entry): entry is SavedListView => {
-      if (!entry || typeof entry !== 'object') return false
-      const view = entry as Partial<SavedListView>
-      return (
-        typeof view.id === 'string' &&
-        typeof view.name === 'string' &&
-        typeof view.query === 'string' &&
-        Array.isArray(view.hiddenColumns) &&
-        view.hiddenColumns.every((column) => typeof column === 'string') &&
-        typeof view.createdAt === 'string'
-      )
-    })
-  } catch {
-    return []
-  }
-}
-
 function comparable(view: { query: string; hiddenColumns: readonly string[] }): string {
   return `${normaliseSavedViewQuery(view.query)}::${[...view.hiddenColumns].sort().join('|')}`
 }
 
 export function SavedViewsMenu({
-  storageKey,
+  listKey,
+  legacyStorageKey,
+  canPublish,
+  userId,
   currentQuery,
   currentHiddenColumns,
   onApply,
   disabled = false,
 }: SavedViewsMenuProps) {
-  const [views, setViews] = useState<SavedListView[]>(() => parseViews(readLocal(storageKey)))
+  const [views, setViews] = useState<SharedListView[]>([])
+  const [loadError, setLoadError] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [saveOpen, setSaveOpen] = useState(false)
   const [name, setName] = useState('')
+  const [shareWithTeam, setShareWithTeam] = useState(false)
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   const menuRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
-    setViews(parseViews(readLocal(storageKey)))
-  }, [storageKey])
+    let live = true
+    void (async () => {
+      try {
+        if (legacyStorageKey) await migrateLocalViews(listKey, legacyStorageKey)
+        const next = await listSharedViews(listKey)
+        if (live) {
+          setViews(next)
+          setLoadError('')
+        }
+      } catch (e) {
+        if (live) setLoadError(e instanceof Error ? e.message : 'Saved views could not be loaded.')
+      }
+    })()
+    return () => {
+      live = false
+    }
+  }, [listKey, legacyStorageKey])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -97,40 +103,66 @@ export function SavedViewsMenu({
     [currentHiddenColumns, currentQuery],
   )
   const active = views.find((view) => comparable(view) === currentComparable)
+  const system = views.filter((v) => v.isSystem)
+  const team = views.filter((v) => !v.isSystem && v.visibility === 'team')
+  const mine = views.filter((v) => !v.isSystem && v.visibility === 'private')
+  const mayRemove = (v: SharedListView) =>
+    !v.isSystem && (v.ownerId === userId || (v.visibility === 'team' && canPublish))
+  const updatingOwn = Boolean(active && !active.isSystem)
 
-  function persist(next: SavedListView[]) {
-    setViews(next)
-    writeLocal(storageKey, JSON.stringify(next))
+  async function reload() {
+    setViews(await listSharedViews(listKey))
   }
 
   function openSave() {
-    setName(active?.name ?? '')
+    setName(active && !active.isSystem ? active.name : '')
+    setShareWithTeam(active?.visibility === 'team' && !active.isSystem)
     setError('')
     setMenuOpen(false)
     setSaveOpen(true)
   }
 
-  function save() {
+  async function save() {
     const trimmed = name.trim()
     if (!trimmed) {
       setError('Enter a name for this view.')
       return
     }
-    const duplicate = views.find((view) => view.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase())
-    const nextView: SavedListView = {
-      id: duplicate?.id ?? `view-${Date.now().toString(36)}`,
-      name: trimmed,
-      query: normaliseSavedViewQuery(currentQuery),
-      hiddenColumns: [...currentHiddenColumns],
-      createdAt: duplicate?.createdAt ?? new Date().toISOString(),
+    const visibility = canPublish && shareWithTeam ? 'team' : 'private'
+    const duplicate = views.find(
+      (view) =>
+        !view.isSystem &&
+        view.visibility === visibility &&
+        view.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase() &&
+        (visibility === 'team' || view.ownerId === userId),
+    )
+    setBusy(true)
+    try {
+      await saveSharedView({
+        id: duplicate?.id ?? null,
+        listKey,
+        name: trimmed,
+        query: normaliseSavedViewQuery(currentQuery),
+        hiddenColumns: currentHiddenColumns,
+        visibility,
+      })
+      await reload()
+      setSaveOpen(false)
+      setName('')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The view could not be saved.')
+    } finally {
+      setBusy(false)
     }
-    persist(duplicate ? views.map((view) => (view.id === duplicate.id ? nextView : view)) : [...views, nextView])
-    setSaveOpen(false)
-    setName('')
   }
 
-  function remove(id: string) {
-    persist(views.filter((view) => view.id !== id))
+  async function remove(id: string) {
+    try {
+      await retireSharedView(id)
+      await reload()
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'The view could not be removed.')
+    }
   }
 
   const menuButtonStyle = {
@@ -149,6 +181,52 @@ export function SavedViewsMenu({
     font: 'inherit',
     fontSize: 'var(--t-meta)',
   }
+
+  const groupLabel = (text: string) => (
+    <div style={{ padding: '7px 10px 5px', color: 'var(--muted)', fontSize: 'var(--t-caption)', fontWeight: 700 }}>
+      {text}
+    </div>
+  )
+
+  const row = (view: SharedListView) => (
+    <div key={view.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          onApply(view)
+          setMenuOpen(false)
+        }}
+        style={{ ...menuButtonStyle, flex: 1, minWidth: 0 }}
+      >
+        <Icon name="flag" size={16} style={{ color: 'var(--primary)' }} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{view.name}</span>
+        {view.id === active?.id && <Icon name="check" size={15} style={{ marginLeft: 'auto', color: 'var(--primary)' }} />}
+      </button>
+      {mayRemove(view) && (
+        <button
+          type="button"
+          aria-label={`Remove saved view ${view.name}`}
+          onClick={() => void remove(view.id)}
+          style={{
+            width: 38,
+            height: 38,
+            border: 0,
+            borderRadius: 'var(--r-sm)',
+            background: 'transparent',
+            color: 'var(--muted)',
+            display: 'grid',
+            placeItems: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          <Icon name="close" size={15} />
+        </button>
+      )}
+    </div>
+  )
+
+  const divider = <div style={{ height: 1, margin: '5px 4px', background: 'var(--border)' }} />
 
   return (
     <>
@@ -177,6 +255,8 @@ export function SavedViewsMenu({
               zIndex: 'var(--z-dropdown)' as unknown as number,
               width: 280,
               maxWidth: 'calc(100vw - 32px)',
+              maxHeight: 'min(70vh, 520px)',
+              overflowY: 'auto',
               padding: 7,
               border: '1px solid var(--border2)',
               borderRadius: 'var(--r-card)',
@@ -184,9 +264,7 @@ export function SavedViewsMenu({
               boxShadow: 'var(--shadow-lg)',
             }}
           >
-            <div style={{ padding: '7px 10px 5px', color: 'var(--muted)', fontSize: 'var(--t-caption)', fontWeight: 700 }}>
-              RENTAL VIEWS
-            </div>
+            {groupLabel('RENTAL VIEWS')}
             <button
               type="button"
               role="menuitem"
@@ -203,51 +281,38 @@ export function SavedViewsMenu({
               )}
             </button>
 
-            {views.length > 0 && <div style={{ height: 1, margin: '5px 4px', background: 'var(--border)' }} />}
-            {views.map((view) => (
-              <div key={view.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onApply(view)
-                    setMenuOpen(false)
-                  }}
-                  style={{ ...menuButtonStyle, flex: 1, minWidth: 0 }}
-                >
-                  <Icon name="flag" size={16} style={{ color: 'var(--primary)' }} />
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{view.name}</span>
-                  {view.id === active?.id && <Icon name="check" size={15} style={{ marginLeft: 'auto', color: 'var(--primary)' }} />}
-                </button>
-                <button
-                  type="button"
-                  aria-label={`Delete saved view ${view.name}`}
-                  onClick={() => remove(view.id)}
-                  style={{
-                    width: 38,
-                    height: 38,
-                    border: 0,
-                    borderRadius: 'var(--r-sm)',
-                    background: 'transparent',
-                    color: 'var(--muted)',
-                    display: 'grid',
-                    placeItems: 'center',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <Icon name="close" size={15} />
-                </button>
-              </div>
-            ))}
+            {system.length > 0 && (
+              <>
+                {divider}
+                {groupLabel('BUILT-IN')}
+                {system.map(row)}
+              </>
+            )}
+            {team.length > 0 && (
+              <>
+                {divider}
+                {groupLabel('TEAM')}
+                {team.map(row)}
+              </>
+            )}
+            {mine.length > 0 && (
+              <>
+                {divider}
+                {groupLabel('MINE')}
+                {mine.map(row)}
+              </>
+            )}
 
-            <div style={{ height: 1, margin: '5px 4px', background: 'var(--border)' }} />
+            {divider}
             <button type="button" role="menuitem" onClick={openSave} style={{ ...menuButtonStyle, color: 'var(--primary)', fontWeight: 650 }}>
               <Icon name="plus" size={16} />
               Save current view
             </button>
-            <div style={{ padding: '4px 10px 7px', color: 'var(--muted)', fontSize: 'var(--t-caption)', lineHeight: 1.45 }}>
-              Saved on this browser for your account.
-            </div>
+            {loadError && (
+              <div role="alert" style={{ padding: '4px 10px 7px', color: 'var(--danger)', fontSize: 'var(--t-caption)', lineHeight: 1.45 }}>
+                {loadError}
+              </div>
+            )}
           </div>
         )}
       </span>
@@ -255,13 +320,15 @@ export function SavedViewsMenu({
       <Modal
         isOpen={saveOpen}
         onClose={() => setSaveOpen(false)}
-        title={active ? 'Update saved view' : 'Save current view'}
+        title={updatingOwn ? 'Update saved view' : 'Save current view'}
         subtitle="Keep this filter and column setup ready for one-click access."
         size="sm"
         footer={
           <>
             <Button onClick={() => setSaveOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={save}>{active ? 'Update view' : 'Save view'}</Button>
+            <Button variant="primary" disabled={busy} onClick={() => void save()}>
+              {updatingOwn ? 'Update view' : 'Save view'}
+            </Button>
           </>
         }
       >
@@ -275,7 +342,7 @@ export function SavedViewsMenu({
               if (error) setError('')
             }}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') save()
+              if (event.key === 'Enter') void save()
             }}
             placeholder="For example: This week's pickups"
             maxLength={60}
@@ -294,8 +361,15 @@ export function SavedViewsMenu({
           />
         </label>
         {error && <p id="saved-view-error" role="alert" style={{ margin: '7px 0 0', color: 'var(--danger)', fontSize: 'var(--t-caption)' }}>{error}</p>}
+        {canPublish && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <input type="checkbox" checked={shareWithTeam} onChange={(event) => setShareWithTeam(event.target.checked)} />
+            Share with the whole team
+          </label>
+        )}
         <div style={{ marginTop: 16, padding: 13, borderRadius: 'var(--r-sm)', background: 'var(--nav-active-bg)', color: 'var(--text2)', fontSize: 'var(--t-caption)', lineHeight: 1.5 }}>
           This saves the active filters, search, sorting and visible columns. Page number and rows per page stay unchanged.
+          {canPublish && shareWithTeam ? ' Everyone on staff will see it, on every device.' : ' Only you will see it, on every device you sign in on.'}
         </div>
       </Modal>
     </>

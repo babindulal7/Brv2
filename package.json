@@ -42,6 +42,7 @@
     "check:anon": "node scripts/check-anon-exposure.mjs",
     "test:audit-coverage": "node scripts/test-audit-trigger-coverage.mjs",
     "test:settings": "node scripts/test-settings-table.mjs",
+    "test:saved-views": "node scripts/test-saved-views.mjs",
     "test:race": "node scripts/test-last-unit-race.mjs",
     "check:fixtures": "node scripts/check-no-fixtures.mjs"
   },
