@@ -174,10 +174,14 @@ export {
 
 export {
   confirmWriteRefusals,
+  deriveRentalAlertsAndNotices,
 } from './newRentalGuards'
 export type {
   BlockingNotice,
   ConfirmWriteState,
+  RentalAlertItem,
+  RentalAlertsInput,
+  RentalAlertsResult,
 } from './newRentalGuards'
 
 export { BookingDatesSection } from './BookingDatesSection'
@@ -203,3 +207,63 @@ export type { CrewLine, CrewSectionProps } from './CrewSection'
 
 export { RentalPricingSection } from './RentalPricingSection'
 export type { RentalPricingSectionProps } from './RentalPricingSection'
+
+export { CrewAndTransportSection } from './CrewAndTransportSection'
+export type {
+  CrewAndTransportSectionProps,
+  TransportDetails,
+} from './CrewAndTransportSection'
+
+export { BookingClientSection } from './BookingClientSection'
+export type { BookingClientSectionProps } from './BookingClientSection'
+
+export { BookingModals } from './BookingModals'
+export type { BookingModalsProps } from './BookingModals'
+
+export { BookingEquipmentSection } from './BookingEquipmentSection'
+export type { BookingEquipmentSectionProps } from './BookingEquipmentSection'
+
+export { useNewRentalCatalogue } from './useNewRentalCatalogue'
+export type {
+  UseNewRentalCatalogueOptions,
+  UseNewRentalCatalogueResult,
+} from './useNewRentalCatalogue'
+
+export { useNewRentalDraft } from './useNewRentalDraft'
+export type { UseNewRentalDraftOptions } from './useNewRentalDraft'
+
+export { useNewRentalSubmit } from './useNewRentalSubmit'
+export type { UseNewRentalSubmitOptions } from './useNewRentalSubmit'
+
+export { useNewRentalTiming } from './useNewRentalTiming'
+export type {
+  UseNewRentalTimingOptions,
+  UseNewRentalTimingResult,
+} from './useNewRentalTiming'
+
+export { useNewRentalLogistics } from './useNewRentalLogistics'
+export type {
+  UseNewRentalLogisticsOptions,
+  UseNewRentalLogisticsResult,
+} from './useNewRentalLogistics'
+
+export { useNewRentalPricing } from './useNewRentalPricing'
+export type {
+  PricingBreakdown,
+  UseNewRentalPricingOptions,
+  UseNewRentalPricingResult,
+} from './useNewRentalPricing'
+
+export { useNewRentalClient } from './useNewRentalClient'
+export type {
+  UseNewRentalClientOptions,
+  UseNewRentalClientResult,
+} from './useNewRentalClient'
+
+export { useNewRentalNavigation } from './useNewRentalNavigation'
+export type {
+  UseNewRentalNavigationOptions,
+  UseNewRentalNavigationResult,
+} from './useNewRentalNavigation'
+
+

@@ -237,7 +237,7 @@ export function LineItemTree({
                   textTransform: 'capitalize',
                 }}
               >
-                {mode === 'all' ? 'All Lines' : mode === 'cases' ? `Flight Cases (${cases.length})` : `Loose Gear (${looseLines.length})`}
+                {mode === 'all' ? 'All Lines' : mode === 'cases' ? `Flight Cases (${cases.length})` : `Loose Equipment (${looseLines.length})`}
               </button>
             ))}
           </div>
@@ -712,7 +712,7 @@ export function LineItemTree({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <Icon name="box" size={18} style={{ color: 'var(--text2)' }} />
               <strong style={{ fontSize: '0.9rem', color: 'var(--text)' }}>
-                Loose Gear & Floor Accessories ({looseLines.length})
+                Loose Equipment & Floor Accessories ({looseLines.length})
               </strong>
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>

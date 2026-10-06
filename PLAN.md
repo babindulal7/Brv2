@@ -618,6 +618,25 @@ PWA → install flows → Capacitor Android → Capacitor iOS → Tauri → stor
 
 **Do not invent answers.** Mark `TODO(decision)` and keep moving on what is unblocked.
 
+## 4.60 ⬅ OPEN — should vocabulary be an editable setting? (scrape pattern C2)
+
+Raised 6 Oct 2026. Booqable lets a business rename seven labels (Order, Quote, Pickup,
+Return…) while internal keys stay fixed. **Not built**, because it contradicts a standing
+ruling: `docs/UI_UX_RULES.md` §5 (Law 15) already fixes one word per concept — Rental for the
+commercial transaction, Booking for the database reservation and numbering, Equipment for the
+catalogue, Unit for the physical asset, Client never Customer — and bans *Gear*. An editable
+label setting could put a banned word back on screen, and which seven labels (and whether
+Nepali needs its own set) is a product call.
+
+What was done instead: the three visible *Gear* strings in UI copy became *Equipment*
+(Rental filter drawer, line-item tree). Proper nouns and stored category values
+(`Gear Alert`, supplier names such as "Pokhara Film Gear") were left alone.
+
+**Decide:** (a) keep the glossary fixed and add a lint that fails on banned terms in UI copy,
+with an allowlist for proper nouns and stored values; or (b) allow owner-editable labels for a
+named, short list, each validated against the banned-term list. Recommended: (a).
+Revert for the copy change: restore the three strings.
+
 ## 4.59 ⬅ OPEN — non-physical lines across floor transitions
 
 `TODO(decision)` (29 Sep 2026): 0139 exempts Service, Sub-rental and Manual item

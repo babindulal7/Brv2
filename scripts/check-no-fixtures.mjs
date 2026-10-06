@@ -23,8 +23,8 @@ const BAD_TOKEN = /^(_*mocks?_*|fakes?|demo|samples?|fixtures?|(mock|fake|demo|s
 const isBad = (spec) => spec.split(/[\/._-]+/).some((t) => BAD_TOKEN.test(t))
 
 // RULING 2026-10-06: the dev:mock switch is the one sanctioned fixture import. Both sit behind
-// IS_MOCK (inlined false in production builds); the bundle check below proves they are tree-shaken.
-const ALLOW = new Set(['src/lib/supabase.ts', 'src/modules/auth/Login.tsx'])
+// IS_MOCK (inlined false in production builds); the --dist check proves the mock client and seed corpus are tree-shaken.
+const ALLOW = new Set(['src/lib/supabase.ts'])
 const violations = []
 let checked = 0
 
@@ -55,9 +55,10 @@ if (violations.length) {
 }
 console.log(`check-no-fixtures: PASS (${checked} production files scanned, 0 fixture imports)`)
 
-// Optional proof: with --dist, fail if the built bundle still carries fixture markers.
+// Optional proof: with --dist, fail if the built bundle still carries fixture markers. The marker is a STRING LITERAL
+// ('No mock user'): identifiers like MOCK_LOGINS are renamed by the minifier, so matching them alone passes vacuously.
 if (process.argv.includes('--dist')) {
-  const dist = join(ROOT, 'dist')
+  const dist = join(ROOT, process.env.FIXTURE_GUARD_DIST ?? 'dist')
   const hits = []
   const walk = (d) => {
     for (const e of readdirSync(d)) {
@@ -65,7 +66,7 @@ if (process.argv.includes('--dist')) {
       if (statSync(f).isDirectory()) walk(f)
       else if (/\.(js|mjs)$/.test(e)) {
         const t = readFileSync(f, 'utf8')
-        if (/MOCK_LOGINS|mockSupabase|mockStorage/.test(t)) hits.push(f.slice(ROOT.length + 1))
+        if (/No mock user|multi-week booking negotiated|MOCK_LOGINS|mockSupabase|mockStorage/.test(t)) hits.push(f.slice(ROOT.length + 1))
       }
     }
   }

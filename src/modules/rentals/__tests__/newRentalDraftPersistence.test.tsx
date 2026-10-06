@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
@@ -200,5 +200,86 @@ describe('New Rental Save Draft reporting', () => {
     expect(container.textContent).toContain("Couldn't load this draft")
     expect(container.textContent).toContain('Network error or draft not found')
     expect(container.textContent).toContain('Retry')
+  })
+})
+
+/* ── C4 — an unsaved New Rental kept on this device ─────────────────────── */
+
+describe('New Rental keeps an unsaved booking on this device', () => {
+  const USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  const KEY = `br.newRentalLocalDraft.v1.${USER_ID}`
+  const kept = () => ({ ...SAMPLE_DRAFT_RECORD.data, version: 1, project: 'Kept on this device', bookingNo: undefined })
+
+  const button = (label: string) =>
+    [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === label)
+  const click = async (label: string) => {
+    const target = button(label)
+    expect(target, `a "${label}" button`).toBeDefined()
+    await act(async () => {
+      target!.click()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+  }
+
+  beforeEach(() => window.localStorage.clear())
+
+  it('offers nothing when no copy was kept', async () => {
+    await mount()
+    expect(container.textContent).not.toContain('was kept on this device')
+  })
+
+  it('offers the kept copy, and Restore puts every field back and clears the copy', async () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ data: kept(), savedAt: new Date().toISOString() }))
+    await mount()
+
+    expect(container.textContent).toContain('An unsaved booking from')
+    expect(container.textContent).toContain('was kept on this device')
+
+    await click('Restore it')
+    const project = container.querySelector('input[value="Kept on this device"]') as HTMLInputElement | null
+    expect(project?.value).toBe('Kept on this device')
+    expect(container.textContent).not.toContain('was kept on this device')
+    expect(window.localStorage.getItem(KEY)).toBeNull()
+    // Restoring is local only: no server draft is created until Save draft is pressed.
+    expect(persistRentalDraft).not.toHaveBeenCalled()
+  })
+
+  it('Discard drops the copy without touching the form', async () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ data: kept(), savedAt: new Date().toISOString() }))
+    await mount()
+    await click('Discard')
+
+    expect(container.textContent).not.toContain('was kept on this device')
+    expect(window.localStorage.getItem(KEY)).toBeNull()
+    expect(container.querySelector('input[value="Kept on this device"]')).toBeNull()
+  })
+
+  it('keeps a copy a second after the first edit of a new rental, and not before one', async () => {
+    await mount()
+    expect(window.localStorage.getItem(KEY)).toBeNull()
+
+    const label = [...container.querySelectorAll('label')].find((l) => l.textContent?.trim() === 'Project')
+    const input = (label?.control ?? label?.parentElement?.querySelector('input') ?? null) as HTMLInputElement | null
+    expect(input, 'the project input').not.toBeNull()
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input, 'Typed before any save')
+      input!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(window.localStorage.getItem(KEY)).toBeNull()
+
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1200)) })
+    const stored = JSON.parse(window.localStorage.getItem(KEY) ?? 'null') as { data: { project: string } } | null
+    expect(stored?.data.project).toBe('Typed before any save')
+    expect(persistRentalDraft).not.toHaveBeenCalled()
+  })
+
+  it('does not offer a copy when opening a saved draft', async () => {
+    window.localStorage.setItem(KEY, JSON.stringify({ data: kept(), savedAt: new Date().toISOString() }))
+    fetchRentalDraft.mockResolvedValueOnce(SAMPLE_DRAFT_RECORD)
+    await mountWithUrl('/rentals/new?draft=11111111-1111-4111-8111-111111111111')
+
+    expect(container.textContent).not.toContain('was kept on this device')
+    expect(window.localStorage.getItem(KEY)).not.toBeNull()
   })
 })

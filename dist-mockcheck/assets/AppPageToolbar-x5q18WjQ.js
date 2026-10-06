@@ -1,0 +1,1 @@
+import{j as a}from"./600-DTxaqykr.js";function l({bulkActions:s,filterChips:r,rightSlot:o,pagination:e}){return a.jsxs("div",{className:"app-page-toolbar",role:"group","aria-label":"List controls",children:[a.jsxs("div",{className:"app-page-toolbar__start",children:[s,r]}),a.jsxs("div",{className:"app-page-toolbar__end",children:[o,e]})]})}export{l as A};

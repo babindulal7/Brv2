@@ -24,17 +24,14 @@ import type { RecordKind } from '../recordEditor'
 import { createBuilder, type EngineHooks, type PgError, type Row, type Store } from './engine'
 import { buildStore, clientDirectory, VIEW_OF } from './corpus'
 import { PROJECT_TYPES } from '../projectTypes'
+import { MOCK_LOGINS } from '../devQuickLogins'
 
 const OVERLAY_KEY = 'babin.mock.overlay.v1'
 const SESSION_KEY = 'babin.mock.session.v1'
 
 /** Sign-in accepts these three, with ANY password. It is a local mimic with no
  *  security boundary; the banner names them so the login screen stays usable. */
-export const MOCK_LOGINS = [
-  { email: 'owner@babinrentals.com', role: 'Owner' },
-  { email: 'warehouse@babinrentals.com', role: 'Warehouse' },
-  { email: 'billing@babinrentals.com', role: 'Accounts' },
-] as const
+export { MOCK_LOGINS }
 
 interface Overlay {
   inserts: { table: string; row: Row }[]

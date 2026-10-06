@@ -39,7 +39,9 @@ vi.mock('../../../lib/supabase', () => ({
 }))
 
 import { bookingDays, bookingInstant } from '../booking/newRentalUtils'
-import { confirmWriteRefusals } from '../booking'
+import { confirmWriteRefusals, deriveRentalAlertsAndNotices } from '../booking'
+import { rupees, type Paisa } from '../../../lib/money'
+import { calculatePricingPipeline, type PricingPipelineResult } from '../../../lib/pricingPipeline'
 
 /** A `products.id`-shaped id — what a live catalogue row carries. */
 const PRODUCT_UUID = '3f1c2b4a-5d6e-4f7a-8b9c-0d1e2f3a4b5c'
@@ -172,7 +174,7 @@ describe('bookingDays — NR-19, the length is measured over the instants that g
  * for a Babin pickup. The fix carries explicit `value` attributes in the state
  * union, display text unchanged.
  */
-import newRentalRaw from '../NewRental.tsx?raw'
+import newRentalLogisticsRaw from '../booking/useNewRentalLogistics.ts?raw'
 import deliverySectionRaw from '../booking/DeliverySection.tsx?raw'
 
 describe('NR-rpo — the Return-Pickup select speaks the state union', () => {
@@ -182,7 +184,7 @@ describe('NR-rpo — the Return-Pickup select speaks the state union', () => {
   })
 
   it('the state union and the branch condition read the same two literals', () => {
-    expect(newRentalRaw).toContain("useState<'Client Return' | 'Babin Pickup'>")
+    expect(newRentalLogisticsRaw).toContain("useState<'Client Return' | 'Babin Pickup'>")
     expect(deliverySectionRaw).toContain("returnPickupType === 'Babin Pickup'")
   })
 
@@ -231,3 +233,82 @@ describe('NR-19 — the availability window is the window that gets stored', () 
     expect(bookingDays(at, at)).toBe(0)
   })
 })
+
+describe('deriveRentalAlertsAndNotices', () => {
+  const dummyPricing: PricingPipelineResult = calculatePricingPipeline({
+    equipmentSubtotalPaisa: rupees(1000) as Paisa,
+    bundleSubtotalPaisa: rupees(0) as Paisa,
+    servicesSubtotalPaisa: rupees(0) as Paisa,
+    crewSubtotalPaisa: rupees(0) as Paisa,
+    deliveryChargePaisa: rupees(0) as Paisa,
+    fuelChargePaisa: rupees(0) as Paisa,
+    vatEnabled: true,
+    vatRatePercent: 13,
+    recommendedDepositPaisa: rupees(5000) as Paisa,
+  })
+
+  const validClient = {
+    id: 'C-01',
+    dbId: PRODUCT_UUID,
+    name: 'Sita Ram',
+    pan: '123456789',
+    phone: '9841000000',
+    email: 'sita@example.com',
+    outstandingPaisa: rupees(0) as Paisa,
+    totalRentals: 5,
+    isBlocked: false,
+  } as any
+
+  it('passes cleanly when all booking inputs are valid', () => {
+    const result = deriveRentalAlertsAndNotices({
+      conflictLines: [],
+      availabilitySource: { state: 'ready', byProduct: new Map() },
+      client: validClient,
+      govId: '123456789',
+      kind: 'Feature Film',
+      discountPct: 0,
+      crew: [],
+      canBookingMoney: true,
+      depositRequiredPaisa: rupees(5000) as Paisa,
+      depositReceivedPaisa: rupees(0) as Paisa,
+      depositPendingPaisa: rupees(5000) as Paisa,
+      outstandingPaisa: rupees(0) as Paisa,
+      days: 2,
+      clientsAreLive: true,
+      lines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      equipmentLines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      pricing: dummyPricing,
+    })
+
+    expect(result.confirmBlocked).toBe(false)
+    expect(result.critical).toHaveLength(0)
+    expect(result.blockingNotices).toHaveLength(0)
+  })
+
+  it('blocks confirm when client is missing or project type is empty', () => {
+    const noClient = deriveRentalAlertsAndNotices({
+      conflictLines: [],
+      availabilitySource: { state: 'ready', byProduct: new Map() },
+      client: undefined,
+      govId: '',
+      kind: '',
+      discountPct: 0,
+      crew: [],
+      canBookingMoney: true,
+      depositRequiredPaisa: rupees(0) as Paisa,
+      depositReceivedPaisa: rupees(0) as Paisa,
+      depositPendingPaisa: rupees(0) as Paisa,
+      outstandingPaisa: rupees(0) as Paisa,
+      days: 1,
+      clientsAreLive: true,
+      lines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      equipmentLines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      pricing: dummyPricing,
+    })
+
+    expect(noClient.confirmBlocked).toBe(true)
+    expect(noClient.critical.some((c) => c.text.includes('No client selected'))).toBe(true)
+    expect(noClient.critical.some((c) => c.text.includes('Select a project type'))).toBe(true)
+  })
+})
+

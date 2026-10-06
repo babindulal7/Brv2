@@ -54,7 +54,7 @@ const BOOQABLE_PRESETS: PresetOption[] = [
   { key: 'Upcoming', label: 'Upcoming', icon: 'box', description: 'Bookings awaiting warehouse packing' },
   { key: 'Tomorrow', label: 'Tomorrow', icon: 'truck', description: 'Starts tomorrow' },
   { key: 'Returning', label: 'Returning', icon: 'queues', description: 'Expected return' },
-  { key: 'On Rent', label: 'On Rent', icon: 'truck', description: 'Gear active with clients' },
+  { key: 'On Rent', label: 'On Rent', icon: 'truck', description: 'Equipment active with clients' },
   { key: 'Overdue', label: 'Overdue', icon: 'alert_triangle', description: 'Past return deadline and not checked in' },
   { key: 'Payment Due', label: 'Payment Due', icon: 'invoice', description: 'Unpaid or partial deposits' },
 ]
@@ -332,7 +332,7 @@ export function BooqableRentalFilterDrawer({
           </FilterSection>
         )}
 
-        {/* Section 4: Sourcing & External Gear */}
+        {/* Section 4: Sourcing & External Equipment */}
         <FilterSection
           title="Fulfillment & Sourcing"
           defaultOpen
@@ -365,7 +365,7 @@ export function BooqableRentalFilterDrawer({
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 'var(--t-ui)', fontWeight: subOn ? 700 : 500, color: 'var(--text)' }}>
-                  Sub-rented Gear Only
+                  Sub-rented Equipment Only
                 </span>
                 <Badge tone="ext" label="External" size="sm" />
               </div>

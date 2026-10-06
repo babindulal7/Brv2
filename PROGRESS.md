@@ -1,5 +1,41 @@
 # Progress Log
 
+## 2026-10-06 (i) — C4 local copy of an unsaved New Rental; C2 not built (conflicts with Law 15)
+
+**Did**
+- **C4.** New file `src/modules/rentals/booking/localDraft.ts` + wiring in `NewRental.tsx`. A NEW rental that has never been saved (no `draftId`, not editing) keeps a device-local copy of the same `RentalDraftData` snapshot one second after the last change. On the next visit to New Rental a banner offers **Restore it** / **Discard**. Restore applies the fields locally (no server draft is created until Save draft is pressed). The copy is cleared on restore, discard, the first successful Save draft, a confirmed booking, and the exit dialog's leave.
+- Guard rails: per-user key; not written on a shared device (`isSharedDevice`); dropped after 7 days or if corrupt; never offered when opening a saved draft (`?draft=`) or editing a quote.
+- Correction to the scrape audit's row C4: once the first Save draft lands, New Rental already autosaves to the server every 2.5 s. The real gap was only the stretch before the first save, which is what this covers.
+- Refactor: the ~30 field setters of the server-draft loader moved into one `applyDraftFields` callback, now shared by the loader and the local restore (the quote loader is untouched).
+- **C2 NOT built.** An editable-vocabulary setting contradicts `docs/UI_UX_RULES.md` §5 (Law 15), which fixes one word per concept and bans *Gear*. Logged as PLAN.md §4.60 (OPEN) with a recommendation. Fixed the three visible *Gear* strings in UI copy to *Equipment* (rental filter drawer ×2, line-item tree ×2); stored values and proper nouns left alone.
+
+**Ruled**
+- No new ruling; C2 is an open decision (PLAN §4.60), recommended answer: keep the glossary fixed and add a banned-term lint with an allowlist.
+
+**Verified**
+- New `localDraft.test.ts` (8) and four New Rental integration cases + one typing case in `newRentalDraftPersistence.test.tsx`: offer only when a copy exists, Restore puts the fields back and clears the copy without calling the server, Discard clears, no offer when opening a saved draft, copy written ~1 s after the first edit and not before.
+- `vitest run src/modules/rentals src/components`: 78 files / 752 tests green. `eslint` clean on every file touched. `tsc`: no errors in files I touched; the only errors are in another session's in-progress `booking/BookingEquipmentSection*` files.
+- NOT verified by driving the app (sign-in pending; Babin will check after full development). The other session was mid-refactor of `NewRental.tsx` during this work and briefly broke it (`customLineName is not defined`); it settled and my tests then passed.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 54 | 52 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 153 files · check:pglite 153/153 applied, 0 failed (recorded 2026-10-06T08:52:29.952Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Gates read from .lifecycle-result.json, written 2026-10-06T08:52:37.974Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Decide PLAN §4.60 (vocabulary): keep fixed + banned-term lint (recommended), or editable labels.
+- Look at the restore banner in a browser; also the Deposit rules card and Close modal from entry (h).
+- C3 (single "bundles available" figure): `src/lib/bundleAvailability.ts` (entry g) has the formula but is not wired to a screen.
+- C6 (product deposit prefill) and C7 (real shortage list) still unbuilt; C5 double-start guard still not located.
+
 ## 2026-10-06 (h) — Close may skip a held deposit with a written reason (migration 0155)
 
 **Did**
@@ -59,6 +95,12 @@ Counted by `npm run completion`, not typed.
 - Applied **only 0154** and recorded it in `schema_migrations`. The 0125–0153 cutover is still NOT done and was not touched.
 - Verified live: trigger `trg_audit_operation_sessions` now present; a test UPDATE inside a transaction raised that session's audit rows 7 → 8, and a ROLLBACK returned it to 7; audit_events total unchanged at 79.
 - Credential hygiene: the DB password was printed into the chat once by a grep during this session (N-8). **Rotate it.**
+
+**Live cutover (06 Oct 2026, on Babin's explicit instruction)**
+- Applied to live, in order: 0148, 0150, 0151, 0153, 0155 (all ran without error). Before: definitions of 103 functions and 30 views saved to `backups/live_definitions_2026-10-06T08-56-33-610Z.json`.
+- Verified by grants, not by an anon query: no public view is readable by `anon` (0 of 30), `audit_logs` / `staff_directory_v` / `product_units_service_v` are `authenticated` only, `cancel_booking` is not executable by anon, payment sequence is padding 1 / no year (`PAY-94`). Row counts unchanged (2 bookings, 79 audit rows).
+- **Known bookkeeping gap:** `schema_migrations` records only 0148, 0151 and 0154. 0150, 0153 and 0155 RAN but were not recorded (version-stamp collision in my script, hidden by `on conflict do nothing`). The attempt to record them was blocked, so Babin must insert them. Until then, any tool that reads `schema_migrations` will think they are pending.
+- First attempt at "anon BEFORE/AFTER" printed `denied` both times, so it proved nothing and is not cited as evidence.
 
 **Blocked / open**
 - True concurrent-reservation proof needs a real Postgres with two connections.

@@ -13,7 +13,7 @@ export type { SystemRole as Role } from '../types/database'
 import type { SystemRole } from '../types/database'
 type Role = SystemRole
 
-interface AuthUser {
+export interface AuthUser {
   id: string
   name: string
   role: Role

@@ -1,3 +1,12 @@
+import { validateDiscount } from '../../../lib/discount'
+import { formatMoney, type Paisa } from '../../../lib/money'
+import type { ClientRecord } from '../../../lib/queries/clients'
+import type { CrewRole } from '../../../lib/queries/crew'
+import type { PricingPipelineResult } from '../../../lib/pricingPipeline'
+import { dbRejectsRole } from './CrewSearch'
+import type { EquipmentAvailabilitySource } from './itemCatalogue'
+import { PRODUCT_ID_RE } from './newRentalUtils'
+
 /**
  * One reason Confirm Booking is refused, in the shape the rail's blocking-
  * notices card renders.
@@ -10,6 +19,12 @@
 export interface BlockingNotice {
   text: string
   action?: string
+}
+
+export interface RentalAlertItem {
+  text: string
+  severity: 'Critical' | 'Warning' | 'Information'
+  action: string
 }
 
 /** Everything `confirmWriteRefusals` needs to know, and nothing else. */
@@ -88,3 +103,104 @@ export function confirmWriteRefusals(s: ConfirmWriteState): BlockingNotice[] {
   }
   return out
 }
+
+export interface RentalAlertsInput {
+  conflictLines: readonly { id?: string; text: string }[]
+  availabilitySource: EquipmentAvailabilitySource
+  client: ClientRecord | undefined
+  govId: string
+  kind: string
+  discountPct: number
+  crew: Array<{ role: CrewRole | string; name: string }>
+  canBookingMoney: boolean
+  depositRequiredPaisa: Paisa
+  depositReceivedPaisa: Paisa
+  depositPendingPaisa: Paisa
+  outstandingPaisa: Paisa
+  days: number
+  clientsAreLive: boolean
+  lines: readonly { productId?: string | null | undefined; id?: string | undefined; name: string }[]
+  equipmentLines: readonly { productId?: string | null | undefined; id?: string | undefined; name: string }[]
+  pricing: PricingPipelineResult
+}
+
+export interface RentalAlertsResult {
+  alerts: RentalAlertItem[]
+  critical: RentalAlertItem[]
+  blockingNotices: BlockingNotice[]
+  confirmBlocked: boolean
+}
+
+export function deriveRentalAlertsAndNotices(input: RentalAlertsInput): RentalAlertsResult {
+  const discountVerdict = validateDiscount(input.discountPct)
+  const discountUnapproved = !discountVerdict.valid
+
+  const alerts: RentalAlertItem[] = [
+    ...input.conflictLines.map((c) => ({
+      text: `Equipment conflict — ${c.text}`,
+      severity: 'Critical' as const,
+      action: 'Open Inventory',
+    })),
+    ...(input.availabilitySource.state === 'failed'
+      ? [
+          {
+            text: `Availability could not be checked for these dates: ${input.availabilitySource.reason}. Confirm will re-check and refuse if anything is short.`,
+            severity: 'Warning' as const,
+            action: 'Open Equipment',
+          },
+        ]
+      : []),
+    ...(!input.client ? [{ text: 'No client selected', severity: 'Critical' as const, action: 'Select Client' }] : []),
+    ...(input.kind.trim() === ''
+      ? [{ text: 'Select a project type before confirming this rental.', severity: 'Critical' as const, action: 'Open Client & Dates' }]
+      : []),
+    ...(input.client && input.govId.trim().length === 0 ? [{ text: 'Missing client ID or PAN', severity: 'Critical' as const, action: 'Edit Client' }] : []),
+    ...(input.client && (input.client.isBlocked || input.client.onStop)
+      ? [
+          {
+            text: `Client is blocked: ${input.client.blockReason || input.client.onStop?.reason || 'Account flagged as on-stop'}`,
+            severity: 'Critical' as const,
+            action: 'View Client',
+          },
+        ]
+      : []),
+    ...(discountUnapproved
+      ? [{ text: discountVerdict.error ?? 'Discount is not a valid percentage.', severity: 'Critical' as const, action: 'Fix Discount' }]
+      : []),
+    ...input.crew
+      .filter((c) => dbRejectsRole(c.role as CrewRole))
+      .map((c) => ({
+        text: `${c.name}'s role — ${c.role} — is not one the database accepts, so this booking cannot be confirmed while they are on it`,
+        severity: 'Critical' as const,
+        action: 'Open Crew',
+      })),
+    ...(input.canBookingMoney && input.client && input.client.outstandingPaisa > 0
+      ? [{ text: `Client has ${formatMoney(input.client.outstandingPaisa)} outstanding`, severity: 'Warning' as const, action: 'View Client' }]
+      : []),
+    ...(input.canBookingMoney && input.depositRequiredPaisa > input.depositReceivedPaisa
+      ? [{ text: `Deposit ${formatMoney(input.depositPendingPaisa)} pending`, severity: 'Warning' as const, action: 'Receive Deposit' }]
+      : []),
+    ...(input.canBookingMoney && input.outstandingPaisa > 0 ? [{ text: 'Rental outstanding', severity: 'Warning' as const, action: 'Receive Payment' }] : []),
+  ]
+  const critical = alerts.filter((a) => a.severity === 'Critical')
+
+  const blockingNotices: BlockingNotice[] = [
+    ...(input.days === 0 ? [{ text: 'The return must be later than the pickup — check the times as well as the dates.', action: 'Open Dates' }] : []),
+    ...critical.map((a) => ({ text: a.text, action: a.action })),
+    ...confirmWriteRefusals({
+      clientSelected: Boolean(input.client),
+      clientDbId: input.client?.dbId ?? null,
+      clientIsBlocked: Boolean(input.client?.isBlocked || input.client?.onStop),
+      clientsAreLive: input.clientsAreLive,
+      lineCount: input.lines.length,
+      sampleLineName: input.equipmentLines.find((l) => !PRODUCT_ID_RE.test(l.productId ?? l.id ?? ''))?.name ?? null,
+      canBookingMoney: input.canBookingMoney,
+    }),
+    ...input.pricing.discounts.validationErrors.map((err) => ({ text: err, action: 'Open Pricing' })),
+    ...input.pricing.securityDeposit.validationErrors.map((err) => ({ text: err, action: 'Open Pricing' })),
+  ]
+  const confirmBlocked = blockingNotices.length > 0
+
+  return { alerts, critical, blockingNotices, confirmBlocked }
+}
+

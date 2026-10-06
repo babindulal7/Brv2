@@ -52,6 +52,7 @@ export interface DeliverySectionProps {
   setFuelChargePaisa: (val: Paisa) => void
   transportPaisa: Paisa
   canBookingMoney: boolean
+  title?: string | undefined
 }
 
 export function DeliverySection({
@@ -87,11 +88,12 @@ export function DeliverySection({
   setFuelChargePaisa,
   transportPaisa,
   canBookingMoney,
+  title = 'Delivery & Transport',
 }: DeliverySectionProps) {
   return (
     <Section
       id="section-4"
-      title="Delivery & Transport"
+      title={title}
       open={open}
       onToggle={onToggle}
       summary={clientPickup ? 'Client Pickup · Rs 0' : `Babin Delivery · ${canBookingMoney ? formatMoney(transportPaisa) : 'charged'}`}
