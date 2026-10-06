@@ -4,6 +4,8 @@
 .record-section{scroll-margin-top:100px;min-width:0}
 .record-actions{position:sticky;bottom:0;z-index:15;display:flex;align-items:center;gap:var(--sp-sm);padding:var(--sp-md);background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-sm)}
 .record-actions>span{flex:1;color:var(--muted);font-size:var(--t-meta)}
+/* Keep the global scanner clear of the shared save/confirm controls. */
+@media(min-width:768px){body:has(.record-actions){--scanner-bottom:112px}}
 .record-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:var(--sp-md)}
 .record-field{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:var(--t-meta)}
 .record-field input,.record-field select,.record-field textarea{min-height:44px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-input);background:var(--card2);color:var(--text);font:inherit;width:100%;box-sizing:border-box}

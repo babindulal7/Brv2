@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MemoryRouter, useLocation } from 'react-router-dom'
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MemberListRow } from '../../../lib/queries/membership'
 import Membership from '../Membership'
+
+;(globalThis as Record<string, unknown>)['IS_REACT_ACT_ENVIRONMENT'] = true
 
 const members: MemberListRow[] = Array.from({ length: 11 }, (_, index) => ({
   id: `membership-${index}`,
@@ -24,7 +26,8 @@ vi.mock('../../../lib/moneyVisibility', () => ({ useCanViewMoney: () => false })
 let currentSearch = ''
 function LocationProbe() {
   currentSearch = useLocation().search
-  return null
+  const navigate = useNavigate()
+  return <button type="button" onClick={() => navigate(-1)}>Go back</button>
 }
 
 let root: Root | undefined
@@ -63,5 +66,16 @@ describe('Membership directory URL state', () => {
     await act(async () => { next?.click() })
     expect(currentSearch).toContain('mp=2')
     expect(host?.textContent).toContain('Member 10')
+  })
+
+  it('restores the previous plan after Back', async () => {
+    await mount('/clients?tab=membership')
+    const creator = [...(host?.querySelectorAll('button') ?? [])].find((button) => button.textContent?.startsWith('Creator '))
+    expect(creator).toBeDefined()
+    await act(async () => { creator?.click() })
+    expect(currentSearch).toContain('ml=Creator')
+    const back = [...(host?.querySelectorAll('button') ?? [])].find((button) => button.textContent === 'Go back')
+    await act(async () => { back?.click() })
+    expect(currentSearch).toBe('?tab=membership')
   })
 })

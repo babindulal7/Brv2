@@ -500,11 +500,12 @@ export function CrewBooking() {
                 {filteredRoster.length === 0 ? (
                   <EmptyState
                     title="Nobody matches this filter"
-                    description="Adjust the availability chips or the search box."
+                    description="Adjust the role, availability, or search filters."
                     actionLabel="Clear Filters"
                     onAction={() => {
                       setRosterChip('All')
                       setSearchQuery('')
+                      setSelectedRole('')
                     }}
                   />
                 ) : phone ? (
@@ -552,11 +553,12 @@ export function CrewBooking() {
                 {filteredCrew.length === 0 ? (
                   <EmptyState
                     title="No crew assignments found"
-                    description="Adjust your search query to find crew assignments."
+                    description="Adjust the role or search filters to find crew assignments."
                     actionLabel="Clear Filters"
                     onAction={() => {
                       setRosterChip('All')
                       setSearchQuery('')
+                      setSelectedRole('')
                     }}
                   />
                 ) : phone ? (

@@ -1317,7 +1317,7 @@ export default function Finance() {
               expanded={invoiceFiltersOpen}
             />
           ),
-        } : tab === 'Expenses' ? {
+        } : money && tab === 'Expenses' ? {
           leading: <FilterButton onClick={() => setExpenseFiltersOpen((open) => !open)} controls="expense-filters" expanded={expenseFiltersOpen} />,
         } : {})}
         icon="card"

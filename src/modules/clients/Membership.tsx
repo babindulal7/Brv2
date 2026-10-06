@@ -58,6 +58,7 @@ export default function Membership({ embedded = false, filtersOpen: externalFilt
     if (value) next.set(key, value)
     else next.delete(key)
     next.delete('mp')
+    if (next.toString() === params.toString()) return
     setParams(next, { replace })
   }
 

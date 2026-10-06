@@ -874,7 +874,7 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
         embedded={embedded}
         icon="card"
         title="Expenses"
-        leading={!embedded ? <FilterButton onClick={() => setInternalFiltersOpen((open) => !open)} controls="expense-filters" expanded={filtersOpen} activeCount={Number(categoryId !== 'All')} /> : undefined}
+        leading={!embedded && money ? <FilterButton onClick={() => setInternalFiltersOpen((open) => !open)} controls="expense-filters" expanded={filtersOpen} activeCount={Number(categoryId !== 'All')} /> : undefined}
         description="Track operating costs and approvals."
         {...(money ? { actions: headerActions } : {})}
       />

@@ -323,7 +323,7 @@ export default function ScannerFab() {
           : {
               position: 'fixed',
               right: 20,
-              bottom: 20,
+              bottom: 'var(--scanner-bottom, 20px)',
               zIndex: 60,
             }
       }
