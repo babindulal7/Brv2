@@ -405,9 +405,17 @@ describe('toRow — raw DB row → BookingListRow', () => {
   })
 
   it('does not retry unrelated database errors', async () => {
-    db.state.error = { code: '42501', message: 'permission denied for bookings' }
-    await expect(listBookings()).rejects.toThrow(/permission denied for bookings/)
+    db.state.error = { code: 'PGRST301', message: 'JWT expired' }
+    await expect(listBookings()).rejects.toThrow(/JWT expired/)
     expect(db.state.selects).toHaveLength(1)
+  })
+
+  /* 7 Oct 2026: live had 0144's columns but no column grant, so the whole projection was refused
+     with 42501. One retry on the pre-0144 projection; a refusal that persists still surfaces. */
+  it('retries a permission refusal once on the pre-0144 projection, and still reports it if that fails too', async () => {
+    db.state.error = { code: '42501', message: 'permission denied for table bookings' }
+    await expect(listBookings()).rejects.toThrow(/permission denied for table bookings/)
+    expect(db.state.selects).toHaveLength(2)
   })
 
   it('retries count-only searches against pre-0144 searchable columns', async () => {

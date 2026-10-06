@@ -421,6 +421,15 @@ function missingProjectTypeColumn(error: BookingQueryError | null): boolean {
   if (code === '42703' || code === 'PGRST204') {
     if (msg.includes('project_type')) return true
   }
+  /*
+   * RULING 2026-10-07: live has 0144's columns but never GRANTED them — `bookings` carries
+   * column-level grants since 0062, and 0144 added no `grant select (…)`. The table answers
+   * 42501 "permission denied for table bookings" without naming the column, which took the
+   * Today screen and the Rentals list down for every role. Fall back to the pre-0144
+   * projection exactly as for a missing column; if that read is refused too, its own error
+   * surfaces. The grant itself is 0161 (Babin applies it, N-5).
+   */
+  if (code === '42501') return true
   if (msg.includes('project_type') && (msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find'))) {
     return true
   }
