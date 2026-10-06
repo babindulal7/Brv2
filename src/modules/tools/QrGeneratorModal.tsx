@@ -125,7 +125,8 @@ export default function QrGenerator() {
               background: 'var(--surface)',
               color: 'var(--text)',
               marginTop: '4px',
-              fontFamily: 'monospace',
+              fontFamily: 'var(--font-id, sans-serif)',
+              fontVariantNumeric: 'tabular-nums',
             }}
           />
 
@@ -190,7 +191,7 @@ export default function QrGenerator() {
               Babin Rentals · Asset ID
             </div>
             {format === 'QR' ? renderQrSvg(tagText || 'SAMPLE') : renderBarcodeSvg(tagText || 'SAMPLE')}
-            <div style={{ fontSize: '13px', fontWeight: 700, fontFamily: 'monospace', color: '#0A0A0A', marginTop: '8px' }}>
+            <div style={{ fontSize: '13px', fontWeight: 700, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', color: '#0A0A0A', marginTop: '8px' }}>
               {tagText || 'SAMPLE'}
             </div>
           </div>

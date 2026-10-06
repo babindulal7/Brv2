@@ -398,7 +398,7 @@ export default function SalesVatReports() {
                     <tr key={inv.id}>
                       <td style={{ ...td, fontWeight: 600, color: 'var(--primary)' }}>{inv.invoiceNo}</td>
                       <td style={{ ...td, fontWeight: 600 }}>{inv.clientName}</td>
-                      <td style={{ ...td, fontFamily: 'monospace' }}>{inv.clientPan || '—'}</td>
+                      <td style={{ ...td, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{inv.clientPan || '—'}</td>
                       <td style={td}>{inv.issueDate}</td>
                       <td style={{ ...td, textAlign: 'right' }}>{formatMoney(inv.subtotal)}</td>
                       <td style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{formatMoney(inv.taxAmount)}</td>
@@ -509,7 +509,7 @@ export default function SalesVatReports() {
                       <td style={{ ...td, fontWeight: 600, color: 'var(--primary)' }}>{tr.invoiceNo}</td>
                       <td style={td}>{tr.issueDate}</td>
                       <td style={{ ...td, fontWeight: 600 }}>{tr.clientName}</td>
-                      <td style={{ ...td, fontFamily: 'monospace' }}>{tr.clientPan || 'Unregistered'}</td>
+                      <td style={{ ...td, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{tr.clientPan || 'Unregistered'}</td>
                       <td style={{ ...td, textAlign: 'right' }}>{formatMoney(tr.subtotal)}</td>
                       <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: 'var(--status-success-text)' }}>
                         {formatMoney(tr.taxAmount)}

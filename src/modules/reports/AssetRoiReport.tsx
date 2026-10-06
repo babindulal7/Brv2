@@ -329,19 +329,20 @@ export default function AssetRoiReport() {
                         {r.category} · {r.daysOwned}d in service
                       </div>
                     </td>
-                    <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>
+                    <td style={{ padding: '10px 12px', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>
                       {formatMoney(r.purchasePricePaisa)}
                     </td>
-                    <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>
+                    <td style={{ padding: '10px 12px', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>
                       {formatMoney(r.lifetimeRevenuePaisa)}
                     </td>
-                    <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>
+                    <td style={{ padding: '10px 12px', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>
                       {formatMoney(r.maintenanceCostPaisa)}
                     </td>
                     <td
                       style={{
                         padding: '10px 12px',
-                        fontFamily: 'monospace',
+                        fontFamily: 'var(--font-id, sans-serif)',
+                        fontVariantNumeric: 'tabular-nums',
                         fontWeight: 600,
                         color: isPositive ? 'var(--st-in-fg)' : 'var(--st-danger-fg)',
                       }}

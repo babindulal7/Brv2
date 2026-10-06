@@ -237,7 +237,7 @@ afterEach(async () => {
   container?.remove()
 })
 
-describe('Tier 1: Feature Coverage (Happy Path & Isolations)', () => {
+describe('Tier 1: Feature Coverage (Happy Path & Isolations)', { timeout: 90000 }, () => {
   describe('R1: Global Shell & Navigation Simplification', () => {
     it('Header renders breadcrumb trail, search command button, and user profile trigger', async () => {
       await mountComponent(

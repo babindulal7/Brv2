@@ -126,6 +126,7 @@ export interface CreateRentalLine {
   isIncluded?: boolean
   parentLineId?: string | null
   parentClientUuid?: string | null
+  serviceBasis?: 'Flat' | 'Per day' | null
   supplierId?: string | null
   supplierCost?: number | null
   markupAmount?: number | null
@@ -493,34 +494,42 @@ export const createRentalConfig: ActionConfig<CreateRentalInput, CreateRentalRes
       return_location: input.returnLocation ?? null,
       quote_expires_at: input.quoteExpiresAt ?? null,
       deposit_required: input.depositRequired ?? 0,
-      lines: input.lines.map((line, i) => ({
-        /* One key per ROW. A line reusing the action's key would collide on
-           `booking_lines.client_uuid`, which is unique. */
-        client_uuid: line.clientUuid ?? newClientUuid(),
-        line_type: line.lineType,
-        parent_line_id: line.parentLineId ?? null,
-        parent_client_uuid: line.parentClientUuid ?? null,
-        product_id: line.productId ?? null,
-        bundle_id: line.bundleId ?? null,
-        description: line.description ?? null,
-        qty: line.qty,
-        days: line.days,
-        rate: line.rate ?? 0,
-        discount_amount: line.discountAmount ?? 0,
-        is_included: line.isIncluded ?? false,
-        supplier_id: line.supplierId ?? null,
-        supplier_cost: line.supplierCost ?? null,
-        markup_amount: line.markupAmount ?? null,
-        line_note: line.lineNote ?? null,
-        sort_order: line.sortOrder ?? i,
-        /* D5 — serials at creation. One Law 8 key per unit ROW
-           (`booking_line_units.client_uuid` is NOT NULL UNIQUE). An empty
-           array is the unit-less fallback and writes nothing. */
-        units: (line.units ?? []).map((assetId) => ({
-          client_uuid: newClientUuid(),
-          asset_id: assetId,
-        })),
-      })),
+      lines: input.lines.map((line, i) => {
+        const isManual = line.lineType === 'Manual item'
+        const desc = line.description?.trim() || (isManual ? 'Manual item' : null)
+        const note = line.lineNote?.trim() || (isManual ? (desc || 'Manual line item') : null)
+        const serviceBasis = line.serviceBasis ?? (line.lineType === 'Service' ? 'Per day' : null)
+        const supplierCost = line.supplierCost != null ? line.supplierCost : (line.lineType === 'Sub-rental' ? 0 : null)
+        return {
+          /* One key per ROW. A line reusing the action's key would collide on
+             `booking_lines.client_uuid`, which is unique. */
+          client_uuid: line.clientUuid ?? newClientUuid(),
+          line_type: line.lineType,
+          parent_line_id: line.parentLineId ?? null,
+          parent_client_uuid: line.parentClientUuid ?? null,
+          product_id: line.productId ?? null,
+          bundle_id: line.bundleId ?? null,
+          description: desc,
+          qty: line.qty,
+          days: line.days,
+          rate: line.rate ?? 0,
+          discount_amount: line.discountAmount ?? 0,
+          is_included: line.isIncluded ?? false,
+          service_basis: serviceBasis,
+          supplier_id: line.supplierId ?? null,
+          supplier_cost: supplierCost,
+          markup_amount: line.markupAmount ?? null,
+          line_note: note,
+          sort_order: line.sortOrder ?? i,
+          /* D5 — serials at creation. One Law 8 key per unit ROW
+             (`booking_line_units.client_uuid` is NOT NULL UNIQUE). An empty
+             array is the unit-less fallback and writes nothing. */
+          units: (line.units ?? []).map((assetId) => ({
+            client_uuid: newClientUuid(),
+            asset_id: assetId,
+          })),
+        }
+      }),
       discounts: (input.discounts ?? []).map((d) => ({
         client_uuid: d.clientUuid ?? newClientUuid(),
         discount_source: d.discountSource,

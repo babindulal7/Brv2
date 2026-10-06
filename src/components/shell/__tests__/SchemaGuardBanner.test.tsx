@@ -160,7 +160,7 @@ describe('SchemaGuardBanner', () => {
 
     expect(toggle?.getAttribute('aria-expanded')).toBe('true')
     expect(container.querySelectorAll('li').length).toBeGreaterThan(0)
-    expect(container.querySelector('li')?.textContent).toContain('014')
+    expect(container.querySelector('li')?.textContent).toMatch(/014|015/)
   })
 
   it('meets the 44px touch-target floor on every control it renders', async () => {

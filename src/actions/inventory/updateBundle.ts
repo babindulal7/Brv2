@@ -1,6 +1,5 @@
 import { createAction, type ActionConfig, type ActionContext } from '../core';
 import { EVENT_TYPES } from '../../events/eventBus';
-import { idempotentInsert, safeUpdate } from '../../lib/dataAccess';
 import { supabase } from '../../lib/supabase';
 import { toRupees, type Paisa } from '../../lib/money';
 
@@ -153,6 +152,12 @@ export type UpdateBundleInput = {
   clientUuid: string;
   /** `bundles.id` — a uuid. The screen holds it; the code is for humans. */
   bundleId: string;
+  /**
+   * The record revision the operator opened (`read_record_editor('bundle', id).revision`). The save is
+   * refused if the bundle or its components changed since. Typed optional so existing call sites compile;
+   * `validate` refuses a save without it.
+   */
+  expectedRevision?: string;
   patch?: UpdateBundlePatch;
   lineEdits?: UpdateBundleLineEdit[];
   lineAdds?: UpdateBundleLineAdd[];
@@ -167,46 +172,6 @@ export type UpdateBundleResult = {
   linesUpdated: number;
   linesAdded: number;
   linesDeactivated: number;
-};
-
-/** The exact `bundles` columns this action writes — typechecked against 0004:380-398. */
-type BundleUpdatePayload = {
-  name?: string;
-  description?: string | null;
-  category_id?: string | null;
-  daily_rate?: number;
-  weekly_rate?: number;
-  is_active?: boolean;
-  /* Law 7 — AD in UTC. Device clock, because PostgREST cannot send `now()` in
-     an UPDATE payload; the same stamp `blockClient` makes for the same reason. */
-  updated_at: string;
-  updated_by: string;
-};
-
-/**
- * The `bundle_items` columns an edit may write.
- *
- * ⚠ `bundle_items` has **no `updated_at` / `updated_by`** (0004:405-422) — only
- * `created_at` / `created_by`. So a component edit is unattributed at the row;
- * the only trace is the parent bundle's `updated_by`, which this action always
- * stamps even when the patch is otherwise empty and the edit was lines-only.
- * That is deliberate: it keeps "who last touched this kit" answerable.
- */
-type BundleItemUpdatePayload = {
-  quantity?: number;
-  days?: number;
-  is_mandatory?: boolean;
-  sort_order?: number;
-};
-
-type BundleItemInsertPayload = {
-  client_uuid: string;
-  bundle_id: string;
-  product_id: string;
-  quantity: number;
-  days: number;
-  sort_order: number;
-  created_by: string;
 };
 
 /** Trimmed, or null — a blank optional column is NULL, never an empty string. */
@@ -260,6 +225,10 @@ export const updateBundleConfig: ActionConfig<UpdateBundleInput, UpdateBundleRes
       throw new Error(
         'This edit carries no idempotency key, so a retry could apply it twice. Nothing was sent. (Law 8)',
       );
+    }
+
+    if (!input.expectedRevision || input.expectedRevision.trim() === '') {
+      throw new Error('Reload the bundle before saving - this edit does not say which version it was made against. Nothing was sent.');
     }
 
     const patchKeys = Object.keys(input.patch ?? {});
@@ -324,6 +293,9 @@ export const updateBundleConfig: ActionConfig<UpdateBundleInput, UpdateBundleRes
     }
   },
 
+  /* RULING 2026-10-06: every write goes through `update_bundle` (0153) - one transaction, a revision
+     lock and an idempotency receipt - instead of the former header/line/deactivate sequence that could
+     leave a bundle half-saved. Removed components are soft-deactivated inside it (Law 3). */
   execute: async (input, ctx: ActionContext) => {
     /* OFFLINE — refused, not queued. Every reference below is resolved by a
        SELECT the queue cannot run, and an edit queued without them would be
@@ -341,86 +313,10 @@ export const updateBundleConfig: ActionConfig<UpdateBundleInput, UpdateBundleRes
     const lineAdds = input.lineAdds ?? [];
     const lineDeactivations = input.lineDeactivations ?? [];
 
-    /* ── 1 · the bundle itself ──────────────────────────────────────────────
-       Read first, by uuid, naming only unmasked columns. A bundle that cannot
-       be read is either gone or invisible to this session, and either way the
-       edit must not proceed to a write that would report success. */
-    const { data: existingRow, error: existingError } = await supabase
-      .from('bundles')
-      .select('id, bundle_code')
-      .eq('id', input.bundleId)
-      .maybeSingle();
-    if (existingError) {
-      throw new Error(`Could not read the bundle, so nothing was saved: ${existingError.message}`);
-    }
-    const existing = existingRow as { id?: string; bundle_code?: string } | null;
-    if (!existing || typeof existing.id !== 'string') {
-      throw new Error(
-        `No bundle has id ${input.bundleId}, so nothing was saved. It may have been opened from a stale ` +
-          `list — reopen the bundle and try again.`,
-      );
-    }
-    const bundleId = existing.id;
-    const bundleCode = existing.bundle_code ?? input.bundleId;
-
-    /* ── 2 · the category, if it was touched ───────────────────────────────── */
-    let categoryColumn: { category_id?: string | null } = {};
-    if (patch.categoryId !== undefined) {
-      if (patch.categoryId === null) {
-        categoryColumn = { category_id: null };
-      } else {
-        const { data: categoryRow, error: categoryError } = await supabase
-          .from('inventory_categories')
-          .select('id')
-          .eq('id', patch.categoryId)
-          .maybeSingle();
-        if (categoryError) {
-          throw new Error(`Could not look up the category, so nothing was saved: ${categoryError.message}`);
-        }
-        if (!categoryRow) {
-          throw new Error(
-            `No category has id ${patch.categoryId}, so nothing was saved. The category list changed ` +
-              `under the form — reopen it and choose again.`,
-          );
-        }
-        categoryColumn = { category_id: (categoryRow as { id: string }).id };
-      }
-    }
-
-    /* ── 3 · every edited line must belong to THIS bundle ───────────────────
-       Without this an itemId from another bundle — a stale tab, a copied id —
-       would be updated by id alone, editing a kit the operator never opened.
-       One read for all of them, and it also gives the highest sort_order the
-       additions continue from. */
-    const { data: itemRows, error: itemsError } = await supabase
-      .from('bundle_items')
-      .select('id, sort_order')
-      .eq('bundle_id', bundleId);
-    if (itemsError) {
-      throw new Error(`Could not read the bundle's components, so nothing was saved: ${itemsError.message}`);
-    }
-    const ownRows = (itemRows ?? []) as unknown as Array<{ id: string; sort_order: number }>;
-    const ownItemIds = new Set(ownRows.map((r) => r.id));
-    for (const [i, e] of lineEdits.entries()) {
-      if (!ownItemIds.has(e.itemId)) {
-        throw new Error(
-          `Component ${i + 1} (row ${e.itemId.slice(0, 8)}) does not belong to ${bundleCode}, so nothing ` +
-            `was saved. The form is out of date with the bundle — reopen it.`,
-        );
-      }
-    }
-    for (const [i, d] of lineDeactivations.entries()) {
-      if (!ownItemIds.has(d.itemId)) {
-        throw new Error(
-          `Deactivated component ${i + 1} (row ${d.itemId.slice(0, 8)}) does not belong to ${bundleCode}, so nothing ` +
-            `was saved. The form is out of date with the bundle — reopen it.`,
-        );
-      }
-    }
-    const nextSortOrder = ownRows.reduce((max, r) => Math.max(max, r.sort_order), -1) + 1;
-
-    /* ── 4 · every added product, resolved to a uuid ───────────────────────── */
-    const resolvedAdds: Array<{ productId: string; qty: number; days: number; clientUuid: string }> = [];
+    /* Added products are resolved to uuids here (a name must match a row exactly); everything
+       else - ownership of each row, the category, the revision, the role - is checked inside
+       the transaction by ``update_bundle`` (0153), so nothing is written unless all of it holds. */
+    const adds: Array<{ product_id: string; quantity: number; days: number }> = [];
     for (const [i, a] of lineAdds.entries()) {
       const productId = a.productId?.trim() ?? '';
       const productName = a.productName?.trim() ?? '';
@@ -436,162 +332,49 @@ export const updateBundleConfig: ActionConfig<UpdateBundleInput, UpdateBundleRes
       }
       if (!productRow) {
         throw new Error(
-          productId
-            ? `New component ${i + 1} names product id ${productId}, which is not in the catalogue, so ` +
-              `nothing was saved. The catalogue changed under the ` +
-              `form — reopen it and pick the component again.`
-            : `New component ${i + 1}, "${productName}", is not a product in the products table, so ` +
-              `nothing was saved. ` +
-              `bundle_items.product_id is a uuid FK (0004:411); a name has to match a row exactly.`,
+          `New component ${i + 1} ("${productName || productId}") is not in the catalogue, so nothing was ` +
+            `saved. Reopen the bundle and pick the component again.`,
         );
       }
-      resolvedAdds.push({
-        productId: (productRow as { id: string }).id,
-        qty: a.qty,
-        /* Law 9 — stated, not defaulted, so the insert cannot become silent if
-           the column default is ever dropped. */
-        days: a.days ?? 1,
-        clientUuid: a.clientUuid,
-      });
+      adds.push({ product_id: (productRow as { id: string }).id, quantity: a.qty, days: a.days ?? 1 });
     }
 
-    /* ── 5 · the bundle row ────────────────────────────────────────────────
-       Always written, even when only lines changed: `updated_by` is the sole
-       attribution a component edit gets (see BundleItemUpdatePayload). */
-    const payload: BundleUpdatePayload = {
+    const rpcPatch: Record<string, unknown> = {
       ...(patch.name !== undefined ? { name: patch.name.trim() } : {}),
       ...(patch.description !== undefined ? { description: orNull(patch.description) } : {}),
-      ...categoryColumn,
+      ...(patch.categoryId !== undefined ? { category_id: patch.categoryId } : {}),
       ...moneyCol('daily_rate', patch.dailyRatePaisa),
       ...moneyCol('weekly_rate', patch.weeklyRatePaisa),
       ...(patch.isActive !== undefined ? { is_active: patch.isActive } : {}),
-      updated_at: new Date().toISOString(),
-      updated_by: ctx.userId,
     };
-    const changedKeys = Object.keys(payload).filter((k) => k !== 'updated_at' && k !== 'updated_by');
-
-    let echoed: { id?: string; bundle_code?: string } | null = null;
-    try {
-      /* `as never` — the sanctioned cast from createBundle/createClient:
-         `dataAccess` is generic over the hand-written `types/database.ts`, and
-         `BundleUpdatePayload` above is what typechecks the payload against 0004.
-         `returningColumns` names only columns 0035's mask leaves open, and the
-         single-row echo is what makes an RLS refusal (0 rows, no error) visible. */
-      const updated = await safeUpdate(
-        'bundles' as never,
-        bundleId,
-        payload as never,
-        input.clientUuid,
-        { returningColumns: 'id, bundle_code' },
-      );
-      echoed = updated.data as unknown as { id?: string; bundle_code?: string } | null;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(describeBundleUpdateFailure(message));
+    const { data, error } = await supabase.rpc('update_bundle', {
+      p_id: input.bundleId,
+      p_revision: input.expectedRevision as string,
+      p_key: input.clientUuid,
+      p_payload: {
+        patch: rpcPatch,
+        edits: lineEdits.map((e) => ({
+          id: e.itemId,
+          ...(e.quantity !== undefined ? { quantity: e.quantity } : {}),
+          ...(e.days !== undefined ? { days: e.days } : {}),
+          ...(e.isMandatory !== undefined ? { is_mandatory: e.isMandatory } : {}),
+          ...(e.sortOrder !== undefined ? { sort_order: e.sortOrder } : {}),
+        })),
+        adds,
+        deactivations: lineDeactivations.map((d) => ({ id: d.itemId })),
+      },
+    });
+    if (error) throw new Error(describeBundleUpdateFailure(error.message));
+    const saved = data as { id?: string; code?: string; revision?: string } | null;
+    if (!saved || typeof saved.id !== 'string' || typeof saved.revision !== 'string') {
+      throw new Error('The save was not confirmed by the database. Nothing is assumed saved - retry with your changes intact.');
     }
-    if (!echoed || typeof echoed.id !== 'string') {
-      throw new Error(
-        `The database did not confirm the change to ${bundleCode}, so treat it as not saved. Check the ` +
-          `connection and save again.`,
-      );
-    }
-
-    /* ── 6 · component edits, one row at a time, each confirmed ─────────────
-       After the parent row, so a refused parent update stops here rather than
-       leaving components changed under an unchanged bundle. */
-    let linesUpdated = 0;
-    for (const [i, e] of lineEdits.entries()) {
-      const itemPayload: BundleItemUpdatePayload = {
-        ...(e.quantity !== undefined ? { quantity: e.quantity } : {}),
-        ...(e.days !== undefined ? { days: e.days } : {}),
-        ...(e.isMandatory !== undefined ? { is_mandatory: e.isMandatory } : {}),
-        ...(e.sortOrder !== undefined ? { sort_order: e.sortOrder } : {}),
-      };
-      if (Object.keys(itemPayload).length === 0) continue;
-      try {
-        const saved = await safeUpdate(
-          'bundle_items' as never,
-          e.itemId,
-          itemPayload as never,
-          e.clientUuid,
-          { returningColumns: 'id' },
-        );
-        const row = saved.data as unknown as { id?: string } | null;
-        if (saved.error || !row || typeof row.id !== 'string') {
-          throw new Error('the database did not confirm the row');
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `${bundleCode} was updated and ${linesUpdated} component${linesUpdated === 1 ? '' : 's'} saved, ` +
-            `but component ${i + 1} failed: ${describeBundleUpdateFailure(message)}. Fix it and save ` +
-            `again — resubmitting the same form re-applies the same edits rather than doubling them ` +
-            `(Law 8).`,
-        );
-      }
-      linesUpdated += 1;
-    }
-
-    /* ── 7 · additions ─────────────────────────────────────────────────────── */
-    let linesAdded = 0;
-    for (const [i, a] of resolvedAdds.entries()) {
-      const itemPayload: BundleItemInsertPayload = {
-        client_uuid: a.clientUuid,
-        bundle_id: bundleId,
-        product_id: a.productId,
-        quantity: a.qty,
-        days: a.days,
-        sort_order: nextSortOrder + i,
-        created_by: ctx.userId,
-      };
-      try {
-        const inserted = await idempotentInsert('bundle_items' as never, itemPayload as never);
-        const row = inserted.data as unknown as { id?: string } | null;
-        if (inserted.error || !row || typeof row.id !== 'string') {
-          throw new Error('the database did not confirm the row');
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `${bundleCode} was updated and ${linesAdded} of ${resolvedAdds.length} new component${
-            resolvedAdds.length === 1 ? '' : 's'
-          } added, but new component ${i + 1} failed: ${describeBundleUpdateFailure(message)}. Fix it and ` +
-            `save again — the same key resolves to the same row instead of adding it twice (Law 8).`,
-        );
-      }
-      linesAdded += 1;
-    }
-
-    /* ── 8 · soft-deactivations (Law 3, OPEN_DECISIONS.md §4.52) ────────────── */
-    let linesDeactivated = 0;
-    for (const [i, d] of lineDeactivations.entries()) {
-      const itemPayload = {
-        is_active: false,
-        deactivated_at: new Date().toISOString(),
-        deactivated_by: ctx.userId,
-      };
-      try {
-        const saved = await safeUpdate(
-          'bundle_items' as never,
-          d.itemId,
-          itemPayload as never,
-          d.clientUuid,
-          { returningColumns: 'id' },
-        );
-        const row = saved.data as unknown as { id?: string } | null;
-        if (saved.error || !row || typeof row.id !== 'string') {
-          throw new Error('the database did not confirm the row');
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new Error(
-          `${bundleCode} was updated, but deactivating component ${i + 1} failed: ${describeBundleUpdateFailure(message)}. Fix it and ` +
-            `save again — the same key resolves to the same row instead of deactivating it twice (Law 8).`,
-        );
-      }
-      linesDeactivated += 1;
-    }
-
+    const bundleId = saved.id;
+    const bundleCode = saved.code ?? input.bundleId;
+    const changedKeys = Object.keys(rpcPatch);
+    const linesUpdated = lineEdits.length;
+    const linesAdded = adds.length;
+    const linesDeactivated = lineDeactivations.length;
     const events = [
       {
         type: EVENT_TYPES.BUNDLE_UPDATED,

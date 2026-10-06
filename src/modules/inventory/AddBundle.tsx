@@ -1,4 +1,3 @@
-import { RecordForm } from '../../components/records/RecordForm'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { newClientUuid } from '../../lib/supabase'
 import { useInventoryCategories, listInventory } from '../../lib/queries/inventory'
@@ -6,7 +5,7 @@ import { readProductAvailability } from '../../lib/queries/productAvailability'
 import { useRentalWindowParams, dayValue } from '../../lib/rentalWindowParams'
 import { DateField } from '../../components/ui/DateField'
 import type { CSSProperties, ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Select } from '../../components/ui/Select'
@@ -19,7 +18,18 @@ import { RestrictedState } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
 import { useToast } from '../../components/ui/Toast'
-import { formatMoney, parseMoney, rupees, roundHalfUp } from '../../lib/money'
+import { formatMoney, parseMoney, rupees, roundHalfUp, toRupees } from '../../lib/money'
+import { useBundleWithItems } from '../../lib/queries/useBundles'
+import { readRecordEditor } from '../../lib/queries/recordEditor'
+import { UnsavedLeaveDialog, useUnsavedRecord } from '../../components/ui/RecordWorkspace'
+import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
+import type { BundleWithItems, BundleComponent } from '../../lib/queries/bundles'
+import type {
+  UpdateBundlePatch,
+  UpdateBundleLineEdit,
+  UpdateBundleLineAdd,
+  UpdateBundleLineDeactivate,
+} from '../../actions/inventory/updateBundle'
 import type { Paisa } from '../../lib/money'
 import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { validateDiscount } from '../../lib/discount'
@@ -408,7 +418,19 @@ function downloadCsv(name: string, rows: string[][]) {
  */
 const NOTES_LIMIT = 500
 
-export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDone?: () => void } = {}) {
+export interface AddBundleProps {
+  bundleRef?: string | undefined
+  bundleId?: string | undefined
+  initialBundle?: BundleWithItems | undefined
+  embedded?: boolean | undefined
+  onDone?: (() => void) | undefined
+}
+
+export function AddBundle(props: AddBundleProps = {}) {
+  const { bundleRef: propBundleRef, embedded, onDone } = props
+  const routeParams = useParams<{ bundleRef: string }>()
+  const bundleRef = propBundleRef ?? routeParams.bundleRef
+  const isEditMode = Boolean(bundleRef)
   const navigate = useNavigate()
   const handleExit = () => (onDone ? onDone() : navigate('/inventory'))
   const money = useCanViewMoney()
@@ -444,6 +466,10 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
      a live catalogue every one is unresolvable — the screen used to boot
      pre-populated and refuse on line 1 the moment Create was pressed. */
   const [lines, setLines] = useState<DraftLine[]>([])
+  const [originalBundle, setOriginalBundle] = useState<BundleWithItems | null>(props.initialBundle ?? null)
+  const [initialLineKeys, setInitialLineKeys] = useState<Map<string, string>>(new Map()) // itemId -> lineKey
+  const [deactivatedItemIds, setDeactivatedItemIds] = useState<string[]>([])
+  const existingBundleRecord = useBundleWithItems(bundleRef, money)
   const [search, setSearch] = useState('')
   const [fCategory, setFCategory] = useState<'All' | InventoryCategory>('All')
   const [fBrand, setFBrand] = useState('All')
@@ -616,6 +642,53 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
    */
   const { rows: liveCategories } = useInventoryCategories()
 
+  const fetchedBundle: BundleWithItems | undefined = props.initialBundle ?? existingBundleRecord.rows[0]
+  useEffect(() => {
+    if (!isEditMode || !fetchedBundle) return
+    if (originalBundle?.id === fetchedBundle.id) return
+
+    setOriginalBundle(fetchedBundle)
+    setName(fetchedBundle.name)
+    setDescription(fetchedBundle.description ?? '')
+    setActive(fetchedBundle.isActive)
+
+    if (fetchedBundle.category) {
+      setCategory(fetchedBundle.category as InventoryCategory)
+    } else if (fetchedBundle.categoryId && liveCategories.length > 0) {
+      const match = liveCategories.find((c) => c.id === fetchedBundle.categoryId)
+      if (match) setCategory(match.name as InventoryCategory)
+    }
+
+    const itemKeyMap = new Map<string, string>()
+    const initialLines: DraftLine[] = (fetchedBundle.items ?? []).map((item: BundleComponent, index: number) => {
+      const key = `L${100 + index}`
+      itemKeyMap.set(item.itemId, key)
+      const originalRate = item.dailyRate ?? (0 as Paisa)
+      return {
+        key,
+        modelId: item.productId,
+        qty: item.quantity,
+        originalRatePaisa: originalRate,
+        discountKind: 'pct',
+        discountPct: 0,
+        discountFixedPaisa: rupees(0),
+        childIds: [],
+        discountReason: '',
+        approvedBy: null,
+      }
+    })
+    setSeq(100 + initialLines.length)
+    setLines(initialLines)
+    setInitialLineKeys(itemKeyMap)
+
+    const sumParts = initialLines.reduce((sum, l) => sum + l.originalRatePaisa * l.qty, 0)
+    if (fetchedBundle.dailyRate !== sumParts && fetchedBundle.dailyRate > 0) {
+      setOverride(true)
+      setOverrideRate(String(toRupees(fetchedBundle.dailyRate)))
+      setOverrideReason('Existing bundle daily rate override')
+    }
+  }, [isEditMode, fetchedBundle, originalBundle?.id, liveCategories])
+
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
@@ -628,6 +701,34 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
    * save that succeeded: the next press is then a new bundle on purpose,
    * which is what pressing Save Draft twice has always meant on this screen.
    */
+  /* Record revision for the atomic save (update_bundle, 0153). Read when the edit opens; a save made
+     against a bundle that has since changed is refused and the operator's entries are kept. */
+  const [bundleRevision, setBundleRevision] = useState<string | null>(null)
+  const [revisionError, setRevisionError] = useState<string | null>(null)
+  const bundleKeyFingerprint = useRef<string | null>(null)
+  const editingBundleId = isEditMode ? (fetchedBundle?.id ?? null) : null
+  useEffect(() => {
+    if (!editingBundleId) return
+    let active = true
+    void readRecordEditor('bundle', editingBundleId)
+      .then((snap) => { if (active) { setBundleRevision(snap.revision); setRevisionError(null) } })
+      .catch((err: unknown) => { if (active) setRevisionError(err instanceof Error ? err.message : String(err)) })
+    return () => { active = false }
+  }, [editingBundleId])
+
+  /* Unsaved-change protection: the baseline is the form as first shown (hydrated record in edit mode,
+     the empty form in create mode). Cancel and link navigation ask only when something differs. */
+  const bundleFingerprint = JSON.stringify({ name, category, active, description, lines: lines.map((l) => [l.modelId, l.qty]), deactivatedItemIds, override, overrideRate })
+  const bundleBaseline = useRef<string | null>(null)
+  useEffect(() => {
+    if (bundleBaseline.current !== null) return
+    if (isEditMode && !originalBundle) return
+    bundleBaseline.current = bundleFingerprint
+  })
+  const bundleDirty = bundleBaseline.current !== null && bundleFingerprint !== bundleBaseline.current
+  useUnsavedRecord(bundleDirty)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  const requestExit = () => (bundleDirty ? setConfirmCancel(true) : handleExit())
   const writeKeys = useRef<{ bundle: string | null; lines: Map<string, string> }>({
     bundle: null,
     lines: new Map(),
@@ -655,12 +756,20 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         <ScreenHeader
           embedded={embedded}
-          icon="plus"
-          title="New Bundle"
-          description="Create a reusable equipment kit and set bundle pricing."
+          icon={isEditMode ? 'queues' : 'plus'}
+          title={isEditMode ? `Edit ${originalBundle?.name ?? 'Bundle'}` : 'New Bundle'}
+          description={
+            isEditMode
+              ? `${originalBundle?.bundleCode ?? bundleRef ?? ''} · Edit equipment kit and pricing.`
+              : 'Create a reusable equipment kit and set bundle pricing.'
+          }
         />
         <RestrictedState
-          reason="Creating a bundle is not available for your role. A bundle sets prices — every rate, discount and the daily rate itself — so building one is a commercial decision your role does not carry. You can open any saved bundle from Inventory ▸ Bundles to see its contents and print its packing list. Ask an Owner, Admin, Coordinator or Accounts user to create a new one."
+          reason={
+            isEditMode
+              ? 'Editing a bundle is not available for your role. A bundle sets prices — every rate, discount and the daily rate itself — so editing one is a commercial decision your role does not carry. Ask an Owner, Admin, Coordinator or Accounts user to update it.'
+              : 'Creating a bundle is not available for your role. A bundle sets prices — every rate, discount and the daily rate itself — so building one is a commercial decision your role does not carry. You can open any saved bundle from Inventory ▸ Bundles to see its contents and print its packing list. Ask an Owner, Admin, Coordinator or Accounts user to create a new one.'
+          }
           requiredRole="Owner, Admin, Coordinator or Accounts"
         />
       </div>
@@ -761,9 +870,103 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
       )
       return
     }
+    if (isEditMode && !bundleRevision) {
+      setSaveError(revisionError ? `Bundle not updated - the current version could not be read: ${revisionError} Everything you typed is still here.` : 'Still loading the latest version of this bundle - try again in a moment. Everything you typed is still here.')
+      return
+    }
     // Law 8: one key per press, per row, reused by every retry of that press.
     const keys = writeKeys.current
     if (!keys.bundle) keys.bundle = newClientUuid()
+    setSaveError(null)
+    setSaving(true)
+
+    if (isEditMode && originalBundle) {
+      const patch: UpdateBundlePatch = {}
+      if (name.trim() !== originalBundle.name) patch.name = name.trim()
+      const descVal = description.trim() || null
+      if (descVal !== (originalBundle.description ?? null)) patch.description = descVal
+
+      const catHit = liveCategories.find((c) => c.name === category)
+      const nextCatId = catHit ? catHit.id : null
+      if (nextCatId !== (originalBundle.categoryId ?? null)) patch.categoryId = nextCatId
+      if (active !== originalBundle.isActive) patch.isActive = active
+      if (effectiveRatePaisa !== originalBundle.dailyRate) patch.dailyRatePaisa = effectiveRatePaisa
+
+      const lineEdits: UpdateBundleLineEdit[] = []
+      const lineAdds: UpdateBundleLineAdd[] = []
+      const lineDeactivations: UpdateBundleLineDeactivate[] = deactivatedItemIds.map((itemId) => ({
+        itemId,
+        clientUuid: newClientUuid(),
+      }))
+
+      for (const l of lines) {
+        let matchedInitialItemId: string | undefined
+        for (const [itemId, lineKey] of initialLineKeys.entries()) {
+          if (lineKey === l.key) {
+            matchedInitialItemId = itemId
+            break
+          }
+        }
+
+        if (matchedInitialItemId) {
+          const originalItem = originalBundle.items.find((i) => i.itemId === matchedInitialItemId)
+          if (originalItem && originalItem.quantity !== l.qty) {
+            lineEdits.push({
+              itemId: matchedInitialItemId,
+              quantity: l.qty,
+              clientUuid: newClientUuid(),
+            })
+          }
+        } else {
+          lineAdds.push({
+            productId: l.modelId,
+            qty: l.qty,
+            days: 1,
+            clientUuid: newClientUuid(),
+          })
+        }
+      }
+
+      /* A retry of the SAME content reuses its key (idempotent); changed content gets a new one. */
+      const fingerprint = JSON.stringify({ patch, lineEdits: lineEdits.map((e) => [e.itemId, e.quantity]), lineAdds: lineAdds.map((a) => [a.productId, a.qty]), lineDeactivations: lineDeactivations.map((d) => d.itemId) })
+      if (bundleKeyFingerprint.current !== fingerprint) {
+        keys.bundle = newClientUuid()
+        bundleKeyFingerprint.current = fingerprint
+      }
+      void import('../../actions/inventory/updateBundle')
+        .then((m) =>
+          m.updateBundle(
+            {
+              clientUuid: keys.bundle as string,
+              expectedRevision: bundleRevision as string,
+              bundleId: originalBundle.id,
+              patch,
+              lineEdits,
+              lineAdds,
+              lineDeactivations,
+            },
+            { userId: user.id, role: user.role },
+          ),
+        )
+        .then((result) => {
+          writeKeys.current = { bundle: null, lines: new Map() }
+          showSuccessToast('Bundle saved', `${result.bundleCode} · Changes applied successfully`)
+          if (onDone) {
+            onDone()
+          } else {
+            navigate(`/inventory/bundles/${result.bundleCode}`)
+          }
+        })
+        .catch((err: unknown) => {
+          setSaveError(
+            `Bundle not updated — ${
+              err instanceof Error ? err.message : 'the update failed and no reason was reported.'
+            } Everything you typed is still here.`,
+          )
+        })
+        .finally(() => setSaving(false))
+      return
+    }
     const items = lines.map((l) => {
       let lineKey = keys.lines.get(l.key)
       if (!lineKey) {
@@ -860,7 +1063,15 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
   const patch = (key: string, updates: Partial<DraftLine>) =>
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...updates } : l)))
 
-  const removeLine = (key: string) => setLines((prev) => prev.filter((l) => l.key !== key))
+  const removeLine = (key: string) => {
+    for (const [itemId, lineKey] of initialLineKeys.entries()) {
+      if (lineKey === key) {
+        setDeactivatedItemIds((prev) => [...prev, itemId])
+        break
+      }
+    }
+    setLines((prev) => prev.filter((l) => l.key !== key))
+  }
 
   const addModel = (m: InventoryModel, includeRequiredChildren: boolean) => {
     const key = nextKey()
@@ -1058,41 +1269,53 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
       {/* §2 — breadcrumb only, and the shell already renders it. No Back button. */}
       <ScreenHeader
         embedded={embedded}
-        icon="plus"
-        title="New Bundle"
-        description="Create a reusable equipment kit and set bundle pricing."
+        icon={isEditMode ? 'queues' : 'plus'}
+        title={isEditMode ? `Edit ${originalBundle?.name ?? 'Bundle'}` : 'New Bundle'}
+        description={
+          isEditMode
+            ? `${originalBundle?.bundleCode ?? bundleRef ?? ''} · Edit equipment kit and pricing.`
+            : 'Create a reusable equipment kit and set bundle pricing.'
+        }
         actions={
-          <>
-            {embedded && onDone && (
+          isEditMode ? (
+            embedded && onDone ? (
               <Button icon="chevron_left" onClick={onDone}>
-                Back to Bundles
+                Back to Bundle
               </Button>
-            )}
-            <Unavailable reason="Templates are not built — there is no bundle template store in this release.">
-              <Button icon="upload" disabled>
-                Import Template
-              </Button>
-            </Unavailable>
-            <select
-              aria-label="Duplicate an existing bundle"
-              value=""
-              onChange={(e) => e.target.value && applyDuplicate(e.target.value)}
-              style={{
-                ...selectStyle,
-                width: 'auto',
-                border: '1px solid var(--btn-secondary-border)',
-                background: 'var(--btn-secondary-bg)',
-                fontWeight: 600,
-              }}
-            >
-              <option value="">Duplicate Existing…</option>
-              {TEMPLATE_BUNDLES.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.id} · {b.name}
-                </option>
-              ))}
-            </select>
-          </>
+            ) : null
+          ) : (
+            <>
+              {embedded && onDone && (
+                <Button icon="chevron_left" onClick={onDone}>
+                  Back to Bundles
+                </Button>
+              )}
+              <Unavailable reason="Templates are not built — there is no bundle template store in this release.">
+                <Button icon="upload" disabled>
+                  Import Template
+                </Button>
+              </Unavailable>
+              <select
+                aria-label="Duplicate an existing bundle"
+                value=""
+                onChange={(e) => e.target.value && applyDuplicate(e.target.value)}
+                style={{
+                  ...selectStyle,
+                  width: 'auto',
+                  border: '1px solid var(--btn-secondary-border)',
+                  background: 'var(--btn-secondary-bg)',
+                  fontWeight: 600,
+                }}
+              >
+                <option value="">Duplicate Existing…</option>
+                {TEMPLATE_BUNDLES.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.id} · {b.name}
+                  </option>
+                ))}
+              </select>
+            </>
+          )
         }
       />
 
@@ -1163,7 +1386,10 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
               {/* Not an input, and not a number: the box held a prediction of the
                   next Bundle counter (see the note above `NOTES_LIMIT`). A
                   `FieldBlock`, because there is no control here to label. */}
-              <FieldBlock label="Bundle ID" hint="Assigned on save, by the database — not by this form">
+              <FieldBlock
+                label="Bundle ID"
+                hint={isEditMode ? 'Permanent bundle identifier' : 'Assigned on save, by the database — not by this form'}
+              >
                 <span
                   className="identifier"
                   style={{
@@ -1171,10 +1397,11 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
                     display: 'flex',
                     alignItems: 'center',
                     background: 'var(--card2)',
-                    color: 'var(--muted)',
+                    color: isEditMode ? 'var(--text)' : 'var(--muted)',
+                    fontWeight: isEditMode ? 600 : 'normal',
                   }}
                 >
-                  Assigned on save
+                  {isEditMode ? (originalBundle?.bundleCode ?? bundleRef) : 'Assigned on save'}
                 </span>
               </FieldBlock>
               <Field
@@ -1965,29 +2192,47 @@ export function LegacyAddBundle({ embedded, onDone }: { embedded?: boolean; onDo
                 : {}),
             }}
           >
-            <Button onClick={handleExit}>Cancel</Button>
+            <Button onClick={requestExit}>Cancel</Button>
+            <UnsavedLeaveDialog />
+            <ConfirmDialog isOpen={confirmCancel} title="Discard unsaved changes?" description="Your edits to this bundle have not been saved and will be lost." confirmLabel="Discard" cancelLabel="Keep editing" variant="danger" onClose={() => setConfirmCancel(false)} onConfirm={() => { setConfirmCancel(false); handleExit() }} />
             <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-              {draftBlockingReason ? (
-                <Unavailable reason={draftBlockingReason}>
-                  <Button icon="file" disabled>
-                    Save Draft
+              {isEditMode ? (
+                blockingReason ? (
+                  <Unavailable reason={blockingReason}>
+                    <Button icon="check" variant="primary" disabled>
+                      Save Changes
+                    </Button>
+                  </Unavailable>
+                ) : (
+                  <Button icon="check" variant="primary" disabled={saving} onClick={() => saveBundle(false)}>
+                    {saving ? 'Saving…' : 'Save Changes'}
                   </Button>
-                </Unavailable>
+                )
               ) : (
-                <Button icon="file" disabled={saving} onClick={() => saveBundle(true)}>
-                  {saving ? 'Saving…' : 'Save Draft'}
-                </Button>
-              )}
-              {blockingReason ? (
-                <Unavailable reason={blockingReason}>
-                  <Button icon="plus" variant="primary" disabled>
-                    Create Bundle
-                  </Button>
-                </Unavailable>
-              ) : (
-                <Button icon="plus" variant="primary" disabled={saving} onClick={() => saveBundle(false)}>
-                  {saving ? 'Saving…' : 'Create Bundle'}
-                </Button>
+                <>
+                  {draftBlockingReason ? (
+                    <Unavailable reason={draftBlockingReason}>
+                      <Button icon="file" disabled>
+                        Save Draft
+                      </Button>
+                    </Unavailable>
+                  ) : (
+                    <Button icon="file" disabled={saving} onClick={() => saveBundle(true)}>
+                      {saving ? 'Saving…' : 'Save Draft'}
+                    </Button>
+                  )}
+                  {blockingReason ? (
+                    <Unavailable reason={blockingReason}>
+                      <Button icon="plus" variant="primary" disabled>
+                        Create Bundle
+                      </Button>
+                    </Unavailable>
+                  ) : (
+                    <Button icon="plus" variant="primary" disabled={saving} onClick={() => saveBundle(false)}>
+                      {saving ? 'Saving…' : 'Create Bundle'}
+                    </Button>
+                  )}
+                </>
               )}
             </span>
           </div>
@@ -2895,4 +3140,5 @@ function LineRow({
   )
 }
 
-export function AddBundle(props: {embedded?:boolean;onDone?:()=>void} = {}) { return <RecordForm kind="bundle" {...(props.onDone ? {onDone:props.onDone}: {})}/> }
+export { AddBundle as LegacyAddBundle }
+export default AddBundle

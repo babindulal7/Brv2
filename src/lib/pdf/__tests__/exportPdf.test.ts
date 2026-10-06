@@ -1,12 +1,48 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { rupees } from '../../money'
+
+const uploadedFiles = new Set<string>()
+
+// Mock Supabase storage at top level with realistic collision simulation
+vi.mock('../../supabase', () => ({
+  supabase: {
+    storage: {
+      from: vi.fn(() => ({
+        upload: vi.fn().mockImplementation(async (path: string) => {
+          if (uploadedFiles.has(path)) {
+            return { data: null, error: { message: 'The resource already exists' } }
+          }
+          uploadedFiles.add(path)
+          return { data: { path }, error: null }
+        }),
+        createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://example.com/signed' }, error: null }),
+        download: vi.fn().mockImplementation(async (path: string) => {
+          if (uploadedFiles.has(path)) {
+            return { data: new Blob(['test']), error: null }
+          }
+          return { data: null, error: { message: 'Not found' } }
+        }),
+        getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: 'https://example.com/public' } }),
+      })),
+    },
+    from: vi.fn(() => ({
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+    })),
+  },
+  IS_MOCK: false,
+}))
+
 import { exportInvoicePdf, exportDocumentPdf } from '../exportPdf'
 import { supabase } from '../../supabase'
-import { mockStorage } from '../../mock/storage'
-import { rupees } from '../../money'
 
 describe('exportPdf', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    uploadedFiles.clear()
   })
 
   it('exports invoice PDF, uploads to documents bucket and retrieves signed URL', async () => {
@@ -43,16 +79,7 @@ describe('exportPdf', () => {
     expect(res.signedUrl).toBeDefined()
     expect(typeof res.signedUrl).toBe('string')
 
-    // Verify it is retrievable from storage (remote or mock)
-    let downloaded: any = null
-    try {
-      downloaded = await supabase.storage.from('documents').download(res.storagePath!)
-    } catch (err) {
-      downloaded = { error: err }
-    }
-    if (downloaded?.error) {
-      downloaded = await mockStorage.from('documents').download(res.storagePath!)
-    }
+    const downloaded = await supabase.storage.from('documents').download(res.storagePath!)
     expect(downloaded.error).toBeNull()
     expect(downloaded.data).toBeDefined()
   })
@@ -79,7 +106,6 @@ describe('exportPdf', () => {
     const first = await exportInvoicePdf(invoiceData)
     expect(first.storagePath).toBe('invoices/INV-2026-9002.pdf')
 
-    // Second export of the same invoice
     const second = await exportInvoicePdf(invoiceData)
     expect(second.storagePath).toMatch(/^invoices\/INV-2026-9002_\d+\.pdf$/)
     expect(second.signedUrl).toBeDefined()

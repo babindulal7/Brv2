@@ -121,6 +121,7 @@ async function flush(rounds = 4) {
 }
 
 async function mount() {
+  sessionStorage.clear()
   Object.defineProperty(window, 'innerWidth', { value: 1440, configurable: true, writable: true })
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -189,7 +190,9 @@ const reasonField = () =>
   container.querySelector<HTMLInputElement>('input[aria-label="Reason for self-performed QC"]')
 
 afterEach(async () => {
+  await flush(4)
   dispatched.length = 0
+  sessionStorage.clear()
   if (root) await act(async () => root.unmount())
   container?.remove()
 })

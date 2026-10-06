@@ -40,10 +40,14 @@ import DamageMaintenanceReports from './DamageMaintenanceReports'
 import SalesVatReports from './SalesVatReports'
 import ActivityReports from './ActivityReports'
 import AssetRoiReport from './AssetRoiReport'
+import RevenueReport from './RevenueReport'
+import CasesReport from './CasesReport'
+import CustomReport from './CustomReport'
 import './reports.css'
 
 const DEDICATED_REPORTS: Record<string, React.ComponentType> = {
   '/reports/pulse': Pulse,
+  '/reports/revenue': RevenueReport,
   '/reports/expenses': ExpenseReports,
   '/reports/clients': ClientReports,
   '/reports/promotions': PromotionsReports,
@@ -57,10 +61,12 @@ const DEDICATED_REPORTS: Record<string, React.ComponentType> = {
   '/reports/rentals': RentalReports,
   '/reports/operations': OperationsReports,
   '/reports/damage-maintenance': DamageMaintenanceReports,
+  '/reports/cases': CasesReport,
   '/reports/sales': SalesVatReports,
   '/reports/vat-tax': SalesVatReports,
   '/reports/activity': ActivityReports,
   '/reports/asset-roi': AssetRoiReport,
+  '/reports/custom': CustomReport,
 }
 
 /**

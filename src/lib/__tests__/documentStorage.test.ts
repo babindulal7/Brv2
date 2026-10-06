@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   buildPdfByteArray,
   generateDocumentPdfBlob,
@@ -8,7 +8,30 @@ import {
   downloadDocumentFromStorage,
 } from '../documentStorage'
 
+// Mock supabase for tests
+vi.mock('../supabase', () => ({
+  supabase: {
+    storage: {
+      from: vi.fn(() => ({
+        upload: vi.fn().mockResolvedValue({ data: { path: 'test/path.pdf' }, error: null }),
+        createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: 'https://example.com/signed-url' }, error: null }),
+        download: vi.fn().mockResolvedValue({ data: new Blob(['test']), error: null }),
+        getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: 'https://example.com/public' } }),
+      })),
+    },
+    from: vi.fn(() => ({
+      update: vi.fn().mockResolvedValue({ error: null }),
+      eq: vi.fn().mockReturnThis(),
+    })),
+  },
+  IS_MOCK: false,
+}))
+
 describe('AUD-010: Document Storage & PDF Generation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   describe('1. buildPdfByteArray & generateDocumentPdfBlob', () => {
     it('produces a valid binary PDF byte array with standard PDF structure', () => {
       const bytes = buildPdfByteArray([
@@ -128,4 +151,3 @@ describe('AUD-010: Document Storage & PDF Generation', () => {
     })
   })
 })
-

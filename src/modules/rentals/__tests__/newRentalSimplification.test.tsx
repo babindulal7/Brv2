@@ -77,9 +77,9 @@ describe('NewRental simplification (Part A - D)', () => {
       expect(container.querySelector('#section-1')?.textContent).toContain('Rental period')
       expect(container.querySelector('#section-2')?.textContent).toContain('Equipment, Bundles & Services')
       expect(container.querySelector('.rental-stepper')).toBeNull()
-      const actions = container.querySelector('.new-rental-mobile-actions')!
+      const actions = container.querySelector('[role="group"][aria-label="Record actions"]')!
       expect(actions.textContent).toContain('Save draft')
-      expect(actions.textContent).toContain('Confirm booking')
+      expect(actions.textContent).toContain('Confirm Booking')
       expect([...container.querySelectorAll('button')].filter((button) => /^save (as )?draft$/i.test(button.textContent?.trim() ?? ''))).toHaveLength(1)
       expect([...container.querySelectorAll('button')].filter((button) => /^confirm booking$/i.test(button.textContent?.trim() ?? ''))).toHaveLength(1)
       await act(async () => (clientSection.querySelector('[aria-label="Collapse Client"]') as HTMLButtonElement).click())

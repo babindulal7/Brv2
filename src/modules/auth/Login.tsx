@@ -8,7 +8,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { useAuth } from '../../lib/auth'
 import { IS_MOCK } from '../../lib/supabase'
-import { MOCK_LOGINS } from '../../lib/mock/client'
+import { MOCK_LOGINS } from '../../lib/__mocks__/client'
 import './auth.css'
 
 const REMEMBER_EMAIL_KEY = 'babin.auth.remember_email'

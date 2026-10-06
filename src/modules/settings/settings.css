@@ -658,7 +658,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   flex-wrap: wrap;

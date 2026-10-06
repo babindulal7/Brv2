@@ -12,6 +12,7 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { useViewport } from '../../lib/device'
 import { useAuth } from '../../lib/auth'
 import { RentalIntelFromFloor } from '../../components/intel/RentalIntelFromFloor'
+import { EquipmentIntelFromFloor } from '../../components/intel/EquipmentIntelFromFloor'
 import { canViewMoney } from '../../lib/rbac'
 import { captureError } from '../../lib/monitoring'
 import { STATUS } from '../../lib/status'
@@ -1677,10 +1678,12 @@ export default function HandoverWorkspace({
                                 </span>
                                 {r.serial && (
                                   <div style={{ marginTop: 4 }}>
-                                    <Link to={`/inventory/${r.serial}`} className="floor-serial-badge" style={{ textDecoration: 'none' }}>
-                                      <Icon name="barcode" size={11} />
-                                      <span>{r.serial}</span>
-                                    </Link>
+                                    <EquipmentIntelFromFloor serial={r.serial} name={r.name} location={r.location} context="handover" role={user?.role ?? 'Client'}>
+                                      <Link to={`/inventory/${r.serial}`} className="floor-serial-badge" style={{ textDecoration: 'none' }}>
+                                        <Icon name="barcode" size={11} />
+                                        <span>{r.serial}</span>
+                                      </Link>
+                                    </EquipmentIntelFromFloor>
                                   </div>
                                 )}
                               </span>
@@ -1770,10 +1773,12 @@ export default function HandoverWorkspace({
                                 </td>
                                 <td style={{ ...td, fontSize: 'var(--t-meta)' }}>
                                   {r.serial ? (
-                                    <Link to={`/inventory/${r.serial}`} className="floor-serial-badge" style={{ textDecoration: 'none' }}>
-                                      <Icon name="barcode" size={11} />
-                                      <span>{r.serial}</span>
-                                    </Link>
+                                    <EquipmentIntelFromFloor serial={r.serial} name={r.name} location={r.location} context="handover" role={user?.role ?? 'Client'}>
+                                      <Link to={`/inventory/${r.serial}`} className="floor-serial-badge" style={{ textDecoration: 'none' }}>
+                                        <Icon name="barcode" size={11} />
+                                        <span>{r.serial}</span>
+                                      </Link>
+                                    </EquipmentIntelFromFloor>
                                   ) : (
                                     <span style={{ color: 'var(--muted)' }}>—</span>
                                   )}

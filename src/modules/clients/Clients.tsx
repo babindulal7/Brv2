@@ -12,7 +12,7 @@ import { useClients, useMembershipPlans } from '../../lib/queries/useClients'
 import { EmptyState } from '../../components/ui/StateViews'
 import { PageBody } from '../../components/ui/PageBody'
 import Membership from './Membership'
-import AddClient from './AddClient'
+import { RecordForm } from '../../components/records/RecordForm'
 import ImportCenter from './ImportCenter'
 import DuplicateCenter from './DuplicateCenter'
 import GenerateReferralCode from './GenerateReferralCode'
@@ -80,6 +80,8 @@ export default function Clients() {
   const activeTab: TabKey = TAB_DEFS.some((t) => t.key === tabParam) ? tabParam : 'clients'
 
   const setTab = (key: TabKey) => {
+    setDirectoryFiltersOpen(false)
+    setMembershipFiltersOpen(false)
     const next = new URLSearchParams(params)
     if (key === 'clients') next.delete('tab')
     else next.set('tab', key)
@@ -212,7 +214,7 @@ export default function Clients() {
           </PageBody>
         </>
       )}
-      {activeTab === 'new' && <AddClient embedded onDone={() => setTab('clients')} />}
+      {activeTab === 'new' && <RecordForm kind="client" onDone={() => setTab('clients')} />}
       {activeTab === 'import' && <ImportCenter embedded />}
       {activeTab === 'duplicates' && <DuplicateCenter embedded />}
       {activeTab === 'membership' && <Membership embedded filtersOpen={membershipFiltersOpen} onFiltersClose={() => setMembershipFiltersOpen(false)} />}

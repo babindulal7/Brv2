@@ -1,6 +1,5 @@
 import Icon from '../../../components/ui/Icon'
 import { Card } from '../../../components/ui/Page'
-import { Button } from '../../../components/ui/Button'
 import { formatMoney, type Paisa } from '../../../lib/money'
 import { formatAd } from '../../../lib/bs'
 import { MoneyRow } from './BookingFormWidgets'
@@ -23,12 +22,6 @@ export interface BookingSummaryCardProps {
   }
   blockingNotices: BlockingNotice[]
   runNoticeAction: (action: string) => void
-  editBookingId?: string | undefined
-  isDesktop: boolean
-  confirmBooking: () => void
-  confirmBlocked: boolean
-  saveState: string
-  blockReasonText?: string | undefined
 }
 
 export function BookingSummaryCard({
@@ -44,12 +37,6 @@ export function BookingSummaryCard({
   pricing,
   blockingNotices,
   runNoticeAction,
-  editBookingId,
-  isDesktop,
-  confirmBooking,
-  confirmBlocked,
-  saveState,
-  blockReasonText,
 }: BookingSummaryCardProps) {
   return (
     <Card id="rail-booking-summary" title="Booking Summary">
@@ -173,19 +160,7 @@ export function BookingSummaryCard({
           </div>
         </div>
       )}
-      {!editBookingId && isDesktop && (
-        <div style={{ marginTop: 14 }}>
-          <Button
-            variant="primary"
-            onClick={confirmBooking}
-            disabled={confirmBlocked || saveState === 'saving'}
-            title={blockReasonText}
-            style={{ minHeight: 44, width: '100%', fontWeight: 700 }}
-          >
-            {saveState === 'saving' ? 'Confirming…' : 'Confirm Booking'}
-          </Button>
-        </div>
-      )}
+
     </Card>
   )
 }

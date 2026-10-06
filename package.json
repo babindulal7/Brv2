@@ -19,7 +19,6 @@
     "db:plan:selftest": "node scripts/plan-migrations.mjs --selftest",
     "db:rebuild": "supabase db reset --no-seed && node scripts/apply-migrations-local.mjs",
     "build": "tsc --noEmit && vite build",
-    "build:mock": "tsc --noEmit && vite build --mode mock",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 0",

@@ -1,5 +1,4 @@
-import { supabase } from './supabase'
-import { mockStorage } from './mock/storage'
+import { supabase, IS_MOCK } from './supabase'
 
 /**
  * =============================================================================
@@ -185,13 +184,26 @@ export function generateDocumentPdfBlob(options: GeneratePdfOptions): Blob {
   return new Blob([byteArray as unknown as BlobPart], { type: 'application/pdf' })
 }
 
-type StorageBucketClient = ReturnType<typeof supabase.storage.from> | ReturnType<typeof mockStorage.from>
+interface StorageBucketClient {
+  upload: (path: string, file: Blob | ArrayBuffer | string, options?: { contentType?: string; upsert?: boolean; cacheControl?: string; duplex?: 'half' | 'full' }) => Promise<{ data: { path: string; fullPath: string; id?: string } | null; error: Error | null }>
+  createSignedUrl: (path: string, expiresIn: number, options?: { download?: boolean; transform?: { width: number; height: number; resize: 'cover' | 'contain' | 'fill' } }) => Promise<{ data: { signedUrl: string } | null; error: Error | null }>
+  download: (path: string, options?: { transform?: { width: number; height: number; resize: 'cover' | 'contain' | 'fill' } }) => Promise<{ data: Blob | null; error: Error | null }>
+  getPublicUrl: (path: string) => { data: { publicUrl: string } }
+  list: (folder?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: 'asc' | 'desc' } }) => Promise<{ data: Array<{ name: string; id: string; updated_at: string; created_at: string; last_accessed_at: string; metadata: Record<string, unknown> }> | null; error: Error | null }>
+  remove: (paths: string[]) => Promise<{ data: Array<{ name: string }> | null; error: Error | null }>
+  move: (fromPath: string, toPath: string) => Promise<{ data: { path: string } | null; error: Error | null }>
+  copy: (fromPath: string, toPath: string) => Promise<{ data: { path: string } | null; error: Error | null }>
+}
 
 function getBucketStorageClient(): StorageBucketClient {
-  if (supabase?.storage && typeof supabase.storage.from === 'function') {
-    return supabase.storage.from(DOCUMENTS_STORAGE_BUCKET)
+  if (IS_MOCK) {
+    throw new Error('Mock mode not supported for document storage. Use real Supabase client.')
   }
-  return mockStorage.from(DOCUMENTS_STORAGE_BUCKET)
+  const client = supabase!
+  if (!client.storage || typeof client.storage.from !== 'function') {
+    throw new Error('Supabase storage client not available')
+  }
+  return client.storage.from(DOCUMENTS_STORAGE_BUCKET) as unknown as StorageBucketClient
 }
 
 /**
@@ -209,41 +221,27 @@ export async function uploadDocumentToStorage(options: {
   const storagePath = `${prefix}/${cleanDocNo}.pdf`
 
   const contentType = options.mimeType || 'application/pdf'
-  let storage: StorageBucketClient = getBucketStorageClient()
+  const storage = getBucketStorageClient()
 
   // 1. Upload to Supabase Storage
-  let uploadError: { message?: string; name?: string } | null = null
-  try {
-    const res = await storage.upload(storagePath, options.content, {
-      contentType,
-    })
-    uploadError = res.error
-  } catch (err: unknown) {
-    uploadError = err instanceof Error ? err : { message: String(err) }
-  }
+  const { error: uploadError } = await storage.upload(storagePath, options.content, {
+    contentType,
+  })
 
-  // If bucket not found, RLS error, or any storage error, try creating bucket or fall back to mock storage
+  // If bucket not found, try creating it once
   if (uploadError && !uploadError.message?.toLowerCase().includes('already exists')) {
-    try {
-      if (supabase?.storage && 'createBucket' in supabase.storage && typeof supabase.storage.createBucket === 'function') {
-        const { error: createErr } = await supabase.storage.createBucket(DOCUMENTS_STORAGE_BUCKET, { public: false })
-        if (!createErr) {
-          const retry = await storage.upload(storagePath, options.content, { contentType })
-          uploadError = retry.error
-        } else {
-          storage = mockStorage.from(DOCUMENTS_STORAGE_BUCKET)
-          const fallbackRes = await storage.upload(storagePath, options.content, { contentType })
-          uploadError = fallbackRes.error
+    if (supabase?.storage && 'createBucket' in supabase.storage && typeof supabase.storage.createBucket === 'function') {
+      const { error: createErr } = await supabase.storage.createBucket(DOCUMENTS_STORAGE_BUCKET, { public: false })
+      if (!createErr) {
+        const retry = await storage.upload(storagePath, options.content, { contentType })
+        if (retry.error) {
+          throw new Error(`Failed to upload document to storage: ${retry.error.message}`)
         }
       } else {
-        storage = mockStorage.from(DOCUMENTS_STORAGE_BUCKET)
-        const fallbackRes = await storage.upload(storagePath, options.content, { contentType })
-        uploadError = fallbackRes.error
+        throw new Error(`Failed to upload document to storage: ${createErr.message}`)
       }
-    } catch {
-      storage = mockStorage.from(DOCUMENTS_STORAGE_BUCKET)
-      const fallbackRes = await storage.upload(storagePath, options.content, { contentType })
-      uploadError = fallbackRes.error
+    } else {
+      throw new Error(`Failed to upload document to storage: ${uploadError.message || 'Unknown upload failure'}`)
     }
   }
 
@@ -312,28 +310,17 @@ export async function getDocumentSignedUrl(
   if (!error && data?.signedUrl) {
     return data.signedUrl
   }
-
-  try {
-    const fallback = await mockStorage.from(DOCUMENTS_STORAGE_BUCKET).createSignedUrl(storagePath, expiresInSeconds)
-    return fallback.data?.signedUrl || null
-  } catch {
-    return null
-  }
+  console.warn(`Could not create signed URL for ${storagePath}:`, error?.message)
+  return null
 }
 
 /**
- * Downloads a document from storage, checking Supabase Storage first,
- * and gracefully falling back to mockStorage.
+ * Downloads a document from Supabase Storage.
  */
 export async function downloadDocumentFromStorage(
   storagePath: string,
 ): Promise<{ data: Blob | null; error: Error | { message: string } | null }> {
-  if (supabase?.storage && typeof supabase.storage.from === 'function') {
-    const res = await supabase.storage.from(DOCUMENTS_STORAGE_BUCKET).download(storagePath)
-    if (!res.error && res.data) {
-      return res
-    }
-  }
-  return mockStorage.from(DOCUMENTS_STORAGE_BUCKET).download(storagePath)
+  const storage = getBucketStorageClient()
+  return storage.download(storagePath)
 }
 

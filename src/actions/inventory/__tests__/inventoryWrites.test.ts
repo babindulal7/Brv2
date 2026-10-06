@@ -838,6 +838,7 @@ describe('the dispatcher — capability gates, as mapped (never widened here)', 
 const UPD_INPUT: UpdateBundleInput = {
   clientUuid: '44444444-4444-4444-8444-444444444441',
   bundleId: 'bundle-new-uuid',
+  expectedRevision: 'rev-1',
   patch: { name: 'Documentary Camera Kit' },
 }
 
@@ -884,130 +885,83 @@ describe('UPDATE_BUNDLE — validate', () => {
   it('refuses a deactivation with no clientUuid (Law 8)', () => {
     expect(() => check({ lineDeactivations: [{ itemId: 'bi-fx3', clientUuid: '' }] })).toThrow(/idempotency key/i)
   })
+
+  it('refuses a save that does not say which revision it was made against', () => {
+    expect(() => check({ expectedRevision: '' })).toThrow(/reload the bundle/i)
+  })
 })
 
-describe('UPDATE_BUNDLE — execute', () => {
+describe('UPDATE_BUNDLE - execute (one atomic RPC)', () => {
   const run = (patch: Partial<UpdateBundleInput> = {}) =>
     updateBundleConfig.execute({ ...UPD_INPUT, ...patch }, CTX)
+  const rpcCall = () => db.state.rpcCalls.find((c) => c.fn === 'update_bundle')
+  const payload = () => (rpcCall()?.args as { p_payload: Record<string, unknown> }).p_payload
 
-  it('sends ONLY the keys the operator changed, plus the attribution stamp', async () => {
+  beforeEach(() => {
+    db.state.rpc = { data: { id: 'bundle-new-uuid', code: 'BND-7', revision: 'rev-2' }, error: null }
+  })
+
+  it('performs every write through ONE update_bundle call carrying the revision and the action key', async () => {
+    await run({ patch: { name: 'Renamed Kit' }, lineEdits: [{ itemId: 'bi-fx3', quantity: 3, clientUuid: 'row-key-1' }], lineDeactivations: [{ itemId: 'bi-nisi', clientUuid: 'd1' }] })
+    expect(db.state.rpcCalls.filter((c) => c.fn === 'update_bundle')).toHaveLength(1)
+    expect(rpcCall()?.args).toMatchObject({ p_id: 'bundle-new-uuid', p_revision: 'rev-1', p_key: UPD_INPUT.clientUuid })
+    // No separate client-side writes remain to leave a half-saved bundle.
+    expect(access.updates).toHaveLength(0)
+    expect(access.inserts).toHaveLength(0)
+  })
+
+  it('sends ONLY the keys the operator changed - an untouched rate is absent, never zero', async () => {
     await run({ patch: { name: 'Renamed Kit' } })
-    const write = access.updates.find((u) => u.table === 'bundles')
-    expect(write).toBeDefined()
-    expect(Object.keys(write?.patch ?? {}).sort()).toEqual(['name', 'updated_at', 'updated_by'])
-    expect(write?.patch['name']).toBe('Renamed Kit')
-    expect(write?.patch['updated_by']).toBe(CTX.userId)
-    // Not `daily_rate: 0` — a rate nobody sent is ABSENT, so the stored figure stands.
-    expect(write?.patch).not.toHaveProperty('daily_rate')
-  })
-
-  it('stamps updated_by even when only components changed — bundle_items has no updated_by', async () => {
-    await run({ patch: {}, lineEdits: [{ itemId: 'bi-fx3', quantity: 3, clientUuid: 'row-key-1' }] })
-    const parent = access.updates.find((u) => u.table === 'bundles')
-    expect(parent?.patch['updated_by']).toBe(CTX.userId)
-    const line = access.updates.find((u) => u.table === 'bundle_items')
-    expect(line?.id).toBe('bi-fx3')
-    expect(line?.patch).toEqual({ quantity: 3 })
-  })
-
-  it('carries each row its OWN envelope key, never the action key — the queue de-dups on it', async () => {
-    await run({
-      patch: {},
-      lineEdits: [
-        { itemId: 'bi-fx3', quantity: 3, clientUuid: 'row-key-1' },
-        { itemId: 'bi-nisi', days: 2, clientUuid: 'row-key-2' },
-      ],
-    })
-    const lines = access.updates.filter((u) => u.table === 'bundle_items')
-    expect(lines.map((l) => l.clientUuid)).toEqual(['row-key-1', 'row-key-2'])
-    expect(new Set(lines.map((l) => l.clientUuid)).size).toBe(2)
+    expect(payload()['patch']).toEqual({ name: 'Renamed Kit' })
   })
 
   it('crosses Paisa to rupees exactly once', async () => {
     await run({ patch: { dailyRatePaisa: rupees(1250) } })
-    const write = access.updates.find((u) => u.table === 'bundles')
-    expect(write?.patch['daily_rate']).toBe(1250)
+    expect(payload()['patch']).toEqual({ daily_rate: 1250 })
   })
 
-  it('refuses an unknown bundle and writes NOTHING', async () => {
-    await expect(run({ bundleId: 'no-such-bundle' })).rejects.toThrow(/no bundle has id/i)
-    expect(access.updates).toHaveLength(0)
-    expect(access.inserts).toHaveLength(0)
+  it('sends component edits by stored row id and removals as deactivations, never deletes', async () => {
+    await run({ patch: {}, lineEdits: [{ itemId: 'bi-fx3', quantity: 3, isMandatory: false, clientUuid: 'k' }], lineDeactivations: [{ itemId: 'bi-nisi', clientUuid: 'k2' }] })
+    expect(payload()['edits']).toEqual([{ id: 'bi-fx3', quantity: 3, is_mandatory: false }])
+    expect(payload()['deactivations']).toEqual([{ id: 'bi-nisi' }])
   })
 
-  it('refuses a component that belongs to another bundle, BEFORE any write', async () => {
-    await expect(
-      run({ patch: {}, lineEdits: [{ itemId: 'bi-someone-elses', quantity: 2, clientUuid: 'k' }] }),
-    ).rejects.toThrow(/does not belong to BND-7/i)
-    expect(access.updates).toHaveLength(0)
-    expect(access.inserts).toHaveLength(0)
+  it('resolves an added product to its uuid and states days (Law 9)', async () => {
+    await run({ patch: {}, lineAdds: [{ productId: 'prod-fx3-uuid', qty: 2, clientUuid: 'add-key-1' }] })
+    expect(payload()['adds']).toEqual([{ product_id: 'prod-fx3-uuid', quantity: 2, days: 1 }])
   })
 
-  it('refuses an unresolvable category before writing, naming what changed under the form', async () => {
-    await expect(run({ patch: { categoryId: 'cat-gone-uuid' } })).rejects.toThrow(/no category has id/i)
-    expect(access.updates).toHaveLength(0)
+  it('refuses a new component that is not in the catalogue, before calling the RPC', async () => {
+    await expect(run({ patch: {}, lineAdds: [{ productId: 'prod-gone', qty: 1, clientUuid: 'k' }] })).rejects.toThrow(/not in the catalogue/i)
+    expect(rpcCall()).toBeUndefined()
   })
 
-  it('adds a component with the RESOLVED product uuid, continuing sort_order past the existing rows', async () => {
-    await run({
-      patch: {},
-      lineAdds: [{ productId: 'prod-fx3-uuid', qty: 2, clientUuid: 'add-key-1' }],
-    })
-    const insert = access.inserts.find((i) => i.table === 'bundle_items')
-    expect(insert?.payload).toMatchObject({
-      bundle_id: 'bundle-new-uuid',
-      product_id: 'prod-fx3-uuid',
-      quantity: 2,
-      // Law 9 — stated, never left to the column default.
-      days: 1,
-      // The fixture holds sort_order 0 and 1, so the next one is 2.
-      sort_order: 2,
-      client_uuid: 'add-key-1',
-    })
+  it('does not report success unless the database confirms the save', async () => {
+    db.state.rpc = { data: null, error: null }
+    await expect(run({ patch: { name: 'Renamed Kit' } })).rejects.toThrow(/not confirmed/i)
   })
 
-  it('reports an RLS refusal as NOT SAVED — zero rows come back with no error', async () => {
-    access.updateResult = { data: null, error: null }
-    await expect(run({ patch: { name: 'Renamed Kit' } })).rejects.toThrow(/treat it as not saved/i)
+  it('surfaces a stale-revision refusal as-is so the draft can be kept and reloaded', async () => {
+    db.state.rpc = { data: null, error: { message: 'This bundle changed since you opened it. Reload the latest record before saving.' } }
+    await expect(run({ patch: { name: 'Renamed Kit' } })).rejects.toThrow(/changed since you opened it/i)
   })
 
-  it('soft-deactivates components with is_active: false and attribution (Law 3, 4.52)', async () => {
-    const { result } = await run({
-      patch: {},
-      lineDeactivations: [{ itemId: 'bi-fx3', clientUuid: 'deact-key-1' }],
-    })
-    expect(result.linesDeactivated).toBe(1)
-    const deact = access.updates.find((u) => u.table === 'bundle_items' && u.id === 'bi-fx3')
-    expect(deact).toBeDefined()
-    expect(deact?.patch).toMatchObject({
-      is_active: false,
-      deactivated_by: CTX.userId,
-    })
-    expect(deact?.clientUuid).toBe('deact-key-1')
-  })
-
-  it('refuses deactivating a component from another bundle before writing', async () => {
-    await expect(
-      run({ patch: {}, lineDeactivations: [{ itemId: 'bi-someone-elses', clientUuid: 'k' }] }),
-    ).rejects.toThrow(/does not belong to BND-7/i)
-    expect(access.updates).toHaveLength(0)
-  })
-
-  it('names the roles when the database changes no row', async () => {
-    access.updateThrows = '[DataAccess] Update failed on bundles: JSON object requested (PGRST116)'
-    await expect(run({ patch: { name: 'Renamed Kit' } })).rejects.toThrow(/Owner, Admin and Manager/i)
+  it('returns the code and counts the screen reports from', async () => {
+    const { result } = await run({ patch: { name: 'Renamed Kit' }, lineDeactivations: [{ itemId: 'bi-nisi', clientUuid: 'd1' }] })
+    expect(result).toMatchObject({ bundleId: 'bundle-new-uuid', bundleCode: 'BND-7', changedKeys: ['name'], linesDeactivated: 1 })
   })
 })
 
-describe('UPDATE_BUNDLE — the role gate', () => {
-  it('denies inventory.update to Warehouse — bundles_manage, not bundle_items_all', async () => {
+describe('UPDATE_BUNDLE - the role gate', () => {
+  it('denies inventory.update to Warehouse - bundles_manage, not bundle_items_all', async () => {
     await expect(
       updateBundle(UPD_INPUT, { userId: 'u-1', role: 'Warehouse', isOnline: true }),
     ).rejects.toThrow()
-    expect(access.updates).toHaveLength(0)
+    expect(db.state.rpcCalls.filter((c) => c.fn === 'update_bundle')).toHaveLength(0)
   })
 
   it('allows Owner', async () => {
+    db.state.rpc = { data: { id: 'bundle-new-uuid', code: 'BND-7', revision: 'rev-2' }, error: null }
     const result = await updateBundle(UPD_INPUT, CTX)
     expect(result.bundleCode).toBe('BND-7')
   })

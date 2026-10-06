@@ -11,12 +11,16 @@ import { listInventory } from '../../lib/queries/inventory'
 import { findClientsByPhoneTail } from '../../lib/queries/clients'
 import { Button, Card, PageHeader } from '../ui/Page'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
-import { RecordWorkspace, RecordSection, RecordActions, useUnsavedRecord } from '../ui/RecordWorkspace'
+import { RecordWorkspace, RecordSection, RecordActions, RecordErrorSummary, focusRecordField, useUnsavedRecord } from '../ui/RecordWorkspace'
 import { useToast } from '../ui/Toast'
 
 export interface RecordFormProps { kind:RecordKind; recordId?:string; onDone?:()=>void }
 const names={client:'Client',equipment:'Equipment',bundle:'Bundle'}
 const routes={client:'/clients',equipment:'/inventory',bundle:'/inventory/bundles'}
+/** Optional sections collapse while empty; essential ones are always open. */
+const optionalSections:Record<RecordKind,string[]>={client:['Addresses','Commercial details','Notes'],equipment:['Purchase','Maintenance & notes'],bundle:[]}
+/** Roles that may open this form. Creating a client keeps canCreateClient parity (Warehouse); editing does not. */
+function rolesFor(kind:RecordKind,editing:boolean){return kind==='client'?(editing?['Owner','Admin','Manager','Coordinator']:['Owner','Admin','Manager','Coordinator','Warehouse']):['Owner','Admin','Manager']}
 
 export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
   const {user}=useAuth(); const online=useNetwork(); const navigate=useNavigate(); const location=useLocation(); const {showSuccessToast}=useToast()
@@ -30,7 +34,9 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
   const initial=useRef(JSON.stringify({values:{...recordDefaults[kind]},rows:[]}))
   const fingerprint=JSON.stringify({values,rows}); const dirty=!saved.current && fingerprint!==initial.current
   useUnsavedRecord(dirty)
-  const permitted=Boolean(user && (kind==='client'?['Owner','Admin','Manager','Coordinator']:['Owner','Admin','Manager']).includes(user.role))
+  const permitted=Boolean(user && rolesFor(kind,Boolean(recordId)).includes(user.role))
+  const errorBox=useRef<HTMLDivElement>(null)
+  useEffect(()=>{if(error)errorBox.current?.focus()},[error])
 
   useEffect(()=>{
     if(!recordId) return
@@ -89,14 +95,16 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
       },
     })
   }
-  function focus(key:string){const target=document.getElementById(`record-${key}`);target?.scrollIntoView({block:'center',behavior:'smooth'});target?.focus()}
+  const fieldId=(key:string)=>`record-${key}`
+  const errorList=Object.entries(errors).map(([key,message])=>({id:fieldId(key),message}))
+  function sectionHasValue(section:string){return recordFields[kind].some(f=>f.section===section && (f.type==='checkbox'?false:String(values[f.key]??'').trim()!=='' && String(values[f.key])!==String(recordDefaults[kind][f.key]??'')))}
   async function save(){
     if(submitting.current || !user || !permitted)return
     const invalid=validateRecord(kind,values)
     if(kind==='bundle' && !rows.length)invalid.components='Add at least one component.'
     if(kind==='equipment' && values.tracking_mode==='Serialised' && !rows.length)invalid.units='Add at least one unit.'
     setErrors(invalid)
-    if(Object.keys(invalid).length){focus(Object.keys(invalid)[0]!);return}
+    if(Object.keys(invalid).length){focusRecordField(fieldId(Object.keys(invalid)[0]!));return}
     submitting.current=true;setBusy(true);setError('')
     if(saveKey.current?.fingerprint!==fingerprint)saveKey.current={fingerprint,key:newClientUuid()}
     try{
@@ -106,7 +114,7 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
       saved.current=true;initial.current=fingerprint
       showSuccessToast(`${names[kind]} saved`,result.code)
       if(onDone && recordId){onDone();return}
-      const params=new URLSearchParams(location.search);params.delete('action');params.delete('tab')
+      const params=new URLSearchParams(location.search);params.delete('action');if(params.get('tab')==='new')params.delete('tab')
       navigate(`${routes[kind]}/${result.id}${params.size?`?${params}`:''}`)
     }catch(e){setError(e instanceof Error?e.message:String(e))}finally{submitting.current=false;setBusy(false)}
   }
@@ -135,7 +143,7 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
         onConfirm={confirmDialog.onConfirm}
       />
     )}
-    {error&&<Card title="Not saved"><p role="alert">{error}</p>{recordId&&<Button onClick={()=>{
+    {error&&<div ref={errorBox} tabIndex={-1}><Card title="Not saved"><p role="alert">{error}</p>{recordId&&<Button onClick={()=>{
       if(!dirty) { setReload(r=>r+1); return }
       setConfirmDialog({
         isOpen: true,
@@ -144,8 +152,8 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
         confirmLabel: 'Reload',
         onConfirm: () => { setConfirmDialog(null); setReload(r=>r+1) },
       })
-    }}>Reload latest record</Button>}</Card>}
-    {Object.keys(errors).length>0&&<Card title="Check these fields"><div role="alert">{Object.entries(errors).map(([key,message])=><Button key={key} variant="ghost" onClick={()=>focus(key)}>{message}</Button>)}</div></Card>}
+    }}>Reload latest record</Button>}</Card></div>}
+    <RecordErrorSummary errors={errorList}/>
     {duplicate&&<Card title="This phone belongs to an existing client"><p>{duplicate.name}</p><Button onClick={()=>{
       if(!dirty) { navigate(`/clients/${duplicate.id}`); return }
       setConfirmDialog({
@@ -157,7 +165,7 @@ export function RecordForm({kind,recordId,onDone}:RecordFormProps) {
       })
     }}>Open existing client</Button></Card>}
     <RecordWorkspace summary={<Card title={`${names[kind]} summary`}><strong>{String(values.name||`New ${kind}`)}</strong><p>{recordId?'Editing the existing record.':'A new record will be created.'}</p>{kind!=='client'&&<p>{rows.length} {kind==='bundle'?'components':'units'}</p>}</Card>} actions={<RecordActions busy={busy} dirty={dirty || !recordId} label={recordId?'Save changes':`Create ${kind}`} onSave={()=>void save()} onCancel={cancel}/> }>
-      {sections.map(section=><RecordSection key={section} title={section}><div className="record-fields">{recordFields[kind].filter(f=>f.section===section).map(renderField)}</div>
+      {sections.map(section=><RecordSection key={section} title={section} id={`record-section-${section.toLowerCase().replace(/[^a-z]+/g,'-')}`} collapsible={optionalSections[kind].includes(section)} defaultOpen={!optionalSections[kind].includes(section)||sectionHasValue(section)||(section==='Notes'&&false)} collapsedHint="Empty"><div className="record-fields">{recordFields[kind].filter(f=>f.section===section).map(renderField)}</div>
         {kind==='client'&&section==='Contact'&&<><h3>Primary contact</h3>{rows.map((row,index)=><div className="record-fields" key={String(row.id??index)}>{rowField(row,index,'full_name','Contact name')}{rowField(row,index,'designation','Designation')}{rowField(row,index,'phone','Contact phone')}{rowField(row,index,'email','Contact email')}<Button disabled={busy} onClick={()=>setRows([])}>Remove primary contact</Button></div>)}{!rows.length&&<Button disabled={busy} onClick={()=>setRows([{full_name:'',designation:null,phone:null,email:null}])}>Add primary contact</Button>}</>}
         {kind==='client'&&section==='Commercial details'&&<p>Membership and credit terms are managed from the client’s dedicated actions.</p>}
         {kind==='equipment'&&section==='Units & location'&&values.tracking_mode==='Serialised'&&<div id="record-units" tabIndex={-1}>{rows.map((row,index)=><Card key={String(row.id??index)} title={String(row.asset_tag||`Unit ${index+1}`)}><div className="record-fields">{recordId&&rowField(row,index,'asset_tag','Asset tag')}{rowField(row,index,'serial_no','Serial number')}{rowField(row,index,'warehouse_id','Warehouse')}{rowField(row,index,'rack','Rack')}{rowField(row,index,'shelf','Shelf')}{rowField(row,index,'bin','Bin')}</div>{recordId?<p>{String(row.status)} · {String(row.condition)}</p>:<Button disabled={busy} onClick={()=>setRows(prev=>prev.filter((_,i)=>i!==index))}>Remove unit</Button>}</Card>)}{!recordId&&<Button disabled={busy} onClick={()=>setRows(prev=>[...prev,{serial_no:null,warehouse_id:null,rack:null,shelf:null,bin:null,condition:'Excellent'}])}>Add unit</Button>}{recordId&&<p>Use stock adjustments or intake to change unit counts; use operational actions to change condition or custody.</p>}</div>}

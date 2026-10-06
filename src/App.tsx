@@ -49,6 +49,9 @@ const ForecastingReports = lazy(() => import('./modules/reports/ForecastingRepor
 const RentalReports     = lazy(() => import('./modules/reports/RentalReports'))
 const OperationsReports = lazy(() => import('./modules/reports/OperationsReports'))
 const DamageMaintenanceReports = lazy(() => import('./modules/reports/DamageMaintenanceReports'))
+const RevenueReport     = lazy(() => import('./modules/reports/RevenueReport'))
+const CasesReport       = lazy(() => import('./modules/reports/CasesReport'))
+const CustomReport      = lazy(() => import('./modules/reports/CustomReport'))
 
 const SalesVatReports   = lazy(() => import('./modules/reports/SalesVatReports'))
 const ActivityReports   = lazy(() => import('./modules/reports/ActivityReports'))
@@ -321,6 +324,8 @@ export default function App() {
         <Route path="/inventory/warehouses" element={<Navigate to="/settings?tab=branches&view=warehouses" replace />} />
 
         <Route path="/inventory/stock-check" element={<Navigate to="/inventory?tab=stock-check" replace />} />
+        <Route path="/inventory/sub-rentals" element={<Navigate to="/inventory?tab=sub-rentals" replace />} />
+        <Route path="/inventory/sub-rental" element={<Navigate to="/inventory?tab=sub-rentals" replace />} />
 
         <Route
           path="/inventory/purchase-requests"
@@ -681,9 +686,30 @@ export default function App() {
           }
         />
 
-        <Route path="/reports/revenue" element={<Navigate to="/finance?tab=reports" replace />} />
-        <Route path="/reports/cases" element={<Navigate to="/operations/cases" replace />} />
-        <Route path="/reports/custom" element={<Navigate to="/finance?tab=reports" replace />} />
+        <Route
+          path="/reports/revenue"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Revenue Reports' }]} search="Search reports…">
+              <RevenueReport />
+            </Shell>
+          }
+        />
+        <Route
+          path="/reports/cases"
+          element={
+            <Shell crumbs={[{ label: 'Operations', to: '/operations' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Cases Reports' }]} search="Search cases, counterparty, damage…">
+              <CasesReport />
+            </Shell>
+          }
+        />
+        <Route
+          path="/reports/custom"
+          element={
+            <Shell crumbs={[{ label: 'Finance', to: '/finance' }, { label: 'Reports', to: '/finance?tab=reports' }, { label: 'Custom Report Builder' }]} search="Search reports…">
+              <CustomReport />
+            </Shell>
+          }
+        />
 
         <Route path="/clients/memberships" element={<Navigate to="/clients?tab=membership" replace />} />
         <Route path="/clients/import" element={<Navigate to="/clients?tab=import" replace />} />

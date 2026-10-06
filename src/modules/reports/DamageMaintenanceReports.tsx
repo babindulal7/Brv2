@@ -476,7 +476,7 @@ export default function DamageMaintenanceReports() {
                         </Link>
                       </td>
                       <td style={{ ...td, fontWeight: 600 }}>{inc.unitName}</td>
-                      <td style={{ ...td, fontFamily: 'monospace' }}>{inc.serial}</td>
+                      <td style={{ ...td, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{inc.serial}</td>
                       <td style={td}>
                         <span
                           style={{
@@ -551,7 +551,7 @@ export default function DamageMaintenanceReports() {
                     <tr key={rep.id}>
                       <td style={{ ...td, fontWeight: 600, color: 'var(--primary)' }}>{rep.recordNo}</td>
                       <td style={{ ...td, fontWeight: 600 }}>{rep.unitName}</td>
-                      <td style={{ ...td, fontFamily: 'monospace' }}>{rep.serial}</td>
+                      <td style={{ ...td, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{rep.serial}</td>
                       <td style={{ ...td, maxWidth: 250 }}>{rep.issue}</td>
                       <td style={td}>{rep.vendorOrShop}</td>
                       <td style={td}>{rep.turnaroundDays} days</td>
@@ -630,7 +630,7 @@ export default function DamageMaintenanceReports() {
                     <tr key={srv.id}>
                       <td style={{ ...td, fontWeight: 600, color: 'var(--primary)' }}>{srv.recordNo}</td>
                       <td style={{ ...td, fontWeight: 600 }}>{srv.unitName}</td>
-                      <td style={{ ...td, fontFamily: 'monospace' }}>{srv.serial}</td>
+                      <td style={{ ...td, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{srv.serial}</td>
                       <td style={td}>{srv.serviceType}</td>
                       <td style={td}>{new Date(srv.scheduledDate).toLocaleDateString('en-GB')}</td>
                       <td style={td}>{srv.performedBy}</td>
@@ -701,7 +701,7 @@ export default function DamageMaintenanceReports() {
                   {data?.sidelinedUnits.map((unit) => (
                     <tr key={unit.id}>
                       <td style={td}>{unit.id}</td>
-                      <td style={{ ...td, fontFamily: 'monospace', fontWeight: 600 }}>{unit.serial}</td>
+                      <td style={{ ...td, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{unit.serial}</td>
                       <td style={{ ...td, fontWeight: 600 }}>{unit.modelName}</td>
                       <td style={td}>
                         <span

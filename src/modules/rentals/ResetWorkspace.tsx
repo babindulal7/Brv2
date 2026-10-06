@@ -167,14 +167,14 @@ interface RowRec {
   queueState: QueueState
   ticks: readonly string[]
   /** Who cleaned it — the §10 self-check compares QC-by against this. */
-  cleanedBy?: string
-  qcBy?: string
-  qcSkipReason?: string
-  qcFailReason?: string
+  cleanedBy?: string | undefined
+  qcBy?: string | undefined
+  qcSkipReason?: string | undefined
+  qcFailReason?: string | undefined
   problem: ProblemState
-  problemReason?: string
-  damageType?: string
-  damageSeverity?: string
+  problemReason?: string | undefined
+  damageType?: string | undefined
+  damageSeverity?: string | undefined
 }
 
 const FRESH: RowRec = { queueState: 'Waiting', ticks: [], problem: 'No Problems' }
@@ -392,23 +392,28 @@ export default function ResetWorkspace({
         const next = { ...prev }
         for (const r of rows) {
           if (!next[r.key]) {
-            next[r.key] = {
+            const entry: RowRec = {
               queueState: 'Ready',
               ticks: [...ROW_TASKS],
-              cleanedBy: actor ?? undefined,
-              qcBy: actor ?? undefined,
               problem: 'No Problems',
             }
+            if (actor) {
+              entry.cleanedBy = actor
+              entry.qcBy = actor
+            }
+            next[r.key] = entry
           }
         }
         return next
       })
     }
 
-    supabase
-      .from('cleaning_queue_entries')
-      .select('unit_id, clean_completed_at, reset_completed_at, problem_state, cleaned_by, qc_by, qc_skip_reason, qc_fail_reason')
-      .eq('booking_id', floorId)
+    void Promise.resolve(
+      supabase
+        .from('cleaning_queue_entries')
+        .select('unit_id, clean_completed_at, reset_completed_at, problem_state, cleaned_by, qc_by, qc_skip_reason, qc_fail_reason')
+        .eq('booking_id', floorId),
+    )
       .then(({ data }) => {
         if (!active || !data || data.length === 0) return
         setMarks((prev) => {
@@ -418,15 +423,16 @@ export default function ResetWorkspace({
             if (matchingRow) {
               const isReady = entry.reset_completed_at !== null
               const isQC = entry.clean_completed_at !== null && !isReady
-              next[matchingRow.key] = {
+              const rec: RowRec = {
                 queueState: isReady ? 'Ready' : isQC ? 'QC' : 'Waiting',
                 ticks: isReady || isQC ? [...ROW_TASKS] : [],
-                cleanedBy: entry.cleaned_by ?? undefined,
-                qcBy: entry.qc_by ?? undefined,
-                qcSkipReason: entry.qc_skip_reason ?? undefined,
-                qcFailReason: entry.qc_fail_reason ?? undefined,
                 problem: (entry.problem_state as ProblemState) ?? 'No Problems',
               }
+              if (entry.cleaned_by) rec.cleanedBy = entry.cleaned_by
+              if (entry.qc_by) rec.qcBy = entry.qc_by
+              if (entry.qc_skip_reason) rec.qcSkipReason = entry.qc_skip_reason
+              if (entry.qc_fail_reason) rec.qcFailReason = entry.qc_fail_reason
+              next[matchingRow.key] = rec
             }
           }
           return next

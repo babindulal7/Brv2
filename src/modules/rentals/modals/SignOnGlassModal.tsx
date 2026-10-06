@@ -214,7 +214,7 @@ export function SignOnGlassModal({
           offCtx.strokeStyle = '#38bdf8'
           offCtx.stroke()
 
-          offCtx.font = '10px monospace'
+          offCtx.font = '10px "Source Sans 3", sans-serif'
           offCtx.fillStyle = '#94a3b8'
           offCtx.fillText(`DIGITALLY ATTESTED · ${bookingNo} · ${formatAdDateTime(nowIso)}`, 40, 118)
           dataUrl = offCanvas.toDataURL('image/png')
@@ -432,7 +432,7 @@ export function SignOnGlassModal({
                   justifyContent: 'space-between',
                 }}
               >
-                <span style={{ color: 'rgba(148, 163, 184, 0.4)', fontSize: 13, fontFamily: 'monospace' }}>✕ Sign on line</span>
+                <span style={{ color: 'rgba(148, 163, 184, 0.4)', fontSize: 13, fontFamily: 'var(--font-id, sans-serif)' }}>✕ Sign on line</span>
                 <span style={{ color: 'rgba(148, 163, 184, 0.4)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Babin Rentals Digital Handover</span>
               </div>
 

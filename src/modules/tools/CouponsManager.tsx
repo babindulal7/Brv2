@@ -225,7 +225,8 @@ export default function CouponsManager() {
                 border: '1px solid var(--border)',
                 background: 'var(--input-bg)',
                 color: 'var(--text)',
-                fontFamily: 'monospace',
+                fontFamily: 'var(--font-id, sans-serif)',
+                fontVariantNumeric: 'tabular-nums',
                 fontWeight: 600,
               }}
             />
@@ -377,7 +378,7 @@ export default function CouponsManager() {
                   <tr key={c.code} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.15s' }}>
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 'var(--t-body)', color: 'var(--accent)' }}>
+                        <span style={{ fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontWeight: 700, fontSize: 'var(--t-body)', color: 'var(--accent)' }}>
                           {c.code}
                         </span>
                         <button
@@ -516,7 +517,8 @@ export default function CouponsManager() {
                   border: '1px solid var(--border)',
                   background: 'var(--input-bg)',
                   color: 'var(--text)',
-                  fontFamily: 'monospace',
+                  fontFamily: 'var(--font-id, sans-serif)',
+                  fontVariantNumeric: 'tabular-nums',
                   fontWeight: 600,
                 }}
               />

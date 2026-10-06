@@ -239,7 +239,8 @@
 }
 
 .inventory-asset-code {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
+  font-variant-numeric: tabular-nums;
   font-size: var(--t-th);
   font-weight: 600;
   letter-spacing: 0.04em;

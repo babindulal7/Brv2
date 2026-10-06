@@ -7,6 +7,7 @@ import { DataTableShell } from '../../components/ui/DataTable'
 import { thStyle } from '../../components/ui/TableHeaderCell'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
+import { Select } from '../../components/ui/Select'
 import { EmptyState } from '../../components/ui/StateViews'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -20,6 +21,8 @@ import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
 import { useViewport } from '../../lib/device'
 import { getBusinessToday } from '../../lib/bs'
+import { canAssignPricedCrew } from '../../lib/crewAssignment'
+import { BookCrewFlow } from './BookCrewFlow'
 import './crew.css'
 import {
   listCrewAssignments,
@@ -121,9 +124,13 @@ function onShootToday(a: CrewAssignment): boolean {
  * checkboxes are deliberately left in place: the selection is the input the
  * real flow will want, and removing working UI is not this fix.
  *
- * TODO(decision): where the crew-booking flow lives — a `/crew/new` workspace,
- * a modal on this screen, or an entry point on the booking itself — and which
- * record it attaches to. A page may not answer that (CLAUDE.md).
+ * Resolved 6 Oct 2026: the flow lives as a header entry point on this screen —
+ * `BookCrewFlow` asks which open booking first, then hands off to the existing
+ * `AssignCrewModal` (rentals), which already collects member, role, rate,
+ * call/wrap and days and dispatches the real `bookCrew` with an `ActionContext`
+ * and an idempotency key. No second copy of that form lives here. The header
+ * button renders only for roles `canAssignPricedCrew` admits (Owner/Admin/
+ * Manager); everyone else never sees an action they cannot complete.
  */
 
 /**
@@ -186,6 +193,15 @@ export function CrewBooking() {
   /* A failed read, never swallowed: the seed stays on screen behind the banner,
      and the banner says the data did not load live. */
   const [rosterLoadError, setRosterLoadError] = useState<string | null>(null)
+  // Book-crew entry point. `bookCrew` assigns crew onto a booking, and this
+  // screen never knows one, so the button opens a booking picker first and the
+  // existing AssignCrewModal does the assignment — no second copy of that form.
+  const [bookCrewOpen, setBookCrewOpen] = useState(false)
+  // Bumped after an assignment lands so the roster/assignment lists re-read.
+  const [crewRefreshKey, setCrewRefreshKey] = useState(0)
+  // Priced assignments need crew-pay access; the modal states the same gate for
+  // anyone who reaches it another way.
+  const canBookCrew = !!user && canAssignPricedCrew(user.role)
 
   useEffect(() => {
     let active = true
@@ -208,7 +224,7 @@ export function CrewBooking() {
     return () => {
       active = false
     }
-  }, [])
+  }, [crewRefreshKey])
 
   // HIS v2.1 Crew card is person-level; this screen lists one row per
   // *assignment*. Group by name so the hover card can show a person's full
@@ -337,6 +353,7 @@ export function CrewBooking() {
   )
 
   return (
+    <>
     <PageShell width="full">
       <div className="crew-v2">
         <PageHeader
@@ -344,13 +361,18 @@ export function CrewBooking() {
           title="Crew Assist"
           leading={<FilterButton onClick={() => setFiltersOpen((open) => !open)} controls="crew-filters" expanded={filtersOpen} activeCount={Number(Boolean(selectedRole))} />}
           description="Roster management, shoot-day assignments, and conflict detection."
+          actions={canBookCrew ? (
+            <Button variant="primary" icon="plus" onClick={() => setBookCrewOpen(true)}>
+              Book Crew
+            </Button>
+          ) : undefined}
         />
         <FilterDrawer id="crew-filters" open={filtersOpen} onClose={() => setFiltersOpen(false)} resultCount={filteredRoster.length} noun="crew members" activeCount={Number(Boolean(selectedRole))} onClearAll={() => setSelectedRole('')} standardFooter onApply={() => setFiltersOpen(false)}>
           <label style={{ display: 'grid', gap: 8, fontWeight: 600 }}>Role
-            <select aria-label="Filter crew by role" value={selectedRole} onChange={(event) => setSelectedRole(event.target.value)} style={{ minHeight: 44, width: '100%' }}>
+            <Select aria-label="Filter crew by role" value={selectedRole} onChange={(event) => setSelectedRole(event.target.value)} style={{ minHeight: 44, width: '100%' }}>
               <option value="">All roles</option>
               {roles.map((role) => <option key={role} value={role}>{role}</option>)}
-            </select>
+            </Select>
           </label>
         </FilterDrawer>
 
@@ -670,6 +692,12 @@ export function CrewBooking() {
         </>
       </div>
     </PageShell>
+    <BookCrewFlow
+      open={bookCrewOpen}
+      onClose={() => setBookCrewOpen(false)}
+      onAssigned={() => setCrewRefreshKey((k) => k + 1)}
+    />
+    </>
   )
 }
 
@@ -981,10 +1009,11 @@ const ALERT_ROW_LAYOUT: CSSProperties = {
  *    own unbuilt-ness once it gets there, which is honest and visible.
  *  - **Unfilled role** has none. `OpenRoleRequest` carries a production *name*,
  *    not a booking number (`data/crew.ts`), no route in `App.tsx` addresses a
- *    role request, and the flow that would fill one is itself unbuilt — see
- *    `BOOK_CREW_UNAVAILABLE`, which already states that gap on this screen. So
- *    the row is rendered as what it is: information, no anchor, no pointer
- *    cursor, nothing to click.
+ *    role request, and the row is rendered as what it is: information, no
+ *    anchor, no pointer cursor, nothing to click. (The crew-booking flow itself
+ *    is built — header `Book Crew` → booking picker → `AssignCrewModal` — but
+ *    it assigns chosen people onto a chosen booking, which is not the same as
+ *    resolving a named open role, so the row still gets no control.)
  *
  * `to` is optional and never `'#'`. A row with no destination does not get one.
  */

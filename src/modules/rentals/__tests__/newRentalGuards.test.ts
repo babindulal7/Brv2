@@ -39,7 +39,7 @@ vi.mock('../../../lib/supabase', () => ({
 }))
 
 import { bookingDays, bookingInstant } from '../booking/newRentalUtils'
-import { confirmWriteRefusals } from '../NewRental'
+import { confirmWriteRefusals } from '../booking'
 
 /** A `products.id`-shaped id — what a live catalogue row carries. */
 const PRODUCT_UUID = '3f1c2b4a-5d6e-4f7a-8b9c-0d1e2f3a4b5c'
@@ -76,7 +76,7 @@ describe('confirmWriteRefusals — NR-10, the card and the button read one list'
 
   it('does NOT repeat "no client" — the alert model already carries that Critical', () => {
     const none = confirmWriteRefusals({ ...CLEAR, clientSelected: false, clientDbId: null })
-    expect(none.map((n) => n.text).filter((t) => t.includes('client'))).toEqual([])
+    expect(none.map((n: { text: string }) => n.text).filter((t: string) => t.includes('client'))).toEqual([])
   })
 
   it('refuses a booking with no lines, and sends the operator to Equipment', () => {

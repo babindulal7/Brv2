@@ -1,5 +1,4 @@
-import { supabase } from './supabase'
-import { mockStorage } from './mock/storage'
+import { supabase, IS_MOCK } from './supabase'
 import { generateClientUuid } from './dataAccess'
 
 export const EVIDENCE_STORAGE_BUCKET = 'evidence'
@@ -22,13 +21,26 @@ export interface StoredEvidencePhotoResult {
   fileSizeBytes: number
 }
 
-type StorageBucketClient = ReturnType<typeof supabase.storage.from> | ReturnType<typeof mockStorage.from>
+interface StorageBucketClient {
+  upload: (path: string, file: Blob | ArrayBuffer | string, options?: { contentType?: string; upsert?: boolean; cacheControl?: string; duplex?: 'half' | 'full' }) => Promise<{ data: { path: string; fullPath: string; id?: string } | null; error: Error | null }>
+  createSignedUrl: (path: string, expiresIn: number, options?: { download?: boolean; transform?: { width: number; height: number; resize: 'cover' | 'contain' | 'fill' } }) => Promise<{ data: { signedUrl: string } | null; error: Error | null }>
+  download: (path: string, options?: { transform?: { width: number; height: number; resize: 'cover' | 'contain' | 'fill' } }) => Promise<{ data: Blob | null; error: Error | null }>
+  getPublicUrl: (path: string) => { data: { publicUrl: string } }
+  list: (folder?: string, options?: { limit?: number; offset?: number; sortBy?: { column: string; order: 'asc' | 'desc' } }) => Promise<{ data: Array<{ name: string; id: string; updated_at: string; created_at: string; last_accessed_at: string; metadata: Record<string, unknown> }> | null; error: Error | null }>
+  remove: (paths: string[]) => Promise<{ data: Array<{ name: string }> | null; error: Error | null }>
+  move: (fromPath: string, toPath: string) => Promise<{ data: { path: string } | null; error: Error | null }>
+  copy: (fromPath: string, toPath: string) => Promise<{ data: { path: string } | null; error: Error | null }>
+}
 
 function getEvidenceBucketClient(): StorageBucketClient {
-  if (supabase?.storage && typeof supabase.storage.from === 'function') {
-    return supabase.storage.from(EVIDENCE_STORAGE_BUCKET)
+  if (IS_MOCK) {
+    throw new Error('Mock mode not supported for evidence storage. Use real Supabase client.')
   }
-  return mockStorage.from(EVIDENCE_STORAGE_BUCKET)
+  const client = supabase!
+  if (!client.storage || typeof client.storage.from !== 'function') {
+    throw new Error('Supabase storage client not available')
+  }
+  return client.storage.from(EVIDENCE_STORAGE_BUCKET) as unknown as StorageBucketClient
 }
 
 /**
@@ -44,40 +56,26 @@ export async function uploadEvidencePhoto(
   const storagePath = `${cleanBooking}/${photoId}_${cleanName}`
 
   const contentType = (options.file as File).type || 'image/jpeg'
-  let storage: StorageBucketClient = getEvidenceBucketClient()
+  const storage = getEvidenceBucketClient()
 
-  let uploadError: { message?: string; name?: string } | null = null
-  try {
-    const res = await storage.upload(storagePath, options.file, {
-      contentType,
-    })
-    uploadError = res.error
-  } catch (err: unknown) {
-    uploadError = err instanceof Error ? err : { message: String(err) }
-  }
+  const { error: uploadError } = await storage.upload(storagePath, options.file, {
+    contentType,
+  })
 
   // Handle missing bucket or storage failure
   if (uploadError && (uploadError.message?.toLowerCase().includes('bucket not found') || uploadError.name === 'StorageApiError')) {
-    try {
-      if (supabase?.storage && 'createBucket' in supabase.storage && typeof supabase.storage.createBucket === 'function') {
-        const { error: createErr } = await supabase.storage.createBucket(EVIDENCE_STORAGE_BUCKET, { public: false })
-        if (!createErr) {
-          const retry = await storage.upload(storagePath, options.file, { contentType })
-          uploadError = retry.error
-        } else {
-          storage = mockStorage.from(EVIDENCE_STORAGE_BUCKET)
-          const fallbackRes = await storage.upload(storagePath, options.file, { contentType })
-          uploadError = fallbackRes.error
+    if (supabase?.storage && 'createBucket' in supabase.storage && typeof supabase.storage.createBucket === 'function') {
+      const { error: createErr } = await supabase.storage.createBucket(EVIDENCE_STORAGE_BUCKET, { public: false })
+      if (!createErr) {
+        const retry = await storage.upload(storagePath, options.file, { contentType })
+        if (retry.error) {
+          throw new Error(`Failed to upload evidence photo: ${retry.error.message}`)
         }
       } else {
-        storage = mockStorage.from(EVIDENCE_STORAGE_BUCKET)
-        const fallbackRes = await storage.upload(storagePath, options.file, { contentType })
-        uploadError = fallbackRes.error
+        throw new Error(`Failed to upload evidence photo: ${createErr.message}`)
       }
-    } catch {
-      storage = mockStorage.from(EVIDENCE_STORAGE_BUCKET)
-      const fallbackRes = await storage.upload(storagePath, options.file, { contentType })
-      uploadError = fallbackRes.error
+    } else {
+      throw new Error(`Failed to upload evidence photo: ${uploadError.message || 'Unknown error'}`)
     }
   }
 
@@ -132,11 +130,6 @@ export async function getEvidenceSignedUrl(
   if (!error && data?.signedUrl) {
     return data.signedUrl
   }
-
-  try {
-    const fallback = await mockStorage.from(EVIDENCE_STORAGE_BUCKET).createSignedUrl(storagePath, expiresInSeconds)
-    return fallback.data?.signedUrl || null
-  } catch {
-    return null
-  }
+  console.warn(`Could not create signed URL for evidence ${storagePath}:`, error?.message)
+  return null
 }

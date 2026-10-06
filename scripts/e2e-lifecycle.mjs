@@ -509,6 +509,47 @@ async function actionCloseRental({ key, actor }) {
 
 let invoiceId = null
 
+/* Editor RPC helpers (0146/0147). Each call runs as a signed-in role so the
+   function's own role ceiling, revision lock and receipt table are what answer. */
+/** s() plus the JWT subject uth.uid() reads - the editor RPCs identify the actor with it. */
+const asJwt = (role, fn) =>
+  as(role, async () => {
+    await q(`select set_config('request.jwt.claim.sub', $1, false)`, [U[role]])
+    try {
+      return await fn()
+    } finally {
+      await q(`select set_config('request.jwt.claim.sub', '', false)`)
+    }
+  })
+const rpcAs = (role, text, params) =>
+  asJwt(role, async () => {
+    const r = await q(text, params)
+    return Object.values(r.rows[0] ?? {})[0] ?? null
+  })
+const editorRead = (role, kind, id) => rpcAs(role, 'select read_record_editor($1, $2)', [kind, id])
+const editorSave = (role, kind, id, rev, key, values, rows) =>
+  rpcAs(role, 'select save_record_editor($1, $2::uuid, $3, $4::uuid, $5::jsonb, $6::jsonb)', [
+    kind, id, rev, key, JSON.stringify(values), JSON.stringify(rows),
+  ])
+const refusesAs = (role, what, text, params, matcher) => asJwt(role, () => refuses(what, text, params, matcher))
+const refusesSave = (role, what, kind, id, rev, key, values, rows, matcher) =>
+  refusesAs(
+    role,
+    what,
+    'select save_record_editor($1, $2::uuid, $3, $4::uuid, $5::jsonb, $6::jsonb)',
+    [kind, id, rev, key, JSON.stringify(values), JSON.stringify(rows)],
+    matcher,
+  )
+const QUOTE_VALUE_KEYS = ['client_id', 'project', 'project_type', 'project_type_other', 'pickup_at', 'return_at', 'delivery_type', 'pickup_location', 'return_location', 'deposit_required']
+const quotePayload = (snap, change = (p) => p) => {
+  const values = Object.fromEntries(QUOTE_VALUE_KEYS.filter((k) => k in snap.values).map((k) => [k, snap.values[k]]))
+  return change({ values, lines: snap.lines, crew: snap.crew, transport: snap.transport ?? {}, discount_percent: snap.discounts.reduce((s, d) => s + Number(d.percent), 0) })
+}
+const quoteSave = (role, id, rev, key, payload) =>
+  rpcAs(role, 'select update_rental_quote($1::uuid, $2, $3::uuid, $4::jsonb)', [id, rev, key, JSON.stringify(payload)])
+const refusesQuote = (role, what, id, rev, key, payload, matcher) =>
+  refusesAs(role, what, 'select update_rental_quote($1::uuid, $2, $3::uuid, $4::jsonb)', [id, rev, key, JSON.stringify(payload)], matcher)
+
 const STEPS = [
   {
     id: 'L1',
@@ -1923,6 +1964,223 @@ const STEPS = [
         ),
       )
       assert(auditCount >= 1, 'void_invoice emitted audit event attributed to Accounts')
+    },
+  },
+  {
+    id: 'L25',
+    title: 'Client Save changes is one atomic, idempotent, revision-locked write; contact removal keeps history (0146)',
+    expect: 'green',
+    async run() {
+      const key = crypto.randomUUID()
+      const values = { type_parent: 'Organisation', org_subtype: 'Production House', name: 'Editor Test Films', phone: '+9779801234567', country: 'Nepal' }
+      const rows = [{ full_name: 'Sita Rai', phone: '+9779801234568' }]
+      const created = await editorSave('Coordinator', 'client', null, null, key, values, rows)
+      assert(created.id && created.revision, 'create returns the new record and its revision')
+      const replay = await editorSave('Coordinator', 'client', null, null, key, values, rows)
+      assertEq(replay.id, created.id, 'replaying the same key returns the same client')
+      assertEq(await one("select count(*) from clients where phone = '+9779801234567'"), 1, 'a retry created no duplicate')
+      await refusesSave('Coordinator', 'same key, different change', 'client', null, null, key, { ...values, name: 'Other' }, rows, /different change/i)
+
+      const opened = await editorRead('Coordinator', 'client', created.id)
+      assertEq(opened.values.name, 'Editor Test Films', 'edit loads the stored value')
+      assertEq(opened.rows.length, 1, 'edit loads the primary contact')
+      const edited = await editorSave('Coordinator', 'client', created.id, opened.revision, crypto.randomUUID(), { ...opened.values, name: 'Editor Test Films Ltd' }, opened.rows)
+      assert(edited.revision !== opened.revision, 'a save moves the revision')
+      assertEq(await one('select name from clients where id = $1', [created.id]), 'Editor Test Films Ltd', 'the edit persisted on the same row')
+      assertEq(await one("select count(*) from clients where phone = '+9779801234567'"), 1, 'editing created no second client')
+
+      await refusesSave('Coordinator', 'stale revision', 'client', created.id, opened.revision, crypto.randomUUID(), { ...opened.values, name: 'Stale write' }, opened.rows, /changed since you opened/i)
+      assertEq(await one('select name from clients where id = $1', [created.id]), 'Editor Test Films Ltd', 'the stale write changed nothing')
+      await refusesSave('Coordinator', 'credit override through generic save', 'client', created.id, edited.revision, crypto.randomUUID(), { ...edited.values, approved_credit_limit: 999999 }, edited.rows, /cannot be edited/i)
+      for (const role of ['Warehouse', 'Accounts', 'Technician', 'Driver']) {
+        await refusesSave(role, `${role} client edit`, 'client', created.id, edited.revision, crypto.randomUUID(), edited.values, edited.rows, /Permission denied/i)
+      }
+
+      await refusesSave('Coordinator', 'duplicate phone', 'client', null, null, crypto.randomUUID(), { ...values, name: 'Twin' }, [], /already exists/i)
+      const walkIn = await editorSave('Warehouse', 'client', null, null, crypto.randomUUID(), { type_parent: 'Individual', name: 'Floor Walk-in', phone: '+9779801234569' }, [])
+      assert(walkIn.id, 'Warehouse may still create a client (canCreateClient parity)')
+      await refusesSave('Warehouse', 'Warehouse editing the walk-in', 'client', walkIn.id, walkIn.revision, crypto.randomUUID(), walkIn.values, [], /Permission denied/i)
+
+      const cleared = await editorSave('Coordinator', 'client', created.id, edited.revision, crypto.randomUUID(), edited.values, [])
+      assertEq(cleared.rows.length, 0, 'removing the contact leaves no active primary')
+      assertEq(await one("select count(*) from client_contacts where client_id = $1 and status = 'Deactivated'", [created.id]), 1, 'the removed contact is deactivated, never deleted (Law 3)')
+    },
+  },
+  {
+    id: 'L26',
+    title: 'Equipment Save changes edits catalogue, rates and unit location only; stock, custody and identity are refused (0146)',
+    expect: 'green',
+    async run() {
+      const stripCreateOnly = (snap) => {
+        const { tracking_mode: _t, total_quantity: _q, ...values } = snap.values
+        return { ...snap, values }
+      }
+      const opened = stripCreateOnly(await editorRead('Manager', 'equipment', SERIAL_PRODUCT))
+      assertEq(opened.rows.length, 3, 'edit loads every unit')
+      const stockBefore = await one('select total_quantity from products where id = $1', [SERIAL_PRODUCT])
+      const relocated = opened.rows.map((r, i) => (i === 0 ? { ...r, rack: 'R-EDIT', shelf: 'S1' } : r))
+      const saved = stripCreateOnly(await editorSave('Manager', 'equipment', SERIAL_PRODUCT, opened.revision, crypto.randomUUID(), { ...opened.values, name: 'Lifecycle Serialised Camera II', daily_rate: 4100, notes_internal: 'edited' }, relocated))
+      assertEq(await one('select name from products where id = $1', [SERIAL_PRODUCT]), 'Lifecycle Serialised Camera II', 'catalogue edit persisted')
+      assertEq(Number(await one('select daily_rate from products where id = $1', [SERIAL_PRODUCT])), 4100, 'permitted rate persisted')
+      assertEq(await one('select rack from product_units where id = $1', [UNITS[0]]), 'R-EDIT', 'unit location persisted')
+      assertEq(await one('select total_quantity from products where id = $1', [SERIAL_PRODUCT]), stockBefore, 'stock is unchanged by a generic edit')
+      assertEq(await one('select count(*) from product_units where product_id = $1', [SERIAL_PRODUCT]), 3, 'no unit was added or removed')
+
+      await refusesSave('Manager', 'stale revision', 'equipment', SERIAL_PRODUCT, opened.revision, crypto.randomUUID(), opened.values, opened.rows, /changed since you opened/i)
+      await refusesSave('Manager', 'tracking mode change', 'equipment', SERIAL_PRODUCT, saved.revision, crypto.randomUUID(), { ...saved.values, tracking_mode: 'Quantity' }, saved.rows, /cannot be edited/i)
+      await refusesSave('Manager', 'stock quantity change', 'equipment', SERIAL_PRODUCT, saved.revision, crypto.randomUUID(), { ...saved.values, total_quantity: 99 }, saved.rows, /cannot be edited/i)
+      await refusesSave('Manager', 'unit condition change', 'equipment', SERIAL_PRODUCT, saved.revision, crypto.randomUUID(), saved.values, saved.rows.map((r, i) => (i === 1 ? { ...r, condition: 'Poor' } : r)), /operational workflow/i)
+      await refusesSave('Manager', 'unit custody change', 'equipment', SERIAL_PRODUCT, saved.revision, crypto.randomUUID(), saved.values, saved.rows.map((r, i) => (i === 1 ? { ...r, status: 'Retired' } : r)), /operational workflow/i)
+      await refusesSave('Manager', 'unit removal', 'equipment', SERIAL_PRODUCT, saved.revision, crypto.randomUUID(), saved.values, saved.rows.slice(1), /cannot be removed/i)
+      await refusesSave('Manager', 'unit addition', 'equipment', SERIAL_PRODUCT, saved.revision, crypto.randomUUID(), saved.values, [...saved.rows, { serial_no: 'NEW', warehouse_id: saved.rows[0].warehouse_id }], /intake/i)
+      for (const role of ['Coordinator', 'Warehouse', 'Accounts']) {
+        await refusesSave(role, `${role} equipment edit`, 'equipment', SERIAL_PRODUCT, saved.revision, crypto.randomUUID(), saved.values, saved.rows, /Permission denied/i)
+      }
+      assertEq(await one('select name from products where id = $1', [SERIAL_PRODUCT]), 'Lifecycle Serialised Camera II', 'every refusal left the saved record untouched')
+    },
+  },
+  {
+    id: 'L27',
+    title: 'Bundle Save changes preserves component identity and soft-deactivates removed components (0146)',
+    expect: 'green',
+    async run() {
+      const key = crypto.randomUUID()
+      const rows = [
+        { product_id: SERIAL_PRODUCT, quantity: 1, days: 1, is_mandatory: true, sort_order: 0 },
+        { product_id: QTY_PRODUCT, quantity: 2, days: 1, is_mandatory: false, sort_order: 1 },
+      ]
+      const created = await editorSave('Manager', 'bundle', null, null, key, { name: 'Editor Test Kit', daily_rate: 5000, weekly_rate: 25000 }, rows)
+      assertEq(created.rows.length, 2, 'both components saved')
+      const [first, second] = created.rows
+      const edited = await editorSave('Manager', 'bundle', created.id, created.revision, crypto.randomUUID(), { ...created.values, name: 'Editor Test Kit v2' }, [{ ...first, quantity: 3 }, second])
+      const kept = edited.rows.find((r) => r.id === first.id)
+      assert(kept !== undefined && Number(kept.quantity) === 3, 'the component kept its identity and took the new quantity')
+      assertEq(edited.rows.find((r) => r.id === second.id)?.is_mandatory, false, 'the optional flag survived the edit')
+
+      const removed = await editorSave('Manager', 'bundle', created.id, edited.revision, crypto.randomUUID(), edited.values, [edited.rows.find((r) => r.id === first.id)])
+      assertEq(removed.rows.length, 1, 'the editor shows one active component')
+      assertEq(await one('select count(*) from bundle_items where bundle_id = $1', [created.id]), 2, 'the removed component row still exists')
+      assertEq(await one('select is_active from bundle_items where id = $1', [second.id]), false, 'removal is a soft deactivation (Law 3)')
+      assert((await one('select deactivated_at from bundle_items where id = $1', [second.id])) !== null, 'the deactivation is timestamped')
+
+      await refusesSave('Manager', 'stale revision', 'bundle', created.id, edited.revision, crypto.randomUUID(), edited.values, edited.rows, /changed since you opened/i)
+      await refusesSave('Manager', 'empty bundle', 'bundle', created.id, removed.revision, crypto.randomUUID(), removed.values, [], /at least one component/i)
+      await refusesSave('Manager', 'resurrecting a removed component', 'bundle', created.id, removed.revision, crypto.randomUUID(), removed.values, [...removed.rows, second], /removed|Reload/i)
+      for (const role of ['Coordinator', 'Warehouse', 'Accounts']) {
+        await refusesSave(role, `${role} bundle edit`, 'bundle', created.id, removed.revision, crypto.randomUUID(), removed.values, removed.rows, /Permission denied/i)
+      }
+    },
+  },
+  {
+    id: 'L28',
+    title: 'Quote Save changes is atomic, revision-locked, quote-only and invoice-safe; it makes no reservations (0147)',
+    expect: 'green',
+    async run() {
+      await as('Coordinator', async () => {
+        await createBooking({
+          key: 'qe',
+          window: ['2099-12-10T04:00:00Z', '2099-12-12T04:00:00Z'],
+          actor: 'Coordinator',
+          lines: [
+            { productId: SERIAL_PRODUCT, description: 'Editable camera', qty: 1, days: 2, rate: 3500 },
+            { productId: QTY_PRODUCT, description: 'Editable cable', qty: 2, days: 2, rate: 250 },
+          ],
+        })
+      })
+      const id = bookingIds.qe
+      const snap = await rpcAs('Coordinator', 'select read_quote_editor($1)', [id])
+      assertEq(snap.lines.length, 2, 'the editor loads both lines')
+      const bookingNo = await one('select booking_no from bookings where id = $1', [id])
+      const holdsBefore = await liveHolds('qe')
+
+      const bumped = quotePayload(snap, (p) => ({ ...p, values: { ...p.values, project: 'Edited project' }, lines: p.lines.map((l) => (l.description === 'Editable cable' ? { ...l, qty: 3 } : l)) }))
+      const key = crypto.randomUUID()
+      const saved = await quoteSave('Coordinator', id, snap.revision, key, bumped)
+      assert(saved.revision !== snap.revision, 'the save moves the revision')
+      assertEq(await one('select booking_no from bookings where id = $1', [id]), bookingNo, 'the booking number is retained')
+      assertEq(await stageOf('qe'), 'Quote', 'the stage is retained')
+      assertEq(await one('select project from bookings where id = $1', [id]), 'Edited project', 'the header edit persisted')
+      assertEq(await one("select qty from booking_lines where booking_id = $1 and description = 'Editable cable' and voided_at is null", [id]), 3, 'the line edit persisted on the same row')
+      assertEq(await liveHolds('qe'), holdsBefore, 'editing a quote makes no reservations')
+      assert(Number(await one('select count(*) from audit_events where client_uuid = $1', [key])) >= 1, 'the edit is audited')
+      const replay = await quoteSave('Coordinator', id, snap.revision, key, bumped)
+      assertEq(replay.revision, saved.revision, 'replaying the same key is a no-op')
+
+      await refusesQuote('Coordinator', 'stale revision', id, snap.revision, crypto.randomUUID(), bumped, /changed since you opened/i)
+
+      const fresh = await rpcAs('Coordinator', 'select read_quote_editor($1)', [id])
+      const dropped = quotePayload(fresh, (p) => ({ ...p, lines: p.lines.filter((l) => l.description !== 'Editable camera') }))
+      const afterDrop = await quoteSave('Coordinator', id, fresh.revision, crypto.randomUUID(), dropped)
+      assertEq(afterDrop.lines.length, 1, 'the editor shows the remaining line')
+      assertEq(await one("select count(*) from booking_lines where booking_id = $1 and description = 'Editable camera'", [id]), 1, 'the removed line still exists (voided, never deleted)')
+      assert((await one("select voided_at from booking_lines where booking_id = $1 and description = 'Editable camera'", [id])) !== null, 'the removed line is voided')
+
+      for (const role of ['Warehouse', 'Technician', 'Driver', 'Accounts']) {
+        await refusesAs(role, `${role} reads the quote editor`, 'select read_quote_editor($1)', [id], /cannot edit/i)
+        await refusesQuote(role, `${role} edits a quote`, id, afterDrop.revision, crypto.randomUUID(), dropped, /cannot edit/i)
+      }
+      await refusesQuote('Coordinator', 'unknown header field', id, afterDrop.revision, crypto.randomUUID(), { ...dropped, values: { ...dropped.values, stage: 'Booked' } }, /cannot be edited/i)
+
+      const later = bookingIds.a
+      assert((await stageOf('a')) !== 'Quote', 'fixture: booking a has left Quote')
+      await refusesAs('Coordinator', 'reading a confirmed booking', 'select read_quote_editor($1)', [later], /Only unconfirmed quotes/i)
+      await refusesQuote('Coordinator', 'editing a confirmed booking', later, 'x', crypto.randomUUID(), dropped, /Only unconfirmed quotes/i)
+
+      // Draft invoice: refused, and the refusal must roll back the header write that ran first.
+      const invoiceId = crypto.randomUUID()
+      await as('Accounts', async () => {
+        await q(
+          `insert into invoices (id, client_uuid, invoice_no, booking_id, client_id, branch_id, status, subtotal, total_amount, paid_amount, outstanding_amount, issue_date, due_date, created_by)
+           values ($1, gen_random_uuid(), next_document_number('invoice'), $2, $3, $4, 'Draft', 1000, 1000, 0, 1000, current_date, current_date + 7, $5)`,
+          [invoiceId, id, CLIENT, BRANCH, U.Accounts],
+        )
+      })
+      const withInvoice = await rpcAs('Coordinator', 'select read_quote_editor($1)', [id])
+      await refusesQuote('Coordinator', 'draft invoice present', id, withInvoice.revision, crypto.randomUUID(), quotePayload(withInvoice, (p) => ({ ...p, values: { ...p.values, project: 'Must roll back' } })), /draft invoice/i)
+      assertEq(await one('select project from bookings where id = $1', [id]), 'Edited project', 'a refused save leaves no partial write (atomic)')
+
+      await asOwnerOfTheDatabase(async () => {
+        await q("update invoices set status = 'Partially Paid', paid_amount = 400, outstanding_amount = 600 where id = $1", [invoiceId])
+      })
+      const issued = await rpcAs('Coordinator', 'select read_quote_editor($1)', [id])
+      await refusesQuote('Coordinator', 'issued invoice present', id, issued.revision, crypto.randomUUID(), quotePayload(issued), /issued financial document/i)
+      assertEq(Number(await one('select paid_amount from invoices where id = $1', [invoiceId])), 400, 'payments and issued invoices are never rewritten')
+    },
+  },
+  {
+    id: 'L29',
+    title: 'update_bundle applies patch, line edits, adds and soft-deactivations in ONE transaction (0153)',
+    expect: 'green',
+    async run() {
+      const created = await editorSave('Manager', 'bundle', null, null, crypto.randomUUID(), { name: 'Atomic Kit', daily_rate: 1000, weekly_rate: 5000 }, [
+        { product_id: SERIAL_PRODUCT, quantity: 1, days: 1, is_mandatory: true, sort_order: 0 },
+        { product_id: QTY_PRODUCT, quantity: 2, days: 1, is_mandatory: false, sort_order: 1 },
+      ])
+      const [a, b] = created.rows
+      const ub = (role, rev, key, payload) => rpcAs(role, 'select update_bundle($1::uuid, $2, $3::uuid, $4::jsonb)', [created.id, rev, key, JSON.stringify(payload)])
+      const refusesUb = (role, what, rev, key, payload, matcher) =>
+        refusesAs(role, what, 'select update_bundle($1::uuid, $2, $3::uuid, $4::jsonb)', [created.id, rev, key, JSON.stringify(payload)], matcher)
+
+      const bad = { patch: { name: 'Must roll back' }, edits: [{ id: a.id, quantity: 9 }], deactivations: [{ id: crypto.randomUUID() }] }
+      await refusesUb('Manager', 'one bad row poisons the whole save', created.revision, crypto.randomUUID(), bad, /no longer belongs/i)
+      assertEq(await one('select name from bundles where id = $1', [created.id]), 'Atomic Kit', 'the header write rolled back')
+      assertEq(Number(await one('select quantity from bundle_items where id = $1', [a.id])), 1, 'the line edit rolled back')
+
+      const key = crypto.randomUUID()
+      const good = { patch: { name: 'Atomic Kit v2', weekly_rate: 6000 }, edits: [{ id: a.id, quantity: 4, is_mandatory: false }], adds: [{ product_id: CONSUMABLE_PRODUCT, quantity: 1, days: 1 }], deactivations: [{ id: b.id }] }
+      const saved = await ub('Manager', created.revision, key, good)
+      assertEq(await one('select name from bundles where id = $1', [created.id]), 'Atomic Kit v2', 'header persisted')
+      assertEq(Number(await one('select quantity from bundle_items where id = $1', [a.id])), 4, 'line edit persisted on the same row')
+      assertEq(saved.rows.length, 2, 'active components: edited one + the new one')
+      assertEq(await one('select is_active from bundle_items where id = $1', [b.id]), false, 'removal is a soft deactivation')
+      assertEq(await one('select count(*) from bundle_items where bundle_id = $1', [created.id]), 3, 'no component row was deleted')
+      assertEq((await ub('Manager', created.revision, key, good)).revision, saved.revision, 'replaying the same key is a no-op')
+      assertEq(await one('select count(*) from bundle_items where bundle_id = $1', [created.id]), 3, 'the replay added nothing')
+
+      await refusesUb('Manager', 'stale revision', created.revision, crypto.randomUUID(), good, /changed since you opened/i)
+      await refusesUb('Manager', 'unknown header field', saved.revision, crypto.randomUUID(), { patch: { bundle_code: 'X' } }, /cannot be edited/i)
+      await refusesUb('Coordinator', 'Coordinator', saved.revision, crypto.randomUUID(), { patch: { name: 'Nope' } }, /Permission denied/i)
+      await refusesUb('Manager', 'emptying an active bundle', saved.revision, crypto.randomUUID(), { deactivations: saved.rows.map((r) => ({ id: r.id })) }, /at least one component/i)
     },
   },
 ]

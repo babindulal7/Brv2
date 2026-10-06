@@ -1,6 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import { mockSupabase } from './mock/client'
-import { mockStorage } from './mock/storage'
 import { getSecureAuthStorage } from './secureStorage'
 
 /**
@@ -24,7 +22,7 @@ import { getSecureAuthStorage } from './secureStorage'
  * DATA SOURCE — `live` (default) or `mock`.
  *
  * `mock` swaps this module's export for a local corpus served by
- * `lib/mock/client.ts`: no network, no project, no credentials. It exists so
+ * `lib/__mocks__/client.ts`: no network, no project, no credentials. It exists so
  * the app can be driven offline and so a fresh clone runs without anyone's
  * keys. Set `VITE_DATA_SOURCE=mock` in `.env.local` and restart Vite.
  *
@@ -66,16 +64,61 @@ function createLiveClient() {
   })
 }
 
-/*
- * `storage` is composed in HERE rather than inside `mock/client.ts`, and the
- * separation is deliberate. `client.ts` is the PostgREST mimic — tables, rows,
- * an overlay in localStorage, all of it synchronous by design. Files are a
- * different service with a different lifetime and an async API, so they live in
- * `mock/storage.ts` behind IndexedDB and are joined to the client at the one
- * place that already decides mock-versus-live.
+/**
+ * In production builds, `VITE_DATA_SOURCE` is inlined as `'live'` (the default),
+ * so `IS_MOCK` becomes `false` and the mock branch is dead-code eliminated.
+ * In `dev:mock`, it is inlined as `'mock'` and the mock client is used.
+ *
+ * The mock imports are inside the conditional so they are tree-shaken out of
+ * production bundles.
  */
-export const supabase: ReturnType<typeof createLiveClient> = IS_MOCK
-  ? ({ ...mockSupabase, storage: mockStorage } as unknown as ReturnType<typeof createLiveClient>)
+let _supabase: ReturnType<typeof createLiveClient> | null = null
+
+let _mockClientPromise: Promise<ReturnType<typeof createLiveClient>> | null = null
+
+async function createMockClient(): Promise<ReturnType<typeof createLiveClient>> {
+  if (_mockClientPromise) return _mockClientPromise
+  _mockClientPromise = (async () => {
+    const [{ mockSupabase }, { mockStorage }] = await Promise.all([
+      import('./__mocks__/client'),
+      import('./__mocks__/storage'),
+    ])
+    return { ...mockSupabase, storage: mockStorage } as unknown as ReturnType<typeof createLiveClient>
+  })()
+  return _mockClientPromise
+}
+
+/**
+ * Get the Supabase client. In production (IS_MOCK=false), returns the live client synchronously.
+ * In mock mode (IS_MOCK=true), throws — use getSupabaseClient() instead for async access.
+ */
+export function getSupabaseClient(): ReturnType<typeof createLiveClient> {
+  if (IS_MOCK) {
+    throw new Error('Mock mode requires async client. Use getSupabaseClientAsync() instead.')
+  }
+  if (!_supabase) _supabase = createLiveClient()
+  return _supabase
+}
+
+/**
+ * Async version for mock mode. In production, returns the live client immediately.
+ */
+export async function getSupabaseClientAsync(): Promise<ReturnType<typeof createLiveClient>> {
+  if (IS_MOCK) {
+    return createMockClient()
+  }
+  return getSupabaseClient()
+}
+
+/**
+ * Synchronous accessor for production use.
+ * In mock mode (IS_MOCK=true), throws an error directing to use getSupabaseClientAsync().
+ * Most application code should use getSupabaseClient() or getSupabaseClientAsync().
+ * 
+ * Note: In production builds, IS_MOCK is inlined as false, so this always returns a valid client.
+ */
+export const supabase = IS_MOCK
+  ? (() => { throw new Error('Mock mode: use getSupabaseClientAsync() for async access') })()
   : createLiveClient()
 
 /**

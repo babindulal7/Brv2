@@ -1295,6 +1295,7 @@ export default function Inventory() {
   const tab = tabFromSlug(tabParam)
   const setTab = useCallback(
     (next: InventoryTab) => {
+      setFiltersOpen(false)
       const p = new URLSearchParams(params)
       if (next === 'Equipment') p.delete('tab')
       else p.set('tab', TAB_SLUG[next])

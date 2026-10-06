@@ -85,7 +85,7 @@ async function mount() {
 }
 
 async function clickSave() {
-  const save = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Save as draft')
+  const save = [...container.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Save draft')
   expect(save).toBeDefined()
   await act(async () => {
     save!.click()

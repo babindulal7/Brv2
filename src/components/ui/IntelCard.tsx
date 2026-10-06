@@ -96,7 +96,7 @@ export interface IntelCardProps {
   /** Spec §1 — carried for cross-entity navigation, not for branching the shell. */
   entityType?: IntelEntityType
   entityId?: string
-  gateContext?: GateContext
+  gateContext?: GateContext | undefined
   actionContext?: ActionContext | null
   onOpen?: () => void
 }

@@ -28,8 +28,8 @@ export interface InternalNote {
   status?: NoteStatus | undefined
   resolvedAt?: number | undefined
   resolvedBy?: string | undefined
-  referenceId?: string | undefined // Auto-detected ID like BR-2613, INV-2041, Q-1049
-  referenceIds?: string[] | undefined
+  referenceId?: string | undefined | undefined // Auto-detected ID like BR-2613, INV-2041, Q-1049
+  referenceIds?: string[] | undefined | undefined
   text: string
   pinned?: boolean | undefined
 }
@@ -163,13 +163,13 @@ export function saveInternalNotes(notes: InternalNote[]): void {
 
 /** Parses booking / invoice / equipment / quote IDs from note text */
 export function extractReferenceId(text: string): string | undefined {
-  const match = text.match(/\b(?:BR-\d{4,5}|INV-\d{4,5}|Q-\d{4,5}|EQ-[A-Z0-9-]+|DM-\d{4}|CL-\d{3,5}|ASSET-\d+)\b/i)
+  const match = text.match(/\b(?:BR-\d{3,6}|INV-\d{3,6}|PAY-\d{1,6}|Q-\d{3,6}|EQ-[A-Z0-9-]+|DM-\d{3,6}|CL-\d{2,6}|TR-[A-Z0-9-]+|CASE-[A-Z0-9-]+|ASSET-\d+)\b/i)
   return match ? match[0].toUpperCase() : undefined
 }
 
 /** Parses all booking / invoice / equipment / quote IDs from note text */
 export function extractReferenceIds(text: string): string[] {
-  const matches = text.match(/\b(?:BR-\d{4,5}|INV-\d{4,5}|Q-\d{4,5}|EQ-[A-Z0-9-]+|DM-\d{4}|CL-\d{3,5}|ASSET-\d+)\b/gi)
+  const matches = text.match(/\b(?:BR-\d{3,6}|INV-\d{3,6}|PAY-\d{1,6}|Q-\d{3,6}|EQ-[A-Z0-9-]+|DM-\d{3,6}|CL-\d{2,6}|TR-[A-Z0-9-]+|CASE-[A-Z0-9-]+|ASSET-\d+)\b/gi)
   if (!matches) return []
   const unique = Array.from(new Set(matches.map(m => m.toUpperCase())))
   return unique
@@ -184,7 +184,10 @@ export function getReferenceUrl(ref: string): string {
   if (upper.startsWith('INV-')) {
     return `/finance?tab=invoices&search=${upper}`
   }
-  if (upper.startsWith('EQ-') || upper.startsWith('ASSET-')) {
+  if (upper.startsWith('PAY-')) {
+    return `/finance?tab=payments&search=${upper}`
+  }
+  if (upper.startsWith('EQ-') || upper.startsWith('ASSET-') || upper.startsWith('CASE-')) {
     return `/inventory?search=${upper}`
   }
   if (upper.startsWith('CL-')) {
@@ -193,7 +196,52 @@ export function getReferenceUrl(ref: string): string {
   if (upper.startsWith('Q-')) {
     return `/rentals?search=${upper}`
   }
+  if (upper.startsWith('TR-')) {
+    return `/operations?tab=transport&search=${upper}`
+  }
+  if (upper.startsWith('DM-')) {
+    return `/inventory?tab=maintenance&search=${upper}`
+  }
   return `/rentals?search=${upper}`
+}
+
+export type EntityReferenceKind =
+  | 'booking'
+  | 'equipment'
+  | 'client'
+  | 'invoice'
+  | 'payment'
+  | 'quote'
+  | 'transport'
+  | 'maintenance'
+  | 'custom'
+
+export function getReferenceKind(ref: string): EntityReferenceKind {
+  const upper = ref.toUpperCase()
+  if (upper.startsWith('BR-')) return 'booking'
+  if (upper.startsWith('EQ-') || upper.startsWith('ASSET-') || upper.startsWith('CASE-')) return 'equipment'
+  if (upper.startsWith('CL-')) return 'client'
+  if (upper.startsWith('INV-')) return 'invoice'
+  if (upper.startsWith('PAY-')) return 'payment'
+  if (upper.startsWith('Q-')) return 'quote'
+  if (upper.startsWith('TR-')) return 'transport'
+  if (upper.startsWith('DM-')) return 'maintenance'
+  return 'custom'
+}
+
+export function getReferenceIconName(ref: string): import('../../components/ui/Icon').IconName {
+  const kind = getReferenceKind(ref)
+  switch (kind) {
+    case 'booking': return 'calendar'
+    case 'equipment': return 'camera'
+    case 'client': return 'user'
+    case 'invoice': return 'receipt'
+    case 'payment': return 'card'
+    case 'quote': return 'file'
+    case 'transport': return 'truck'
+    case 'maintenance': return 'tool'
+    default: return 'receipt'
+  }
 }
 
 export function addInternalNote(params: {
@@ -203,12 +251,21 @@ export function addInternalNote(params: {
   category: NoteCategory
   priority?: NotePriority
   referenceId?: string
+  referenceIds?: string[]
 }): InternalNote {
   const notes = listInternalNotes()
-  const ref = params.referenceId || extractReferenceId(params.text)
+  const ref = params.referenceId ? params.referenceId.toUpperCase() : extractReferenceId(params.text)
   const allRefs = extractReferenceIds(params.text)
-  if (ref && !allRefs.includes(ref)) {
-    allRefs.unshift(ref)
+  if (params.referenceIds) {
+    for (const r of params.referenceIds) {
+      const upper = r.toUpperCase().trim()
+      if (upper && !allRefs.includes(upper)) {
+        allRefs.push(upper)
+      }
+    }
+  }
+  if (ref && !allRefs.includes(ref.toUpperCase())) {
+    allRefs.unshift(ref.toUpperCase())
   }
 
   const now = new Date()
@@ -238,7 +295,7 @@ export function addInternalNote(params: {
 
 export function updateInternalNote(
   noteId: string,
-  patch: Partial<Pick<InternalNote, 'text' | 'category' | 'priority' | 'referenceId'>>,
+  patch: Partial<Pick<InternalNote, 'text' | 'category' | 'priority' | 'referenceId' | 'referenceIds'>>,
 ): InternalNote | null {
   const notes = listInternalNotes()
   const idx = notes.findIndex(n => n.id === noteId)
@@ -248,10 +305,20 @@ export function updateInternalNote(
   if (!existing) return null
 
   const updatedText = patch.text !== undefined ? patch.text.trim() : existing.text
-  const ref = patch.referenceId !== undefined ? patch.referenceId : extractReferenceId(updatedText)
+  const ref = patch.referenceId !== undefined
+    ? (patch.referenceId ? patch.referenceId.toUpperCase() : undefined)
+    : extractReferenceId(updatedText)
   const allRefs = extractReferenceIds(updatedText)
-  if (ref && !allRefs.includes(ref)) {
-    allRefs.unshift(ref)
+  if (patch.referenceIds) {
+    for (const r of patch.referenceIds) {
+      const upper = r.toUpperCase().trim()
+      if (upper && !allRefs.includes(upper)) {
+        allRefs.push(upper)
+      }
+    }
+  }
+  if (ref && !allRefs.includes(ref.toUpperCase())) {
+    allRefs.unshift(ref.toUpperCase())
   }
 
   const updatedNote: InternalNote = {

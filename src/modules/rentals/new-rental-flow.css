@@ -190,7 +190,7 @@
 }
 
 .new-rental-footer-total {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
   font-size: 16px;
   font-variant-numeric: tabular-nums;
   color: var(--text);

@@ -46,12 +46,13 @@ function sanitizePathSegment(segment: string): string {
 }
 
 /**
- * Resolves the storage bucket client, falling back gracefully to mockStorage
- * if the remote storage bucket is not provisioned.
+ * Resolves the storage bucket client.
  */
 async function getStorageClient() {
-  const remote = supabase.storage.from('documents')
-  return remote
+  if (!supabase?.storage || typeof supabase.storage.from !== 'function') {
+    throw new Error('Supabase storage client not available')
+  }
+  return supabase.storage.from('documents')
 }
 
 /**
@@ -82,7 +83,7 @@ export async function exportInvoicePdf(
   // 2. Upload to Supabase Storage bucket 'documents'
   if (uploadToStorage) {
     let targetPath = `invoices/${safeName}.pdf`
-    let storage = await getStorageClient()
+    const storage = await getStorageClient()
     let uploadRes: { data?: unknown; error?: { message?: string } | null }
     try {
       uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
@@ -100,19 +101,8 @@ export async function exportInvoicePdf(
       }
     }
 
-    // Fall back to local mockStorage if remote upload failed (bucket not found, network offline, RLS, etc.)
     if (uploadRes.error && !uploadRes.error.message?.includes('already exists')) {
-      const { mockStorage } = await import('../mock/storage')
-      storage = mockStorage.from('documents') as unknown as ReturnType<typeof supabase.storage.from>
-      try {
-        uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
-        if (uploadRes.error && uploadRes.error.message?.includes('already exists')) {
-          targetPath = `invoices/${safeName}_${Date.now()}.pdf`
-          uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
-        }
-      } catch (err) {
-        uploadRes = { error: { message: String(err) } }
-      }
+      throw new Error(`Failed to upload invoice PDF to storage: ${uploadRes.error.message || 'Unknown upload failure'}`)
     }
 
     if (!uploadRes.error) {
@@ -194,7 +184,7 @@ export async function exportDocumentPdf(
 
   if (uploadToStorage) {
     let targetPath = `registry/${safeName}.pdf`
-    let storage = await getStorageClient()
+    const storage = await getStorageClient()
     let uploadRes: { data?: unknown; error?: { message?: string } | null }
     try {
       uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
@@ -212,17 +202,7 @@ export async function exportDocumentPdf(
     }
 
     if (uploadRes.error && !uploadRes.error.message?.includes('already exists')) {
-      const { mockStorage } = await import('../mock/storage')
-      storage = mockStorage.from('documents') as unknown as ReturnType<typeof supabase.storage.from>
-      try {
-        uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
-        if (uploadRes.error && uploadRes.error.message?.includes('already exists')) {
-          targetPath = `registry/${safeName}_${Date.now()}.pdf`
-          uploadRes = await storage.upload(targetPath, blob, { contentType: 'application/pdf' })
-        }
-      } catch (err) {
-        uploadRes = { error: { message: String(err) } }
-      }
+      throw new Error(`Failed to upload document PDF to storage: ${uploadRes.error.message || 'Unknown upload failure'}`)
     }
 
     if (!uploadRes.error) {

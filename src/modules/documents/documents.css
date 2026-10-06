@@ -70,7 +70,7 @@
   color: var(--text2);
   font-size: 11px;
   font-weight: 600;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
   font-variant-numeric: tabular-nums;
 }
 
@@ -130,7 +130,7 @@
 }
 
 .doc-rail-cat-count {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
   font-variant-numeric: tabular-nums;
   font-size: 11px;
   font-weight: 600;
@@ -224,7 +224,7 @@
   font-size: var(--t-meta, 13px);
   font-weight: 700;
   color: var(--nav-active-accent, #3b82f6);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
   font-variant-numeric: tabular-nums;
 }
 
@@ -272,7 +272,7 @@
   display: block;
   font-size: 11px;
   color: var(--muted);
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
   font-variant-numeric: tabular-nums;
   margin-top: 2px;
 }
@@ -407,7 +407,7 @@
 }
 
 .doc-alert-ageing {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-id, 'Source Sans 3', sans-serif);
   font-variant-numeric: tabular-nums;
   font-size: 11px;
   font-weight: 700;

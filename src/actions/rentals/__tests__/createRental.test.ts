@@ -352,6 +352,67 @@ describe('the write is not reported unless the function reports it', () => {
     await expect(run({}, { ...OWNER, isOnline: false })).rejects.toThrow(/offline/)
     expect(rpc.state.calls).toHaveLength(0)
   })
+
+  it('populates line_note for Manual item to satisfy booking_lines_manual_item_needs_text', async () => {
+    await run({
+      lines: [
+        {
+          lineType: 'Manual item',
+          description: 'Custom bracket fabrication',
+          qty: 1,
+          days: 2,
+          rate: 1500,
+        },
+      ],
+    })
+    const p = (rpc.state.calls[0]?.args as { p_payload: { lines: Array<{ line_type: string; description: string; line_note: string }> } }).p_payload
+    expect(p.lines[0]?.line_type).toBe('Manual item')
+    expect(p.lines[0]?.description).toBe('Custom bracket fabrication')
+    expect(p.lines[0]?.line_note).toBe('Custom bracket fabrication')
+  })
+
+  it('preserves custom lineNote when provided on Manual item', async () => {
+    await run({
+      lines: [
+        {
+          lineType: 'Manual item',
+          description: 'Emergency replacement',
+          lineNote: 'Director specifically requested this replacement',
+          qty: 1,
+          days: 1,
+          rate: 500,
+        },
+      ],
+    })
+    const p = (rpc.state.calls[0]?.args as { p_payload: { lines: Array<{ line_type: string; line_note: string }> } }).p_payload
+    expect(p.lines[0]?.line_note).toBe('Director specifically requested this replacement')
+  })
+
+  it('populates service_basis for Service and supplier_cost for Sub-rental to satisfy DB constraints', async () => {
+    await run({
+      lines: [
+        {
+          lineType: 'Service',
+          description: 'Gimbal tuning service',
+          qty: 1,
+          days: 1,
+          rate: 2000,
+        },
+        {
+          lineType: 'Sub-rental',
+          description: 'Arri Alexa Mini LF (GearHouse)',
+          qty: 1,
+          days: 3,
+          rate: 12000,
+        },
+      ],
+    })
+    const p = (rpc.state.calls[0]?.args as { p_payload: { lines: Array<{ line_type: string; service_basis: string; supplier_cost: number }> } }).p_payload
+    expect(p.lines[0]?.line_type).toBe('Service')
+    expect(p.lines[0]?.service_basis).toBe('Per day')
+    expect(p.lines[1]?.line_type).toBe('Sub-rental')
+    expect(p.lines[1]?.supplier_cost).toBe(0)
+  })
 })
 
 describe('the dispatcher gate', () => {

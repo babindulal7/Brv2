@@ -91,8 +91,9 @@ describe('schemaGuard — a database that is behind', () => {
     const state = await checkDatabaseSchema()
 
     expect(state.isBehind).toBe(true)
-    expect(state.missing.map((m) => m.name)).toContain('read_quote_editor')
-    expect(state.missing[0]?.migration).toBe('0147')
+    const quoteEditor = state.missing.find((m) => m.name === 'read_quote_editor')
+    expect(quoteEditor).toBeDefined()
+    expect(quoteEditor?.migration).toBe('0147')
   })
 
   it('reports behind when a table is absent', async () => {

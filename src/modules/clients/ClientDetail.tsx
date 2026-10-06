@@ -1,7 +1,7 @@
 import { RecordForm } from '../../components/records/RecordForm'
 import { useSearchParams } from 'react-router-dom'
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Card, PageHeader, PageActions, Button, KpiStrip, FooterNote, SummaryRows } from '../../components/ui/Page'
@@ -182,20 +182,6 @@ function toEditable(c: ClientRecord) {
   }
 }
 
-/** Folds a patch of flat keys back into the record's real shape. */
-function applyPatch(c: ClientRecord, patch: Record<string, unknown>): ClientRecord {
-  const next: ClientRecord = { ...c, contactPerson: { ...c.contactPerson } }
-  for (const [k, v] of Object.entries(patch)) {
-    if (k === 'contact_name') next.contactPerson.name = String(v)
-    else if (k === 'contact_designation') next.contactPerson.designation = String(v)
-    else if (k === 'contact_phone') next.contactPerson.phone = String(v)
-    /* `ClientRecord` is an interface, so it has no implicit index signature —
-       the double cast is the narrowest way to write a key the patch already
-       proved belongs to it (`CLIENT_FIELDS` is the whitelist). */
-    else (next as unknown as Record<string, unknown>)[k] = v
-  }
-  return next
-}
 
 const CLIENT_FIELDS: FieldSpec[] = [
   { key: 'name', validate: (v) => (String(v ?? '').trim() ? null : 'A client must have a name.') },
@@ -289,6 +275,7 @@ async function fetchClientInvoices(filters: ListFilters) {
 function ClientDetailView() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const money = useCanViewMoney()
   const { user } = useAuth()
   const online = useNetwork()
@@ -408,33 +395,20 @@ function ClientDetailView() {
   const editRecord = useMemo(() => (client ? toEditable(client) : {}), [client])
 
   /**
-   * `updateClient` writes through `safeUpdate` when a real client row exists.
-   * If working with seed / demo data without an id, it still updates the local draft.
+   * RULING 2026-10-06: client edits are record-level. `Edit Client` opens `?action=edit` (the shared
+   * `RecordForm` with `Save changes`); there is no per-field save on this page. `useEditMode` is kept
+   * only so the read rows keep their layout, and it can never be unlocked here.
    */
-  const onSave = useCallback(
-    async (patch: Record<string, unknown>) => {
-      if (loaded?.id && user?.id && user?.role) {
-        const { updateClient } = await import('../../actions/clients/updateClient')
-        await updateClient(
-          {
-            clientId: loaded.id,
-            patch,
-          },
-          {
-            userId: user.id,
-            role: user.role,
-          },
-        )
-        showSuccessToast('Client Updated', 'Client details have been saved.')
-        profile.refetch()
-      }
-      setDraft((d) => {
-        const base = d ?? loaded?.record ?? null
-        return base ? applyPatch(base, patch) : base
-      })
-    },
-    [loaded, user, profile, showSuccessToast],
-  )
+  const onSave = useCallback(async () => {
+    throw new Error('Use Edit Client to change this record.')
+  }, [])
+
+  const openEdit = useCallback(() => {
+    setLeaveError(null)
+    const next = new URLSearchParams(location.search)
+    next.set('action', 'edit')
+    navigate({ pathname: location.pathname, search: next.toString() })
+  }, [navigate, location.pathname, location.search])
 
   const edit = useEditMode({ record: editRecord, fields: CLIENT_FIELDS, onSave })
 
@@ -707,7 +681,7 @@ function ClientDetailView() {
                 </>
               }
               primary={
-                edit.editing ? undefined : client.isBlocked ? (
+                client.isBlocked ? (
                   <Unavailable reason={`Blocked${client.blockReason ? `: ${client.blockReason}` : ''} — clear the block before starting a rental`}>
                     <Button variant="primary" icon="plus" disabled>
                       Start Rental
@@ -724,40 +698,11 @@ function ClientDetailView() {
                 )
               }
               secondary={
-                edit.editing ? [
-                  <Button
-                    key="done"
-                    icon="check"
-                    onClick={() => {
-                      const outcome = edit.stopEditing()
-                      setLeaveError(
-                        outcome.ok
-                          ? null
-                          : `Unsaved: ${outcome.unsaved.join(', ')}. Save or cancel each before leaving edit mode.`,
-                      )
-                    }}
-                  >
-                    Done
-                  </Button>,
-                  <Button
-                    key="discard"
-                    icon="close"
-                    variant="ghost"
-                    onClick={() => {
-                      edit.cancelAll()
-                      setLeaveError(null)
-                    }}
-                  >
-                    Discard
-                  </Button>,
-                ] : [
+                [
                   <Button
                     key="edit"
                     icon="tool"
-                    onClick={() => {
-                      setLeaveError(null)
-                      edit.startEditing()
-                    }}
+                    onClick={openEdit}
                   >
                     Edit Client
                   </Button>,
@@ -819,30 +764,6 @@ function ClientDetailView() {
       )}
 
       {leaveError && <ErrorBanner title="Unsaved changes." message={leaveError} />}
-
-      {/* Nothing in this app persists yet — see `onSave` above. Saying so is the
-          alternative to a success toast for a write that did not happen. */}
-      {edit.editing && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: 'var(--sp-sm)',
-            padding: '10px 12px',
-            borderRadius: 'var(--r-sm)',
-            border: '1px solid var(--border)',
-            background: 'var(--card2)',
-            fontSize: 'var(--t-meta)',
-            color: 'var(--text2)',
-          }}
-        >
-          <Icon name="info" size={14} style={{ flexShrink: 0, marginTop: 2, color: 'var(--muted)' }} />
-          <span>
-            Editing this session only — client records are not persisted yet, so these changes are lost on
-            reload. Save and Cancel behave exactly as they will once the write lands.
-          </span>
-        </div>
-      )}
 
       <KpiStrip items={kpis} columns={kpis.length} />
 
@@ -1441,10 +1362,7 @@ function ClientDetailView() {
               title="No notes yet"
               description="Nothing has been written about this client. Press Edit Client to add one."
               actionLabel="Edit Client"
-              onAction={() => {
-                setLeaveError(null)
-                edit.startEditing()
-              }}
+              onAction={openEdit}
             />
           )}
         </Card>

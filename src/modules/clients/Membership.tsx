@@ -7,10 +7,10 @@ import { ListControlRow, ListWorkspace } from '../../components/ui/ListWorkspace
 import { Pagination } from '../../components/ui/Pagination'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
+import { Select } from '../../components/ui/Select'
 import { formatMoney } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { listMembers, type MemberListRow } from '../../lib/queries/membership'
-import type { MembershipTier } from '../../lib/queries/clients'
 import './clients.css'
 
 const PAGE_SIZES = [10, 25, 50] as const
@@ -24,6 +24,7 @@ export default function Membership({ embedded = false, filtersOpen: externalFilt
   const money = useCanViewMoney()
   const search = params.get('mq') ?? ''
   const selectedLevel = params.get('ml') ?? ''
+  const selectedKind = params.get('mk') ?? ''
   const sort = (['name', 'joined-newest', 'joined-oldest', 'plan'].includes(params.get('ms') ?? '')
     ? params.get('ms') : 'name') as Sort
   const view = params.get('mv') === 'cards' ? 'cards' : 'table'
@@ -31,10 +32,11 @@ export default function Membership({ embedded = false, filtersOpen: externalFilt
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState<number>(PAGE_SIZES[0])
+  const requestedPage = Number(params.get('mp') ?? '1')
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
+  const requestedPageSize = Number(params.get('mps') ?? PAGE_SIZES[0])
+  const pageSize = PAGE_SIZES.find((size) => size === requestedPageSize) ?? PAGE_SIZES[0]
   const [internalFiltersOpen, setInternalFiltersOpen] = useState(false)
-  const [selectedKind, setSelectedKind] = useState('')
   const filtersOpen = externalFiltersOpen ?? internalFiltersOpen
   const closeFilters = onFiltersClose ?? (() => setInternalFiltersOpen(false))
 
@@ -51,12 +53,27 @@ export default function Membership({ embedded = false, filtersOpen: externalFilt
     return () => { active = false }
   }, [retry])
 
-  function updateParam(key: string, value: string) {
+  function updateParam(key: string, value: string, replace = false) {
     const next = new URLSearchParams(params)
     if (value) next.set(key, value)
     else next.delete(key)
-    setParams(next, { replace: true })
-    setPage(1)
+    next.delete('mp')
+    setParams(next, { replace })
+  }
+
+  function setPage(nextPage: number) {
+    const next = new URLSearchParams(params)
+    if (nextPage > 1) next.set('mp', String(nextPage))
+    else next.delete('mp')
+    setParams(next)
+  }
+
+  function setPageSize(size: number) {
+    const next = new URLSearchParams(params)
+    if (size === PAGE_SIZES[0]) next.delete('mps')
+    else next.set('mps', String(size))
+    next.delete('mp')
+    setParams(next)
   }
 
   const levels = useMemo(() => [...new Set(members.map((member) => member.level))].sort(), [members])
@@ -99,25 +116,19 @@ export default function Membership({ embedded = false, filtersOpen: externalFilt
         </>
       )}
 
-      <FilterDrawer id="membership-filters" open={filtersOpen} onClose={closeFilters} resultCount={loading ? null : filtered.length} noun="members" activeCount={Number(Boolean(selectedKind))} onClearAll={() => { setSelectedKind(''); setPage(1) }} standardFooter onApply={closeFilters}>
+      <FilterDrawer id="membership-filters" open={filtersOpen} onClose={closeFilters} resultCount={loading ? null : filtered.length} noun="members" activeCount={Number(Boolean(selectedKind))} onClearAll={() => updateParam('mk', '')} standardFooter onApply={closeFilters}>
         <label style={{ display: 'grid', gap: 8, fontWeight: 600 }}>Client type
-          <select aria-label="Filter members by client type" value={selectedKind} onChange={(event) => { setSelectedKind(event.target.value); setPage(1) }} style={{ minHeight: 44, width: '100%' }}>
+          <Select aria-label="Filter members by client type" value={selectedKind} onChange={(event) => updateParam('mk', event.target.value)} style={{ minHeight: 44, width: '100%' }}>
             <option value="">All client types</option>
             {kinds.map((kind) => <option key={kind} value={kind}>{kind}</option>)}
-          </select>
+          </Select>
         </label>
       </FilterDrawer>
 
       <ListWorkspace
         controls={
           <ListControlRow
-            search={<SearchInput value={search} onChange={(value) => updateParam('mq', value)} onClear={() => updateParam('mq', '')} placeholder="Search members" aria-label="Search members" />}
-            filters={
-              <select aria-label="Membership plan" value={selectedLevel} onChange={(event) => updateParam('ml', event.target.value)} style={{ minHeight: 44 }}>
-                <option value="">All plans</option>
-                {levels.map((level: MembershipTier) => <option value={level} key={level}>{level}</option>)}
-              </select>
-            }
+            search={<SearchInput value={search} onChange={(value) => updateParam('mq', value, true)} onClear={() => updateParam('mq', '', true)} placeholder="Search members" aria-label="Search members" />}
             sort={
               <select aria-label="Sort members" value={sort} onChange={(event) => updateParam('ms', event.target.value)} style={{ minHeight: 44 }}>
                 <option value="name">Name A–Z</option>
@@ -144,21 +155,21 @@ export default function Membership({ embedded = false, filtersOpen: externalFilt
             ))}
           </div>
         )}
-        results={!loading && !error && <Pagination page={current} total={filtered.length} pageSize={pageSize} onPageChange={setPage} pageSizeOptions={PAGE_SIZES} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />}
+        results={!loading && !error && <Pagination page={current} total={filtered.length} pageSize={pageSize} onPageChange={setPage} pageSizeOptions={PAGE_SIZES} onPageSizeChange={setPageSize} />}
       >
         {loading ? <LoadingSkeleton label="Loading memberships" /> : error ? (
           <ErrorBanner title="Could not load memberships" message={error} onRetry={() => setRetry((value) => value + 1)} />
         ) : pageRows.length === 0 ? (
           <EmptyState
             title={hasFilters ? 'No members match these filters' : 'No current memberships'}
-            description={hasFilters ? 'Try another name or plan.' : 'Current membership records will appear here when available.'}
+            description={hasFilters ? 'Try another name, plan, or client type.' : 'Current membership records will appear here when available.'}
             {...(hasFilters ? { actionLabel: 'Clear filters', onAction: () => {
               const next = new URLSearchParams(params)
               next.delete('mq')
               next.delete('ml')
-              setSelectedKind('')
+              next.delete('mk')
+              next.delete('mp')
               setParams(next, { replace: true })
-              setPage(1)
             } } : {})}
           />
         ) : view === 'cards' ? (

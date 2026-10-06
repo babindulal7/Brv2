@@ -150,4 +150,108 @@ describe('InternalNotesPage', () => {
 
     expect(container.textContent).toContain('RESOLVED')
   })
+
+  it('toggles between Cards and Compact table view', () => {
+    const container = render(
+      <MemoryRouter>
+        <InternalNotesPage />
+      </MemoryRouter>,
+    )
+
+    const compactBtn = Array.from(container.querySelectorAll('button')).find(b =>
+      b.textContent?.includes('Compact'),
+    )
+    expect(compactBtn).toBeDefined()
+
+    act(() => {
+      compactBtn?.click()
+    })
+
+    expect(container.querySelector('.notes-compact-table')).not.toBeNull()
+
+    const cardsBtn = Array.from(container.querySelectorAll('button')).find(b =>
+      b.textContent?.includes('Cards'),
+    )
+    expect(cardsBtn).toBeDefined()
+
+    act(() => {
+      cardsBtn?.click()
+    })
+
+    expect(container.querySelector('.notes-compact-table')).toBeNull()
+  })
+
+  it('opens Shift Handover Brief modal', () => {
+    const container = render(
+      <MemoryRouter>
+        <InternalNotesPage />
+      </MemoryRouter>,
+    )
+
+    const shiftBriefBtn = Array.from(container.querySelectorAll('button')).find(b =>
+      b.textContent?.includes('Shift Brief'),
+    )
+    expect(shiftBriefBtn).toBeDefined()
+
+    act(() => {
+      shiftBriefBtn?.click()
+    })
+
+    expect(document.body.textContent).toContain('Shift Brief & Handoff Summary')
+    expect(document.body.textContent).toContain('Copy Shift Brief')
+  })
+
+  it('opens Entity ID Selector modal and attaches an entity', () => {
+    const container = render(
+      <MemoryRouter>
+        <InternalNotesPage />
+      </MemoryRouter>,
+    )
+
+    const selectIdBtn = Array.from(container.querySelectorAll('button')).find(b =>
+      b.textContent?.includes('Select / Search ID'),
+    )
+    expect(selectIdBtn).toBeDefined()
+
+    act(() => {
+      selectIdBtn?.click()
+    })
+
+    expect(document.body.textContent).toContain('Select Entity ID')
+
+    // Find one of the recent entity quick-attach buttons in the modal (e.g. EQ-SONY-FX6-02)
+    const recentButtons = Array.from(document.body.querySelectorAll('button')).filter(b =>
+      b.title?.startsWith('Attach EQ-SONY-FX6-02') || b.textContent?.includes('EQ-SONY-FX6-02'),
+    )
+    expect(recentButtons.length).toBeGreaterThan(0)
+
+    act(() => {
+      recentButtons[0]?.click()
+    })
+
+    // Modal should close and composer should display the attached chip
+    expect(container.querySelector('.attached-ref-chip')).not.toBeNull()
+    expect(container.querySelector('.attached-ref-chip')?.textContent).toContain('EQ-SONY-FX6-02')
+  })
+
+  it('filters notes when clicking entity filter button', () => {
+    const container = render(
+      <MemoryRouter>
+        <InternalNotesPage />
+      </MemoryRouter>,
+    )
+
+    const filterBtns = Array.from(container.querySelectorAll('button')).filter(b =>
+      b.textContent?.trim() === 'Filter',
+    )
+    expect(filterBtns.length).toBeGreaterThan(0)
+
+    act(() => {
+      filterBtns[0]?.click()
+    })
+
+    // Filtered to entity banner should appear
+    expect(container.textContent).toContain('Filtered to entity:')
+  })
 })
+

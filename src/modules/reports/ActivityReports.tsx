@@ -565,7 +565,7 @@ export default function ActivityReports() {
                     </td>
                     <td style={td}>
                       {e.tableName ? (
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--t-meta)' }}>
+                        <span style={{ fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--t-meta)' }}>
                           {e.tableName}
                           {e.recordId ? `:${e.recordId.slice(0, 8)}` : ''}
                         </span>

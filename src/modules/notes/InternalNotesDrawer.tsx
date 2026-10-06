@@ -299,7 +299,8 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                 {detectedRef && (
                   <span
                     style={{
-                      fontFamily: 'monospace',
+                      fontFamily: 'var(--font-id, sans-serif)',
+                      fontVariantNumeric: 'tabular-nums',
                       fontSize: '11px',
                       fontWeight: 700,
                       background: 'rgba(28, 92, 196, 0.1)',
@@ -489,7 +490,8 @@ export default function InternalNotesDrawer({ isOpen, onClose, initialReference 
                           background: 'var(--surface-2)',
                           border: '1px solid var(--border)',
                           fontSize: '11px',
-                          fontFamily: 'monospace',
+                          fontFamily: 'var(--font-id, sans-serif)',
+                          fontVariantNumeric: 'tabular-nums',
                           fontWeight: 700,
                           color: 'var(--accent)',
                           textDecoration: 'none',

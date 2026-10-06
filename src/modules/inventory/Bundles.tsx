@@ -467,6 +467,14 @@ export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { fi
     setPage(1)
   }
 
+  const clearAdvanced = () => {
+    setCategory('All')
+    setTag('All')
+    setHasCrew('Any')
+    setHasVehicle('Any')
+    setPage(1)
+  }
+
   const filtered = useMemo(() => {
     const source = chip === 'Archived' ? archivedBundles : activeBundles
     const rows = source.filter((b) => {
@@ -653,7 +661,7 @@ export function Bundles({ filtersOpen = false, onFiltersClose = () => {} }: { fi
         resultCount={bundles.loading ? null : filtered.length}
         noun="bundles"
         activeCount={Number(category !== 'All') + Number(tag !== 'All') + Number(hasCrew !== 'Any') + Number(hasVehicle !== 'Any')}
-        onClearAll={clearAll}
+        onClearAll={clearAdvanced}
         standardFooter
         onApply={onFiltersClose}
       >

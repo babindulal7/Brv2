@@ -45,9 +45,15 @@ export interface RentalDraftData {
     committedTo: string
     bundleCode?: string | undefined
     bundleName?: string | undefined
+    lineNote?: string | undefined
+    serviceBasis?: 'Flat' | 'Per day' | undefined
+    supplierCost?: number | undefined
   }>
   crew: Array<{
     crewId: string
+    bookingCrewLineId?: string | undefined
+    crewMemberId?: string | undefined
+    days?: number | undefined
     name: string
     role: string
     phone: string

@@ -5,6 +5,7 @@ import { Card, Button } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { ScreenHeader } from './TabHeader'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
+import { Select } from '../../components/ui/Select'
 import { PageBody } from '../../components/ui/PageBody'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { Modal } from '../../components/ui/Modal'
@@ -879,10 +880,10 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
       />
       <FilterDrawer id="expense-filters" open={filtersOpen} onClose={closeFilters} resultCount={list.loading ? null : total} noun="expenses" activeCount={Number(categoryId !== 'All')} onClearAll={() => { setCategoryId('All'); setPage(1) }} standardFooter onApply={closeFilters}>
         <label style={{ display: 'grid', gap: 8, fontWeight: 600 }}>Category
-          <select aria-label="Filter expenses by category" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setPage(1) }} disabled={categories.length === 0} style={{ ...inputStyle, minHeight: 44, width: '100%' }}>
+          <Select aria-label="Filter expenses by category" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setPage(1) }} disabled={categories.length === 0} style={{ ...inputStyle, minHeight: 44, width: '100%' }}>
             <option value="All">All categories</option>
             {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-          </select>
+          </Select>
         </label>
       </FilterDrawer>
 

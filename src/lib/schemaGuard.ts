@@ -149,7 +149,7 @@ export const SCHEMA_PROBES: readonly (RpcProbe | RelationProbe)[] = [
     args: { p_id: NIL },
   },
   {
-    migration: '0146',
+    migration: '0153',
     name: 'read_record_editor',
     kind: 'rpc',
     impact: 'record editing',

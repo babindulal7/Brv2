@@ -75,3 +75,19 @@ To eliminate copy drift across modules and floor touchpoints:
 - **Modal Confirmations:**
   - Browser-native `window.confirm()` or `window.alert()` are strictly prohibited; all destructive or unsaved-state confirmations must use `ConfirmDialog`.
 
+
+## 11. Shared Add / Edit / Booking workspace pattern (ruled 6 Oct 2026)
+
+One composition for every record screen, so Add and Edit differ only by prefilled values and the primary label. The semantic roles below are the contract; styling comes from the existing tokens and Card treatment (no new imagery, motion or layouts).
+
+| Role | Component | Rule |
+|---|---|---|
+| Workspace | `RecordWorkspace` | Body column plus summary rail. Rail is sticky at >=1280px (`src/lib/breakpoints.ts`) and flows below the sections under it |
+| Section | `RecordSection` | One Card per section in the fixed order below. Essential sections never collapse; optional sections collapse while empty (`collapsible`, `defaultOpen`, `collapsedHint`). Collapsed content stays mounted |
+| Error summary | `RecordErrorSummary` + `focusRecordField` | `role="alert"` list; each entry is a button that opens the owning section and focuses the control. Field errors also render inline (`aria-invalid`, `aria-describedby`) |
+| Action bar | `RecordActions` | One persistent bar: **Cancel / Create** or **Cancel / Save changes**. Booking creation adds Save draft / Confirm booking via `extra` |
+| Leave guard | `useUnsavedRecord` + `UnsavedLeaveDialog` | Active only while dirty. Cancel and link clicks ask; clean forms never prompt |
+
+Section order: Client = Identity > Contact > Addresses > Commercial details > Notes. Equipment = Identity > Units & location > Purchase > Pricing > Maintenance & notes. Bundle = Identity > Components > Rates > Summary. Booking = Client & schedule > Equipment, bundles & services > Crew & delivery > Pricing & terms.
+
+Behaviour contract: entries survive a failed save; one idempotency key per unchanged content (a changed form mints a new one); duplicate submits are blocked while busy; success is shown only after the write is confirmed; a concurrent-change refusal keeps the draft and offers **Reload latest record**; focus moves to the error box after a failed save; return navigation keeps every query parameter except `action` (and `tab=new` on create).

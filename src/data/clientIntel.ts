@@ -313,8 +313,8 @@ export function clientDetailGroups(client: ClientRecord, gctx: GateContext): Int
   groups.push({
     title: 'Activity',
     fields: [
-      ...client.activeBookings.map((b): IntelField => ({ label: b, value: 'Currently booked', trigger: { label: 'Open', to: `/rentals/${b}` } })),
-      { label: 'Last rental', value: client.lastRentalBs === '—' ? 'No rental yet' : `${client.lastRentalBs} BS · ${client.lastRentalAd}` },
+      ...(client.activeBookings ?? []).map((b): IntelField => ({ label: b, value: 'Currently booked', trigger: { label: 'Open', to: `/rentals/${b}` } })),
+      { label: 'Last rental', value: (client.lastRentalBs ?? '—') === '—' ? 'No rental yet' : `${client.lastRentalBs} BS · ${client.lastRentalAd ?? '—'}` },
     ],
   })
 

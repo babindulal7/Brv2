@@ -4,6 +4,7 @@ import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
 import { FilterButton, FilterDrawer } from '../../components/ui/FilterDrawer'
+import { Select } from '../../components/ui/Select'
 import { PageShell } from '../../components/ui/PageShell'
 import { useViewport } from '../../lib/device'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
@@ -148,6 +149,7 @@ export default function ToolsLanding() {
     : 'overview'
 
   const setTab = (t: ToolsTab) => {
+    setFiltersOpen(false)
     const next = new URLSearchParams(params)
     if (t === 'overview') next.delete('tab')
     else next.set('tab', t)
@@ -179,10 +181,10 @@ export default function ToolsLanding() {
       />
       <FilterDrawer id="tools-filters" open={filtersOpen && activeTab === 'overview'} onClose={() => setFiltersOpen(false)} resultCount={visibleToolCount} noun="tools" activeCount={Number(Boolean(selectedGroup))} onClearAll={() => setSelectedGroup('')} standardFooter onApply={() => setFiltersOpen(false)}>
         <label style={{ display: 'grid', gap: 8, fontWeight: 600 }}>Category
-          <select aria-label="Filter tools by category" value={selectedGroup} onChange={(event) => setSelectedGroup(event.target.value)} style={{ minHeight: 44, width: '100%' }}>
+          <Select aria-label="Filter tools by category" value={selectedGroup} onChange={(event) => setSelectedGroup(event.target.value)} style={{ minHeight: 44, width: '100%' }}>
             <option value="">All categories</option>
             {groups.map((group) => <option key={group.heading} value={group.heading}>{group.heading}</option>)}
-          </select>
+          </Select>
         </label>
       </FilterDrawer>
 

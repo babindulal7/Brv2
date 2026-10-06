@@ -38,6 +38,14 @@ export const ScannerInput: React.FC<ScannerInputProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
+  }, [])
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const trimmed = value.trim()
@@ -51,7 +59,8 @@ export const ScannerInput: React.FC<ScannerInputProps> = ({
       inputRef.current?.focus()
     }
 
-    setTimeout(() => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
       setRecentScan(null)
     }, 2500)
   }
@@ -78,7 +87,8 @@ export const ScannerInput: React.FC<ScannerInputProps> = ({
             paddingTop: 10,
             paddingBottom: 10,
             fontSize: 'var(--t-ui)',
-            fontFamily: 'monospace',
+            fontFamily: 'var(--font-id, sans-serif)',
+            fontVariantNumeric: 'tabular-nums',
             borderRadius: 'var(--r-card)',
             background: 'var(--card2)',
             border: '1px solid var(--border)',
@@ -141,7 +151,7 @@ export const ScannerInput: React.FC<ScannerInputProps> = ({
         >
           <IconCheck size={16} style={{ flexShrink: 0 }} />
           <span>
-            Scanned: <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>{recentScan}</span>
+            Scanned: <span style={{ fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'var(--text)' }}>{recentScan}</span>
           </span>
         </div>
       )}
