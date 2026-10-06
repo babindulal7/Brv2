@@ -1318,6 +1318,40 @@ Counted by `npm run completion`, not typed.
 ### Remaining
 - Item 7: Nepali catalogue localization with native speaker input.
 
+## 2026-10-06 (e) — Inventory Reports: fabricated figures removed (Law 16)
+
+**Did**
+- `InventoryReports` rendered seeded Total Assets 485, Utilization 68.4%, Available 132, Accuracy 99.2%, an invented Asset Health table and invented Top Categories by Value, and exported them to CSV as real. Its query also fell back to the seed on empty/failed reads.
+- `src/lib/queries/inventoryReports.ts` now counts units per `inventory_state` from `product_units_v` (no money). Total Assets = units not Retired; Available = In Stock. A failed read is `null` → "Unavailable"/"Could not load", never 0.
+- Utilization and Inventory Accuracy read "Not measured" (no source). Asset Health table replaced by Units by Status (counts + share of real total). Top Categories by Value stays behind `useCanViewMoney` and reads "Not tracked yet" (`TODO(decision)`: valuation basis).
+- CSV export carries the same figures; money-blind roles' file has no category-value row. `ShortageSection` untouched.
+- Removed `src/data/inventoryReports.ts` (its deletion had already landed in 310cb77; the old query still imported it, so that commit did not typecheck — fixed here).
+
+**Ruled**
+- RULING 2026-10-06: no inventory figure without a real source (Law 16). Revert = restore the seed file and old query from 4191388.
+
+**Verified**
+- `tsc --noEmit`: PASS. `eslint src --max-warnings 0`: PASS.
+- `vitest run src/modules/reports src/lib/queries`: PASS (62 files, 664 tests), incl. new `InventoryReports.csv.test.ts` (never 0 on failed read; no category row for money-blind).
+- NOT verified: page not driven in a browser; the live count query was not run against the database. Completion gates are the 2026-10-06 results from the main checkout, not re-run here; migrations unchanged.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 54 | 52 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 154 files · check:pglite 154/154 applied, 0 failed (recorded 2026-10-06T11:45:46.125Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Gates read from .lifecycle-result.json, written 2026-10-06T12:04:09.917Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Confirm Inventory Reports renders and the 10 count queries return in the browser.
+- TODO(decision): category valuation basis (purchase_price vs replacement_value) before "Top Categories by Value" can exist; utilization and accuracy need a defined source.
+
 ## 2026-10-05 (l) — Tabular Number Typography & Design System Font Unification
 
 **Did**
