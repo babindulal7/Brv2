@@ -1316,17 +1316,12 @@ export async function runFloorVerb(
     )
   }
 
-  /* TODO(decision) §4.36 — this is THE call site the ruling is about.
-   *
-   * `operation_sessions` carries no audit trigger, so this row is the only
-   * record that the session happened and who closed it. Until 16 Aug 2026 a
-   * failure here was invisible: `logAuditEvent` returned void and swallowed it,
-   * so a Warehouse actor finished a return, saw success, and left no trace.
-   *
-   * It is now reportable. What to DO about a failure is the open ruling — fail
-   * the verb with it, or proceed and surface a banner until the row drains. The
-   * verb deliberately still PROCEEDS, exactly as before, so nothing here
-   * pre-empts the answer. When §4.36 is ruled, this branch is where it lands. */
+  /* RULING 2026-10-06 (§4.36): the audit of record for `operation_sessions` is the database trigger
+   * (0154/0156), written in the SAME transaction as the session, so if that insert fails the session
+   * write fails with it — "fail with it" is enforced atomically, below the app. This app-side row is
+   * supplementary (reason, device context). If it fails the verb PROCEEDS — a floor operator must not
+   * lose a completed return to an audit outage — but never silently: logged and sent to monitoring
+   * below. Revert = return early here when `!sessionAudit.ok`. */
   const sessionAudit = await logAuditEvent({
     eventClass: 'session',
     category: 'Rentals',
@@ -2083,11 +2078,10 @@ async function completeResetQueue(
     }
 
     // Per item, never per batch (`0003:911`) — and so is its audit row.
-    // TODO(decision) §4.36, same ruling as the session row above. Note the extra
-    // wrinkle here: the `safeUpdate` on the line before has already committed,
-    // so "fail the verb with it" would have to mean failing PART WAY THROUGH a
-    // loop that has written earlier entries. Whoever rules §4.36 should rule
-    // this shape too rather than let it be inferred at the call site.
+    // RULING 2026-10-06 (§4.36): proceed on failure, loudly (below). Earlier entries in this loop are
+    // already committed, so stopping part-way would leave a half-reset batch — worse than a missing
+    // supplementary row. `cleaning_queue_entries` has no audit trigger yet, so until one exists this
+    // row is the only record: PLAN.md §4.36 lists adding triggers for it as the follow-up.
     const entryAudit = await logAuditEvent({
       eventClass: 'session',
       category: 'Rentals',

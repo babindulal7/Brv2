@@ -1888,7 +1888,18 @@ lifetime). Nothing is misplaced today — no component imports it, so it sits co
 the engine layer. The ruling: promote the ranking into an RPC (client sends product + window,
 server returns ranked units), or accept client-computed-and-passed as the durable shape.
 
-## 4.36 ⬅ OPEN — should a failed audit write stop the business action? (`R3-5`)
+## 4.36 ✅ RULED 6 Oct 2026 — should a failed audit write stop the business action? (`R3-5`)
+
+> **RULING (Claude, under build-time authority, on Babin's instruction to rule it — `RULINGS-2026-10-06.md`
+> "§4.36"):** the **audit of record is the database trigger**, written in the same transaction as the
+> change, so a failed audit insert already fails the change atomically — for `operation_sessions` since
+> 0154/0156. The app-side `logAuditEvent` row is supplementary: if it fails the business verb
+> **proceeds**, loudly (`console.error` + `captureError`), never silently. This also answers the
+> `resetUnits` loop wrinkle: no part-way failure is introduced. **Follow-up:** `cleaning_queue_entries`,
+> `purchase_requests`, `stock_transfers` and `products` have NO audit trigger, so for them the app row is
+> the only record — add triggers (a new migration, not yet written). Revert = make the two call sites
+> return early on `!ok`. The original question and analysis are kept below for the record.
+
 
 **Raised 16 Aug 2026 by re-verifying `R3-5`. The defect is confirmed; the fix needs one ruling.**
 
