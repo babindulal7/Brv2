@@ -146,6 +146,18 @@ function formatMasterDispatchDate(filter: DateFilter, today: string, lang: 'en' 
   return dual
 }
 
+/** The date button's two lines: what the day IS ("Today", "Wed") and which day (AD · BS). */
+function masterDispatchParts(filter: DateFilter, today: string, lang: 'en' | 'ne' = 'en'): { primary: string; secondary: string } {
+  const full = formatMasterDispatchDate(filter, today, lang)
+  const dot = full.indexOf(' · ')
+  if (dot > 0) return { primary: full.slice(0, dot), secondary: full.slice(dot + 3).replace(' / ', ' · ') }
+  const single = filter.kind === 'quick' ? filter.period !== 'Next 7 Days' : filter.from === filter.to
+  if (!single) return { primary: full, secondary: '' }
+  const day = filter.kind === 'custom' ? filter.from : rangeFor(filter, today).from
+  const weekday = new Intl.DateTimeFormat(lang === 'ne' ? 'ne-NP' : 'en-US', { weekday: 'long', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00.000Z`))
+  return { primary: weekday, secondary: full.replace(' / ', ' · ') }
+}
+
 /**
  * Dashboard calendars used to render inline (`position: absolute`) inside the
  * page header and the movement-panel headers. Ancestors there sit under
@@ -441,6 +453,7 @@ function MasterDispatchDateControl({
   }, [open])
 
   const masterLabel = formatMasterDispatchDate(filter, today, lang)
+  const parts = masterDispatchParts(filter, today, lang)
   const isToday = filter.kind === 'quick' && filter.period === 'Today'
 
   return (
@@ -448,16 +461,29 @@ function MasterDispatchDateControl({
       className="dashboard-master-date-control"
       ref={root}
       role="group"
-      aria-label="Master dispatch date"
+      aria-label="Dispatch day for pickups and returns"
       onBlur={(event) => {
         const next = event.relatedTarget as Node | null
         if (next && (event.currentTarget.contains(next) || dialog.current?.contains(next))) return
         if (event.relatedTarget) setOpen(false)
       }}
     >
-      <span className="dashboard-header-controls__label" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 500, marginRight: 4 }}>
-        Sync dispatch day:
-      </span>
+      {/* Redesigned 7 Oct 2026 (R-39, fewest clicks): one date button that opens the calendar — the
+          separate calendar button opened the same dialog; the "Today" button shows only when you are
+          away from today, where it is one tap back, and sits LEFT of ‹ so the arrows never move under a
+          thumb (the group is right-aligned); the "Sync dispatch day:" caption is gone, the group
+          keeps its accessible name. */}
+      {!isToday && (
+        <button
+          type="button"
+          className="dashboard-master-date-control__today"
+          aria-label="Today"
+          title="Back to today"
+          onClick={() => onChange({ kind: 'quick', period: 'Today' })}
+        >
+          {lang === 'ne' ? 'आज' : 'Today'}
+        </button>
+      )}
       <button
         type="button"
         className="dashboard-master-date-control__btn"
@@ -465,27 +491,25 @@ function MasterDispatchDateControl({
         title="Previous day (Shortcut: [ or P)"
         onClick={() => onStepDay(-1)}
       >
-        <Icon name="chevron_left" size={16} />
-      </button>
-      <button
-        type="button"
-        className={`dashboard-master-date-control__btn dashboard-day-pager__btn--today ${isToday ? 'is-today' : ''}`}
-        aria-label="Today"
-        onClick={() => onChange({ kind: 'quick', period: 'Today' })}
-      >
-        Today
+        <Icon name="chevron_left" size={18} />
       </button>
       <button
         ref={trigger}
         type="button"
         className={`dashboard-master-date-control__date-btn ${isToday ? 'is-today' : ''}`}
-        aria-label={`${masterLabel} — choose dispatch date filter`}
+        aria-label={`${masterLabel} — choose dispatch date`}
+        title="Choose dispatch date"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? 'dispatch-date-dialog' : undefined}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="dashboard-master-date-control__label">{masterLabel}</span>
+        <Icon name="calendar" size={18} className="dashboard-master-date-control__icon" />
+        <span className="dashboard-master-date-control__text">
+          <span className="dashboard-master-date-control__primary">{parts.primary}</span>
+          {parts.secondary && <span className="dashboard-master-date-control__secondary">{parts.secondary}</span>}
+        </span>
+        <Icon name="chevron_down" size={14} className="dashboard-master-date-control__caret" />
       </button>
       <button
         type="button"
@@ -494,19 +518,7 @@ function MasterDispatchDateControl({
         title="Next day (Shortcut: ] or N)"
         onClick={() => onStepDay(1)}
       >
-        <Icon name="chevron_right" size={16} />
-      </button>
-      <button
-        type="button"
-        className="dashboard-master-date-control__calendar-btn"
-        aria-label="Dispatch calendar"
-        title="Open calendar"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? 'dispatch-date-dialog' : undefined}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Icon name="calendar" size={18} />
+        <Icon name="chevron_right" size={18} />
       </button>
       {open && (
         <CalendarPortal triggerRef={trigger} dialogRef={dialog} id="dispatch-date-dialog" label="Dispatch date filter">

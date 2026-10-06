@@ -132,46 +132,81 @@
 .dashboard-master-date-control__date-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  gap: 0.6rem;
+  /* Wide enough for "Wednesday" / "Tomorrow" + the AD·BS line, so the › arrow does not move as the
+     day changes. */
+  min-width: 12.5rem;
   min-height: 44px;
-  padding: 0 0.85rem;
+  padding: 0.25rem 0.75rem;
   border: 0;
   border-radius: calc(var(--r-btn, 8px) - 2px);
   background: transparent;
   color: var(--text);
-  font-size: var(--t-meta);
-  font-weight: 700;
-  letter-spacing: -0.01em;
   cursor: pointer;
+  text-align: left;
   white-space: nowrap;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 
 .dashboard-master-date-control__date-btn:hover {
   background: var(--hover-card);
+}
+
+.dashboard-master-date-control__date-btn[aria-expanded='true'] {
+  background: var(--dashboard-accent-soft);
+}
+
+.dashboard-master-date-control__icon {
+  flex: none;
   color: var(--dashboard-accent-strong);
 }
 
-.dashboard-master-date-control__date-btn.is-today {
+.dashboard-master-date-control__text {
+  display: grid;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.dashboard-master-date-control__primary {
+  font-size: var(--t-ui);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.dashboard-master-date-control__date-btn.is-today .dashboard-master-date-control__primary {
   color: var(--dashboard-accent-strong);
 }
 
-.dashboard-master-date-control__calendar-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
-  border: 0;
-  border-left: 1px solid var(--border);
-  border-radius: 0 calc(var(--r-btn, 8px) - 2px) calc(var(--r-btn, 8px) - 2px) 0;
+.dashboard-master-date-control__secondary {
+  font-size: var(--t-meta);
+  font-weight: 500;
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-master-date-control__caret {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+}
+
+/* Shown only away from today: one tap back. */
+.dashboard-master-date-control__today {
+  min-height: 36px;
+  margin: 0 0.15rem 0 0.25rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--dashboard-accent-strong);
+  border-radius: 999px;
   background: transparent;
   color: var(--dashboard-accent-strong);
+  font-size: var(--t-meta);
+  font-weight: 650;
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease);
 }
 
-.dashboard-master-date-control__calendar-btn:hover {
+.dashboard-master-date-control__today:hover {
   background: var(--dashboard-accent-soft);
 }
 
@@ -2252,13 +2287,6 @@
   box-shadow: none;
 }
 
-.dashboard-master-date-control__calendar-btn {
-  color: var(--primary-text);
-}
-
-.dashboard-master-date-control__calendar-btn:hover {
-  background: var(--ext-bg);
-}
 
 /* ─── Mobile Viewport (<768px): Single column, tab switcher active ──────── */
 @media (max-width: 767px) {
@@ -2764,20 +2792,15 @@
     min-width: 0;
   }
 
-  .dashboard-master-date-control .dashboard-header-controls__label,
-  .dashboard-master-date-control__calendar-btn {
-    display: none;
-  }
-
   .dashboard-master-date-control__date-btn {
     flex: 1 1 auto;
     min-width: 0;
-    padding-inline: 0.35rem;
+    justify-content: center;
     overflow: hidden;
   }
 
-  .dashboard-master-date-control__label {
-    min-width: 0;
+  .dashboard-master-date-control__primary,
+  .dashboard-master-date-control__secondary {
     overflow: hidden;
     text-overflow: ellipsis;
   }

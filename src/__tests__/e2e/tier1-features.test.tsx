@@ -334,9 +334,9 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', { timeout: 90000 
       expect(container.textContent).toContain('Today')
 
       // Master dispatch sync controls
-      expect(container.textContent).toContain('Sync dispatch day:')
-      const todayPagerBtn = container.querySelector('button[aria-label="Today"]')
-      expect(todayPagerBtn).not.toBeNull()
+      expect(container.querySelector('[aria-label="Dispatch day for pickups and returns"]')).not.toBeNull()
+      // On today itself there is no "Today" button — it appears only away from today (7 Oct 2026 redesign).
+      expect(container.querySelector('button[aria-label="Today"]')).toBeNull()
       const prevDayBtn = container.querySelector('button[aria-label="Previous day"]')
       expect(prevDayBtn).not.toBeNull()
       const nextDayBtn = container.querySelector('button[aria-label="Next day"]')

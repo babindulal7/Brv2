@@ -227,15 +227,16 @@ describe('Tier 3: Cross-Feature Combinations & Invariants', () => {
 
       // Master dispatch synchronization control bar is rendered
       expect(container.textContent).toContain('Today')
-      expect(container.textContent).toContain('Sync dispatch day:')
+      // Redesigned 7 Oct 2026: no caption; the group keeps its accessible name, and the Today
+      // button only appears once the day has moved away from today.
+      expect(container.querySelector('[aria-label="Dispatch day for pickups and returns"]')).not.toBeNull()
 
       const prevDayBtn = container.querySelector('button[aria-label="Previous day"]') as HTMLButtonElement
       const nextDayBtn = container.querySelector('button[aria-label="Next day"]') as HTMLButtonElement
-      const todayBtn = container.querySelector('button[aria-label="Today"]') as HTMLButtonElement
 
       expect(prevDayBtn).not.toBeNull()
       expect(nextDayBtn).not.toBeNull()
-      expect(todayBtn).not.toBeNull()
+      expect(container.querySelector('button[aria-label="Today"]')).toBeNull()
 
       // Both Movement Panels are present in the layout
       expect(container.textContent).toContain('Pickups')
@@ -255,7 +256,10 @@ describe('Tier 3: Cross-Feature Combinations & Invariants', () => {
       expect(container.textContent).toContain('Pickups')
       expect(container.textContent).toContain('Returns')
 
-      // Return to Today using the master Today button
+      // Away from today, the Today button appears — one tap back
+      const todayBtn = container.querySelector('button[aria-label="Today"]') as HTMLButtonElement
+      expect(todayBtn).not.toBeNull()
+      expect(container.textContent).toContain('Tomorrow')
       await act(async () => {
         todayBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
@@ -265,8 +269,9 @@ describe('Tier 3: Cross-Feature Combinations & Invariants', () => {
         })
       }
 
-      // Panels remain synchronized back to today
+      // Panels remain synchronized back to today, and the button hides again
       expect(container.textContent).toContain('Today')
+      expect(container.querySelector('button[aria-label="Today"]')).toBeNull()
     })
   })
 
