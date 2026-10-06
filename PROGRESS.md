@@ -1,5 +1,41 @@
 # Progress Log
 
+## 2026-10-06 (l) — Audit triggers for the four trigger-less tables (migration 0157)
+
+**Did**
+- Migration `0157_audit_triggers_for_trigger_less_tables.sql`: generic `log_audit_event_actor()` plus INSERT/UPDATE triggers on `cleaning_queue_entries`, `purchase_requests`, `stock_transfers`, `products`. Closes the §4.36 follow-up. **Written, NOT applied to live (N-5).**
+- `scripts/test-audit-trigger-coverage.mjs` (`npm run test:audit-coverage`).
+
+**Ruled** — `RULINGS-2026-10-06.md`, "Audit triggers for the four trigger-less tables" (1 row).
+
+**Verified**
+- New test: 8/8 pass with 0157, **8/8 fail without it**. An early draft of the test passed two checks vacuously (`every()` on an empty list); fixed by also asserting the row count.
+- `check:pglite` all applied, 0 view leaks, 0 unauthorized RPCs, **62 definer functions, 0 unpinned** · `check:lifecycle` 30/30 · `test-operation-session-audit` and `test:race` still green → 0157 is Verified under R-35.
+- **Pre-existing failure, not caused by this:** `scripts/test-audit-trigger.mjs` fails ("audit_logs view failed to return matching audit record") identically with 0157 removed. Likely stale since 0148 put a role predicate on the `audit_logs` view; not investigated, and that script is not part of `check:pglite`.
+- Not run: full vitest (no `src/` change this session).
+
+**Blocked / open**
+- **0157 must be applied to live by Babin** (needs the backup step). After it, `products` writes also produce a trigger row next to the app row.
+- Investigate / refresh `scripts/test-audit-trigger.mjs`.
+- Rotate the DB password. Optional re-stamp of `V1`/`V2`/`V3`.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 54 | 52 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-06T15:48:52.726Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Apply 0157 to live. Refresh the stale audit-view script.
+- Real two-connection concurrency test; decide bundle quantity > 1 before wiring `bundleCapacity`.
+
+
 ## 2026-10-06 — Membership list navigation retains context
 
 **Did**

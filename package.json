@@ -40,6 +40,7 @@
     "storage:local": "node scripts/local-storage.mjs",
     "data:wipe": "node scripts/wipe-user-data.mjs",
     "check:anon": "node scripts/check-anon-exposure.mjs",
+    "test:audit-coverage": "node scripts/test-audit-trigger-coverage.mjs",
     "test:race": "node scripts/test-last-unit-race.mjs",
     "check:fixtures": "node scripts/check-no-fixtures.mjs"
   },

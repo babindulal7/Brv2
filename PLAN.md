@@ -1896,8 +1896,8 @@ server returns ranked units), or accept client-computed-and-passed as the durabl
 > 0154/0156. The app-side `logAuditEvent` row is supplementary: if it fails the business verb
 > **proceeds**, loudly (`console.error` + `captureError`), never silently. This also answers the
 > `resetUnits` loop wrinkle: no part-way failure is introduced. **Follow-up:** `cleaning_queue_entries`,
-> `purchase_requests`, `stock_transfers` and `products` have NO audit trigger, so for them the app row is
-> the only record — add triggers (a new migration, not yet written). Revert = make the two call sites
+> `purchase_requests`, `stock_transfers` and `products` had NO audit trigger — **written as migration
+> `0157` (6 Oct 2026), verified locally, NOT yet applied to live.** Revert = make the two call sites
 > return early on `!ok`. The original question and analysis are kept below for the record.
 
 
