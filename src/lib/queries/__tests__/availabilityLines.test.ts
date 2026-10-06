@@ -26,8 +26,6 @@ const db = vi.hoisted(() => {
     const call: Call = { table, columns: '', ops: [] }
     state.calls.push(call)
 
-    let updatePayload: unknown = null
-
     const builder: Record<string, unknown> = {
       select(columns: string) {
         call.columns = columns
@@ -50,7 +48,6 @@ const db = vi.hoisted(() => {
         return builder
       },
       update(payload: unknown) {
-        updatePayload = payload
         state.updates.push({ table, payload, ops: call.ops })
         return builder
       },
@@ -340,8 +337,7 @@ describe('createBookingLineUnits and releaseBookingLineUnits', () => {
               retiredAt: null,
             },
           ],
-          conflicts: [],
-          disqualified: [],
+          rejected: [],
           shortfall: 0,
         },
         problem: null,
@@ -359,8 +355,7 @@ describe('createBookingLineUnits and releaseBookingLineUnits', () => {
               retiredAt: null,
             },
           ],
-          conflicts: [],
-          disqualified: [],
+          rejected: [],
           shortfall: 0,
         },
         problem: null,
@@ -433,8 +428,7 @@ describe('reserveAssignedUnits — reservations and floor projection', () => {
               retiredAt: null,
             },
           ],
-          conflicts: [],
-          disqualified: [],
+          rejected: [],
           shortfall: 0,
         },
         problem: null,

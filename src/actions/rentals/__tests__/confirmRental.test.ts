@@ -151,7 +151,7 @@ const assign = vi.hoisted(() => {
     /** Rows released, with the reason given. */
     released: [] as Array<{ ids: readonly string[]; reason: string }>,
     /** Booking line unit rows released. */
-    releasedUnits: [] as Array<{ ids: readonly string[]; reason?: string }>,
+    releasedUnits: [] as Array<{ ids: readonly string[]; reason?: string | undefined }>,
   }
   function reset(): void {
     state.complete = true

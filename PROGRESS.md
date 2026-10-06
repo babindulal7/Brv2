@@ -2,6 +2,28 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-10-07 — Auto-Assign Serials, Bundle Expansion & Floor Projection (Option 2) Complete
+
+**Phase:** Phase 2 (Floor Workspaces & Confirmation) · **Status:** `tsc --noEmit` exit 0 · `npm test` 1986 passed in 78 files (0 failures)
+
+### 1. Bundle Line Expansion in `readLines()` (`src/lib/queries/availability.ts`)
+- Standalone bundle lines (`product_id === null` with `bundle_id !== null`) are expanded into constituent `bundle_items` with quantities calculated as `line.qty * item.quantity`.
+- Member product names are read through `products_v` (`.select('id, name')`, Law 6 compliant without selecting money columns) to build informative labels (`${bundleLabel} · ${productName}`).
+- Bundle parent lines that already have child lines in the booking (`parent_line_id === row.id`) are marked skipped as parent-only lines so their child lines carry assignments without item duplication.
+
+### 2. Floor Projection (`booking_line_units`) Generation
+- In `reserveAssignedUnits` and `createBookingLineUnits`, assigned physical units are projected into `booking_line_units` (`asset_id: unit.unitId`, `qty: 1`, `unit_state: 'Ready'`, `is_required: true`, `packed: false`, `created_by: ctx.userId`).
+- Unblocks floor operations (Packing, Handover, Return, Reset, Evidence) by ensuring confirmed bookings arrive on the floor with assigned serials.
+
+### 3. Law 3 Release Compensation
+- Implemented `releaseBookingLineUnits(unitIds, reason)`: because `trg_booking_line_units_reject_delete` strictly rejects `DELETE FROM booking_line_units`, compensation sets `asset_id: null` and `is_required: false` via UPDATE.
+- Wired into `src/actions/rentals/confirmRental.ts` across both rollback paths (`!ok` refusal and `persisted !== to` verification failure) alongside `releaseReservations()`.
+
+### 4. Schema Typing & Comprehensive Test Coverage
+- Added `booking_line_units` table definition to `src/types/database.ts` for typed data-access source switch operations.
+- Created `src/lib/queries/__tests__/availabilityLines.test.ts` (9 tests) testing bundle expansion, child line handling, projection creation, and rollback.
+- Updated `src/actions/rentals/__tests__/confirmRental.test.ts` with assertions verifying both `releaseReservations` and `releaseBookingLineUnits` are called on transition refusal and verification failure.
+
 ## 2026-10-07 — Law 6 closed at the database: migration 0062 applied and verified live
 
 **Phase:** 1 (Schema) → Phase 2 unblocked · **Status:** `tsc --noEmit` exit 0 · `0062` applied with approval and verified live
