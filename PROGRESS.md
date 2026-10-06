@@ -17,7 +17,7 @@
 - Not independently proven: a mock-flag build still passes the dist guard (that build does not bundle the corpus either), so the only real-bundle positive control is the leak observed before the fix.
 
 **Blocked / open**
-- **0156 must be applied to live by Babin** (live still has 0154's null-actor trigger).
+- ~~0156 must be applied to live~~ — **applied to live 2026-10-06 on Babin's explicit instruction and recorded in `schema_migrations`.** Verified live: `trg_audit_operation_sessions` now runs `log_operation_session_audit`; a test UPDATE inside a rolled-back transaction wrote a row with an actor, class `session`, module `Operations`; audit_events total unchanged (79); anon cannot execute the function.
 - 0150, 0153 and 0155 still lack `schema_migrations` rows (see 2026-10-06 (g)).
 - Rotate the DB password (printed once in chat). §4.36 still unruled.
 
