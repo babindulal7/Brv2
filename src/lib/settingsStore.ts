@@ -462,10 +462,90 @@ export function validateSetting(key: SettingKey, value: SettingValue): string | 
   return spec.validate?.(value) ?? null
 }
 
+/**
+ * RULING 2026-10-07 (G1): settings are shared across devices through the `settings` table (0158).
+ * Only these two stay per-device — they are how THIS screen looks and reads, not business rules.
+ */
+export const DEVICE_LOCAL_KEYS: readonly SettingKey[] = ['density', 'language']
+export function isDeviceLocalKey(key: SettingKey): boolean {
+  return DEVICE_LOCAL_KEYS.includes(key)
+}
+
+/* The last values read from the database. `org` is the business-wide value; `byLocation` carries
+   per-branch overrides (only operationalDayStart may have one — enforced by set_setting()). */
+let remoteOrg: Partial<Record<SettingKey, SettingValue>> = {}
+let remoteByLocation: Record<string, Partial<Record<SettingKey, SettingValue>>> = {}
+const listeners = new Set<() => void>()
+
+export interface RemoteSettingRow {
+  key: string
+  value: unknown
+  scope: 'org' | 'location'
+  location_id: string | null
+}
+
+function coerce(key: SettingKey, raw: unknown): SettingValue | null {
+  const spec = SETTING_SPECS[key]
+  const v: SettingValue | null =
+    spec.kind === 'number' ? (typeof raw === 'number' || typeof raw === 'string' ? Number(raw) : null) : raw == null ? null : String(raw)
+  if (v === null || (typeof v === 'number' && !Number.isFinite(v))) return null
+  return validateSetting(key, v) === null ? v : null
+}
+
+/** Replace the in-memory copy with what the database returned. A row that no longer validates is ignored. */
+export function applyRemoteSettings(rows: readonly RemoteSettingRow[]): void {
+  const org: Partial<Record<SettingKey, SettingValue>> = {}
+  const loc: Record<string, Partial<Record<SettingKey, SettingValue>>> = {}
+  for (const r of rows) {
+    if (!(r.key in SETTING_SPECS) || isDeviceLocalKey(r.key as SettingKey)) continue
+    const key = r.key as SettingKey
+    const v = coerce(key, r.value)
+    if (v === null) continue
+    if (r.scope === 'location' && r.location_id) (loc[r.location_id] ??= {})[key] = v
+    else if (r.scope === 'org') org[key] = v
+  }
+  remoteOrg = org
+  remoteByLocation = loc
+  listeners.forEach((fn) => fn())
+}
+
+/** Optimistic update after a successful set_setting(). */
+export function applyRemoteSettingPatch(patch: Partial<SettingsRecord>): void {
+  remoteOrg = { ...remoteOrg, ...patch }
+  listeners.forEach((fn) => fn())
+}
+
+export function subscribeSettings(fn: () => void): () => void {
+  listeners.add(fn)
+  return () => listeners.delete(fn)
+}
+
+/** Test seam. */
+export function clearRemoteSettings(): void {
+  remoteOrg = {}
+  remoteByLocation = {}
+}
+
+/**
+ * location → org → default. A branch override (D-1: operationalDayStart only) wins for that branch;
+ * everything else is the business-wide value.
+ */
+export function getSettingForLocation(key: SettingKey, locationId: string | null | undefined): SettingValue {
+  const override = locationId ? remoteByLocation[locationId]?.[key] : undefined
+  return override ?? getSetting(key)
+}
+
 export function readSettings(): SettingsRecord {
-  if (typeof window === 'undefined') return { ...SETTINGS_DEFAULTS }
+  if (typeof window === 'undefined') return { ...SETTINGS_DEFAULTS, ...remoteOrg }
   const out = { ...SETTINGS_DEFAULTS }
   for (const key of Object.keys(SETTING_SPECS) as SettingKey[]) {
+    /* A shared value wins over this device's old localStorage copy. A key the database has no row for
+       yet falls through to the local value, so nothing reverts the day this ships. */
+    const shared = isDeviceLocalKey(key) ? undefined : remoteOrg[key]
+    if (shared !== undefined) {
+      out[key] = shared
+      continue
+    }
     /* Guarded — this sweep runs on the load path and WebKit can throw. */
     const raw = readLocal(PREFIX + key)
     if (raw === null) continue

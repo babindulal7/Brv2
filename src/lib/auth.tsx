@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react'
 import { supabase, IS_MOCK } from './supabase'
 import { getSetting } from './settingsStore'
+import { hydrateSharedSettings } from './settingsSync'
 import { captureError } from './monitoring'
 import { purgeDeviceReadCaches } from './devicePurge'
 
@@ -634,6 +635,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!hasPin) return
     setLocked(true)
   }, [hasPin])
+
+  /* G1: shared settings load once a staff session exists — before that, RLS would return nothing. */
+  const signedInId = user?.id ?? null
+  useEffect(() => {
+    if (signedInId) void hydrateSharedSettings()
+  }, [signedInId])
 
   useEffect(() => {
     // Nothing to lock when signed out, and no point re-arming while the curtain

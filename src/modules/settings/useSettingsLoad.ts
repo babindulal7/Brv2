@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { readSettings, languageCodeOf } from '../../lib/settingsStore'
+import { hydrateSharedSettings } from '../../lib/settingsSync'
 import type { SettingsRecord } from '../../lib/settingsStore'
 import { applyLanguage } from '../../lib/i18n'
 
@@ -50,6 +51,8 @@ export function useSettingsLoad(): SettingsLoadResult {
 
     void (async () => {
       try {
+        /* Best-effort: offline, the screen shows the last values this device had. */
+        await hydrateSharedSettings().catch(() => undefined)
         const settings = readSettings()
         /* The stored language is applied before the page is declared ready, so
            a Nepali session never paints an English first frame. */
