@@ -47,6 +47,7 @@ import {
   type Line,
   type CrewLine,
 } from './booking'
+import { useNewRentalProductDeposits } from './booking/useNewRentalProductDeposits'
 export type { Line, CrewLine, BlockingNotice, ConfirmWriteState }
 export { lineAmountPaisa, confirmWriteRefusals }
 
@@ -364,6 +365,9 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     })
   }, [days])
 
+  /* C6 — what the products on this booking ask as a deposit. Read once per set of products. */
+  const { terms: productDepositTerms, error: productDepositError } = useNewRentalProductDeposits(lines)
+
   /* ── §10.1 canonical calculation order — via calculatePricingPipeline (Task 6) ── */
   const {
     equipmentLines,
@@ -393,6 +397,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     vatOn,
     vatRatePercent,
     savedDepositPaisa,
+    productDepositTerms,
     manualDepositOverride,
     manualDepositAmount,
     depositOverrideReason,
@@ -814,6 +819,13 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
             Discard
           </Button>
         </div>
+      )}
+      {productDepositError && canBookingMoney && (
+        <p role="status" style={inlineErrorStyle}>
+          <Icon name="error" size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+          The deposit set on each product could not be read, so the recommended security deposit is the standard rule
+          only. Check it before confirming.
+        </p>
       )}
       {/* Errors are inline and persistent, never a toast and never an alert(). */}
       {actionError && (

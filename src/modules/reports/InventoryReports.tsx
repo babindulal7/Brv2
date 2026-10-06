@@ -13,6 +13,7 @@ import {
 } from '../../lib/queries/inventoryReports'
 import { formatMoney, rupees } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import ShortageSection from './ShortageSection'
 
 /**
  * The export body.
@@ -127,6 +128,10 @@ export default function InventoryReports() {
           },
         ]}
       />
+
+      {/* C7 — the one list of over-committed products for a period. Real holds and
+          real stock; every other figure on this page is still the seeded snapshot. */}
+      <ShortageSection />
 
       {/* Rulings §7 — these tables are the report's CONTENT, not a rail. They
           used to be passed into `ReflowRail`, which at desktop is a 288px

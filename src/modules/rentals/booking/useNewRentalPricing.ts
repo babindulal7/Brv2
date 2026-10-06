@@ -6,6 +6,11 @@ import {
 } from '../../../lib/pricingPipeline'
 import { rupees, type Paisa } from '../../../lib/money'
 import { rentalDaysBetween } from '../../../lib/rentalDays'
+import {
+  productDepositPaisa,
+  recommendedDepositWithProducts,
+  type ProductDepositTerms,
+} from '../../../lib/productDeposit'
 import { lineAmountPaisa, type Line } from './RentalLineItemsTree'
 import type { CrewLine } from './CrewSection'
 
@@ -28,6 +33,8 @@ export interface UseNewRentalPricingOptions {
   vatOn: boolean
   vatRatePercent: number
   savedDepositPaisa: Paisa | null
+  /** C6 — deposit terms of the products on the booking; empty/omitted leaves the flat rule alone. */
+  productDepositTerms?: ReadonlyMap<string, ProductDepositTerms> | undefined
   manualDepositOverride: boolean
   manualDepositAmount: string
   depositOverrideReason: string
@@ -91,6 +98,7 @@ export function useNewRentalPricing({
   vatOn,
   vatRatePercent,
   savedDepositPaisa,
+  productDepositTerms,
   manualDepositOverride,
   manualDepositAmount,
   depositOverrideReason,
@@ -158,8 +166,11 @@ export function useNewRentalPricing({
   const recommendedDepositPaisa = useMemo<Paisa>(() => {
     const totalGear = equipmentPaisa + bundlePaisa + subRentalPaisa
     if (totalGear <= 0) return 0 as Paisa
-    return Math.max(500000, Math.round(totalGear)) as Paisa
-  }, [equipmentPaisa, bundlePaisa, subRentalPaisa])
+    const flatRule = Math.max(500000, Math.round(totalGear)) as Paisa
+    /* C6 — raised, never lowered, by what the products themselves ask. */
+    const fromProducts = productDepositTerms ? productDepositPaisa(lines, productDepositTerms) : (0 as Paisa)
+    return recommendedDepositWithProducts(flatRule, fromProducts)
+  }, [equipmentPaisa, bundlePaisa, subRentalPaisa, lines, productDepositTerms])
 
   const manualDepositPaisa = useMemo<Paisa | null>(() => {
     if (!manualDepositOverride) return null
