@@ -12,7 +12,7 @@
  * Revert = delete this script and its package.json entry.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = process.env.FIXTURE_GUARD_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -58,7 +58,7 @@ console.log(`check-no-fixtures: PASS (${checked} production files scanned, 0 fix
 // Optional proof: with --dist, fail if the built bundle still carries fixture markers. The marker is a STRING LITERAL
 // ('No mock user'): identifiers like MOCK_LOGINS are renamed by the minifier, so matching them alone passes vacuously.
 if (process.argv.includes('--dist')) {
-  const dist = join(ROOT, process.env.FIXTURE_GUARD_DIST ?? 'dist')
+  const dist = resolve(ROOT, process.env.FIXTURE_GUARD_DIST ?? 'dist')
   const hits = []
   const walk = (d) => {
     for (const e of readdirSync(d)) {

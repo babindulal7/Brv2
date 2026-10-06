@@ -3,7 +3,7 @@
 // A Warehouse return is an operation_sessions row. The ONLY audit record used to be an
 // app-written audit_events row that could fail silently; this proves the DATABASE now records
 // session creation and completion by itself, whoever the caller is.
-// EXCLUDE_MIGRATION=0154 applies everything except that file (proves the test fails without it).
+// EXCLUDE_MIGRATION=0154 or 0156 applies everything except that file (proves the test fails without it).
 import { PGlite } from '@electric-sql/pglite'
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto'
 import { btree_gist } from '@electric-sql/pglite/contrib/btree_gist'
@@ -17,7 +17,7 @@ const skip = process.env.EXCLUDE_MIGRATION
 const db = await PGlite.create({ extensions: { pgcrypto, btree_gist } })
 await db.exec(readFileSync(join(HERE, '..', 'supabase', 'pglite-prelude.sql'), 'utf8'))
 for (const f of readdirSync(MIG).filter((f) => f.endsWith('.sql')).sort()) {
-  if (skip && f.startsWith(skip)) continue
+  if (skip && skip.split(',').some((x) => f.startsWith(x))) continue
   await db.exec(readFileSync(join(MIG, f), 'utf8'))
 }
 
@@ -43,6 +43,10 @@ check((await count(s)) === 1, 'creating a Return session writes one audit row by
 
 await db.query(`update operation_sessions set state = 'Completed', completed_at = now(), completed_by = $2 where id = $1`, [s, actor])
 check((await count(s)) === 2, 'completing the session writes a second audit row')
+
+const actors = (await db.query(`select actor_id, event_class, module from audit_events where table_name='operation_sessions' and record_id=$1 order by created_at, id`, [s])).rows
+check(actors.length === 2 && actors.every((r) => r.actor_id === actor), 'BOTH rows name the actor (insert from created_by, completion from completed_by) - a completion with no "who" is not an audit trail')
+check(actors.every((r) => r.event_class === 'session' && r.module === 'Operations'), 'rows are classed as session / Operations, not generic Rentals')
 
 const last = (await db.query(`select old_values->>'state' as o, new_values->>'state' as n from audit_events where table_name='operation_sessions' and record_id=$1 order by created_at desc, id desc limit 1`, [s])).rows[0]
 check(last?.o === 'Not Started' && last?.n === 'Completed', `the row records the before/after state (${last?.o} → ${last?.n})`)

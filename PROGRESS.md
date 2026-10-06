@@ -1,5 +1,43 @@
 # Progress Log
 
+## 2026-10-06 (j) — Bug review of the Deep Spec adoptions: demo corpus was shipping in production; 0154 audit had no actor
+
+**Did**
+- Reviewed my own session's changes and tested the claims I had made about them. Three real defects:
+  1. **Demo seed corpus shipped in the production bundle.** `Login.tsx` statically imported `MOCK_LOGINS` from the mock client, which pulls `lib/seed.ts` (fake clients and bookings) into `main`. Fixed with `src/lib/devQuickLogins.ts`. Main chunk 543,237 → 479,408 bytes.
+  2. **My `--dist` guard was vacuous** (matched minifier-renamed identifiers). It now matches string literals and is proven on a synthetic leaky and clean bundle.
+  3. **0154's UPDATE audit row had `actor_id = NULL`.** New migration `0156` (written, NOT applied to live) fixes the actor and classifies rows `session`/`Operations`.
+
+**Ruled** — `RULINGS-2026-10-06.md`, "Bug review of the Deep Spec v2 adoptions" (3 rows).
+
+**Verified**
+- Production build: no seed or mock strings in `dist`; `check:fixtures --dist` PASS; a synthetic leaky bundle exits 1, a clean one exits 0.
+- Audit test: the 2 new actor/class checks FAIL against 0154 alone and pass with 0156 (6/6).
+- `typecheck` 0 · `lint` 0 warnings · full vitest 307 files / 4,039 tests green · `check:pglite` 0 view leaks, 0 unauthorized RPCs, 0 unpinned definers · `check:lifecycle` 30/30 · `test:race` green → 0156 is Verified under R-35.
+- Not independently proven: a mock-flag build still passes the dist guard (that build does not bundle the corpus either), so the only real-bundle positive control is the leak observed before the fix.
+
+**Blocked / open**
+- **0156 must be applied to live by Babin** (live still has 0154's null-actor trigger).
+- 0150, 0153 and 0155 still lack `schema_migrations` rows (see 2026-10-06 (g)).
+- Rotate the DB password (printed once in chat). §4.36 still unruled.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 54 | 52 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 154 files · check:pglite 154/154 applied, 0 failed (recorded 2026-10-06T11:40:53.653Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Apply 0156 to live; record 0150/0153/0155 in `schema_migrations`.
+- Real two-connection concurrency test; decide bundle quantity > 1 before wiring `bundleCapacity`; rule §4.36.
+
+
 ## 2026-10-06 (i) — C4 local copy of an unsaved New Rental; C2 not built (conflicts with Law 15)
 
 **Did**
