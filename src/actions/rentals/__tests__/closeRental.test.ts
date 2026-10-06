@@ -116,6 +116,14 @@ const db = vi.hoisted(() => {
   return { state, from, reset }
 })
 
+/* Settings are device-local (localStorage); this suite runs in node, so the one
+   key the action reads is a controllable stand-in. The DATABASE is what enforces
+   the skip — see lifecycle step L30. */
+const settings = vi.hoisted(() => ({ allowDepositSkipOnClose: 'Off' }))
+vi.mock('../../../lib/settingsStore', () => ({
+  getSetting: (key: string) => (key === 'allowDepositSkipOnClose' ? settings.allowDepositSkipOnClose : ''),
+}))
+
 vi.mock('../../../lib/supabase', () => ({
   supabase: { from: db.from },
   newClientUuid: () => 'test-action-key',
@@ -453,6 +461,71 @@ describe('RL-05 — the deposit gate asks what is still held', () => {
 })
 
 /* ── 3 · RL-06 · the count that used to be a constant ───────────────────── */
+
+/* ── RULING 2026-10-06 · close over a held deposit, on a written reason ──── */
+
+describe('depositSkip — Manager and above, switched on, with a reason; moves no money', () => {
+  const MANAGER: ActionContext = { userId: 'usr-mgr', role: 'Manager', isOnline: true }
+  const REASON = 'Client collects the deposit in person next week'
+  const skip = (ctx: ActionContext = MANAGER, reason = REASON) =>
+    closeRental({ bookingNo: 'B-880', clientUuid: ACTION_KEY, depositSkip: { reason } }, ctx)
+
+  function holdDeposit(): void {
+    setUpCloseable()
+    db.state.responses['security_deposits'] = [[{ received_amount: 25000, refunded_amount: 0, applied_amount: 0 }]]
+  }
+
+  beforeEach(() => {
+    settings.allowDepositSkipOnClose = 'Off'
+  })
+
+  it('refuses while Settings has it Off (the default), and writes nothing', async () => {
+    holdDeposit()
+    await expect(skip()).rejects.toThrow(/switched off in Settings/i)
+    expect(transitions()).toHaveLength(0)
+  })
+
+  it('closes a Manager over a held deposit and carries the reason onto the transition row', async () => {
+    settings.allowDepositSkipOnClose = 'On'
+    holdDeposit()
+    const result = await skip()
+
+    expect(result.stage).toBe('Closed')
+    expect(transitions()).toHaveLength(1)
+    expect(transitions()[0]?.payload['deposit_skip_reason']).toBe(REASON)
+    // The deposit is still reported as held: the skip settles nothing (Law 5).
+    expect(result.gates.depositHeldPaisa).toBe(2_500_000)
+  })
+
+  it('refuses a role below Manager before any read', async () => {
+    settings.allowDepositSkipOnClose = 'On'
+    holdDeposit()
+    await expect(skip(ACCOUNTS)).rejects.toThrow(/restricted to Manager and above/i)
+    expect(transitions()).toHaveLength(0)
+  })
+
+  it('refuses a reason under 10 characters, sending nothing', async () => {
+    settings.allowDepositSkipOnClose = 'On'
+    holdDeposit()
+    await expect(skip(MANAGER, 'later')).rejects.toThrow(/at least 10 characters/i)
+    expect(transitions()).toHaveLength(0)
+  })
+
+  it('does not excuse any other gate — an open case still blocks', async () => {
+    settings.allowDepositSkipOnClose = 'On'
+    holdDeposit()
+    db.state.responses['cases'] = [[{ id: 'c1', status: 'Open' }]]
+    await expect(skip()).rejects.toThrow(/No open Case/)
+    expect(transitions()).toHaveLength(0)
+  })
+
+  it('a plain close with no skip is unchanged: the held deposit still blocks', async () => {
+    settings.allowDepositSkipOnClose = 'On'
+    holdDeposit()
+    await expect(close(MANAGER)).rejects.toThrow(/still held/)
+    expect(transitions()).toHaveLength(0)
+  })
+})
 
 describe('RL-06 — damage findings are counted through both parents', () => {
   it('refuses on an unapproved finding written at Return, and counts it', async () => {

@@ -2183,6 +2183,93 @@ const STEPS = [
       await refusesUb('Manager', 'emptying an active bundle', saved.revision, crypto.randomUUID(), { deactivations: saved.rows.map((r) => ({ id: r.id })) }, /at least one component/i)
     },
   },
+
+  {
+    id: 'L30',
+    title: 'Close skips a held deposit only with a reason from Manager+, audited, moving no money (0155)',
+    expect: 'green',
+    async run() {
+      const result = await undone(async () => {
+        await as('Warehouse', async () => {
+          await actionPackRental({ key: 'c', actor: 'Warehouse', units: [{ id: UNITS[0], serial: 'SN-C1' }] })
+          await actionHandoverRental({ key: 'c', actor: 'Warehouse', signerName: 'Lifecycle Client Signer' })
+          await actionReturnRental({ key: 'c', actor: 'Warehouse', returnedUnits: [{ id: UNITS[0] }] })
+        })
+
+        /* A deposit of 5,000 collected in full and never returned: HELD. */
+        await asOwnerOfTheDatabase(async () => {
+          await q(
+            `insert into security_deposits (client_uuid, deposit_no, booking_id, client_id, branch_id, required_amount)
+             select gen_random_uuid(), 'SD-L30', b.id, b.client_id, $2::uuid, 5000 from bookings b where b.id = $1::uuid`,
+            [bookingIds.c, BRANCH],
+          )
+          await q(
+            `insert into deposit_movements (client_uuid, movement_no, security_deposit_id, movement_type, amount, handled_by)
+             select gen_random_uuid(), 'DM-L30', id, 'Received', 5000, $1::uuid from security_deposits where deposit_no = 'SD-L30'`,
+            [U.Owner],
+          )
+        })
+
+        const closeAs = (actor, extra) =>
+          q(
+            `insert into booking_stage_transitions
+               (client_uuid, booking_id, branch_id, from_stage, to_stage, actor_id, actor_role, occurred_at, reason, deposit_skip_reason)
+             values (gen_random_uuid(), $1, $2, 'Returned', 'Closed', $3, $4, now(), $5, $6)`,
+            [bookingIds.c, BRANCH, U[actor], actor, 'Zero-value goodwill job for the lifecycle test', extra ?? null],
+          )
+
+        /* A refused insert aborts the transaction, so every probe sits behind a
+           savepoint it can roll back to; the setup above survives. */
+        const tryClose = async (actor, skip) => {
+          let message = null
+          await as(actor, async () => {
+            await q('savepoint probe')
+            try {
+              await closeAs(actor, skip)
+              await q('release savepoint probe')
+            } catch (e) {
+              message = String(e.message)
+              await q('rollback to savepoint probe')
+            }
+          })
+          return message
+        }
+
+        /* 1. No skip: the held deposit still blocks Close. */
+        const refusedWithoutSkip = await tryClose('Owner', null)
+        assert(refusedWithoutSkip !== null, 'a held deposit did not block Close')
+        assert(/unresolved security deposit/i.test(refusedWithoutSkip), `refused by the wrong gate — ${refusedWithoutSkip.split('\n')[0]}`)
+
+        /* 2. A reason too short is refused by the table's own check. */
+        const tooShort = await tryClose('Owner', 'short')
+        assert(tooShort !== null && /deposit_skip_only_on_close/i.test(tooShort), 'a skip reason under 10 characters was accepted')
+
+        /* 3. A Coordinator may not skip, even with a full reason. */
+        const coordinatorRefused = await tryClose('Coordinator', 'Client collects the deposit in person next week')
+        assert(coordinatorRefused !== null, 'a Coordinator closed a rental over a held deposit')
+
+        /* 4. Owner + reason: closes, audited, no money moved. */
+        const ownerSkip = await tryClose('Owner', 'Client collects the deposit in person next week')
+        assert(ownerSkip === null, `Owner with a reason was refused — ${String(ownerSkip).split('\n')[0]}`)
+        const stage = await stageOf('c')
+        const audit = await asOwnerOfTheDatabase(() =>
+          one(
+            `select count(*) from audit_events
+              where record_id = $1 and new_values->>'gate' = 'close_deposit_skipped'`,
+            [bookingIds.c],
+          ),
+        )
+        const held = await asOwnerOfTheDatabase(() =>
+          one(`select received_amount - refunded_amount - applied_amount from security_deposits where deposit_no = 'SD-L30'`),
+        )
+        return { stage, audit: Number(audit), held: Number(held) }
+      })
+
+      assertEq(result.stage, 'Closed', 'Owner with a reason closes over a held deposit')
+      assertEq(result.audit, 1, 'the skip wrote exactly one audit event')
+      assertEq(result.held, 5000, 'the deposit is still held after the skip — no money moved (Law 5)')
+    },
+  },
 ]
 
 /* ── Run ──────────────────────────────────────────────────────────────────── */

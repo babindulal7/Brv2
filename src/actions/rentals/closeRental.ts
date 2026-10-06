@@ -2,6 +2,7 @@ import { createAction, type ActionContext } from '../core'
 import { EVENT_TYPES } from '../../events/eventBus'
 import { applyBookingTransition } from '../../lib/bookingTransition'
 import { supabase } from '../../lib/supabase'
+import { getSetting } from '../../lib/settingsStore'
 import type { CloseGateInput } from '../../lib/workflow'
 import type { SystemRole } from '../../types/database'
 
@@ -92,6 +93,15 @@ export type CloseRentalInput = {
    * Gated on `Owner | Admin` and requires a mandatory reason of at least 10 characters.
    */
   override?: {
+    reason: string
+  }
+  /**
+   * RULING 2026-10-06 (migration 0155) — close with the deposit unresolved, on a
+   * written reason. Manager and above; offered only while Settings ▸ Financial ▸
+   * Deposit rules allows it. Moves no money (Law 5): the deposit stays held and
+   * the skip is audited with the amounts. The database enforces role and reason.
+   */
+  depositSkip?: {
     reason: string
   }
 }
@@ -373,6 +383,9 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
       // a different key, and `booking_stage_transitions` exists to refuse that.
       throw new Error('This close carries no idempotency key, so a retry could advance two stages. Nothing was sent.')
     }
+    if (input.depositSkip !== undefined && input.depositSkip.reason.trim().length < 10) {
+      throw new Error('Closing without settling the deposit needs a written reason of at least 10 characters. Nothing was sent.')
+    }
     if (input.override !== undefined) {
       if (!input.override.reason || input.override.reason.trim().length < 10) {
         throw new Error(
@@ -400,6 +413,18 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
     if (isOverride && ctx.role !== 'Owner' && ctx.role !== 'Admin') {
       throw new Error(
         `A zero-value close override is restricted to Owner and Admin (called by ${ctx.role}). Nothing was closed.`,
+      )
+    }
+
+    const isDepositSkip = input.depositSkip !== undefined
+    if (isDepositSkip && !['Owner', 'Admin', 'Manager'].includes(String(ctx.role))) {
+      throw new Error(
+        `Closing without settling the deposit is restricted to Manager and above (called by ${ctx.role}). Nothing was closed.`,
+      )
+    }
+    if (isDepositSkip && getSetting('allowDepositSkipOnClose') !== 'On') {
+      throw new Error(
+        'Closing without settling the deposit is switched off in Settings ▸ Financial ▸ Deposit rules. Nothing was closed.',
       )
     }
 
@@ -448,9 +473,11 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
     }
 
     const rawGates = await readCloseGates(booking.id, bookingNo)
-    const gates: CloseGateInput = isOverride
-      ? { ...rawGates, isZeroValueOverride: true }
-      : rawGates
+    const gates: CloseGateInput = {
+      ...rawGates,
+      ...(isOverride ? { isZeroValueOverride: true } : {}),
+      ...(isDepositSkip ? { depositSkipReason: input.depositSkip!.reason.trim() } : {}),
+    }
 
     const transitionReason = isOverride ? input.override!.reason.trim() : input.reason
 
@@ -520,6 +547,7 @@ export const closeRental = createAction<CloseRentalInput, CloseRentalResult>({
           openCases: gates.openCases,
           damageChargesPendingApproval: gates.damageChargesPendingApproval,
           isZeroValueOverride: isOverride,
+          depositSkipped: isDepositSkip,
           reason: transitionReason ?? null,
           userId: ctx.userId,
         },

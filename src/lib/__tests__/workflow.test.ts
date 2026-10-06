@@ -304,6 +304,36 @@ describe('closeGates — §1.7', () => {
     expect(deposit?.blocking).toMatch(/more deposit has been refunded or applied/i)
   })
 
+  /* ── RULING 2026-10-06 · skip a held deposit with a written reason ──────── */
+
+  it('passes a held deposit only when a skip reason of at least 10 characters is given', () => {
+    const find = (g: Parameters<typeof closeGates>[0]) => closeGates(g).find((x) => x.label === 'Deposit resolved')
+    const held = { ...PASSING_GATES, depositHeldPaisa: 2_500_000 }
+    expect(find({ ...held, depositSkipReason: 'Client collects it next week' })?.passing).toBe(true)
+    expect(find({ ...held, depositSkipReason: 'short' })?.passing).toBe(false)
+    expect(find({ ...held, depositSkipReason: '          ' })?.passing).toBe(false)
+  })
+
+  it('never lets a skip reason excuse an over-refund, which does not reconcile', () => {
+    const deposit = closeGates({
+      ...PASSING_GATES,
+      depositHeldPaisa: -100,
+      depositSkipReason: 'A perfectly long reason',
+    }).find((g) => g.label === 'Deposit resolved')
+    expect(deposit?.passing).toBe(false)
+  })
+
+  it('does not let a deposit skip pass any other close gate', () => {
+    const gates = closeGates({
+      ...PASSING_GATES,
+      depositHeldPaisa: 2_500_000,
+      depositSkipReason: 'Client collects it next week',
+      openCases: 1,
+      rentalOutstandingPaisa: 100,
+    })
+    expect(gates.filter((g) => !g.passing).map((g) => g.label)).toEqual(['Rental Outstanding settled', 'No open Case'])
+  })
+
   /* ── RL-06 · the count that used to be a constant ───────────────────────── */
 
   it('refuses on an unapproved damage finding and counts it in words, singular and plural', () => {

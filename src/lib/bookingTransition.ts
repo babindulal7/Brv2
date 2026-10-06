@@ -105,6 +105,9 @@ export async function applyBookingTransition(req: BookingTransitionRequest): Pro
       to_stage: req.to,
       is_reversal: false,
       reason,
+      ...(req.gates?.depositSkipReason?.trim()
+        ? { deposit_skip_reason: req.gates.depositSkipReason.trim() }
+        : {}),
       occurred_at: occurredAt,
       actor_id: req.actorId,
       actor_role: req.actorRole,

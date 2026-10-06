@@ -430,7 +430,8 @@ Known hole to keep closed: **`security_deposits` was readable by money-blind ses
 | `gate.stock_adjust.negative_result` | Adjustment would make product quantity negative | nobody | — | refused | 0140 |
 | `gate.close.no_invoice` | Returned → Closed with no invoice | nobody | — | yes | Stage 1 (0116) |
 | `gate.close.invoice_unsettled` | Returned → Closed with unsettled invoice | nobody | — | yes | Stage 1 (0116) |
-| `gate.close.deposit_unresolved` | Returned → Closed with unresolved deposit | nobody | — | yes | Stage 1 (0116) |
+| `gate.close.deposit_unresolved` | Returned → Closed with unresolved deposit | **M+ may pass it with a written reason** (0155); nobody otherwise. Offered only while Settings ▸ Financial ▸ Deposit rules is On; the database enforces role and reason regardless | ≥10 chars (`booking_stage_transitions.deposit_skip_reason`) | yes — `audit_events` gate `close_deposit_skipped` with deposit held/pending; **no money moves**, the deposit stays a liability | Stage 1 (0116); RULINGS-2026-10-06 (0155) |
+| `gate.close.deposit_skip_role` | Deposit skip attempted below Manager | nobody | — | refused | 0155 |
 | `gate.close.open_case` | Returned → Closed with open case | nobody | — | yes | Stage 1 (0116) |
 | `gate.close.reservation_live` | Returned → Closed with live reservation | nobody | — | yes | Stage 1 (0116) |
 | `gate.unit_status.direct_write` | Direct write to product_units.status | nobody (engine-owned) | — | yes | Stage 1 (0114) |

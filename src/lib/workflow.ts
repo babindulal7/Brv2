@@ -305,6 +305,13 @@ export interface CloseGateInput {
    * When true and rentalOutstandingPaisa === 0, the invoice gate passes without an issued invoice.
    */
   isZeroValueOverride?: boolean
+  /**
+   * RULING 2026-10-06 (migration 0155) — the written reason a Manager-or-above
+   * gave for closing with the deposit unresolved. Only ever lets the deposit gate
+   * pass; it moves no money and the deposit stays a liability (Law 5). The
+   * database re-checks the reason length and the role.
+   */
+  depositSkipReason?: string
 }
 
 /**
@@ -322,6 +329,9 @@ export function closeGates(i: CloseGateInput): Array<{ label: string; passing: b
     (i.rentalInvoiced && i.rentalOutstandingPaisa === 0) ||
     (i.isZeroValueOverride === true && i.rentalOutstandingPaisa === 0)
   const held = i.depositHeldPaisa
+  /* Only an amount still HELD can be skipped; an over-refund does not reconcile
+     and no reason makes it so. */
+  const depositSkipped = held > 0 && (i.depositSkipReason?.trim().length ?? 0) >= 10
   const pending = i.damageChargesPendingApproval
 
   return [
@@ -338,9 +348,9 @@ export function closeGates(i: CloseGateInput): Array<{ label: string; passing: b
     },
     {
       label: 'Deposit resolved',
-      passing: held === 0,
+      passing: held === 0 || depositSkipped,
       blocking:
-        held === 0
+        held === 0 || depositSkipped
           ? null
           : held > 0
             /* TODO(MONEY-10): drop the second clause once a screen records a Released or

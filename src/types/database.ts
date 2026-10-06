@@ -721,6 +721,8 @@ export interface Database {
           is_reversal: boolean
           approved_by: string | null
           reason: string | null
+          /** 0155 — written only on a Close that skipped an unresolved deposit. */
+          deposit_skip_reason: string | null
           audit_event_id: string | null
           occurred_at: string
           actor_id: string
@@ -738,6 +740,7 @@ export interface Database {
           is_reversal?: boolean
           approved_by?: string | null
           reason?: string | null
+          deposit_skip_reason?: string | null
           audit_event_id?: string | null
           occurred_at?: string
           actor_id: string

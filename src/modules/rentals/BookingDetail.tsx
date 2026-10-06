@@ -85,7 +85,7 @@ import { paymentReceipt } from '../../lib/whatsappTemplates'
 import { buildWaLink } from '../../lib/whatsapp'
 import { openWaLink } from '../../lib/whatsapp'
 import { WhatsAppShareButton } from '../../components/ui/WhatsAppShareButton'
-import { readSettings } from '../../lib/settingsStore'
+import { getSetting, readSettings } from '../../lib/settingsStore'
 import { releaseBookingLineUnit } from '../../actions/rentals/releaseBookingLineUnit'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { deliveryTypeLabel } from '../../lib/format'
@@ -1472,6 +1472,44 @@ function BookingDetailView() {
       })
       .finally(() => setOverriding(false))
   }, [id, user, overrideReason, showSuccessToast, refetchHead])
+
+  /* RULING 2026-10-06 (0155) — close with the deposit unresolved, on a reason.
+     Offered to Manager+ only while Settings ▸ Financial ▸ Deposit rules is On;
+     the database is what actually enforces role and reason. */
+  const [depositSkipOpen, setDepositSkipOpen] = useState(false)
+  const [depositSkipReason, setDepositSkipReason] = useState('')
+  const [depositSkipping, setDepositSkipping] = useState(false)
+  const [depositSkipError, setDepositSkipError] = useState<string | null>(null)
+
+  const submitDepositSkip = useCallback(() => {
+    const ctx = actionCtx(user)
+    if (!ctx) {
+      setDepositSkipError('You must be signed in to close a rental.')
+      return
+    }
+    if (depositSkipReason.trim().length < 10) {
+      setDepositSkipError('A written reason of at least 10 characters is required.')
+      return
+    }
+    setDepositSkipError(null)
+    setDepositSkipping(true)
+    const clientUuid = newClientUuid()
+    void import('../../actions/rentals/closeRental')
+      .then((m) =>
+        m.closeRental({ bookingNo: id, clientUuid, depositSkip: { reason: depositSkipReason.trim() } }, ctx),
+      )
+      .then((res) => {
+        showSuccessToast('Rental Closed', `${res.bookingNo} closed without settling the deposit`)
+        setDepositSkipOpen(false)
+        setDepositSkipReason('')
+        setCloseError(null)
+        refetchHead()
+      })
+      .catch((err: unknown) => {
+        setDepositSkipError(formatGateError(err))
+      })
+      .finally(() => setDepositSkipping(false))
+  }, [id, user, depositSkipReason, showSuccessToast, refetchHead])
 
   const [fulfilling, setFulfilling] = useState(false)
   const [fulfillError, setFulfillError] = useState<string | null>(null)
@@ -2937,6 +2975,23 @@ function BookingDetailView() {
                   </Button>
                 </div>
               )}
+            {/deposit/i.test(closeError) &&
+              ['Owner', 'Admin', 'Manager'].includes(String(user?.role)) &&
+              getSetting('allowDepositSkipOnClose') === 'On' && (
+                <div style={{ marginTop: 'var(--sp-xs)', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setDepositSkipError(null)
+                      setDepositSkipReason('')
+                      setDepositSkipOpen(true)
+                    }}
+                  >
+                    Close without settling deposit
+                  </Button>
+                </div>
+              )}
           </div>
         )}
       </div>
@@ -3181,6 +3236,65 @@ function BookingDetailView() {
           refetchHead()
         }}
       />
+
+      <Modal
+        isOpen={depositSkipOpen}
+        onClose={() => {
+          if (!depositSkipping) {
+            setDepositSkipOpen(false)
+            setDepositSkipReason('')
+            setDepositSkipError(null)
+          }
+        }}
+        title="Close without settling the deposit"
+        subtitle={`Booking ${booking.bookingNo}`}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-sm)' }}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDepositSkipOpen(false)
+                setDepositSkipReason('')
+                setDepositSkipError(null)
+              }}
+              disabled={depositSkipping}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={submitDepositSkip}
+              disabled={depositSkipping || depositSkipReason.trim().length < 10}
+            >
+              {depositSkipping ? 'Closing…' : 'Close rental'}
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+          <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+            The client's deposit stays held — nothing is released, refunded or turned into revenue. Your reason and the
+            amounts still held are written to the audit log.
+          </p>
+          <Input
+            label="Reason"
+            value={depositSkipReason}
+            onChange={(e) => setDepositSkipReason(e.target.value)}
+            placeholder="e.g. Client collecting the deposit in person next week"
+            helperText={`${depositSkipReason.trim().length}/10 characters minimum`}
+            error={
+              depositSkipReason.length > 0 && depositSkipReason.trim().length < 10
+                ? 'Reason must be at least 10 characters.'
+                : null
+            }
+          />
+          {depositSkipError && (
+            <div role="alert" style={{ fontSize: 'var(--t-meta)', color: 'var(--danger-text)' }}>
+              {depositSkipError}
+            </div>
+          )}
+        </div>
+      </Modal>
 
       <Modal
         isOpen={overrideModalOpen}

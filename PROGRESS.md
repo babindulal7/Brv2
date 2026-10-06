@@ -1,5 +1,86 @@
 # Progress Log
 
+## 2026-10-06 (h) — Close may skip a held deposit with a written reason (migration 0155)
+
+**Did**
+- Migration `0155_close_deposit_skip_with_reason.sql` (written, NOT applied to live — N-5): `booking_stage_transitions.deposit_skip_reason` + a check (≥10 chars, Closed only); `apply_booking_stage_transition` gate (c) now accepts a skip from Manager+ with that reason and writes one `audit_events` row (`close_deposit_skipped`, held/pending amounts). No money moves; the deposit stays a liability.
+- Engine/action: `closeGates` takes `depositSkipReason`; `bookingTransition` writes the column; `closeRental` takes `depositSkip` (Manager+, and only while the setting is On).
+- Settings ▸ Financial ▸ new **Deposit rules** card (`allowDepositSkipOnClose`, Off/On, default Off). BookingDetail shows "Close without settling deposit" (Manager+, setting On, close refused over the deposit) with a reason modal. Gate registry, PERMISSIONS §6.1, RULINGS-2026-10-06 updated.
+- Found and fixed by the new lifecycle step: 0135's zero-value close override wrote audit action `'CloseOverride'`, which is not in the `audit_action` enum, so the Owner/Admin override failed in the database. 0155 uses `'Approve'` for both.
+
+**Ruled**
+- RULINGS-2026-10-06 "Close may skip a held deposit…" rows 1–4. Open: the role check keeps the existing `actor_role` clause (client-supplied); dropping it is stricter but breaks the JWT-less PGlite lifecycle — Babin to decide.
+
+**Verified**
+- `check:pglite`: 153/153 applied, 0 failed. `check:lifecycle`: 30/30 green, including new **L30** (held deposit blocks Close; reason <10 chars refused by the table check; Coordinator refused; Owner + reason closes, one audit row, deposit still 5,000 held).
+- `tsc --noEmit` 0, `eslint src --max-warnings 0` 0, full `vitest run` 301 files / 4,009 tests green (new: 3 `closeGates` cases, 6 `closeRental` depositSkip cases).
+- NOT verified by driving the app: the browser pane refused localhost earlier, so the Settings card, Close button and modal have not been seen rendered. Release / forfeit of a deposit remain unbuilt and unruled.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 54 | 52 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +1 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 153 files · check:pglite 153/153 applied, 0 failed (recorded 2026-10-06T07:54:30.287Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Gates read from .lifecycle-result.json, written 2026-10-06T07:54:18.479Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Apply 0155 to live after the backup step (Babin's action, N-5).
+- Open ruling: drop the client-supplied `actor_role` clause in the skip role check?
+- R3 remainder: who may release or forfeit a deposit, and whether forfeit needs a reason (no screen records either yet).
+- Look at the Settings card and Close modal in a browser.
+
+## 2026-10-06 (g) — Deep Spec v2: four safe adoptions (fixture guard, last-unit race, bundle capacity, session audit)
+
+**Did**
+- Reviewed `Babin_Rentals_OS_Deep_Spec_v2.zip` against the repo. Adopted only additive, decision-free parts; role names, capability strings, tenant model and phase order deliberately not adopted (N-1, N-6).
+- `scripts/check-no-fixtures.mjs` (`npm run check:fixtures`): fails on production imports of mock/fake/demo/sample/fixture paths. Real finding: `supabase.ts` and `Login.tsx` import `__mocks__` behind `IS_MOCK`; allowlisted, and `--dist` proves the built bundle carries no mock client.
+- `scripts/test-last-unit-race.mjs` (`npm run test:race`): 4 contenders for one unit, head/tail/inside overlap, back-to-back boundaries, per-unit independence, quantity ceiling.
+- `src/lib/bundleAvailability.ts` + test: how many WHOLE bundles can go out (limiting component). Pure, not wired. Correction: the UI already has a per-component bundle verdict (`itemCatalogue.ts` `bundleAvailability`); this adds only the whole-bundle count, so it matters only when a bundle is booked at quantity > 1.
+- `supabase/migrations/0154_operation_sessions_audit_trigger.sql` + `scripts/test-operation-session-audit.mjs`: database now audits Warehouse return sessions itself. **Not applied to live (N-5).**
+
+**Ruled** — see `RULINGS-2026-10-06.md`, "Deep Spec v2 safe adoptions" (4 rows). §4.36 remains open and untouched.
+
+**Verified**
+- Fixture guard: PASS on the real tree (580 files); FAILS on planted `mock/` and `sampleData` imports and ignores `__tests__` and the name `mockingbird`; `--dist` PASS after `npm run build`.
+- Race test: all pass. **Mutation-checked:** dropping the exclusion constraint fails 4 checks; dropping the capacity trigger fails the ceiling check. First draft used a 1-unit product, where the capacity trigger masked the constraint — fixed by choosing a 2–4 unit product. **Limit: sequential, not interleaved (PGlite is single-connection); true concurrency is unproven.**
+- Bundle capacity: 10/10 tests; swapping `floor` for `round` fails 3.
+- Session audit: fails 4/4 with `EXCLUDE_MIGRATION=0154`, passes 4/4 with it.
+- `npm run typecheck` 0 · `npm run lint` 0 warnings · `npx vitest run` 301 files / 4000 tests green · `npm run build` ok · `check:pglite` 152/152, 0 leaks · `check:lifecycle` 29/29 → migration 0154 is **Verified** under R-35.
+
+**Live apply (06 Oct 2026, on Babin's explicit instruction, N-5)**
+- Read-only probe first: `operation_sessions` and `log_audit_event()` present, 0154 absent, live holds 2 bookings / 4 sessions / 79 audit rows.
+- Backup before change: all 133 public tables, 476 rows, `backups/live_data_2026-10-06T08-22-07-283Z.json` (now gitignored: client PII). No `pg_dump` on this machine, so this is a data export, not a schema dump.
+- Applied **only 0154** and recorded it in `schema_migrations`. The 0125–0153 cutover is still NOT done and was not touched.
+- Verified live: trigger `trg_audit_operation_sessions` now present; a test UPDATE inside a transaction raised that session's audit rows 7 → 8, and a ROLLBACK returned it to 7; audit_events total unchanged at 79.
+- Credential hygiene: the DB password was printed into the chat once by a grep during this session (N-8). **Rotate it.**
+
+**Blocked / open**
+- True concurrent-reservation proof needs a real Postgres with two connections.
+- `bundleCapacity` is not consumed anywhere. Wiring is optional and only worthwhile if bundles can be booked at quantity > 1 (needs a product answer); the existing per-component verdict already covers quantity 1.
+- §4.36 (failed app-side audit write) still needs the owner's ruling.
+- ~~0154 must be applied by Babin~~ — **applied to live 2026-10-06 on Babin's explicit instruction (see Live apply below).**
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 54 | 52 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 29 / 29 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 152 files · check:pglite 152/152 applied, 0 failed. Counted by `npm run completion`, not typed.
+
+### Remaining
+- Live cutover: backup, then apply 0090→0154 in order, then check-db.sql and per-role probes.
+- Real two-connection concurrency test; decide whether bundle quantity > 1 is a real case before wiring `bundleCapacity`; rule §4.36.
+
 ## 2026-10-06 (f) — NewRental Orchestrator Decomposition: RentalLineItemsTree, CrewSection & RentalPricingSection (Item 13)
 
 **Did**

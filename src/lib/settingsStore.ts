@@ -40,6 +40,7 @@ export type SettingKey =
   | 'paymentTermsDays'
   | 'overdueStopDays'
   | 'latePaymentPercentPerMonth'
+  | 'allowDepositSkipOnClose'
   | 'sessionTimeoutMinutes'
   | 'passwordPolicy'
   | 'density'
@@ -176,6 +177,18 @@ export const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
     suffix: '% / month',
     validate: (v) => percent(v, 'Late payment interest'),
   },
+  /**
+   * **RULING 2026-10-06 (migration 0155)** — whether Close offers "Skip deposit
+   * with a reason" to Manager and above. `Off` is the default: until an owner
+   * turns it on, an unresolved deposit blocks Close exactly as before.
+   *
+   * ⚠ This only decides whether the BUTTON is offered, on this device. It is
+   * not the enforcement — `apply_booking_stage_transition` accepts a skip only
+   * with a reason of at least 10 characters from Manager or above, whatever
+   * this says. Revert = delete this key; nothing else reads it but `closeRental`
+   * and the Close control.
+   */
+  allowDepositSkipOnClose: { default: 'Off', kind: 'select', options: ['Off', 'On'] },
   /**
    * The idle screen lock, in minutes. **`0` means off, and off is the default**
    * (ruled by the owner 25 Aug 2026).

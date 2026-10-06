@@ -139,6 +139,19 @@ export const FINANCIAL_SECTIONS: Section[] = [
     ],
   },
   {
+    key: 'deposit-rules',
+    title: 'Deposit rules',
+    icon: 'lock',
+    fields: [
+      {
+        label: 'Allow closing without settling the deposit',
+        note: 'Off by default. When On, Manager and above see "Close without settling deposit" on a rental whose deposit is still held; it needs a written reason of at least 10 characters and is recorded in the audit log. The deposit stays held — nothing is released, refunded or turned into revenue. The database refuses a skip without the reason or from a lower role, whatever this says.',
+        settingKey: 'allowDepositSkipOnClose',
+        readBy: 'the Close control on a booking',
+      },
+    ],
+  },
+  {
     key: 'booking-rules',
     title: 'Booking rules',
     icon: 'lock',

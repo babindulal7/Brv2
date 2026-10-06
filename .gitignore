@@ -75,3 +75,6 @@ files.zip
 .specify/
 
 
+
+# local data backups (contain client PII)
+backups/

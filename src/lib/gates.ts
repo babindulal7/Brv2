@@ -310,10 +310,28 @@ export const GATE_REGISTRY: Record<string, GateDefinition> = {
       ne: 'फिर्ता वा जफत नगरिएको सक्रिय धरौटी रकम बाँकी रहँदा बुकिङ बन्द गर्न सकिँदैन।',
     },
     howToResolve: {
-      en: 'Confirm deposit refund or record damage forfeiture in the finance section.',
-      ne: 'वित्त खण्डमा धरौटी फिर्ता पुष्टि गर्नुहोस् वा क्षति बापत रकम कट्टा रेकर्ड गर्नुहोस्।',
+      en: 'Confirm deposit refund or record damage forfeiture in the finance section. A Manager or above may instead close without settling it, with a written reason, when Settings ▸ Financial ▸ Deposit rules allows it.',
+      ne: 'वित्त खण्डमा धरौटी फिर्ता पुष्टि गर्नुहोस् वा क्षति बापत रकम कट्टा रेकर्ड गर्नुहोस्। सेटिङले अनुमति दिएमा प्रबन्धक वा माथिकाले लिखित कारणसहित फर्स्यौट नगरी बन्द गर्न सक्नुहुन्छ।',
     },
-    whoMayOverride: 'Nobody',
+    whoMayOverride: 'Manager or above',
+  },
+
+  'gate.close.deposit_skip_role': {
+    id: 'gate.close.deposit_skip_role',
+    category: 'close',
+    title: {
+      en: 'Deposit Skip Needs Manager',
+      ne: 'धरौटी छोड्न प्रबन्धक आवश्यक छ',
+    },
+    message: {
+      en: 'Only a Manager, Admin, or Owner may close a rental without settling its deposit.',
+      ne: 'प्रबन्धक, प्रशासक, वा मालिकले मात्र धरौटी फर्स्यौट नगरी बुकिङ बन्द गर्न सक्नुहुन्छ।',
+    },
+    howToResolve: {
+      en: 'Ask a Manager or above to close it, or settle the deposit first.',
+      ne: 'प्रबन्धक वा माथिकालाई बन्द गर्न भन्नुहोस्, वा पहिले धरौटी फर्स्यौट गर्नुहोस्।',
+    },
+    whoMayOverride: 'Manager or above',
   },
 
   'gate.close.open_case': {
