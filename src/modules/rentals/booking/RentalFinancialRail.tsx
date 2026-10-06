@@ -316,7 +316,7 @@ export function RentalFinancialRail({
                     onChange={(e) => {
                       onPromoCodeInput(e.target.value.toUpperCase())
                     }}
-                    placeholder="e.g. NEPALFILM, MONSOON26"
+                    placeholder="Promo code"
                     style={{ ...inputStyle, textTransform: 'uppercase' }}
                   />
                   <Button variant="secondary" type="button" onClick={() => onApplyPromo(promoCodeInput.trim().toUpperCase())}>

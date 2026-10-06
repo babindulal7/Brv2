@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import {
   calculatePricingPipeline,
   type PricingPipelineResult,
-  PROMO_CODES,
+  type PromoCodeDefinition,
 } from '../../../lib/pricingPipeline'
 import { rupees, type Paisa } from '../../../lib/money'
 import { rentalDaysBetween } from '../../../lib/rentalDays'
@@ -29,7 +29,7 @@ export interface UseNewRentalPricingOptions {
   manualDiscountReason: string
   manualDiscountAuthorizedBy: string
   womenDopEligible: boolean
-  promoCodeApplied: string | null
+  promoCodeApplied: PromoCodeDefinition | null
   vatOn: boolean
   vatRatePercent: number
   savedDepositPaisa: Paisa | null
@@ -179,8 +179,7 @@ export function useNewRentalPricing({
   }, [manualDepositOverride, manualDepositAmount])
 
   const pricing = useMemo<PricingPipelineResult>(() => {
-    const promoCodeKey = promoCodeApplied ? String(promoCodeApplied).toUpperCase() : null
-    const promo = promoCodeKey ? (PROMO_CODES[promoCodeKey] ?? null) : null
+    const promo = promoCodeApplied
     return calculatePricingPipeline({
       equipmentSubtotalPaisa: equipmentPaisa,
       bundleSubtotalPaisa: bundlePaisa,
