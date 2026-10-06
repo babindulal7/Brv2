@@ -137,7 +137,7 @@ Counted by `npm run completion`, not typed.
 **Live cutover (06 Oct 2026, on Babin's explicit instruction)**
 - Applied to live, in order: 0148, 0150, 0151, 0153, 0155 (all ran without error). Before: definitions of 103 functions and 30 views saved to `backups/live_definitions_2026-10-06T08-56-33-610Z.json`.
 - Verified by grants, not by an anon query: no public view is readable by `anon` (0 of 30), `audit_logs` / `staff_directory_v` / `product_units_service_v` are `authenticated` only, `cancel_booking` is not executable by anon, payment sequence is padding 1 / no year (`PAY-94`). Row counts unchanged (2 bookings, 79 audit rows).
-- **Known bookkeeping gap:** `schema_migrations` records only 0148, 0151 and 0154. 0150, 0153 and 0155 RAN but were not recorded (version-stamp collision in my script, hidden by `on conflict do nothing`). The attempt to record them was blocked, so Babin must insert them. Until then, any tool that reads `schema_migrations` will think they are pending.
+- **Bookkeeping (resolved except cosmetics):** 0150, 0153 and 0155 ran but my script did not record them (version-stamp collision hidden by `on conflict do nothing`). Babin inserted them by hand; checked 2026-10-06: all three names are in `schema_migrations` and their effects are live. **Their `version` values are the placeholders `V1`/`V2`/`V3`, not 14-digit stamps** — harmless to this repo's scripts (they match on name), but the Supabase CLI expects timestamps. Re-stamping was blocked in this session; the optional UPDATE is in the chat of 2026-10-06.
 - First attempt at "anon BEFORE/AFTER" printed `denied` both times, so it proved nothing and is not cited as evidence.
 
 **Blocked / open**
