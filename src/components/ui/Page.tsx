@@ -205,7 +205,10 @@ export interface Kpi {
   accent: BrandKey
   /** Delta line, e.g. "8.4% vs last month". */
   delta?: { direction: 'up' | 'down'; text: string; good?: boolean }
+  /** Extra explanation — shown in the card's (i) tooltip, not on its face. */
   note?: string
+  /** A secondary FIGURE (e.g. "Rs 1,234 receivable") — stays visible on the card. */
+  detail?: string
   /** Law L1 — Every money tile carries its one-line definition tooltip (§9.3, §15.1) */
   definition?: string
   /** Law L2 — Every computed figure resolving to zero or less explains itself (§10.3) */
@@ -248,6 +251,10 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
     >
       {items.map((k) => {
         const isZero = k.value === '0' || k.value === 'Rs 0' || k.value === 'Rs. 0' || k.value === 'Rs 0.00' || k.value === '—'
+        // Definition (L1), note and zero explanation (L2) all ride in ONE (i)
+        // tooltip, like PageHeader's description (R-39: less on the card face).
+        // The delta stays inline — it is a figure, not an explanation.
+        const info = [k.definition, k.note, isZero ? k.zeroExplanation : undefined].filter((t): t is string => Boolean(t))
         return (
           <article key={k.label} className="surface-card kpi-tile lift" style={{ ...cardStyle, padding: '13px 14px', minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -290,30 +297,19 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
                 >
                   {k.label}
                 </span>
-                {k.definition && (
-                  <span
-                    title={k.definition}
-                    aria-label={k.definition}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 14,
-                      height: 14,
-                      borderRadius: '50%',
-                      background: 'var(--card2, rgba(0,0,0,0.06))',
-                      border: '1px solid var(--border)',
-                      color: 'var(--muted)',
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      cursor: 'help',
-                      flexShrink: 0,
-                    }}
-                  >
-                    i
-                  </span>
-                )}
               </div>
+              {info.length > 0 && (
+                <InfoTooltip
+                  label={`About ${k.label}`}
+                  size={16}
+                  style={{ marginLeft: 'auto', flexShrink: 0 }}
+                  content={info.map((t) => (
+                    <p key={t} style={{ margin: 0 }}>
+                      {t}
+                    </p>
+                  ))}
+                />
+              )}
             </div>
 
             {/*
@@ -343,7 +339,7 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
               {k.value}
             </div>
 
-            {(k.delta || k.note || (isZero && k.zeroExplanation)) && (
+            {(k.delta || k.detail) && (
               <div style={{ marginTop: 7, fontSize: 'var(--t-meta)', display: 'flex', alignItems: 'center', gap: 'var(--sp-xs)' }}>
                 {k.delta && (
                   <span
@@ -359,11 +355,7 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
                     {k.delta.text}
                   </span>
                 )}
-                {k.note ? (
-                  <span style={{ color: 'var(--muted)' }}>{k.note}</span>
-                ) : isZero && k.zeroExplanation ? (
-                  <span style={{ color: 'var(--muted)', fontStyle: 'italic', lineHeight: '1.5' }}>{k.zeroExplanation}</span>
-                ) : null}
+                {k.detail && <span style={{ color: 'var(--muted)' }}>{k.detail}</span>}
               </div>
             )}
 
@@ -515,26 +507,22 @@ export function FooterNote({ extra }: { extra?: string[] }) {
   const parts = [...new Set((extra ?? []).map((part) => part.trim()).filter(Boolean))]
   if (parts.length === 0) return null
 
+  // Extra information rides in ONE (i) tooltip, like KpiStrip and PageHeader —
+  // the page keeps its content, the notes stay one hover/tap away.
   return (
     <div
       className="footer-note"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--sp-md)',
-        flexWrap: 'wrap',
-        padding: '11px 2px 0',
-        borderTop: '1px solid var(--border)',
-        marginTop: 'var(--sp-xs)',
-      }}
+      style={{ display: 'flex', justifyContent: 'flex-end', padding: '4px 2px 0', marginTop: 'var(--sp-xs)' }}
     >
-      <Icon name="info" size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-      {parts.map((p, i) => (
-        <span key={p} style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 'var(--sp-md)' }}>
-          {i > 0 && <span aria-hidden style={{ color: 'var(--muted)' }}>|</span>}
-          {p}
-        </span>
-      ))}
+      <InfoTooltip
+        label="About this page"
+        size={16}
+        content={parts.map((p) => (
+          <p key={p} style={{ margin: 0 }}>
+            {p}
+          </p>
+        ))}
+      />
     </div>
   )
 }

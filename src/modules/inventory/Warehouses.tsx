@@ -8,6 +8,7 @@ import type { IconName } from '../../components/ui/Icon'
 import { Input, Select, SearchInput } from '../../components/ui'
 import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
+import { InfoTooltip } from '../../components/ui/InfoTooltip'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
@@ -449,6 +450,7 @@ function KpiCard({
         >
           {label}
         </div>
+        {note && <InfoTooltip content={note} label={`About ${label}`} size={16} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
       </div>
       <div
         className="figure"
@@ -456,7 +458,6 @@ function KpiCard({
       >
         {value}
       </div>
-      {note && <div style={{ marginTop: 3, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{note}</div>}
       {footer && <div style={{ marginTop: 'auto', paddingTop: 9 }}>{footer}</div>}
     </article>
   )

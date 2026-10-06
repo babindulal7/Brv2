@@ -6,6 +6,7 @@ import '../settings.css'
 import Icon from '../../../components/ui/Icon'
 import type { IconName } from '../../../components/ui/Icon'
 import { Card, Button, cardStyle } from '../../../components/ui/Page'
+import { InfoTooltip } from '../../../components/ui/InfoTooltip'
 import { STATUS, BRAND, BRAND_ON } from '../../../lib/status'
 import type { StatusKey, BrandKey } from '../../../lib/status'
 import { SETTING_SPECS, formatSetting } from '../../../lib/settingsStore'
@@ -382,6 +383,7 @@ export function KpiCard({ k }: { k: KpiSpec }) {
         >
           {k.label}
         </div>
+        {k.note && <InfoTooltip content={k.note} label={`About ${k.label}`} size={16} style={{ marginLeft: 'auto', flexShrink: 0 }} />}
       </div>
 
       <div
@@ -416,7 +418,6 @@ export function KpiCard({ k }: { k: KpiSpec }) {
             {k.delta.text}
           </span>
         )}
-        <span style={{ color: 'var(--muted)' }}>{k.note}</span>
       </div>
 
       {k.dest ? (
