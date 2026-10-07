@@ -132,3 +132,38 @@ export async function migrateLocalViews(listKey: string, legacyStorageKey: strin
   writeLocal(marker, 'done')
   return moved
 }
+
+/**
+ * Until 0159 is applied to a database, `saved_views` and its two functions do not exist there. That is
+ * a deployment state, not an error the floor should read: the menu falls back to this device's own list
+ * (the pre-G2 behaviour), and the first load after the migration moves that list up as private views.
+ */
+export function sharedViewsUnavailable(message: string): boolean {
+  return /schema cache|does not exist|could not find the (table|function)|PGRST20[25]/i.test(message)
+}
+
+interface DeviceView extends LegacyView {
+  id?: string
+  createdAt?: string
+}
+
+export function readDeviceViews(legacyStorageKey: string, userId: string | null): SharedListView[] {
+  const raw = parseLegacy(readLocal(legacyStorageKey)) as DeviceView[]
+  return raw.map((v, i) => ({
+    id: v.id ?? `device-${i}-${v.name}`,
+    name: v.name,
+    query: v.query,
+    hiddenColumns: [...v.hiddenColumns],
+    visibility: 'private',
+    isSystem: false,
+    ownerId: userId,
+    createdAt: v.createdAt ?? new Date(0).toISOString(),
+  }))
+}
+
+export function writeDeviceViews(legacyStorageKey: string, views: readonly SharedListView[]): void {
+  writeLocal(
+    legacyStorageKey,
+    JSON.stringify(views.map((v) => ({ id: v.id, name: v.name, query: v.query, hiddenColumns: v.hiddenColumns, createdAt: v.createdAt }))),
+  )
+}

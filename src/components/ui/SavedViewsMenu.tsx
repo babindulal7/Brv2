@@ -5,8 +5,11 @@ import { Button } from './Page'
 import {
   listSharedViews,
   migrateLocalViews,
+  readDeviceViews,
   retireSharedView,
   saveSharedView,
+  sharedViewsUnavailable,
+  writeDeviceViews,
   type SharedListView,
 } from '../../lib/savedViews'
 
@@ -61,6 +64,9 @@ export function SavedViewsMenu({
   const [shareWithTeam, setShareWithTeam] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  /* True while this database has no `saved_views` yet (0159 not applied): the menu keeps working on
+     this device's own list, exactly as before G2, and says so. */
+  const [deviceMode, setDeviceMode] = useState(false)
   const menuRef = useRef<HTMLSpanElement>(null)
 
   useEffect(() => {
@@ -74,13 +80,21 @@ export function SavedViewsMenu({
           setLoadError('')
         }
       } catch (e) {
-        if (live) setLoadError(e instanceof Error ? e.message : 'Saved views could not be loaded.')
+        if (!live) return
+        const message = e instanceof Error ? e.message : ''
+        if (legacyStorageKey && sharedViewsUnavailable(message)) {
+          setDeviceMode(true)
+          setViews(readDeviceViews(legacyStorageKey, userId))
+          setLoadError('')
+          return
+        }
+        setLoadError('Saved views could not be loaded. Check the connection and reopen this menu.')
       }
     })()
     return () => {
       live = false
     }
-  }, [listKey, legacyStorageKey])
+  }, [listKey, legacyStorageKey, userId])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -111,6 +125,10 @@ export function SavedViewsMenu({
   const updatingOwn = Boolean(active && !active.isSystem)
 
   async function reload() {
+    if (deviceMode && legacyStorageKey) {
+      setViews(readDeviceViews(legacyStorageKey, userId))
+      return
+    }
     setViews(await listSharedViews(listKey))
   }
 
@@ -136,6 +154,23 @@ export function SavedViewsMenu({
         view.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase() &&
         (visibility === 'team' || view.ownerId === userId),
     )
+    if (deviceMode && legacyStorageKey) {
+      const next: SharedListView = {
+        id: duplicate?.id ?? `view-${Date.now().toString(36)}`,
+        name: trimmed,
+        query: normaliseSavedViewQuery(currentQuery),
+        hiddenColumns: [...currentHiddenColumns],
+        visibility: 'private',
+        isSystem: false,
+        ownerId: userId,
+        createdAt: duplicate?.createdAt ?? new Date().toISOString(),
+      }
+      writeDeviceViews(legacyStorageKey, duplicate ? views.map((v) => (v.id === duplicate.id ? next : v)) : [...views, next])
+      setViews(readDeviceViews(legacyStorageKey, userId))
+      setSaveOpen(false)
+      setName('')
+      return
+    }
     setBusy(true)
     try {
       await saveSharedView({
@@ -157,6 +192,11 @@ export function SavedViewsMenu({
   }
 
   async function remove(id: string) {
+    if (deviceMode && legacyStorageKey) {
+      writeDeviceViews(legacyStorageKey, views.filter((v) => v.id !== id))
+      setViews(readDeviceViews(legacyStorageKey, userId))
+      return
+    }
     try {
       await retireSharedView(id)
       await reload()
@@ -308,6 +348,11 @@ export function SavedViewsMenu({
               <Icon name="plus" size={16} />
               Save current view
             </button>
+            {deviceMode && (
+              <div style={{ padding: '4px 10px 7px', color: 'var(--muted)', fontSize: 'var(--t-caption)', lineHeight: 1.45 }}>
+                Saved on this device. Built-in and team views arrive with the next database update.
+              </div>
+            )}
             {loadError && (
               <div role="alert" style={{ padding: '4px 10px 7px', color: 'var(--danger)', fontSize: 'var(--t-caption)', lineHeight: 1.45 }}>
                 {loadError}
@@ -361,7 +406,7 @@ export function SavedViewsMenu({
           />
         </label>
         {error && <p id="saved-view-error" role="alert" style={{ margin: '7px 0 0', color: 'var(--danger)', fontSize: 'var(--t-caption)' }}>{error}</p>}
-        {canPublish && (
+        {canPublish && !deviceMode && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             <input type="checkbox" checked={shareWithTeam} onChange={(event) => setShareWithTeam(event.target.checked)} />
             Share with the whole team
@@ -369,7 +414,11 @@ export function SavedViewsMenu({
         )}
         <div style={{ marginTop: 16, padding: 13, borderRadius: 'var(--r-sm)', background: 'var(--nav-active-bg)', color: 'var(--text2)', fontSize: 'var(--t-caption)', lineHeight: 1.5 }}>
           This saves the active filters, search, sorting and visible columns. Page number and rows per page stay unchanged.
-          {canPublish && shareWithTeam ? ' Everyone on staff will see it, on every device.' : ' Only you will see it, on every device you sign in on.'}
+          {deviceMode
+            ? ' Saved on this device only for now — shared views arrive with the next database update.'
+            : canPublish && shareWithTeam
+              ? ' Everyone on staff will see it, on every device.'
+              : ' Only you will see it, on every device you sign in on.'}
         </div>
       </Modal>
     </>
