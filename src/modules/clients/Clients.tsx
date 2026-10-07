@@ -156,6 +156,20 @@ export default function Clients({
     showSuccessToast('Export ready', `${clients.length} client rows written to clients.csv`)
   }
 
+  /* ── restricted state for non-staff ────────────────────────────────── */
+  if (!isStaffMember) {
+    return (
+      <PageBody
+        restricted={true}
+        restrictedReason="The client management directory is for Babin Rentals staff only. Clients may view their profile in the client portal."
+        restrictedRequiredRole="Staff"
+        noun="clients"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
@@ -230,12 +244,13 @@ export default function Clients({
               absent, which `client_directory_v` does by returning them null.
           */}
           <PageBody
-            loading={clientsLoading}
-            error={clientsError}
-            onRetry={refresh}
+            loading={isLoading}
+            error={isError}
+            onRetry={handleRetry}
             hasRows={clients.length > 0}
             noun="clients"
             skeleton="table"
+            skeletonRows={6}
           >
             <ClientsDirectory clients={clients} onRequestAdd={() => navigate('/clients/new')} onBlockChanged={refresh} />
           </PageBody>
@@ -244,7 +259,7 @@ export default function Clients({
       {activeTab === 'membership' && <Membership embedded />}
       {activeTab === 'referral' && <ReferralView />}
       {activeTab === 'credit' && money && (
-        <CreditView clients={clients} loading={clientsLoading} error={clientsError} onRetry={refresh} />
+        <CreditView clients={clients} loading={isLoading} error={isError} onRetry={handleRetry} />
       )}
 
       <FooterNote extra={['Clients are never deleted — a closed account is retained and marked']} />
