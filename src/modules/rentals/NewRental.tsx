@@ -14,6 +14,7 @@ import { useViewport } from '../../lib/device'
 import { useNetwork } from '../../lib/network'
 import { formatAd } from '../../lib/bs'
 import { isProjectType } from '../../lib/projectTypes'
+import { fetchLastProjectType } from '../../lib/queries/bookings'
 import { rupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import type { RentalDraftData } from '../../actions/rentals/saveDraft'
@@ -256,6 +257,37 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   /** Custom description, only meaningful while `kind` is 'Other' (spec §7). */
   const [kindOther, setKindOther] = useState('')
 
+  /**
+   * Project Type defaults to the client's most recent typed booking (ruled
+   * 8 Oct 2026, RULINGS-2026-10-08.md). It only fills an empty field, or one
+   * still holding the previous client's default — never a type staff chose,
+   * and never on an edit or restored draft, which arrive with their own type.
+   */
+  const prefilledKind = useRef<string | null>(null)
+  const kindNow = useRef(kind)
+  kindNow.current = kind
+  const clientDbId = client?.dbId ?? null
+  useEffect(() => {
+    if (editBookingId) return
+    const replaceable = () => kindNow.current === '' || kindNow.current === prefilledKind.current
+    if (!clientDbId) {
+      if (prefilledKind.current !== null && kindNow.current === prefilledKind.current) setKind('')
+      prefilledKind.current = null
+      return
+    }
+    let cancelled = false
+    void fetchLastProjectType(clientDbId).then((last) => {
+      if (cancelled || !replaceable()) return
+      const next = last && isProjectType(last.projectType) ? last.projectType : ''
+      setKind(next)
+      if (next === 'Other') setKindOther(last?.projectTypeOther ?? '')
+      prefilledKind.current = next || null
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [clientDbId, editBookingId])
+
   /* `seedLine` lived here and built the three pre-picked demo rows. Both are
      gone: it had no other caller, and a helper whose only job was to
      manufacture unsaveable lines is not worth keeping for a future that would
@@ -417,7 +449,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
    * clamp on this page can produce either. The verdict still gates Confirm
    * so the arithmetic refusals surface if state is ever set another way.
    */
-  const { blockingNotices, confirmBlocked } = useMemo(
+  const { blockingNotices, advisories, confirmBlocked } = useMemo(
     () =>
       deriveRentalAlertsAndNotices({
         conflictLines,
@@ -707,6 +739,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
       canBookingMoney={canBookingMoney}
       pricing={pricing}
       blockingNotices={blockingNotices}
+      advisories={advisories}
       validationAttempted={validationAttempted}
       runNoticeAction={runNoticeAction}
     />

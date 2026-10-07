@@ -670,15 +670,14 @@ export default function AddClient({ embedded = false, onDone }: AddClientProps =
                 invoice outstanding, and nothing else.
 
             So no booking is refused for a missing PAN, and this row says so.
-            It keeps a mark rather than disappearing, because New Rental raises
-            a Critical of its own — "Missing client ID or PAN" — over a
-            Government ID / PAN box seeded from this very field.
+            It keeps a mark rather than disappearing, because New Rental shows
+            "Missing client ID or PAN" as a non-blocking advisory, seeded from
+            this very field.
 
-            **TODO(decision).** 0005's own comment on the column says *"Not
-            required at create; the booking Confirm gate enforces it"*, and
-            that gate does not exist anywhere. Either it gets built — and this
-            row goes back to naming a real rule — or the comment goes. A screen
-            may not pick which.
+            **Ruled 8 Oct 2026** (RULINGS-2026-10-08.md): a missing PAN is a
+            warning, never a Confirm gate. 0005's column comment ("the booking
+            Confirm gate enforces it") is therefore stale; the gate is not to
+            be built.
           */}
           <div style={{ display: 'flex', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)', alignItems: 'flex-start' }}>
             <Icon name={pan.trim() ? 'check' : 'info'} size={14} style={{ color: pan.trim() ? 'var(--success-text)' : 'var(--muted)', flexShrink: 0, marginTop: 2 }} />

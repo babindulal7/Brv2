@@ -127,9 +127,12 @@ export interface RentalAlertsInput {
 export interface RentalAlertsResult {
   alerts: RentalAlertItem[]
   critical: RentalAlertItem[]
+  advisories: RentalAlertItem[]
   blockingNotices: BlockingNotice[]
   confirmBlocked: boolean
 }
+
+export const MISSING_GOV_ID_TEXT = 'Missing client ID or PAN'
 
 export function deriveRentalAlertsAndNotices(input: RentalAlertsInput): RentalAlertsResult {
   const discountVerdict = validateDiscount(input.discountPct)
@@ -154,7 +157,10 @@ export function deriveRentalAlertsAndNotices(input: RentalAlertsInput): RentalAl
     ...(input.kind.trim() === ''
       ? [{ text: 'Select a project type before confirming this rental.', severity: 'Critical' as const, action: 'Open Client & Dates' }]
       : []),
-    ...(input.client && input.govId.trim().length === 0 ? [{ text: 'Missing client ID or PAN', severity: 'Critical' as const, action: 'Edit Client' }] : []),
+    /* Ruled 8 Oct 2026 (RULINGS-2026-10-08.md): a missing ID/PAN is a WARNING.
+       Neither confirmRental nor the database requires one, and a page may not
+       invent a gate the engines do not hold. It stays visible as an advisory. */
+    ...(input.client && input.govId.trim().length === 0 ? [{ text: MISSING_GOV_ID_TEXT, severity: 'Warning' as const, action: 'Edit Client' }] : []),
     ...(input.client && (input.client.isBlocked || input.client.onStop)
       ? [
           {
@@ -201,6 +207,9 @@ export function deriveRentalAlertsAndNotices(input: RentalAlertsInput): RentalAl
   ]
   const confirmBlocked = blockingNotices.length > 0
 
-  return { alerts, critical, blockingNotices, confirmBlocked }
+  // Warnings the confirm panel shows without blocking. Only the ID/PAN notice
+  // for now; deposit and outstanding warnings keep their existing surfaces.
+  const advisories = alerts.filter((a) => a.text === MISSING_GOV_ID_TEXT)
+  return { alerts, critical, advisories, blockingNotices, confirmBlocked }
 }
 

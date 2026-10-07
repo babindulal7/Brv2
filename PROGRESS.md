@@ -1,5 +1,40 @@
 # Progress Log
 
+## 2026-10-08 — New Rental tap audit; mock mode restored
+
+**Did**
+- Tap-counted New Rental (R-39 budget ≤ 12, Dashboard → Booked). Measured 8 taps for a new client-booking pair; Confirm was refused for any client without an ID/PAN, a gate only the page held.
+- Missing ID/PAN is now a non-blocking advisory in the Booking Summary ("Worth checking — does not block confirming", Edit Client action kept).
+- Project Type defaults to the client's most recent typed booking (`fetchLastProjectType`). It replaces only an empty field or the previous client's default; never a staff choice, an edit, or a restored draft. Returning client: 6 taps.
+- The confirm panel's "Ready N/3" (client/items/dates only — read 3/3 while still refused) now counts the real blockers: "N things left before confirming".
+- Restored mock mode, blank since `d1a0ed1` (6 Oct): `supabase` threw at module load in mock mode. It now forwards to the dynamically imported mock client, which `main.tsx` awaits before rendering.
+
+**Ruled**
+- User: PAN is warning-only (gate not to be built; closes AddClient's TODO(decision)); Project Type defaults to the client's last type. Recorded in RULINGS-2026-10-08.md and at the code sites.
+
+**Verified**
+- Drove mock mode at 1366×900 as Owner: confirmed B-1 for Prakash Rai (no PAN) with the advisory showing; a second New Rental for the same client prefilled Documentary; switching to Sunita Gurung (no typed history) cleared it; counts read 2 → 1 thing left as fields filled. Writes were to the mock local store only.
+- Typecheck and ESLint (changed files) passed; UI-copy lint passed; production build passed and its bundle contains no mock corpus (grep for the mock owner address: 0 files).
+- Full suite 4099 passed, 9 failed — the same 9 that fail at `3f8d1e3` (ClientDetail.block ×5, BookingDetail.honesty ×4: queries scoped to the component container while menus/dialogs now portal to body). New guard test (PAN advisory) and updated simplification assertion pass. The Completion block's suite line below is the stale 7 Oct record, not this run.
+- `lint:shell` still reports the `DateField.tsx:1167` zero-size portal wrapper introduced in `3f8d1e3`; not touched here.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T17:02:48.363Z). Suite: 4100/4100 passed (recorded 2026-10-07T10:30:21.542Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T17:02:49.147Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- 9 failing tests and the `lint:shell` DateField finding from `3f8d1e3` (body-portal change) — not fixed.
+- Further tap cuts not taken: Client search is not autofocused on open (1 tap); single items list below bundles in the catalogue, and it shows ~2½ rows above the sticky action bar at 1366×900.
+- Not checked on phone width or in dark theme. Not committed.
+
 ## 2026-10-07 — Orange booking schedule dates
 
 **Did**

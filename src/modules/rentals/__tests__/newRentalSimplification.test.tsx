@@ -121,7 +121,8 @@ describe('NewRental simplification (Part A - D)', () => {
 
     const attentionStatus = container.querySelector('[data-testid=booking-attention-status]')
     expect(attentionStatus).not.toBeNull()
-    expect(attentionStatus?.textContent).toContain('Ready')
+    // Counts the real blockers; "Ready 3/3" used to show while Confirm was still refused.
+    expect(attentionStatus?.textContent).toMatch(/\d+ things? left before confirming/)
 
     const confirmBtn = [...container.querySelectorAll('button')].find(
       (b) => b.textContent?.trim() === 'Confirm Booking',

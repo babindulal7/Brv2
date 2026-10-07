@@ -55,6 +55,7 @@ import './styles/responsive.css'
 import { REFERENCE_CASE_ERROR } from './lib/money'
 import { startAuditLogging } from './events/auditLogger'
 import { installGlobalErrorHandlers } from './lib/monitoring'
+import { IS_MOCK, loadMockClient } from './lib/supabase'
 
 /*
  * Before either branch below renders. ErrorBoundary only sees render-time
@@ -104,15 +105,19 @@ if (REFERENCE_CASE_ERROR) {
     </StrictMode>,
   )
 } else {
-  createRoot(root).render(
-    <StrictMode>
-      <AuthProvider>
-        <ThemeProvider initial="light">
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
-        </ThemeProvider>
-      </AuthProvider>
-    </StrictMode>,
-  )
+  const renderApp = () =>
+    createRoot(root).render(
+      <StrictMode>
+        <AuthProvider>
+          <ThemeProvider initial="light">
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          </ThemeProvider>
+        </AuthProvider>
+      </StrictMode>,
+    )
+  // Mock mode loads its client first; live renders synchronously, as before.
+  if (IS_MOCK) void loadMockClient().then(renderApp)
+  else renderApp()
 }

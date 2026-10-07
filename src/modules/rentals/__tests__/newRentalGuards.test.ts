@@ -40,6 +40,7 @@ vi.mock('../../../lib/supabase', () => ({
 
 import { bookingDays, bookingInstant } from '../booking/newRentalUtils'
 import { confirmWriteRefusals, deriveRentalAlertsAndNotices } from '../booking'
+import { MISSING_GOV_ID_TEXT } from '../booking/newRentalGuards'
 import { rupees, type Paisa } from '../../../lib/money'
 import { calculatePricingPipeline, type PricingPipelineResult } from '../../../lib/pricingPipeline'
 
@@ -283,6 +284,32 @@ describe('deriveRentalAlertsAndNotices', () => {
     expect(result.confirmBlocked).toBe(false)
     expect(result.critical).toHaveLength(0)
     expect(result.blockingNotices).toHaveLength(0)
+  })
+
+  it('a missing client ID/PAN is an advisory, not a Confirm blocker (ruled 8 Oct 2026)', () => {
+    const result = deriveRentalAlertsAndNotices({
+      conflictLines: [],
+      availabilitySource: { state: 'ready', byProduct: new Map() },
+      client: validClient,
+      govId: '',
+      kind: 'Feature Film',
+      discountPct: 0,
+      crew: [],
+      canBookingMoney: true,
+      depositRequiredPaisa: rupees(0) as Paisa,
+      depositReceivedPaisa: rupees(0) as Paisa,
+      depositPendingPaisa: rupees(0) as Paisa,
+      outstandingPaisa: rupees(0) as Paisa,
+      days: 2,
+      clientsAreLive: true,
+      lines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      equipmentLines: [{ id: PRODUCT_UUID, productId: PRODUCT_UUID, name: 'Sony FX3' }],
+      pricing: dummyPricing,
+    })
+
+    expect(result.confirmBlocked).toBe(false)
+    expect(result.blockingNotices.some((n) => n.text === MISSING_GOV_ID_TEXT)).toBe(false)
+    expect(result.advisories.map((a) => a.text)).toEqual([MISSING_GOV_ID_TEXT])
   })
 
   it('blocks confirm when client is missing or project type is empty', () => {

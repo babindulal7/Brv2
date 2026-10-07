@@ -21,6 +21,8 @@ export interface BookingSummaryCardProps {
     advanceRequiredPaisa: Paisa
   }
   blockingNotices: BlockingNotice[]
+  /** Shown without blocking Confirm — e.g. a missing client ID/PAN. */
+  advisories?: BlockingNotice[]
   validationAttempted?: boolean
   runNoticeAction: (action: string) => void
 }
@@ -37,9 +39,41 @@ export function BookingSummaryCard({
   canBookingMoney,
   pricing,
   blockingNotices,
+  advisories = [],
   validationAttempted = false,
   runNoticeAction,
 }: BookingSummaryCardProps) {
+  const noticeList = (notices: BlockingNotice[]) => (
+    <ul style={{ listStyle: 'disc', margin: '6px 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)' }}>
+      {notices.map((n) => (
+        <li key={n.text} style={{ lineHeight: 1.35, display: 'flex', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
+          <span>{n.text}</span>
+          {n.action && (
+            <button
+              type="button"
+              className="press"
+              onClick={() => runNoticeAction(n.action!)}
+              style={{
+                display: 'inline-block',
+                minHeight: 44,
+                marginLeft: 0,
+                padding: '1px 8px',
+                borderRadius: 'var(--r-badge)',
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'inherit',
+                fontSize: 'var(--t-th)',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              {n.action}
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
   return (
     <Card id="rail-booking-summary" title="Booking Summary">
       <dl className="new-rental-summary-context">
@@ -127,39 +161,24 @@ export function BookingSummaryCard({
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 'var(--t-meta)' }}>
               <Icon name="error" size={14} style={{ flexShrink: 0 }} />
               <span>
-                {validationAttempted ? `${blockingNotices.length} ${blockingNotices.length === 1 ? 'thing needs' : 'things need'} attention:` : `Ready ${Number(Boolean(client)) + Number(totalUnits > 0) + Number(Boolean(pickupAt && returnAt))}/3`}
+                {validationAttempted ? `${blockingNotices.length} ${blockingNotices.length === 1 ? 'thing needs' : 'things need'} attention:` : `${blockingNotices.length} ${blockingNotices.length === 1 ? 'thing' : 'things'} left before confirming`}
               </span>
             </div>
-            <ul style={{ listStyle: 'disc', margin: '6px 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)' }}>
-              {blockingNotices.map((n) => (
-                <li key={n.text} style={{ lineHeight: 1.35, display: 'flex', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
-                  <span>{n.text}</span>
-                  {n.action && (
-                    <button
-                      type="button"
-                      className="press"
-                      onClick={() => runNoticeAction(n.action!)}
-                      style={{
-                        display: 'inline-block',
-                        minHeight: 44,
-                        marginLeft: 0,
-                        padding: '1px 8px',
-                        borderRadius: 'var(--r-badge)',
-                        border: '1px solid var(--border)',
-                        background: 'transparent',
-                        color: 'inherit',
-                        fontSize: 'var(--t-th)',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {n.action}
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
+            {noticeList(blockingNotices)}
           </div>
+        </div>
+      )}
+
+      {advisories.length > 0 && (
+        <div
+          data-testid="booking-advisories"
+          style={{ marginTop: 12, padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--text2)' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 'var(--t-meta)' }}>
+            <Icon name="info" size={14} style={{ flexShrink: 0 }} />
+            <span>Worth checking — does not block confirming</span>
+          </div>
+          {noticeList(advisories)}
         </div>
       )}
 

@@ -1383,3 +1383,27 @@ export * from '../../data/rentals'
 export { OPERATIONS, isSubRentedLine, isSubRentalBooking, type PaymentHistoryRow } from '../../data/booking'
 export { paymentGlance, paymentDetailGroups } from '../../data/bookingIntel'
 export { businessNowAd } from '../../data/today'
+
+/**
+ * The project type of a client's most recent booking that has one — New
+ * Rental's default for Project Type (ruled 8 Oct 2026, RULINGS-2026-10-08.md;
+ * R-39: a field that could be prefilled but is not is a defect).
+ *
+ * Returns null when the client has no typed booking or the read fails: a
+ * missing default leaves the field empty, exactly as before, so a failure here
+ * never blocks or misleads. Reads the 0144 columns only, which are not money.
+ */
+export async function fetchLastProjectType(
+  clientDbId: string,
+): Promise<{ projectType: string; projectTypeOther: string | null } | null> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('project_type, project_type_other, created_at')
+    .eq('client_id', clientDbId)
+    .order('created_at', { ascending: false })
+    .limit(20)
+  if (error || !data) return null
+  const rows = data as unknown as { project_type: string | null; project_type_other: string | null }[]
+  const hit = rows.find((r) => r.project_type)
+  return hit ? { projectType: hit.project_type!, projectTypeOther: hit.project_type_other } : null
+}

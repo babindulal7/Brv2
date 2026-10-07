@@ -110,15 +110,31 @@ export async function getSupabaseClientAsync(): Promise<ReturnType<typeof create
   return getSupabaseClient()
 }
 
+let _mockClient: ReturnType<typeof createLiveClient> | null = null
+
 /**
- * Synchronous accessor for production use.
- * In mock mode (IS_MOCK=true), throws an error directing to use getSupabaseClientAsync().
- * Most application code should use getSupabaseClient() or getSupabaseClientAsync().
- * 
- * Note: In production builds, IS_MOCK is inlined as false, so this always returns a valid client.
+ * Mock mode only: `main.tsx` awaits this before it renders, so every
+ * `supabase.*` call below finds the client loaded. A no-op in live mode.
  */
-export const supabase = IS_MOCK
-  ? (() => { throw new Error('Mock mode: use getSupabaseClientAsync() for async access') })()
+export async function loadMockClient(): Promise<void> {
+  if (IS_MOCK && !_mockClient) _mockClient = await createMockClient()
+}
+
+/**
+ * The synchronous client 150+ modules import directly.
+ *
+ * In mock mode it is a forwarder to the dynamically imported mock client, so the
+ * corpus stays out of live bundles (the import() above is dead code there). It
+ * must not throw at module evaluation: from 6 Oct 2026 it did, and mock mode
+ * rendered a blank page before React mounted.
+ */
+export const supabase: ReturnType<typeof createLiveClient> = IS_MOCK
+  ? new Proxy({} as ReturnType<typeof createLiveClient>, {
+      get(_target, key) {
+        if (!_mockClient) throw new Error('Mock client used before loadMockClient() resolved')
+        return Reflect.get(_mockClient, key)
+      },
+    })
   : createLiveClient()
 
 /**
