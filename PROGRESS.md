@@ -1,5 +1,35 @@
 # Progress Log
 
+## 2026-10-08 — Branch consolidation; bigger page title in the top bar
+
+**Did**
+- Consolidated into `step1-foundation`: merged `booqable-babin-adoption-spec` (settings 0158, saved views 0159, pricing 0160, project-type grant 0161, audits, kit capacity, coupons) with 9 hand-resolved conflicts; cherry-picked `zen-swartz` report fixes and KpiStrip tooltip (its own 0158 skipped); added the loose grant migration as 0162. Left out: `work-tree-feature-copy` (duplicate), OpenCode crew/delivery search (built on the pre-split New Rental — needs re-implementing), `main`'s two old-line commits. `main`'s uncommitted tool work saved to `wip/main-loose-2026-10-08`.
+- Top-bar page name is now the page title: display face, ≈20.6px at 1366 and 16.5px at 375; parent crumbs unchanged; (i) icon 16px. Shared header, so every page.
+
+**Ruled**
+- RULINGS-2026-10-08.md "Global header".
+
+**Verified**
+- Consolidated HEAD `c1484b6` in a clean temporary worktree: tsc clean, 4157/4157 tests. `check:pglite` 160/160, `check:lifecycle` 30/30. Nothing applied to live.
+- Header: browser (mock) 1366×900 and 375×812 — sizes as above, no truncation, no horizontal scroll; shell tests 100/100. The full suite was not re-run after the header change.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T21:50:19.631Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Another agent's uncommitted New Rental rework is in this worktree (7 files + 3 CSS). It currently fails `tsc` (unused `draftPersisted`, NewRental.tsx) and `lint:shell` (16px control, RentalPricingSection.tsx:459). Not committed by this session.
+- Live database is at 0156; 0157–0162 need Babin's go-ahead and a backup (N-5).
+- The user's New Rental request ("every information should come at the header, make the page clean") waits for that agent to finish.
+
 ## 2026-10-08 — New Rental spacing and required labels
 
 **Did**

@@ -194,7 +194,12 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                 <span
                   aria-current={last ? 'page' : undefined}
                   style={{
-                    fontSize: 'var(--t-ui)',
+                    /* The current page reads as the page's title (8 Oct 2026, RULINGS-2026-10-08.md):
+                       larger, in the display face; parent crumbs stay at UI size. */
+                    fontSize: last ? 'clamp(1.1rem, 0.95rem + 0.5vw, 1.35rem)' : 'var(--t-ui)',
+                    fontFamily: last ? 'var(--font-display, inherit)' : undefined,
+                    letterSpacing: last ? '-0.02em' : undefined,
+                    lineHeight: last ? 1.2 : undefined,
                     fontWeight: i === 0 ? 600 : last ? 600 : 500,
                     color: i === 0 ? 'var(--nav-active-accent)' : last ? 'var(--text)' : 'var(--text2)',
                     whiteSpace: 'nowrap',
@@ -228,7 +233,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
         <span style={{ display: 'inline-flex', flexShrink: 0, visibility: effectiveInfo ? 'visible' : 'hidden' }} aria-hidden={effectiveInfo ? undefined : true}>
           <InfoTooltip
             content={effectiveInfo ?? 'Page info'}
-            size={14}
+            size={16}
             label={activeCrumb ? `${activeCrumb} info` : 'Page info'}
             style={{ flexShrink: 0 }}
           />
