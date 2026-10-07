@@ -54,7 +54,7 @@ import Icon from '../../../components/ui/Icon'
 import { formatMoney, rupees, type Paisa } from '../../../lib/money'
 import { generateClientUuid } from '../../../lib/dataAccess'
 import type { BundleRecord } from '../../../lib/queries/bundles'
-import { AvailabilityChip, BundlePreview } from './BundlePreview'
+import { AvailabilityChip, BundlePreview, KitCapacityLine } from './BundlePreview'
 import { TOUCH } from './ClientHealthChip'
 import { OverbookingOverrideModal } from './OverbookingOverrideModal'
 import { getAllowOverbooking } from '../../../lib/bookingRules'
@@ -1675,6 +1675,12 @@ function BundleRow({
       >
         {result.componentSummary}
       </div>
+
+      {result.record.kitCapacity && (
+        <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+          <KitCapacityLine capacity={result.record.kitCapacity} />
+        </div>
+      )}
 
       {availability.level !== 'available' && (
         <div style={{ fontSize: 'var(--t-meta)', color: 'var(--danger-text)', fontWeight: 600 }}>

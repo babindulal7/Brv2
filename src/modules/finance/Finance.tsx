@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { recordExport } from '../../lib/exportAudit'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
@@ -1085,6 +1086,7 @@ export default function Finance() {
       : `Invoices (${list.total})`
 
   const exportCsv = useCallback(() => {
+    recordExport({ list: 'finance.invoices', module: 'Finance', rowCount: list.rows.length, columns: INVOICE_CSV_HEADERS })
     const blob = new Blob([invoicesCsv(list.rows)], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

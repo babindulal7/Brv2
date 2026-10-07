@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { readSettings, languageCodeOf } from '../../lib/settingsStore'
+import { hydrateSharedSettings } from '../../lib/settingsSync'
 import type { SettingsRecord } from '../../lib/settingsStore'
 import { applyLanguage } from '../../lib/i18n'
 
@@ -55,6 +56,13 @@ export function useSettingsLoad(): SettingsLoadResult {
            a Nepali session never paints an English first frame. */
         await applyLanguage(languageCodeOf(settings.language))
         if (live) setLoad({ status: 'ready', settings })
+        /* Best-effort and AFTER the first paint: offline, the screen shows what this device had; once the
+           shared values arrive they replace it. Never blocks the page on the network. */
+        void hydrateSharedSettings()
+          .then(() => {
+            if (live) setLoad({ status: 'ready', settings: readSettings() })
+          })
+          .catch(() => undefined)
       } catch (e) {
         if (!live) return
         setLoad({

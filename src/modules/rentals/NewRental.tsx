@@ -48,6 +48,7 @@ import {
   type Line,
   type CrewLine,
 } from './booking'
+import type { PromoCodeDefinition } from '../../lib/pricingPipeline'
 import { useNewRentalProductDeposits } from './booking/useNewRentalProductDeposits'
 export type { Line, CrewLine, BlockingNotice, ConfirmWriteState }
 export { lineAmountPaisa, confirmWriteRefusals }
@@ -338,7 +339,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   const [manualDiscountReason, setManualDiscountReason] = useState('')
   const [manualDiscountAuthorizedBy, setManualDiscountAuthorizedBy] = useState('')
   const [promoCodeInput, setPromoCodeInput] = useState('')
-  const [promoCodeApplied, setPromoCodeApplied] = useState<string | null>(null)
+  const [promoCodeApplied, setPromoCodeApplied] = useState<PromoCodeDefinition | null>(null)
   const [promoNotice, setPromoNotice] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null)
 
   const [manualDepositOverride, setManualDepositOverride] = useState(false)

@@ -32,6 +32,7 @@ import type { BundleLine, BundleRecord } from '../../../lib/queries/bundles'
 import { addBundleToBooking, bundleAvailability } from './itemCatalogue'
 import type { AddBundleResult, AvailabilityVerdict, BookingWindow } from './itemCatalogue'
 import { TOUCH } from './ClientHealthChip'
+import { formatKitCapacity, type BundleKitCapacity } from '../../../lib/bundleCapacityView'
 
 /* ── The availability pill, shared with the panel ──────────────────────── */
 
@@ -40,6 +41,20 @@ import { TOUCH } from './ClientHealthChip'
  * mode that drops the word — a bare coloured dot is a defect, so this
  * component cannot produce one.
  */
+/**
+ * G4 — "N kits available for these dates" and the component that limits it. Renders nothing when the
+ * bundle has no capacity answer: an absent source is not a zero.
+ */
+export function KitCapacityLine({ capacity }: { capacity: BundleKitCapacity | null | undefined }) {
+  if (!capacity) return null
+  const { headline, limitedBy } = formatKitCapacity(capacity)
+  return (
+    <span data-testid="kit-capacity">
+      <strong>{headline}</strong> · {limitedBy}
+    </span>
+  )
+}
+
 export function AvailabilityChip({
   verdict,
   size = 'sm',
@@ -226,6 +241,9 @@ export function BundlePreview({
           <AvailabilityChip verdict={verdict} size="md" />
           <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', minWidth: 0 }}>
             {verdict.detail}
+          </span>
+          <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', minWidth: 0 }}>
+            <KitCapacityLine capacity={bundle?.kitCapacity} />
           </span>
           <span style={{ marginLeft: 'auto', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
             {bookingWindow.pickupAd && bookingWindow.returnAd ? (

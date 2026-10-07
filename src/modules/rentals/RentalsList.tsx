@@ -1,4 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { csvCell } from '../../lib/csv'
+import { recordExport } from '../../lib/exportAudit'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -29,6 +31,7 @@ import {
   canPerformOperations,
   canRecordPayment,
   canCloseRental,
+  canPublishTeamViews,
   type Role as SystemRole,
 } from '../../lib/rbac'
 import { STATUS_ORDER } from '../../lib/workflow'
@@ -1577,31 +1580,33 @@ export default function RentalsList() {
       : list.rows
     if (rows.length === 0) return
 
-    const csvHeaders = [
-      'Booking No',
-      'Created Date',
-      'Client',
-      'Project',
-      'Project Type',
-      'Status',
-      'Pickup Date',
-      'Return Date',
-      'Items',
-      ...(money ? ['Total Amount'] : []),
+    /* G5 (RULING 2026-10-07): the file carries the columns the table shows — an optional column the
+       operator hid is not in the export, and Total Amount is absent for a money-blind role exactly as it is
+       on screen. Money is written once, as integer paisa. No deposit stands in for a missing total
+       (deposits never touch Rental Total). Every cell goes through the one quoter in lib/csv. */
+    const shown = (c: OptionalColumn) => !hiddenCols.has(c) && (c !== 'Total Amount' || money)
+    const columns: Array<{ head: string; cell: (r: (typeof rows)[number]) => string | number }> = [
+      { head: 'Booking No', cell: (r) => r.bookingNo },
+      { head: 'Created Date', cell: (r) => r.createdOn || '' },
+      { head: 'Client', cell: (r) => r.client || '' },
+      { head: 'Project', cell: (r) => r.project || '' },
+      { head: 'Project Type', cell: (r) => r.projectTypeDisplay || '' },
+      { head: 'Status', cell: (r) => r.status },
+      ...(shown('Pickup') ? [{ head: 'Pickup Date', cell: (r: (typeof rows)[number]) => r.pickup?.date || '' }] : []),
+      ...(shown('Return') ? [{ head: 'Return Date', cell: (r: (typeof rows)[number]) => r.ret?.date || '' }] : []),
+      ...(shown('Items') ? [{ head: 'Items', cell: (r: (typeof rows)[number]) => r.itemCount }] : []),
+      ...(shown('Total Amount')
+        ? [{ head: 'Total Amount (paisa)', cell: (r: (typeof rows)[number]) => (r.totalAmount != null ? Number(r.totalAmount) : '') }]
+        : []),
     ]
-    const csvLines = rows.map((r) => [
-      `"${r.bookingNo}"`,
-      `"${r.createdOn || ''}"`,
-      `"${(r.client || '').replace(/"/g, '""')}"`,
-      `"${(r.project || '').replace(/"/g, '""')}"`,
-      `"${(r.projectTypeDisplay || '').replace(/"/g, '""')}"`,
-      `"${r.status}"`,
-      `"${r.pickup?.date || ''}"`,
-      `"${r.ret?.date || ''}"`,
-      r.itemCount,
-      ...(money ? [r.totalAmount != null ? `"${r.totalAmount}"` : '""'] : []),
-    ])
-    const csv = [csvHeaders.join(','), ...csvLines.map((l) => l.join(','))].join('\n')
+    recordExport({
+      list: 'rentals',
+      module: 'Rentals',
+      rowCount: rows.length,
+      columns: columns.map((c) => c.head),
+      filter: savedViewQuery,
+    })
+    const csv = [columns.map((c) => csvCell(c.head)).join(','), ...rows.map((r) => columns.map((c) => csvCell(c.cell(r))).join(','))].join('\r\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -1611,7 +1616,7 @@ export default function RentalsList() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
-  }, [list.rows, selectedIds, money])
+  }, [list.rows, selectedIds, money, hiddenCols, savedViewQuery])
 
   // Bulk Pack & Bulk Handover removed per Steps 2 & 3: packing and handover are
   // physical floor operations requiring equipment resolution and stage gates in
@@ -1948,7 +1953,10 @@ export default function RentalsList() {
                 {countedTitle}
               </span>
               <SavedViewsMenu
-                storageKey={savedViewStorageKey}
+                listKey="rentals"
+                legacyStorageKey={savedViewStorageKey}
+                canPublish={canPublishTeamViews(user?.role ?? 'Client')}
+                userId={user?.id ?? null}
                 currentQuery={savedViewQuery}
                 currentHiddenColumns={[...hiddenCols]}
                 onApply={applySavedView}

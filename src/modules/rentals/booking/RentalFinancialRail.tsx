@@ -309,14 +309,14 @@ export function RentalFinancialRail({
 
             {/* Promo code */}
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-              <Field label="Promo Code *">
+              <Field label="Promo code (optional)">
                 <div style={{ display: 'flex', gap: 8 }}>
                   <Input
                     value={promoCodeInput}
                     onChange={(e) => {
                       onPromoCodeInput(e.target.value.toUpperCase())
                     }}
-                    placeholder="e.g. NEPALFILM, MONSOON26"
+                    placeholder="Promo code"
                     style={{ ...inputStyle, textTransform: 'uppercase' }}
                   />
                   <Button variant="secondary" type="button" onClick={() => onApplyPromo(promoCodeInput.trim().toUpperCase())}>

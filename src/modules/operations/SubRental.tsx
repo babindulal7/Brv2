@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { recordExport } from '../../lib/exportAudit'
 import { useNavigate, Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { PageHeader } from '../../components/ui/Page'
@@ -133,6 +134,7 @@ function exportSubRentalsCsv(rows: SubRentalRecord[], canViewMoney: boolean) {
   const csv = [head, ...body]
     .map((cells) => cells.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
     .join('\r\n')
+  recordExport({ list: 'sub-rentals', module: 'Operations', rowCount: rows.length, columns: head })
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')
   a.href = url

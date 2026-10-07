@@ -422,6 +422,8 @@ function missingProjectTypeColumn(error: BookingQueryError | null): boolean {
   // project_type without extending that grant. PostgREST reports the table,
   // not the denied column. Retry the already-granted projection once; a real
   // table denial still fails, and explicit project-type filters are preserved.
+  // The grant itself is migration 0161 (Babin applies it, N-5); until then this
+  // fallback keeps Today and the Rentals list readable for every role.
   if (code === '42501' && msg === 'permission denied for table bookings') return true
   if (code === '42703' || code === 'PGRST204') {
     if (msg.includes('project_type')) return true

@@ -396,6 +396,8 @@ export type ChipKey =
    * ("do not rename an identifier") is untouched by it.
    */
   | 'All'
+  | 'Pickups Today'
+  | 'Returns Today'
   | 'Tomorrow'
   | 'Next 7 Days'
   | 'Upcoming'
@@ -627,6 +629,8 @@ export function chipsFor(canSeeMoney: boolean): RentalChip[] {
  */
 export const CHIP_MEANS: Record<ChipKey, string> = {
   All: 'every booking — the reset-to-everything scope, not a date filter',
+  'Pickups Today': 'bookings going out in the current operational day (the Today screen Pickups list, same set)',
+  'Returns Today': 'bookings due back in the current operational day (the Today screen Returns list, same set)',
   Tomorrow: 'bookings picking up tomorrow',
   'Next 7 Days': 'bookings picking up in the next seven days, today included',
   Upcoming: 'bookings at Quote, Booked or Packed — not yet handed over',
@@ -751,6 +755,12 @@ function chipFilters(chip: ChipKey, custom: CustomRange, nowAd: string): ListFil
     // does (`04_RENTALS.md` §4.1 draws it as `(All)`).
     case 'All':
       return bySortedPickup()
+    /* G2 (RULING 2026-10-07): the very named sets Today's Pickups / Returns panels read — a saved view and
+       a dashboard card are one definition, so they cannot disagree about what "today" is. */
+    case 'Pickups Today':
+      return todaysOutgoing(dayAd)
+    case 'Returns Today':
+      return todaysIncoming(dayAd)
     case 'Tomorrow':
       return bySortedPickup({ dateRange: pickupTomorrow })
     case 'Next 7 Days':

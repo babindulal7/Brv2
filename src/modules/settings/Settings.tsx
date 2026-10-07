@@ -14,12 +14,12 @@ import type { FieldSpec } from '../../lib/edit/useEditMode'
 import {
   SETTING_SPECS,
   SETTINGS_DEFAULTS,
-  writeSettings,
   validateSetting,
   resetSettings,
   languageCodeOf,
 } from '../../lib/settingsStore'
 import type { SettingKey, SettingValue, SettingsRecord } from '../../lib/settingsStore'
+import { saveSettings, resetSharedSettings } from '../../lib/settingsSync'
 import { applyLanguage } from '../../lib/i18n'
 import { canManageSettings } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
@@ -103,7 +103,7 @@ export default function Settings() {
 
   const onSaveSetting = useCallback(
     async (p: Record<string, unknown>) => {
-      writeSettings(p as Partial<SettingsRecord>)
+      await saveSettings(p as Partial<SettingsRecord>)
       patch(p as Partial<SettingsRecord>)
       if ('language' in p) {
         await applyLanguage(languageCodeOf(p.language as SettingValue))
@@ -223,10 +223,17 @@ export default function Settings() {
                 icon="refresh"
                 variant="ghost"
                 onClick={() => {
-                  resetSettings()
-                  reload()
-                  edit.cancelAll()
-                  setLeaveError(null)
+                  void (async () => {
+                    resetSettings()
+                    try {
+                      await resetSharedSettings()
+                      setLeaveError(null)
+                    } catch (e) {
+                      setLeaveError(e instanceof Error ? e.message : 'Reset was refused.')
+                    }
+                    reload()
+                    edit.cancelAll()
+                  })()
                 }}
               >
                 Reset to defaults

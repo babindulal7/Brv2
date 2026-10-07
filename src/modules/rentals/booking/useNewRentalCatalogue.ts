@@ -3,6 +3,7 @@ import { listClientRecords, type ClientRecord } from '../../../lib/queries/clien
 import { listInventory } from '../../../lib/queries/inventory'
 import { readProductAvailability } from '../../../lib/queries/productAvailability'
 import { listBundleRecords } from '../../../lib/queries/bundleRecords'
+import { bundleCapacityView } from '../../../lib/bundleCapacityView'
 import type { BundleRecord } from '../../../data/bundles'
 import type { RentalWindow } from '../../../lib/availability'
 import { listCrewMembers, type CrewMember } from '../../../lib/queries/crew'
@@ -114,7 +115,16 @@ export function useNewRentalCatalogue({
         ])
         if (!cancelled) {
           setAvailabilitySource({ state: 'ready', byProduct })
-          if (bundles && bundles.length > 0) setLiveBundles(bundles)
+          if (bundles && bundles.length > 0) {
+            /* G4: kit capacity from the same windowed answers the catalogue rows use. A component with no
+               answer (or a serialised product with no unit rows) yields no capacity at all — never a guess. */
+            const freeOf = (id: string): number | undefined => {
+              const a = byProduct.get(id)
+              if (!a || (a.mode === 'unit' && a.unitsOwned === 0)) return undefined
+              return a.unitsFree
+            }
+            setLiveBundles(bundles.map((b) => ({ ...b, kitCapacity: bundleCapacityView(b.lines, freeOf) })))
+          }
         }
       } catch (e: unknown) {
         if (!cancelled) {

@@ -1,4 +1,5 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { recordExport } from '../../lib/exportAudit'
 import Icon from './Icon'
 import { Button } from './Page'
 import { DateField } from './DateField'
@@ -360,6 +361,7 @@ export function reportCsvFilename(stem: string, range: ReportFilters['dateRange'
 }
 
 function download(filename: string, text: string): void {
+  recordExport({ list: `report.${filename.replace(/\.csv$/, '')}`, module: 'Operations', rowCount: Math.max(0, text.split(/\r?\n/).length - 1) })
   const blob = new Blob([text], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')

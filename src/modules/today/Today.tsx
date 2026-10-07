@@ -362,13 +362,26 @@ function MasterDispatchDateControl({
       className="dashboard-master-date-control"
       ref={root}
       role="group"
-      aria-label="Dispatch date"
+      aria-label="Dispatch day for pickups and returns"
       onBlur={(event) => {
         const next = event.relatedTarget as Node | null
         if (next && (event.currentTarget.contains(next) || dialog.current?.contains(next))) return
         if (event.relatedTarget) setOpen(false)
       }}
     >
+      {/* Only offered away from today, and LEFT of ‹ so the arrows never move under a thumb
+          when it appears (the group is right-aligned) — the booqable branch's 7 Oct detail. */}
+      {!isToday && (
+        <button
+          type="button"
+          className="dashboard-master-date-control__btn dashboard-day-pager__btn--today"
+          aria-label="Today"
+          title="Back to today"
+          onClick={() => onChange({ kind: 'quick', period: 'Today' })}
+        >
+          {lang === 'ne' ? 'आज' : 'Today'}
+        </button>
+      )}
       <button
         type="button"
         className="dashboard-master-date-control__btn"
@@ -406,17 +419,6 @@ function MasterDispatchDateControl({
       >
         <Icon name="chevron_right" size={16} />
       </button>
-      {/* Only offered when there is somewhere to come back from. */}
-      {!isToday && (
-        <button
-          type="button"
-          className="dashboard-master-date-control__btn dashboard-day-pager__btn--today"
-          aria-label="Today"
-          onClick={() => onChange({ kind: 'quick', period: 'Today' })}
-        >
-          Today
-        </button>
-      )}
       {open && (
         <CalendarPortal triggerRef={trigger} dialogRef={dialog} id="dispatch-date-dialog" label="Dispatch date filter">
           <DashboardCalendarContent

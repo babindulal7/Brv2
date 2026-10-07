@@ -1,5 +1,36 @@
 # Progress Log
 
+## 2026-10-08 — New Rental spacing and required labels
+
+**Did**
+- Removed stacked margins above setup and compacted the draft recovery banner/header. Grouped Restore and Discard without shrinking their 44px touch targets; desktop recovery-to-setup gap is now 16px.
+- Added a required-to-confirm legend and marked Client, Project Type (including Other specification), pickup and return date-time values. Removed optional Discount and Promo Code stars. Forwarded Select's accessible name and required state to its actual trigger, and exposed required state on the client/date-time controls.
+- Preserved restore/discard, pricing calculations, confirmation gates, orange dates, panel order and visible summary. Saved desktop, light, phone and pricing evidence under artifacts/new-rental-clarity-2026-10-07/.
+
+**Ruled**
+- Applied the user's acceptance of the recommended first pass: top spacing and required-field clarity. Recorded it in RULINGS-2026-10-07.md and implementation comments. No live record or schema changes.
+
+**Verified**
+- Typecheck passed. Six focused UI, client, pricing, calendar, draft-persistence and form suites passed 29/29. These are separate from the cached full-suite counts below.
+- Changed-file ESLint and scoped diff checks passed. UI-copy check found zero violations and its four tests passed. PGlite rebuilt 155/155 migrations with security gates green; lifecycle passed 30/30. Production build passed (297 PWA precache entries).
+- Browser checked dark/light desktop and 375px phone: no horizontal overflow, recovery controls 44px high, actual client/project/date-time controls expose required state, and optional pricing labels have no star. Restored dark theme and normal viewport in the agent preview.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 159 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T17:02:48.363Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T17:02:49.147Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining work on the accepted spacing and required-label pass. Readiness wording, pricing disclosures, save-state clarity and client-warning wording remain separate next improvements from the review.
+
 ## 2026-10-08 — Today: smaller, smarter dispatch date control
 
 **Did**
@@ -219,6 +250,57 @@ Counted by `npm run completion`, not typed.
 - 9 failing tests and the `lint:shell` DateField finding from `3f8d1e3` (body-portal change) — not fixed.
 - Further tap cuts not taken: Client search is not autofocused on open (1 tap); single items list below bundles in the catalogue, and it shows ~2½ rows above the sticky action bar at 1366×900.
 - Not checked on phone width or in dark theme. Not committed.
+
+## 2026-10-07 — Booqable adoption spec: promo leak, shared settings, shared views, kit capacity, export + auth audit, pricing structures (migrations 0158–0160)
+
+**Did**
+- **§3 promo check — a real leak, fixed.** `PROMO_CODES` (NEPALFILM, MONSOON26, KATHMANDU, FILMSTUDENT …) were hard-coded demo discounts that Apply honoured with no `coupons` row behind them. Deleted; Apply now calls `lookupCouponByCode` (active, dates, redemption cap, minimum spend) against the `coupons` table. Found while there and **not fixed**: `lib/queries/coupons.ts` still seeds a localStorage coupon list (DASHAIN10 …) read by Tools ▸ Coupons; and New Rental never writes `booking_discounts.coupon_id` for an applied code.
+- **G1 settings in the database — 0158.** `settings` + append-only `settings_history` + `set_setting()` (Owner only, `client_uuid` idempotent). Money keys hidden from money-blind roles by RLS. `settingsStore` overlays the DB value over the device's old copy; `settingsSync.ts` hydrates after sign-in and saves through the RPC; `density` and `language` stay per-device. `getSettingForLocation` resolves location → org → default (nothing passes a location yet).
+- **G2 shared saved views — 0159.** `saved_views`, `save_view()`, `retire_view()`, five seeded system views (Pickups today · Returns today · Overdue · Awaiting inspection · Drafts). New `quick` chips `Pickups Today` / `Returns Today` are the Today screen's own named sets. `SavedViewsMenu` rebuilt on the DB (Built-in / Team / Mine); old localStorage views migrate once as private views.
+- **G4 kit capacity on screen.** "N kits available for these dates · limited by X — n free" in the bundle row and the Bundle Preview; nothing is shown when any component has no windowed answer.
+- **G5 exports.** One `audit_events` row per export at all 14 export sites (`export.created`); Rentals export follows the visible columns, money as one integer-paisa column, no deposit-for-total substitution; client directory exports carry phone/email/PAN only for Owner · Admin · Manager.
+- **G6 audit classes.** Login and Logout now audited. Found already covered: invoice and payment changes (triggers). Not buildable from the browser: failed login (0091 refuses anonymous writes).
+- **G3 pricing structures — foundation, 0160.** Four tables + `products.pricing_structure_id` / `pricing_ruleset_id`, whole-row Law 6 RLS, Owner/Admin/Manager write, nothing deleted, database-audited. `lib/pricingStructures.ts` quote engine reproduces Booqable's documented 7-day example (81 / 81.40, whole-rupee rounded once). **Not wired into a booking total** — see Remaining.
+
+**Ruled** — `RULINGS-2026-10-07.md` (19 rows). Conflicts that mattered:
+
+| Conflict | Sources | Decision | Revert |
+|---|---|---|---|
+| Settings write: Owner/Admin vs Owner | Spec G1 vs PERMISSIONS §4.10 | Owner only (B-1) | add `'Admin'` to `set_setting()` + `canManageSettings` |
+| Where a saved view's money-ness comes from | Law 6 | computed in the database from the query | edit `saved_view_query_touches_money` |
+| Two new Rentals chips vs "the twelve chips" doctrine test | spec G2 vs `rentalsList.test.ts` | chips valid in the URL, not in the bar | delete the two cases |
+| Failed login audit | Spec G6 vs 0091 | not recorded; needs a server-side hook | n/a |
+| Structure totals vs a one-rate booking line | Spec G3 vs `create_booking` | quote engine only; no persistence yet | n/a |
+
+**Verified**
+- `check:pglite` **158/158 applied, 0 failed**, 0 views readable by anon, **0 unauthorized anon-executable functions** (the gate caught two of my helper functions; fixed), 66 definer functions all pinned · `check:lifecycle` **30/30** in the same run → 0158, 0159, 0160 are **Verified** under R-35.
+- New PGlite scripts, each also run with its migration excluded (fails without it): `test:settings` (Owner-only write, money keys hidden from Warehouse, location override limited, history append-only, retry idempotent), `test:saved-views` (system views fixed, Law 6, retire-not-delete), `test:pricing-structures` (Law 6, Law 3, shape checks, link guard, audit). `test:audit-coverage`, `check:anon`, `check:fixtures` still green.
+- `tsc` 0 · `eslint --max-warnings 0` clean · `npm run build` exit 0.
+- Unit tests added: couponLookup, settings overlay, bundle kit capacity, productPricingTerms, pricingStructures (15, incl. the documented fixture), Pickups/Returns Today = named sets, rbac. Full vitest: **317 files / 4114 tests green** (a first full run found 13 failures in 2 files — the Settings screen test and a Rentals render test, both broken by my change; fixed and the whole suite re-run).
+- **Not verified by driving the app:** none of the new UI (promo Apply, saved-views menu, kit-capacity line, export audit, login/logout rows) was run in a browser against a live Supabase — there is no local Supabase stack and 0158–0160 are not applied anywhere, so the RPC calls from the browser are proven only through PGlite SQL, not through PostgREST. PGlite is also not RLS-under-JWT proof (stated in its own header).
+
+**Blocked / open**
+- **Babin must apply 0158, 0159, 0160** (backup first, N-5). Until then the app runs unchanged on device settings: saving a setting or a team view against live will fail with a missing function until applied — apply before deploying this build.
+- **D-2** (keep the 4 seasonal rulesets?) is Babin's; D-1 and D-3 adopted as ⭐ proposals. See `docs/OPEN_DECISIONS.md` §11.
+- Babin's one-field action from the spec §5: Booqable ▸ Settings ▸ General ▸ Personalize your labels ▸ Customer → Client.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 54 | 52 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 158 files · check:pglite 158/158 applied, 0 failed. Suite: 317 files / 4114 tests green (run this session).
+Counted by `npm run completion`, not typed. The five dimensions do not move: they count the existing actions, routes and gates, and none of this session's work adds an action or a lifecycle step — it adds three tables, their RPCs and screens, which these counters do not measure.
+
+### Remaining
+- **G3 persistence (blocks Stage 5 cutover):** `create_booking` + invoice builders must accept a per-line total and store a `price_breakdown` snapshot, then wire `quoteUnitPrice` into New Rental. No admin UI exists to create structures/rulesets, and the Booqable bridge code is not in this repo, so the 9 structures and 4 rulesets cannot be imported yet.
+- Failed-login audit (needs a server-side hook). Export money columns on the other 13 screens are still human-formatted with fixed columns (an earlier ruling) — spec G5 wanted integer minor units.
+- Kit capacity is not in the Check Availability modal (per-product). `New Rental` does not write `coupon_id`; localStorage coupon seed list still exists (see Did).
+- Drive the new screens against a real stack once 0158–0160 are applied.
 
 ## 2026-10-07 — Orange booking schedule dates
 

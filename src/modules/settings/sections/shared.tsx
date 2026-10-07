@@ -1,4 +1,5 @@
 import { createContext, useContext, useState } from 'react'
+import { recordExport } from '../../../lib/exportAudit'
 import type { CSSProperties, ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import '../settings.css'
@@ -952,6 +953,7 @@ export function QuickActionList({ actions }: { actions: QuickAction[] }) {
 /* ── CSV, shared by the config export and the branch export ────────────── */
 
 export function downloadCsv(filename: string, rows: string[][]) {
+  recordExport({ list: `settings.${filename.replace(/\.csv$/, '')}`, module: 'Settings', rowCount: Math.max(0, rows.length - 1), ...(rows[0] ? { columns: rows[0] } : {}) })
   const csv = rows.map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')).join('\r\n')
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')

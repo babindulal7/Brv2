@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback, ReactNode } from 'react'
 import { supabase, IS_MOCK } from './supabase'
 import { getSetting } from './settingsStore'
+import { hydrateSharedSettings } from './settingsSync'
+import { recordLogin, recordLogout } from './authAudit'
 import { captureError } from './monitoring'
 import { purgeDeviceReadCaches } from './devicePurge'
 
@@ -137,6 +139,8 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
+  /* Latest signed-in id for `logout`, which has no dependency on render state (G6 Logout audit row). */
+  const userIdRef = useRef<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [isLocked, setLocked] = useState(false)
   const [isPasswordRecovery, setPasswordRecovery] = useState(false)
@@ -270,6 +274,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
        * someone from the screen they are legitimately using.
        */
       if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
+      if (event === 'SIGNED_IN' && session) recordLogin(session.user.id, session.user.last_sign_in_at)
 
       if (!session) {
         setUser(null)
@@ -538,11 +543,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * follows cannot fail in a way that should keep the session on screen.
    */
   const logout = useCallback(() => {
+    const leavingId = userIdRef.current
     setUser(null)
     setLocked(false)
     setPasswordRecovery(false)
     setHasPin(false)
-    void supabase.auth.signOut()
+    /* G6: the Logout row is written while the session is still valid, then the sign-out follows (bounded). */
+    void recordLogout(leavingId).finally(() => void supabase.auth.signOut())
     /*
      * Law 6 — the identity is leaving the device, so its rows must leave with
      * it. Workbox keys its two PostgREST caches on URL alone, so without this an
@@ -634,6 +641,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!hasPin) return
     setLocked(true)
   }, [hasPin])
+
+  /* G1: shared settings load once a staff session exists — before that, RLS would return nothing. */
+  const signedInId = user?.id ?? null
+  userIdRef.current = signedInId
+  useEffect(() => {
+    if (signedInId) void hydrateSharedSettings()
+  }, [signedInId])
 
   useEffect(() => {
     // Nothing to lock when signed out, and no point re-arming while the curtain

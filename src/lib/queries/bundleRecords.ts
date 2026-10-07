@@ -2,7 +2,8 @@ import { supabase } from '../supabase'
 import { rupees } from '../money'
 import { listBundlesWithItems } from './bundles'
 import type { BundleWithItems, BundleComponent, ListBundlesOptions } from './bundles'
-import { availabilityRules, readCandidates, readHolds } from './availability'
+import { availabilityRules, readCandidates, readHolds, readProductModes, readQuantityHolds } from './availability'
+import { productCapacityFor } from './productAvailability'
 import { selectUnitsForLine, isRetired } from '../availability'
 import type { RentalWindow, UnitCandidate, UnitHold, AssignmentOutcome } from '../availability'
 import type { BundleRecord, BundleLine, BundleBooking, BlockedBy } from '../../data/bundles'
@@ -255,19 +256,60 @@ export async function listBundleRecords(
   if (bundles.length === 0) return []
 
   const productIds = [...new Set(bundles.flatMap((b) => b.items.map((i) => i.productId)))]
-  const [candidatesByProduct, holds, bookings] = await Promise.all([
+  const [candidatesByProduct, holds, bookings, modes, quantityHolds] = await Promise.all([
     readCandidates(productIds),
     readHolds(null),
     readBundleBookings(bundles.map((b) => b.id), Date.parse(window.fromAd)),
+    readProductModes(productIds),
+    readQuantityHolds(productIds, null),
   ])
 
   const now = Date.parse(window.fromAd)
+
+  /*
+   * RULING 2026-10-07 — found by driving New Rental against live: every bundle read "Unavailable ·
+   * N of N items unavailable" while each of its components, one row below, read "10 of 10 free for
+   * these dates". `lineOf` only counts serialised `product_units`, and live's 204 products are all
+   * quantity-tracked with zero unit rows, so a bulk component always came back 0 free.
+   *
+   * A bulk (Quantity / Consumable) component is now answered by the same `productCapacityFor` the
+   * catalogue rows use — total stock less the peak of overlapping holds — so the bundle verdict and
+   * its components cannot disagree. Serialised components are unchanged.
+   */
+  const rules = availabilityRules()
+  const bulkFree = new Map<string, number>()
+  for (const id of productIds) {
+    const mode = modes.get(id)
+    if (mode?.trackingMode !== 'Quantity' && mode?.trackingMode !== 'Consumable') continue
+    const a = productCapacityFor(id, mode.totalQuantity ?? 0, quantityHolds.get(id) ?? [], window, rules)
+    bulkFree.set(id, a.unitsFree)
+  }
 
   return bundles.map((b): BundleRecord => {
     /* Shared within the bundle, so a `qty: 2` line cannot be covered twice by
        one unit, and two lines naming the same product compete honestly. */
     const claimed = new Set<string>()
+    /* Bulk stock is shared within the bundle exactly as serialised units are: two lines naming the
+       same product cannot both count the same free units. */
+    const bulkUsed = new Map<string, number>()
     const lines = b.items.map((item) => {
+      const free = bulkFree.get(item.productId)
+      if (free !== undefined) {
+        const mode = modes.get(item.productId)
+        const left = Math.max(0, free - (bulkUsed.get(item.productId) ?? 0))
+        bulkUsed.set(item.productId, (bulkUsed.get(item.productId) ?? 0) + Math.min(left, item.quantity))
+        const base = lineOf(item, [], holds, window, now)
+        const { blockedBy: _none, freesAd: _noDate, ...rest } = base
+        void _none
+        void _noDate
+        return {
+          ...rest,
+          unitsStock: mode?.totalQuantity ?? 0,
+          unitsAvailable: left,
+          /* Short because other bookings hold the stock — the only reason a bulk line is short. */
+          ...(left < item.quantity && (quantityHolds.get(item.productId) ?? []).length > 0 ? { blockedBy: 'Reserved' as const } : {}),
+        }
+      }
       const pool = (candidatesByProduct.get(item.productId) ?? []).filter((u) => !claimed.has(u.unitId))
       const line = lineOf(item, pool, holds, window, now)
       let taken = 0

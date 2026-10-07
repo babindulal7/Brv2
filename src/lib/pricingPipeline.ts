@@ -34,6 +34,8 @@ export interface PromoCodeDefinition {
   applicableCategories?: readonly string[] // If empty, applies to all
   minSpendPaisa?: Paisa
   allowStacking?: boolean
+  /** `coupons.id` — carried to booking_discounts.coupon_id. */
+  couponId?: string
 }
 
 export interface DiscountDetails {
@@ -48,36 +50,8 @@ export interface DiscountDetails {
   isStudentBundle?: boolean
 }
 
-export const PROMO_CODES: Record<string, PromoCodeDefinition> = {
-  NEPALFILM: {
-    code: 'NEPALFILM',
-    discountPercent: 10,
-    active: true,
-    minSpendPaisa: 2000000 as Paisa,
-  },
-  MONSOON26: {
-    code: 'MONSOON26',
-    discountPercent: 15,
-    active: true,
-    minSpendPaisa: 5000000 as Paisa,
-  },
-  KATHMANDU: {
-    code: 'KATHMANDU',
-    discountPercent: 5,
-    active: true,
-    minSpendPaisa: 1000000 as Paisa,
-  },
-  KATHMANDU10: {
-    code: 'KATHMANDU10',
-    discountPercent: 10,
-    active: true,
-  },
-  FILMSTUDENT: {
-    code: 'FILMSTUDENT',
-    discountPercent: 15,
-    active: true,
-  },
-}
+/* RULING 2026-10-07: the hard-coded PROMO_CODES demo table is deleted. A code exists only as a
+   row in `coupons` (see lib/queries/couponLookup.ts); the pipeline receives the resolved definition. */
 
 export interface PricingPipelineInput {
   equipmentSubtotalPaisa: Paisa

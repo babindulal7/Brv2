@@ -340,7 +340,7 @@ model**. Nothing is stored: `product_units_service_v` derives it at read time.
 | Capability | Roles | Notes | Code |
 |---|---|---|---|
 | `settings.view` | M+ · Coordinator · Accounts (money-gated tab follows §5) | | ○ |
-| `settings.manage` (General, Financial, Branches) | ⛔ **Code is `Owner` only** (`canManageSettings`), not Owner · Admin. **And there is no `settings` table in `public` on live** — settings are `localStorage` (`settingsStore.ts`), so this row has no DB enforcement to mirror and §12.2 D-9 is untestable rather than failing. | none — no table | ✓ string · ⛔ roles |
+| `settings.manage` (General, Financial, Branches) | ⛔ **Code is `Owner` only** (`canManageSettings`), not Owner · Admin. **Since 0158 (7 Oct 2026, written, not yet applied to live) the `settings` table exists:** read = staff, money keys (`settings_is_money_key`) need `auth_can_view_money()`; write = `set_setting()` RPC, Owner only; `settings_history` append-only. Until 0158 is applied on live, settings are still `localStorage` there and D-9 is untestable on live (it runs under PGlite: `npm run test:settings`). | `settings`, `settings_history`, `set_setting()` — 0158 | ✓ string · ⛔ roles |
 | `settings.rules` class 1–2 | Owner · Admin | BLOCK/WARN/OFF states | ○ |
 | `settings.rules` class 3 | **Owner** + PIN + typed confirmation (2FA when built) | | ○ |
 | `admin.users` (create, deactivate, assign ≤ Manager) | Owner · Admin | build gap: today only read/reset/revoke | ○ |

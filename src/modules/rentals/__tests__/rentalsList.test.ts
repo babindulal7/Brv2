@@ -66,7 +66,7 @@ import {
 } from '../../../data/booking'
 import { overdue, todaysIncoming, todaysOutgoing, type BookingListRow } from '../../../lib/queries/bookings'
 import type { ListFilters } from '../../../lib/queries/listQuery'
-import { businessNowAd, TODAY_DAY_AD } from '../../../data/today'
+import { businessDayAd, businessNowAd, TODAY_DAY_AD } from '../../../data/today'
 import { getBusinessToday } from '../../../lib/bs'
 import { gateContext } from '../../../lib/fieldGating'
 import { rupees } from '../../../lib/money'
@@ -880,5 +880,19 @@ describe('OPTIONAL_COLUMNS — renamed to what the query can actually fill', () 
     // join; "Payment" promised a rental total and an outstanding balance, both
     // of which are the Financial Engine's and deliberately off the list row.
     expect(OPTIONAL_COLUMNS).toEqual(['Items', 'Pickup', 'Return', 'Total Amount'])
+  })
+})
+
+/* G2 (RULING 2026-10-07): the two system-view chips are the dashboard's own named sets, and are not among
+   the render's twelve visible chips (they are reached through the Built-in saved views). */
+describe('Pickups Today / Returns Today — one definition with the Today screen', () => {
+  it('are exactly todaysOutgoing / todaysIncoming for the operating day', () => {
+    const dayAd = businessDayAd(new Date(NOW_AD))
+    expect(q('Pickups Today').filters).toEqual(todaysOutgoing(dayAd))
+    expect(q('Returns Today').filters).toEqual(todaysIncoming(dayAd))
+  })
+  it('stay out of the twelve-chip bar but are valid quick filters', () => {
+    expect(ALL_CHIPS).not.toContain('Pickups Today')
+    expect(Object.keys(CHIP_MEANS)).toEqual(expect.arrayContaining(['Pickups Today', 'Returns Today']))
   })
 })

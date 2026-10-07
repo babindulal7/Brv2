@@ -1,4 +1,5 @@
 import { Pagination } from '../../components/ui/Pagination'
+import { recordExport } from '../../lib/exportAudit'
 import { useMemo, useRef, useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
@@ -480,6 +481,7 @@ function exportCsv(rows: Warehouse[]) {
   const csv = [head, ...body]
     .map((cells) => cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\r\n')
+  recordExport({ list: 'warehouses', module: 'Inventory', rowCount: rows.length, columns: head })
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')
   a.href = url

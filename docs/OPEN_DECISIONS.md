@@ -77,3 +77,13 @@
 - **Status:** Resolved (4 October 2026, Babin ruling).
 
 
+
+---
+
+## 11. Booqable adoption (7 October 2026) — what is still Babin's
+
+Provisional rulings are in `RULINGS-2026-10-07.md`; these three are the ones that need a person.
+- **D-1 (per-location settings)** — proposal adopted ⭐: only `operationalDayStart` may be overridden per location. Nothing reads a location yet (one site). Flip = widen `settings_location_overridable()` (0158).
+- **D-2 (the 4 seasonal rulesets: SUMMER25, New year, Christmas ×2)** — **open.** Proposal: import, then let them expire on their end dates. `pricing_rulesets.valid_until` (0160) carries the date. Nothing is imported yet (the Booqable bridge code is not in this repository).
+- **D-3 (who publishes a team saved view)** — proposal adopted ⭐: Manager and above (0159). Flip = `save_view()` and `canPublishTeamViews`, together.
+- **G3 persistence (engineering, not a product call, but it blocks Stage 5 cutover)** — pricing structures price a **quote** today; an invoice cannot yet reproduce them. Needs `create_booking` to accept a line total plus a `price_breakdown` snapshot (a new migration, 0161+, with the R-35 gates). Until then a structure-priced product must be keyed with a flat rate on the booking.

@@ -1,14 +1,14 @@
-import { formatAd } from '../../../lib/bs'
 import Icon from '../../../components/ui/Icon'
 import { Button, Input } from '../../../components/ui'
 import { Field, MoneyRow, Section, inputStyle } from './BookingFormWidgets'
 import { DiscountChips } from './DiscountChips'
 import { VatToggle } from './VatToggle'
 import { formatMoney, toRupees } from '../../../lib/money'
+import { lookupCouponByCode } from '../../../lib/queries/couponLookup'
 import {
   type PricingPipelineResult,
   DISCOUNT_STACKING_CAP_PERCENT,
-  PROMO_CODES,
+  type PromoCodeDefinition,
 } from '../../../lib/pricingPipeline'
 
 const sub = {
@@ -47,8 +47,8 @@ export interface RentalPricingSectionProps {
   isStudentBundle: boolean
   promoCodeInput: string
   setPromoCodeInput: (code: string) => void
-  promoCodeApplied: string | null
-  setPromoCodeApplied: (code: string | null) => void
+  promoCodeApplied: PromoCodeDefinition | null
+  setPromoCodeApplied: (promo: PromoCodeDefinition | null) => void
   promoNotice: { tone: 'success' | 'danger'; text: string } | null
   setPromoNotice: (notice: { tone: 'success' | 'danger'; text: string } | null) => void
   pickupAt: Date | null
@@ -235,7 +235,7 @@ export function RentalPricingSection({
 
             {/* Promo code */}
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-              <Field label="Promo Code">
+              <Field label="Promo code (optional)">
                 <div style={{ display: 'flex', gap: 8 }}>
                   <Input
                     value={promoCodeInput}
@@ -243,44 +243,26 @@ export function RentalPricingSection({
                       setPromoCodeInput(e.target.value.toUpperCase())
                       setPromoNotice(null)
                     }}
-                    placeholder="e.g. NEPALFILM, MONSOON26"
+                    placeholder="Promo code"
                     style={{ ...inputStyle, textTransform: 'uppercase' }}
                   />
                   <Button
                     variant="secondary"
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       const code = promoCodeInput.trim().toUpperCase()
                       if (!code) {
                         setPromoNotice({ tone: 'danger', text: 'Enter a promo code.' })
                         return
                       }
-                      const promo = PROMO_CODES[code]
-                      if (!promo) {
-                        setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is invalid or expired.` })
+                      /* RULING 2026-10-07: a code is a `coupons` row, never an in-code constant. */
+                      const today = (pickupAt ?? new Date()).toISOString().slice(0, 10)
+                      const found = await lookupCouponByCode(code, today)
+                      if (!found.ok) {
+                        setPromoNotice({ tone: 'danger', text: found.reason })
                         return
                       }
-                      if (!promo.active) {
-                        setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is no longer active.` })
-                        return
-                      }
-                      if (pickupAt) {
-                        const pickupIso = pickupAt.toISOString()
-                        if (promo.validFrom && pickupIso < promo.validFrom) {
-                          setPromoNotice({
-                            tone: 'danger',
-                            text: `Promo code "${code}" is not valid until ${formatAd(new Date(promo.validFrom))}.`,
-                          })
-                          return
-                        }
-                        if (promo.validTo && pickupIso > promo.validTo) {
-                          setPromoNotice({
-                            tone: 'danger',
-                            text: `Promo code "${code}" expired on ${formatAd(new Date(promo.validTo))}.`,
-                          })
-                          return
-                        }
-                      }
+                      const promo = found.promo
                       if (promo.minSpendPaisa && pricing.grossSubtotalPaisa < promo.minSpendPaisa) {
                         setPromoNotice({
                           tone: 'danger',
@@ -288,7 +270,7 @@ export function RentalPricingSection({
                         })
                         return
                       }
-                      setPromoCodeApplied(code)
+                      setPromoCodeApplied(promo)
                       setPromoNotice({
                         tone: 'success',
                         text: `Promo "${code}" applied: ${promo.discountPercent}% off${promo.description ? ` (${promo.description})` : ''}.`,

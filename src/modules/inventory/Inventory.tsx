@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { recordExport } from '../../lib/exportAudit'
 import type { ReactNode } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -1170,6 +1171,7 @@ function exportCsv(rows: InventoryListRow[], money: boolean) {
   const csv = [head, ...body]
     .map((cells) => cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\r\n')
+  recordExport({ list: 'inventory', module: 'Inventory', rowCount: rows.length, columns: head })
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
   const a = document.createElement('a')
   a.href = url
