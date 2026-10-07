@@ -1,5 +1,190 @@
 # Progress Log
 
+## 2026-10-08 — Today: smaller, smarter dispatch date control
+
+**Did**
+- User selected the dispatch date control: "make it smaller and smarter". 546 → 235px wide (295px when away from today).
+- Removed the "Sync dispatch day:" label and the separate calendar button (it opened the same dialog as the date). The date button now carries a calendar icon and reads as a day name (Today / Tomorrow / Yesterday / weekday; Next 7 days; Date range) over "22 Ashwin · 8 Oct", with years only for another year. "Today" appears only when away from today. Summary line above the lists uses the same day name.
+- Removed the control's phone-only label branch and the now-unused `formatMasterDispatchDate`. The button's accessible name is built from the same two visible parts plus a screen-reader separator (WCAG 2.5.3 test kept green).
+
+**Verified**
+- Browser (mock mode) 1366×900: control 235px, all buttons 44px tall; Next day → "Tomorrow · 23 Ashwin · 9 Oct" plus Today button, summary "Tomorrow · 0 going out · 0 coming back"; Today → back, button gone; the date opens the picker (Today / Tomorrow / Next 7 days / range), Escape closes. 375×812: full-width control, no horizontal scroll.
+- Tests: new control test in `dashboardLayout.test.tsx`; tier1/tier3 e2e updated to the new Today-button behaviour. Typecheck, ESLint, `lint:shell`, `lint:ui-copy`, `check:contrast` 54/54, build. Full suite 4114/4114.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T17:02:48.363Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T21:28:13.867Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Nepali weekday names come from the browser's `ne-NP` locale data; not checked in the Nepali language setting.
+- Pre-existing, unrelated: RentalsList's FilterBar renders `NaN` in a chip during the tier1/tier3 e2e runs (React warning).
+- Not committed.
+
+## 2026-10-08 — Today: meaningful rows
+
+**Did**
+- User: "make it visually pleasing and meaningful". Every Today row visual now names a fact, from fields the row already carries:
+  - time column (replaces initials): movement time in booking-date orange, plus the day when not today; overdue rows show "79d late" in danger ink;
+  - readiness tag from stage (Booked → "Not packed yet", Packed → "Packed"); mode tag from `delivery_type`;
+  - return tag "Due back today" only on the actual day, otherwise "Due back Tue 22 Sep" (fixed month names — Node ICU prints "Sept").
+- Workbar intro "Daily dispatch / Movement board" → period plus "N going out · M coming back" (falls back to "Movement board" while counts load). Still hidden on phone.
+
+**Ruled**
+- RULINGS-2026-10-08.md, Today table, "Make it visually pleasing and meaningful".
+
+**Verified**
+- Browser (mock mode) 1366×900 light: pickup row "09:00 AM · Not packed yet · Client pickup"; overdue returns lead "79d late"; summary "1 going out · 24 coming back". 375×812: first card with tags and Start Packing fully on screen, no horizontal or in-card overflow.
+- Contrast: measured in page (light lowest 4.97 on the Not-packed tag, dark 7.00) and computed for tones the mock data lacks (Packed, Due back, late) — lowest 5.84.
+- Four new tests in `movementPanel.test.tsx` (tags, time column, due-back day, overdue lead). Typecheck, ESLint, `lint:shell`, `lint:ui-copy`, `check:contrast` 54/54. Full suite 4113/4113.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T17:02:48.363Z). Suite: 4113/4113 passed (recorded 2026-10-07T21:13:09.063Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T17:02:49.147Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Overdue rows say the lateness twice (time column and the "Overdue · 79 days late" badge); the badge is kept because the time column is hidden from screen readers.
+- Pickup rows for today repeat the time under "Pickup".
+- Other screens still use the older row styles; the same approach (lead with the fact staff act on) would apply to Rentals and Operation.
+- Not committed.
+
+## 2026-10-08 — App-wide contrast: theme structure tokens
+
+**Did**
+- User: "app design looks old and lacks contrast". Measured first: text was AA, structure was not — light borders 1.48:1 on cards, cards 1.07:1 on the page, input outlines ~1.8:1 (dark 1.24 / 1.08 / ~1.35).
+- `theme.css` light: one cool slate family (cream `--bg0`/`--inset`/`--inset2` replaced), page `--app` #e9eef5, `--border` #b8c3d2, `--input-border` #7c8ba1 (3.46:1), `--text` #0f172a, `--text2` #334155, `--muted` #526075, soft card shadows. Dark: page #04080d, cards #0f1b2a / #13233a, borders 14–18% white, input outline 34% white (3.1:1), `--text2` #b8c4d3, `--muted` #9eaabb. High-contrast theme untouched.
+- Fixed `--ready-text` #7f620a and `--warn-text` #9a5417 (light): previously 4.03 / 4.32 on the darkest inset, now 4.66.
+
+**Ruled**
+- Applied after a live in-browser preview the user approved. RULINGS-2026-10-08.md "App-wide contrast".
+
+**Verified**
+- Computed contrast for every coloured text token on the new surfaces: light lowest 4.61 (warn on page bg) after the fix; dark lowest 6.39. `check:contrast` 54/54.
+- Browser (mock mode, real theme file): Rentals list in dark and light via the app's own toggle (restored to dark afterwards); New Rental and Today previewed in both.
+- Typecheck, `lint:shell`, production build passed. Full suite 4109/4109.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T17:02:48.363Z). Suite: 4109/4109 passed (recorded 2026-10-07T20:32:46.983Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T17:02:49.147Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Screens checked: Rentals, New Rental, Today. Others inherit the tokens but were not individually viewed; components with hard-coded colours would not have changed.
+- `check:contrast` does not assert the new structural pairs (borders, input outline, card-on-page); adding them would stop this regressing.
+- The PWA manifest and `index.html` theme colour still say cream #FDEFDC.
+- Not committed.
+
+## 2026-10-08 — Today: modern visual layer
+
+**Did**
+- Added a "Modern layer" at the end of `dashboard.css` (the user asked for Today to be modern): flat queue panels without the accent bar or tinted header; category dot plus tinted count chip by the text title; hairline row dividers; sentence-case muted labels; rounded-square avatars shown again; neutral booking-number chip; dates and actions aligned to the client name; hover arrow nudge and press scale on actions; staggered row fade-in, disabled under reduced motion.
+- `DashboardMovementPanel.tsx` sets a capped `--row-i` per row for the stagger. No data, ordering, gate or copy change.
+
+**Ruled**
+- Direction recorded in RULINGS-2026-10-08.md (Today, "I want it to be modern").
+
+**Verified**
+- Browser (mock mode): 1366×900 in dark and light — panels, chips, avatars and alignment as described; 375×812 dark — first card with Start Packing still fully on the first screen, no horizontal scroll.
+- Measured contrast in the page for the new chips/labels: lowest 5.56:1 (dark), 5.75:1 (light) — all ≥ 4.5. `check:contrast` 54/54.
+- Typecheck, ESLint (today module), `lint:shell`, `lint:ui-copy` passed. Full suite 4109/4109.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T17:02:48.363Z). Suite: 4109/4109 passed (recorded 2026-10-07T20:32:46.983Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T17:02:49.147Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- The header area (title, "Daily dispatch / Movement board", date control labelled "Sync dispatch day:", overdue banner) was not restyled.
+- `dashboard.css` carries many superseded layers (~230 card/panel rules); a consolidation pass would make future styling safer.
+- Not committed.
+
+## 2026-10-08 — Today: no count tiles; work first on phone
+
+**Did**
+- Removed the three count tiles (On rent now / Overdue / Packing due tomorrow) on every screen size, with their component and CSS. The overdue banner and the Returns badge still carry the overdue signal.
+- Phone (≤ 767px): hid the "Daily dispatch / Movement board" intro and visually hid the panel heading (kept for screen readers and the View Returns jump), since the Pickups/Returns switch already names the list and its count.
+- Added a test that Today renders no count tiles; it fails against the previous page.
+
+**Ruled**
+- User: no KPI cards, everywhere; work first on phone. Return order was asked and not answered, so it is unchanged. Recorded in RULINGS-2026-10-08.md.
+
+**Verified**
+- Browser (mock mode), 375×812: the first pickup card including its Start Packing action is fully on the first screen (card bottom 645px of 812; mock banner included); no horizontal scroll; View Returns switches to Returns and shows its first card. 1366×900: tiles gone, both lists start mid-screen.
+- Typecheck, ESLint (today module), `lint:shell`, `lint:ui-copy` passed. Full suite 4109/4109.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T17:02:48.363Z). Suite: 4109/4109 passed (recorded 2026-10-07T20:32:46.983Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T20:32:46.983Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Offered and not chosen: BS + AD dates on Today cards (they show numeric AD only), capping long Return lists, merging the overdue banner into a tile.
+- Return order (overdue oldest-first ahead of due-today) still needs a ruling.
+- Unused `.dashboard-kpi-*` rules in `dashboard.css` predate this change and were left.
+- Not checked in dark theme (only removals and a visually-hidden rule; no new colours).
+
+## 2026-10-08 — Suite and shell lint green after the body-portal change
+
+**Did**
+- Fixed the 9 tests broken by `3f8d1e3`: `BookingDetail.honesty` (×4) and `ClientDetail.block` (×5) searched only the component container, but overflow menus and dialogs now portal to `<body>`. Their helpers now query `document.body`; no assertion was loosened.
+- Cleared the `lint:shell` SUB_44PX_CONTROL finding at `DateField.tsx`: a false positive (the 0×0 popover anchor's line mentioned `buttonRef`). Split the style across lines with a comment; no behaviour change.
+
+**Verified**
+- Full suite 4108/4108 passed (recorded in `.test-result.json`). Typecheck, ESLint on changed files and `lint:shell` (612 files, 0 violations) passed.
+- Browser (mock mode): the Out date picker on New Rental opens anchored under its field and above the page; Escape closes it.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T17:02:48.363Z). Suite: 4108/4108 passed (recorded 2026-10-07T20:13:52.754Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T17:02:49.147Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- New Rental tap cuts still open: Client search autofocus; catalogue lists bundles before single items and shows ~2½ rows at 1366×900.
+- New Rental changes not checked at phone width or in dark theme.
+
 ## 2026-10-08 — New Rental tap audit; mock mode restored
 
 **Did**
