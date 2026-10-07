@@ -122,10 +122,11 @@ async function mount() {
   await click(container.querySelector('button[aria-label="More actions"]'))
 }
 
-const dialog = () => container.querySelector('[role="dialog"]')
+// Overflow menus and dialogs portal to <body> (shell clearance, 7 Oct 2026).
+const dialog = () => document.body.querySelector('[role="dialog"]')
 
 /** Buttons matched by visible text — the handle an operator has. */
-function buttons(label: string, scope: ParentNode = container): HTMLButtonElement[] {
+function buttons(label: string, scope: ParentNode = document.body): HTMLButtonElement[] {
   return [...scope.querySelectorAll('button')].filter((b) => b.textContent?.trim() === label)
 }
 

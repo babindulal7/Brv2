@@ -1164,7 +1164,19 @@ export function DateField({
       )}
 
       {open && panelPos && createPortal(
-        <div ref={panelRef} style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, width: 0, height: 0, zIndex: floatingLayer(buttonRef.current) }}>
+        // A 0×0 positioning anchor for the popover, not a control — the
+        // popover inside it carries its own 44px targets.
+        <div
+          ref={panelRef}
+          style={{
+            position: 'fixed',
+            top: panelPos.top,
+            left: panelPos.left,
+            width: 0,
+            height: 0,
+            zIndex: floatingLayer(buttonRef.current),
+          }}
+        >
           <CalendarPopover
           value={value}
           clearable={clearable}
