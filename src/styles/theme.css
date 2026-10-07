@@ -74,18 +74,18 @@
 :root,
 :root[data-theme='light'] {
   /* ---- §3.1 core elevation ladder ---- */
-  --bg0: #eae6de;
-  --bg: #f5f7fb;
-  --bgglow: #edf2f9;
+  --bg0: #e2e8f0;
+  --bg: #eaeff5;
+  --bgglow: #e4eaf2;
   --surface: #ffffff;
   --surface-2: #edf3fa;
   --card: #ffffff;
   --card2: #faf8f4;
-  --inset: #f5f3ee;
-  --inset2: #eae6de;
-  --border: #cbd5e1;
-  --border2: #d8e2ee;
-  --divider: #cbd5e1;
+  --inset: #f1f5f9;
+  --inset2: #e2e8f0;
+  --border: #b8c3d2;
+  --border2: #cbd5e1;
+  --divider: #c3cddb;
 
   /* Universal 9-tier translucent alpha border scale (Light mode: slate-based) */
   --w02: rgba(15, 23, 42, 0.02);
@@ -100,8 +100,8 @@
   --w40: rgba(15, 23, 42, 0.40);
 
   /* Shared cool canvas, matched to the Pickup & Return dashboard. */
-  --bg-gradient-1: #f5f7fb;
-  --bg-gradient-2: #edf2f9;
+  --bg-gradient-1: #eaeff5;
+  --bg-gradient-2: #e4eaf2;
   --bg-radial-mesh: none;
   --surface-card: var(--surface);
   --surface-card-hover: var(--surface-2);
@@ -110,8 +110,8 @@
   --bezel-outer-ring: 0 0 0 1px rgba(16, 32, 59, 0.06);
   --bezel-outer-bg: rgba(16, 32, 59, 0.025);
 
-  --text: #1c1e22;
-  --text2: #4b4e54;
+  --text: #0f172a;
+  --text2: #334155;
   /*
    * v4.1 shipped #6d7076 here with the comment "measured 4.97:1 on white" —
    * which was true, and was the whole problem. `--muted` is not painted on
@@ -126,8 +126,15 @@
    * every surface in the ladder passes, not just the one that was measured.
    * `check:contrast` now asserts the muted-on-tinted pairs so this cannot
    * regress behind a passing white-only check.
+   *
+   * 8 Oct 2026 (RULINGS-2026-10-08.md, "looks old and lacks contrast"): text
+   * was already AA; the STRUCTURE was not — borders 1.48:1 on cards, cards
+   * 1.07:1 on the page, input outlines ~1.8:1 (under WCAG 1.4.11's 3:1).
+   * One cool slate family now (the cream insets are gone); muted #526075 is
+   * 6.39:1 on white and 5.18:1 on the darkest inset #e2e8f0; text2 #334155
+   * 10.35:1; input border #7c8ba1 3.46:1; cards carry a soft shadow.
    */
-  --muted: #63666d;
+  --muted: #526075;
   --disabled: #9b9ea4;
 
   --primary: #2456d6;
@@ -151,14 +158,14 @@
      #d46218 holds the desaturation and measures 4.55:1. */
   --warn: #d46218;
   --on-warn: #231a05;
-  --warn-text: #a05818;
+  --warn-text: #9a5417;
   /* User ruling, 7 Oct 2026: booking pickup/return dates use orange everywhere. */
   /* Slightly deeper ink keeps small dates readable on the darkest light inset. */
   --booking-date-text: #985014;
 
   --ready: #d4a315;       /* Desaturated from #e3b117. */
   --on-ready: #231a05;
-  --ready-text: #8a6b0b;
+  --ready-text: #7f620a;
 
   --neutral: #72757e;  /* draft #8A8D95 → white was 3.32, now 4.60 */
   --on-neutral: #ffffff;
@@ -172,7 +179,7 @@
   --gold: #2456d6;
   --brand-mark: #2456d6;
 
-  --app: #f5f7fb;
+  --app: #e9eef5;
   --sidebar: #ffffff;
   --card: #ffffff;
   --card2: #edf3fa;
@@ -196,8 +203,8 @@
   --nav-icon: #6d7076;
 
   --input-bg: #ffffff;
-  --input-border: #afc0d4;
-  --input-placeholder: #6d7e95;
+  --input-border: #7c8ba1;
+  --input-placeholder: #5f6e83;
   --input-focus: #2456d6;
 
   --th-bg: #edf3fa;
@@ -206,10 +213,10 @@
   --tr-alt: #f5f7fb;
 
   /* DESIGN_DIRECTION_SPEC v4.2 §6 Shadow Scale — tinted to match background hue */
-  --shadow-xs: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
-  --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.05);
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.07), 0 0 0 1px rgba(15, 23, 42, 0.03);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.09), 0 1px 2px rgba(15, 23, 42, 0.05);
   --shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.05), 0 2px 4px -1px rgba(15, 23, 42, 0.03);
-  --shadow-card: 0 0 0 transparent;
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-kpi: 0 0 0 transparent;
   --shadow-md: 0 8px 20px -3px rgba(15, 23, 42, 0.08);
   --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.05), 0 4px 6px -2px rgba(15, 23, 42, 0.025);
@@ -241,13 +248,13 @@
 
 :root[data-theme='dark'] {
   /* ---- §3.1 5-Tier Obsidian Dark Elevation Ladder ---- */
-  --bg0: #02060b;
-  --bg: #050b12;
+  --bg0: #020509;
+  --bg: #04080d;
   --bgglow: #0a1826;
-  --surface: #0b1622;
-  --surface-2: #0d1a29;
-  --card: #0b1622;
-  --card2: #0d1a29;
+  --surface: #0f1b2a;
+  --surface-2: #13233a;
+  --card: #0f1b2a;
+  --card2: #13233a;
   --inset: #081522;
   --inset2: #0b1b2c;
   --sidebar: #050b12;
@@ -266,13 +273,13 @@
   --w30: rgba(255, 255, 255, 0.30);
   --w40: rgba(255, 255, 255, 0.40);
 
-  --border: var(--w08);
-  --border2: var(--w12);
-  --divider: var(--w08);
+  --border: rgba(255, 255, 255, 0.14);
+  --border2: rgba(255, 255, 255, 0.18);
+  --divider: rgba(255, 255, 255, 0.14);
 
   /* Obsidian Spatial Gradients & Glows */
-  --bg-gradient-1: #050b12;
-  --bg-gradient-2: #02060b;
+  --bg-gradient-1: #04080d;
+  --bg-gradient-2: #020509;
   --bg-radial-mesh: radial-gradient(ellipse 80% 50% at 50% -20%, #0a1826 0%, #050b12 100%);
   --surface-card: linear-gradient(180deg, var(--card2) 0%, var(--card) 100%);
   --surface-card-hover: var(--card2);
@@ -282,8 +289,8 @@
   --bezel-outer-bg: rgba(255, 255, 255, 0.02);
 
   --text: #f1f5f9;
-  --text2: #94a3b8;
-  --muted: #8b8e96;
+  --text2: #b8c4d3;
+  --muted: #9eaabb;
   --disabled: #475569;
 
   --primary: #386af7;      /* WCAG AA 4.59:1 with white on-primary */
@@ -320,10 +327,10 @@
   --gold: #386af7;
   --brand-mark: #85b2ff;
 
-  --app: #050b12;
+  --app: #04080d;
   --sidebar: #050b12;
-  --card: #0b1622;
-  --card2: #0d1a29;
+  --card: #0f1b2a;
+  --card2: #13233a;
   --modal: #0d1a29;
   --dropdown: #0d1a29;
 
@@ -351,7 +358,7 @@
   --nav-icon: #94a3b8;
 
   --input-bg: #081522;
-  --input-border: var(--w12);
+  --input-border: rgba(255, 255, 255, 0.34);
   --input-placeholder: #64748b;
   --input-focus: #386af7;
 
