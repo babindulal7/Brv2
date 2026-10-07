@@ -12,6 +12,8 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { formatMoney, rupees, type Paisa } from '../../lib/money'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
+import { useAuth } from '../../lib/auth'
+import { isStaff } from '../../lib/rbac'
 import { TIER_TONE, type ClientRecord } from '../../data/clients'
 import { STATUS } from '../../lib/status'
 
@@ -47,8 +49,20 @@ function csvCell(v: string | number): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-export default function Clients() {
+export interface ClientsProps {
+  loading?: boolean | undefined
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
+}
+
+export default function Clients({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: ClientsProps = {}) {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const isStaffMember = user ? isStaff(user.role) : true
   const money = useCanViewMoney()
   const { showSuccessToast } = useToast()
   const [params, setParams] = useSearchParams()
@@ -60,6 +74,10 @@ export default function Clients() {
    * import is gone from it entirely.
    */
   const { clients, loading: clientsLoading, error: clientsError, refresh } = useClients()
+
+  const isLoading = propLoading !== undefined ? propLoading : clientsLoading
+  const isError = propError !== undefined ? propError : clientsError
+  const handleRetry = propOnRetry ?? refresh
 
   /**
    * Blocking is a write now, and this screen's only job in it is the re-read.

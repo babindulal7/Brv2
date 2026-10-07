@@ -12,7 +12,7 @@ import type { StatusKey, BrandKey } from '../../lib/status'
 import { formatMoney } from '../../lib/money'
 import { formatAd, TODAY } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
-import type { Role as SystemRole } from '../../lib/rbac'
+import { isStaff, type Role as SystemRole } from '../../lib/rbac'
 import { STATUS_ORDER, statusToken } from '../../lib/workflow'
 import type { BookingStatus } from '../../lib/workflow'
 import { useAuth } from '../../lib/auth'
@@ -623,10 +623,21 @@ function pageWindow(current: number, pageCount: number, span = 5): number[] {
  * money filter groups and the Payment Due chip are removed from their arrays
  * *before* render, so a money-blind session has no masked cell to un-hide.
  */
-export default function RentalsList() {
+export interface RentalsListProps {
+  loading?: boolean | undefined
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
+}
+
+export default function RentalsList({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: RentalsListProps = {}) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const role: SystemRole = user ? user.role : 'Client'
+  const isStaffMember = user ? isStaff(user.role) : true
   /** The single money gate. Mirrors `auth_can_view_money()` — see Law 6 above. */
   const money = useCanViewMoney()
   /**
@@ -895,6 +906,10 @@ export default function RentalsList() {
     overdueKpi.refetch()
   }, [list.refetch, activeKpi.refetch, pickupsKpi.refetch, returnsKpi.refetch, overdueKpi.refetch])
 
+  const isLoading = propLoading !== undefined ? propLoading : (list.loading || (subOn && subPending))
+  const isError = propError !== undefined ? propError : (subOn && !subPending && subIds === null ? SUB_RENTAL_UNANSWERED : list.error)
+  const handleRetry = propOnRetry ?? refreshAll
+
   /*
    * ⛔ Six hardcoded cards became four counted ones.
    *
@@ -1093,6 +1108,20 @@ export default function RentalsList() {
     </Card>
   )
 
+  /* ── restricted state for non-staff ────────────────────────────────── */
+  if (!isStaffMember) {
+    return (
+      <PageBody
+        restricted={true}
+        restrictedReason="The operational rentals directory is for Babin Rentals staff only. Clients may view their confirmed bookings in the client portal."
+        restrictedRequiredRole="Staff"
+        noun="rentals"
+      >
+        <div />
+      </PageBody>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
@@ -1103,7 +1132,7 @@ export default function RentalsList() {
             <Button icon="plus" variant="primary" onClick={() => navigate('/rentals/new')}>
               New Rental
             </Button>
-            <Button icon="refresh" onClick={refreshAll}>
+            <Button icon="refresh" onClick={handleRetry}>
               Refresh
             </Button>
             {/* ⛔ The Import button is GONE — §4.1 draws `[＋ New Rental]
@@ -1473,12 +1502,12 @@ export default function RentalsList() {
                  the skeleton up until it lands is what stops a "no rentals
                  match these filters" flashing over a question still in flight —
                  `query.impossible` is true for that whole window by design. */
-              loading={list.loading || (subOn && subPending)}
+              loading={isLoading}
               /* Law 12 — inline and persistent. A sub-rental read that failed
                  is a real error on a screen filtering by it, not a silent
                  empty list. */
-              error={subOn && !subPending && subIds === null ? SUB_RENTAL_UNANSWERED : list.error}
-              onRetry={refreshAll}
+              error={isError}
+              onRetry={handleRetry}
               hasRows={list.rows.length > 0}
               empty={list.isEmpty || query.impossible}
               emptyIsFiltered={list.isFiltered}
@@ -1487,6 +1516,12 @@ export default function RentalsList() {
               skeleton="table"
               skeletonRows={6}
               emptyTitle={isFiltered ? 'No rentals match these filters' : 'No rentals yet'}
+              {...(!isFiltered
+                ? {
+                    emptyActionLabel: 'New Rental',
+                    onEmptyAction: () => navigate('/rentals/new'),
+                  }
+                : {})}
               emptyMessage={
                 /* Three different emptinesses, and saying which one it is
                    matters: an empty derived set is a fact about the corpus, an

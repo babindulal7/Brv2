@@ -2,6 +2,73 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-10-08 — Phase 6 Screen Hardening: RentalsList 5-State PageBody & Filter EmptyState Adoption (Option 8) Complete
+
+**Phase:** Phase 6 (Screens — Rentals) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2024 passed in 85 files (0 failures)
+
+### 1. `RentalsList.tsx` 5-State `PageBody` Hardening
+- Exported and integrated `RentalsListProps` (`loading?: boolean`, `error?: string | null`, `onRetry?: () => void`) for caller overrides and headless test mounting.
+- **Client Role Restriction (Law 6 / RBAC):**
+  - Added role check: `isStaffMember = user ? isStaff(user.role) : true`.
+  - Non-staff (`Client`) sessions navigating to `/rentals` are immediately gated into `RestrictedState` via `<PageBody restricted={true} restrictedRequiredRole="Staff" restrictedReason="The operational rentals directory is for Babin Rentals staff only. Clients may view their confirmed bookings in the client portal." noun="rentals">`.
+- **Loading State:**
+  - Integrated `isLoading` derived from `propLoading !== undefined ? propLoading : (list.loading || (subOn && subPending))`.
+  - Displays `<LoadingSkeleton type="table" rows={6} label="Loading rentals…" />`.
+- **Persistent Error State (Law 12):**
+  - Integrated `isError` derived from `propError !== undefined ? propError : (subOn && !subPending && subIds === null ? SUB_RENTAL_UNANSWERED : list.error)`.
+  - Renders inline `<ErrorBanner>` with retry callback (`handleRetry = propOnRetry ?? refreshAll`). Wired both the banner retry button and the PageHeader Refresh button to `handleRetry`.
+  - Respects `hasRows`: displays banner above surviving rows on failed refresh, or full-width banner on initial load error.
+- **Filter-Aware EmptyState vs. Unfiltered Zero Data State:**
+  - Unfiltered zero data renders `EmptyState` with `emptyTitle="No rentals yet"`, description `"No booking has been created yet."`, and 44×44 primary action `emptyActionLabel="New Rental"` invoking `navigate('/rentals/new')`.
+  - Filtered zero data renders `EmptyState` with `emptyTitle="No rentals match these filters"`, descriptive filter explanations, and 44×44 action `emptyActionLabel="Clear filters"` invoking `onClearFilters={clearFilters}`.
+
+### 2. Automated Test Coverage & Full Regression Verification
+- Created `src/modules/rentals/__tests__/RentalsList.states.test.tsx` (6/6 tests passing):
+  - Renders `LoadingSkeleton` with 6-row table layout when `loading={true}`.
+  - Renders `ErrorBanner` with inline alert message and clickable `Retry` button calling `onRetry` when `error` prop is provided.
+  - Renders `RestrictedState` with `"Requires Staff"` chip for `Client` role.
+  - Renders `EmptyState` with `"New Rental"` CTA when unfiltered list is empty.
+  - Renders `EmptyState` with `"Clear filters"` CTA when query filters match zero rows, successfully clearing filter parameters.
+  - Renders table and booking rows when records exist for staff.
+- Full regression verification: **85 test files passed, 2024/2024 tests passed, `tsc --noEmit` exit 0**.
+
+## 2026-10-07 — Phase 6 Screen Reachability, Orphaned Reports Routing & Law 6 Money Gating (Option 7) Complete
+
+**Phase:** Phase 6 (Screens & Reachability) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2018 passed in 84 files (0 failures)
+
+### 1. Orphaned Reports Routing & Law 6 Money Hardening
+- **`CasesReports.tsx` (`/reports/cases`):**
+  - Integrated `useCanViewMoney()` (Law 6): strictly omits the "Total Assessed" KPI tile and table financial columns ("Assessed", "Outstanding") for money-blind roles (`Warehouse`, `Technician`, `Driver`, `Client`).
+  - Replaced undefined `--good`/`--warn` color variables with standard design system semantic tokens (`--success-text`, `--warning-text`).
+  - Added `--warn: var(--warning-text);` alias to `theme.css`.
+- **`ProductReports.tsx` (`/reports/products`):**
+  - Fully routed in `App.tsx` at `/reports/products` with `Shell` breadcrumbs (`Finance ▸ Reports ▸ Product Performance`).
+  - Added `/reports/cases` and `/reports/products` to `BUILT` set in `App.tsx`.
+
+### 2. `Pulse.tsx` Dead Links Fixed
+- Resolved all dead tab links (`to: null`) in `TAB_FAMILIES`:
+  - `Staff` → `/reports/staff` (`StaffReports.tsx`).
+  - `Maintenance` → `/reports/equipment-performance` (`EquipmentPerformance.tsx`).
+  - `Cases` → `/reports/cases` (`CasesReports.tsx`).
+  - `Revenue` → `/reports/expenses` (`ExpenseReports.tsx`, `money: true`).
+  - `Operations` → `/reports/working-capital` (`WorkingCapitalReport.tsx`, `money: true`).
+- Money-blind roles automatically see `Revenue` and `Operations` categorized under `"Not in your role's view"` (Law 6), with no broken links.
+
+### 3. Inventory Sub-screen Reachability & Command Palette Integration
+- Added 44×44 clickable action buttons in `src/modules/inventory/Inventory.tsx` header for:
+  - `Warehouses` → `/inventory/warehouses`
+  - `Purchase Requests` → `/inventory/purchase-requests`
+- Added navigation actions to `src/components/shell/CommandPalette.tsx` for `Warehouses` and `Purchase Requests`, making both reachable via ⌘K keyboard palette.
+
+### 4. Automated Test Coverage & Verification
+- Created `src/modules/reports/__tests__/reachability.test.tsx` (6 tests passing):
+  - Verifies `CasesReports` renders full metrics for Owner and strictly hides money KPIs/columns for Warehouse.
+  - Verifies `ProductReports` hides revenue/margin/profit charts and columns for Warehouse.
+  - Verifies `Pulse.tsx` provides live route destinations and properly gates money families.
+- Created `src/modules/inventory/__tests__/inventoryNav.test.tsx` (1 test passing):
+  - Verifies `Warehouses` and `Purchase Requests` action buttons render and navigate to `/inventory/warehouses` and `/inventory/purchase-requests`.
+- Full regression verification: 84 test files passed, 2018/2018 tests passed, `tsc --noEmit` exit 0.
+
 ## 2026-10-07 — Phase 6 Screen Hardening: Calendar 5-State PageBody & Filter EmptyState Adoption (Option 6) Complete
 
 **Phase:** Phase 6 (Screens — Calendar) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2011 passed in 82 files (0 failures)

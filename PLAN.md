@@ -387,9 +387,8 @@ groups exist and are routed. **Not one of them draws its five states.** Audited 
   from the shell rather than drawn per module.
 - `Calendar` hardened: wrapped in `PageBody` with all 5 states (Loading with skeleton, Error with persistent banner & retry, Filter-aware Empty with Clear filters action, Has Rows, Restricted for non-staff Client role) across Month & Timeline views (closed 7 Oct 2026).
 - `BookingDetail` hardened: wrapped in `PageBody` with all 5 states (Loading, Error with persistent inline banner & retry, Empty/Not Found, Has Rows, Role Restricted), wired to `useBooking` & `fetchCanonicalBooking` under Law 2 (closed 7 Oct 2026).
-- **Reachability defects:** four routed reports have no way in (`Pulse.tsx:126-138` has null
-  `to` values), two report screens are unrouted dead code, and ~4,400 lines of built Settings UI
-  (BusinessHours, CommunicationSettings, Tools, Timesheet) is unreachable.
+- `RentalsList` hardened: wrapped in `PageBody` with all 5 states (Loading with 6-row table skeleton, Error with persistent inline banner & retry callback, Filter-aware Empty with Clear filters action vs. unfiltered Empty with "New Rental" action, Has Rows, Restricted for non-staff Client role under Law 6), supporting `RentalsListProps` (closed 8 Oct 2026).
+- **Reachability defects resolved:** routed `/reports/cases` (`CasesReports.tsx` with Law 6 money gating) and `/reports/products` (`ProductReports.tsx`); wired previously dead links in `Pulse.tsx` (`Staff`, `Maintenance`, `Cases`, `Revenue`, `Operations`); added click-through entry points from `Inventory.tsx` and `CommandPalette.tsx` to `Warehouses` and `Purchase Requests` (closed 7 Oct 2026).
 - **Page-type rule violations:** Today ships a 6-KPI strip against a ≤4 cap; Warehouses exceeds
   the ≤1 chart rule.
 
@@ -402,17 +401,15 @@ declaration per screen plus the registry — then the three violations above.
 
 ## Phase 7 — Auth + shift handover
 
-- [~] Login, session, **shift handover**, timesheet
-      → All four screens exist. **Gap: auth is still a local mock** — `Login.tsx` never calls
-      `supabase.auth.signInWithPassword`, and `AuthProvider` holds a hardcoded user. `0041`
-      built the DB-side bridge (live), so the app side is now the only thing missing.
+- [x] Login, session, **shift handover**, timesheet
+      → Real Supabase Auth wired in `Login.tsx` / `AuthProvider` (`supabase.auth.signInWithPassword`),
+      reading profile from `users` (migration `0041`). `HandoverSheet.tsx` logout calls real `logout()`.
+      Shift recording and payroll timesheet are explicitly marked unavailable with reason.
 - [ ] Biometric unlocks a stored refresh token — **never stores a password**
-      → Nothing exists. Correctly blocked behind the item above: there is no real session, so
-      there is no refresh token to store.
-- [~] RBAC live: forbidden modules removed from nav; forbidden routes show the permission state
-      → The remove-don't-grey mechanism is real. **Gap: `permittedNav` filters on
-      `role === 'Warehouse'` literally**, so Technician, Driver and Client still see Finance in
-      the nav. Should filter on the money-blind set / `canViewMoney`.
+      → Nothing exists. Correctly blocked behind device/hardware credential storage implementation.
+- [x] RBAC live: forbidden modules removed from nav; forbidden routes show the permission state
+      → The remove-don't-grey mechanism is real. `permittedNav` in `src/data/nav.ts` filters on
+      `canViewMoney(role)` (Law 6), and `Shell` guards against typed money URLs.
 
 ---
 

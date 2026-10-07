@@ -5,7 +5,8 @@ import type { IconName } from '../../components/ui/Icon'
 import { Card, Button, KpiStrip, cardStyle, Rail, SideRail } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
 import { Modal } from '../../components/ui/Modal'
-import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
+import { PageBody } from '../../components/ui/PageBody'
+import { ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useToast } from '../../components/ui/Toast'
 import { STATUS, STATUS_ICON } from '../../lib/status'
@@ -1193,22 +1194,28 @@ export function ClientsDirectory({
               </label>
             </div>
 
-            {filteredClients.length === 0 ? (
-              <div style={{ padding: 'var(--sp-lg)' }}>
-                <EmptyState
-                  title={emptyBecauseNoClients ? 'No clients yet' : 'No clients found'}
-                  description={
-                    emptyBecauseNoClients
-                      ? 'The directory is empty. Register the first client to start booking.'
-                      : searchQuery
-                        ? `No client matches "${searchQuery}" under the current filter.`
-                        : 'No client matches the selected filter.'
+            <PageBody
+              empty={filteredClients.length === 0}
+              emptyIsFiltered={!emptyBecauseNoClients}
+              emptyTitle={emptyBecauseNoClients ? 'No clients yet' : 'No clients found'}
+              emptyMessage={
+                emptyBecauseNoClients
+                  ? 'The directory is empty. Register the first client to start booking.'
+                  : searchQuery
+                    ? `No client matches "${searchQuery}" under the current filter.`
+                    : 'No client matches the selected filter.'
+              }
+              {...(emptyBecauseNoClients
+                ? {
+                    emptyActionLabel: 'Register a client',
+                    onEmptyAction: onRequestAdd,
                   }
-                  actionLabel={emptyBecauseNoClients ? 'Register a client' : 'Clear all filters'}
-                  onAction={emptyBecauseNoClients ? onRequestAdd : clearAll}
-                />
-              </div>
-            ) : !tabular || view === 'Cards' ? (
+                : {
+                    onClearFilters: clearAll,
+                  })}
+              noun="clients"
+            >
+              {!tabular || view === 'Cards' ? (
               <div
                 style={{
                   display: 'grid',
@@ -1652,30 +1659,33 @@ export function ClientsDirectory({
                 </table>
               </div>
             )}
+            </PageBody>
 
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 'var(--sp-md)',
-                padding: '10px 14px',
-                flexWrap: 'wrap',
-                fontSize: 'var(--t-meta)',
-                color: 'var(--text2)',
-                borderTop: '1px solid var(--border)',
-              }}
-            >
-              <span>
-                Page <span className="figure">{current}</span> of <span className="figure">{pageCount}</span>
-              </span>
-              <span style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
-                <PageBtn label="‹" disabled={current === 1} onClick={() => setPage(current - 1)} />
-                {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
-                  <PageBtn key={p} label={String(p)} active={p === current} onClick={() => setPage(p)} />
-                ))}
-                <PageBtn label="›" disabled={current === pageCount} onClick={() => setPage(current + 1)} />
-              </span>
-            </div>
+            {filteredClients.length > 0 && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--sp-md)',
+                  padding: '10px 14px',
+                  flexWrap: 'wrap',
+                  fontSize: 'var(--t-meta)',
+                  color: 'var(--text2)',
+                  borderTop: '1px solid var(--border)',
+                }}
+              >
+                <span>
+                  Page <span className="figure">{current}</span> of <span className="figure">{pageCount}</span>
+                </span>
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 3 }}>
+                  <PageBtn label="‹" disabled={current === 1} onClick={() => setPage(current - 1)} />
+                  {Array.from({ length: pageCount }, (_, i) => i + 1).map((p) => (
+                    <PageBtn key={p} label={String(p)} active={p === current} onClick={() => setPage(p)} />
+                  ))}
+                  <PageBtn label="›" disabled={current === pageCount} onClick={() => setPage(current + 1)} />
+                </span>
+              </div>
+            )}
           </Card>
 
           {/* ── client profile rail ─────────────────────────────────── */}
