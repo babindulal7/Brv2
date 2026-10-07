@@ -525,11 +525,6 @@ export default function Today() {
     }
   }, [isPhone, pickupCount, returnCount])
 
-  const overdueCount = useMemo(
-    () => returns.rows.filter((r) => r.flags.includes('Overdue') || (r.statusNote && r.statusNote.includes('late'))).length,
-    [returns.rows]
-  )
-
   const goToToday = useCallback(() => {
     syncBothPanels({ kind: 'quick', period: 'Today' })
   }, [syncBothPanels])
@@ -668,33 +663,6 @@ export default function Today() {
           </div>
         </div>
 
-        {/* Condensed Overdue Alert (⚠ N overdue returns [View Returns]) */}
-        {overdueCount > 0 && (
-          <div
-            role="alert"
-            className="dashboard-alert dashboard-alert--overdue"
-          >
-            <div className="dashboard-alert__content">
-              <Icon name="alert_circle" size={18} />
-              <span>Overdue returns need attention</span>
-            </div>
-            <button
-              type="button"
-              className="dashboard-alert__action"
-              onClick={() => {
-                if (isPhone) {
-                  mobileTabChosenRef.current = true
-                  setMobileTab('returns')
-                }
-                const returnsHeading = document.getElementById('incoming-panel-title')
-                returnsHeading?.scrollIntoView({ behavior: 'smooth' })
-                returnsHeading?.focus()
-              }}
-            >
-              View Returns
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Spec §31: Mobile Segmented Control */}

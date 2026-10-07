@@ -1,5 +1,37 @@
 # Progress Log
 
+## 2026-10-08 — Header filter toggle, no overdue banner, real row buttons, stage icons, clickable Operations rows
+
+**Did**
+- Operations' filter-panel toggle now sits in the global header beside the page name (`WorkspaceHeaderActions`; mount point moved from the page body into `Header.tsx`).
+- Today: overdue banner removed; row actions restyled as bordered, tinted 44px buttons (fills on hover).
+- Operation stage tabs: stage icons (package / truck / return arrow / sparkles), check when done, one lock when not open; the 🔒 emoji is gone.
+- Operations table: clicking a row's blank space opens the booking; controls keep their own actions; Ctrl/⌘-click opens a new tab.
+
+**Ruled**
+- RULINGS-2026-10-08.md, "Global header" table.
+
+**Verified**
+- Browser (mock) 1366×900: filter toggle in the header opens the panel; project-line click → `/rentals/B-888`; the row's Reset button opens the Operations window without navigating; stage tabs show check ×3 + sparkles; Today has no banner and bordered tinted buttons (after a reload — HMR had left a stale computed style). 375×812: header toggle 44px, title not truncated, no horizontal scroll.
+- Contrast: button text 6.34 (dark) / 6.70 (light). Tests: today, operations, shell, e2e 341/341 plus the new row-click test (operationRoutes 29/29); lock test now asserts one lock icon, no emoji. `lint:ui-copy` clean; `lint:shell` clean apart from the other agent's RentalPricingSection.tsx:459.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T21:50:19.631Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Eleven other pages still carry the filter toggle beside their title (Rentals, Calendar, Clients, Membership, Crew, Documents, Expenses, Finance, Inventory, Tools).
+- In mock mode the Operations window says "No booking matches B-888" for returned bookings — the floor lookup, unrelated to this change, not investigated.
+- The other agent's New Rental work is still uncommitted here.
+
 ## 2026-10-08 — Branch consolidation; bigger page title in the top bar
 
 **Did**

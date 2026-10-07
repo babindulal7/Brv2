@@ -186,6 +186,10 @@ export default function Header({ crumbs, actions }: HeaderProps) {
           overflow: 'hidden',
         }}
       >
+        {/* Page controls that belong to the page as a whole (8 Oct 2026, RULINGS-2026-10-08.md):
+            pages send them here through <WorkspaceHeaderActions>, so they sit beside the page
+            name instead of above the page. Empty — and so zero-width — on pages that send none. */}
+        <span className="workspace-page-actions" ref={ws?.setHeaderActionsElement} />
         <nav aria-label="Breadcrumb" style={{ minWidth: 0, overflow: 'hidden' }}>
           <ol style={{ display: 'flex', alignItems: 'center', gap: 7, margin: 0, padding: 0, listStyle: 'none' }}>
             {(isPhone && crumbs.length > 1 ? [crumbs[crumbs.length - 1]!] : crumbs).map((c, i, arr) => {

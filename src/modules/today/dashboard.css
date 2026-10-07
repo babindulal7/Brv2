@@ -2775,7 +2775,7 @@
    already says Today and the Pickups/Returns switch already names the open list
    with its count, so the workbar intro and the panel heading only pushed the
    first card below the fold. The heading stays for screen readers: it names the
-   section and is where "View Returns" moves focus. */
+   section the list belongs to. */
 @media (max-width: 767px) {
   .dashboard-workbar__intro {
     display: none;
@@ -3019,9 +3019,32 @@
   border-top: 0;
 }
 
-.rental-dashboard .movement-card__cta-btn {
+/* A real button, not a text link (8 Oct 2026): bordered, tinted, 44px, with
+   hover and press feedback. Soft rather than solid — a list can show two dozen
+   of these, and a wall of solid blue would drown the rows themselves. Three
+   classes deep to outrank the older `.rental-dashboard__panels … .is-dominant` link style. */
+.rental-dashboard .rental-dashboard__panels .movement-card__cta-btn {
+  min-height: var(--tap, 44px);
+  padding: 0 0.95rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
   border-radius: var(--r-btn, 8px);
-  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  background: color-mix(in srgb, var(--primary) 10%, var(--card));
+  color: var(--primary-text);
+  font-size: var(--t-meta);
+  font-weight: 650;
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.rental-dashboard .rental-dashboard__panels .movement-card__cta-btn:hover {
+  border-color: var(--primary);
+  background: var(--btn-primary-bg, var(--primary));
+  color: var(--btn-primary-fg, var(--on-primary));
+}
+
+.rental-dashboard .rental-dashboard__panels .movement-card__cta-btn:focus-visible {
+  outline: 2px solid var(--input-focus);
+  outline-offset: 2px;
 }
 
 .rental-dashboard .movement-card__cta-btn svg {

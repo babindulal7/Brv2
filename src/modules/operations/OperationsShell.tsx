@@ -1,6 +1,7 @@
 import { formatAd } from '../../lib/bs'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '../../components/ui/Page'
+import type { IconName } from '../../components/ui/Icon'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { Modal } from '../../components/ui/Modal'
 import { LoadingSkeleton } from '../../components/ui/StateViews'
@@ -19,6 +20,16 @@ const LABEL: Record<JobName, string> = {
   Handover: 'Handover',
   Return: 'Return & Inspection',
   Reset: 'Cleaning & Reset',
+}
+
+/* One icon per stage (8 Oct 2026, RULINGS-2026-10-08.md). A stage that is not
+   open yet shows a single lock instead — the label used to carry a 🔒 emoji
+   beside the lock icon, so locked stages showed two padlocks. */
+const STEP_ICON: Record<JobName, IconName> = {
+  Pack: 'package',
+  Handover: 'truck',
+  Return: 'return_arrow',
+  Reset: 'sparkles',
 }
 
 const PREV_JOB: Partial<Record<JobName, JobName>> = {
@@ -325,7 +336,7 @@ export default function OperationsShell({
                       : 'Not open yet'
 
             const countStr = measured ? ` ${measured.done}/${measured.total}` : ''
-            const displayLabel = `${isBlocked ? '🔒 ' : ''}${LABEL[candidate]} · ${stateLabel}${countStr}`
+            const displayLabel = `${LABEL[candidate]} · ${stateLabel}${countStr}`
 
             return (
               <Button
@@ -336,7 +347,7 @@ export default function OperationsShell({
                 disabled={isBlocked}
                 title={!gate.allowed ? gate.reason ?? undefined : undefined}
                 onClick={() => requestJob(candidate)}
-                icon={isCompleted ? 'check' : isBlocked ? 'lock' : undefined}
+                icon={isCompleted ? 'check' : isBlocked ? 'lock' : STEP_ICON[candidate]}
                 style={{
                   minHeight: 'var(--tap)',
                   opacity: isBlocked ? 0.6 : 1,

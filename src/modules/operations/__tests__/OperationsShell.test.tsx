@@ -254,8 +254,12 @@ describe('Task 5 — Operations popup navigation and state', () => {
 
     expect(returnTab?.hasAttribute('disabled')).toBe(true)
     expect(resetTab?.hasAttribute('disabled')).toBe(true)
-    expect(returnTab?.textContent).toContain('🔒')
-    expect(resetTab?.textContent).toContain('🔒')
+    // One lock icon and the words, not a 🔒 emoji beside a lock icon (8 Oct 2026).
+    for (const tab of [returnTab, resetTab]) {
+      expect(tab?.textContent).toContain('Not open yet')
+      expect(tab?.textContent).not.toContain('🔒')
+      expect(tab?.querySelectorAll('svg.tabler-icon-lock')).toHaveLength(1)
+    }
   })
 
   it('renders booking context summary details', async () => {

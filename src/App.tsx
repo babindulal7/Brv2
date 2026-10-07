@@ -1208,7 +1208,7 @@ function WorkspaceContent({
   isFloor,
   children
 }: WorkspaceContentProps) {
-  const { setLeftPanelElement, setRightPanelElement, setHeaderActionsElement } = useWorkspace()
+  const { setLeftPanelElement, setRightPanelElement } = useWorkspace()
   const { pathname } = useLocation()
   const mainRef = useRef<HTMLElement>(null)
 
@@ -1246,7 +1246,6 @@ function WorkspaceContent({
           scrollbarGutter: 'stable',
         }}
       >
-        <div className="workspace-page-actions" ref={setHeaderActionsElement} />
         {isForbidden ? (
           <div style={{ maxWidth: 420, margin: '10vh auto 0' }}>
             <RestrictedState reason={`Your role (${user?.role ?? 'unknown'}) does not have access to this module.`} />

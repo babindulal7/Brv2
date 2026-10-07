@@ -290,6 +290,22 @@ describe('Spec 03 §3.1 — queue chips filter ONE time-ordered list', () => {
     expect(container.querySelector('[role="dialog"]')).not.toBeNull()
   })
 
+  it('opens the booking from a click on blank row space, but not from the row controls (8 Oct 2026)', async () => {
+    await mount(<OperationsQueues />, '/operations')
+    const row = container.querySelector<HTMLTableRowElement>('tr.operations-v2__row')!
+    const bookingNo = row.querySelector('a.identifier')?.textContent
+    // The action button keeps its own job and the route does not move.
+    await act(async () => {
+      row.querySelector<HTMLButtonElement>('button')!.click()
+    })
+    expect(path).toBe('/operations')
+    // A plain cell (the items count) opens the booking.
+    await act(async () => {
+      row.querySelector<HTMLTableCellElement>('td.figure')!.click()
+    })
+    expect(path).toBe(`/rentals/${bookingNo}`)
+  })
+
   it('opens the filter rail from the title control at tablet width', async () => {
     viewport = 'tablet'
     await mount(<OperationsQueues />, '/operations')

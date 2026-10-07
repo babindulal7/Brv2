@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { WorkspaceHeaderActions } from '../../components/shell/WorkspacePortal'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Card, PageHeader, PageActions, Button, FooterNote, cardStyle } from '../../components/ui/Page'
@@ -690,16 +691,17 @@ export default function OperationsQueues() {
           alignItems: 'start',
         }}
       >
+      {/* The filter-panel toggle lives in the global header, beside the page name (8 Oct 2026). */}
+      <WorkspaceHeaderActions>
+        <FilterButton
+          onClick={() => setShowMoreFilters((open) => !open)}
+          activeCount={operationFilterCount}
+          controls="operations-filters"
+          expanded={showMoreFilters}
+        />
+      </WorkspaceHeaderActions>
       <div style={{ gridColumn: '1 / -1' }}>
         <PageHeader
-          leading={
-            <FilterButton
-              onClick={() => setShowMoreFilters((open) => !open)}
-              activeCount={operationFilterCount}
-              controls="operations-filters"
-              expanded={showMoreFilters}
-            />
-          }
           title="Operation"
           actions={
             <PageActions
@@ -872,7 +874,23 @@ export default function OperationsQueues() {
                   </thead>
                   <tbody>
                     {pagedJobs.map((job) => (
-                      <tr key={job.id} style={{ borderLeft: job.isPastDue ? '2px solid var(--danger)' : '2px solid transparent' }}>
+                      <tr
+                        key={job.id}
+                        className="operations-v2__row"
+                        style={{ borderLeft: job.isPastDue ? '2px solid var(--danger)' : '2px solid transparent' }}
+                        /* A click anywhere on the row's blank space opens the booking (8 Oct 2026,
+                           RULINGS-2026-10-08.md). Links, buttons and the checkbox keep their own
+                           action, a text selection is left alone, and Ctrl/⌘-click opens a new tab.
+                           Keyboard users have the booking-number link, so the row adds no tab stop. */
+                        onClick={(event) => {
+                          const target = event.target as HTMLElement
+                          if (target.closest('a, button, input, label, select, textarea')) return
+                          if (window.getSelection()?.toString()) return
+                          const url = `/rentals/${job.bookingNo}`
+                          if (event.metaKey || event.ctrlKey) window.open(url, '_blank', 'noopener')
+                          else routeNavigate(url)
+                        }}
+                      >
                         <td style={{ ...td, width: 44 }}>
                           <input
                             type="checkbox"

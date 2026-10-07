@@ -34,6 +34,8 @@
 .operations-v2__table tr:last-child { border-bottom: 0; }
 .operations-v2__table tbody tr { transition: background-color var(--dur-fast) var(--ease); }
 .operations-v2__table tbody tr:hover { background: color-mix(in srgb, var(--nav-active-bg) 36%, transparent); }
+/* The whole row opens the booking (8 Oct 2026). */
+.operations-v2__table tbody tr.operations-v2__row { cursor: pointer; }
 .operations-v2__table input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
 /* Law 15 — the 18px box needs a 44px activation area: enlarge the invisible
    hit zone, keep the visible box unchanged. */

@@ -1,7 +1,8 @@
+/* Mount point in the global header, before the page name (8 Oct 2026). */
 .workspace-page-actions:empty { display: none; }
-.workspace-page-actions { min-width: 0; margin-bottom: 16px; }
+.workspace-page-actions { min-width: 0; flex-shrink: 0; }
 .workspace-page-actions > * { max-width: 100%; }
-.workspace-page-actions, .workspace-page-actions > div { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.workspace-page-actions, .workspace-page-actions > div { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; }
 .workspace-page-actions button { min-height: 44px; }
 .app-global-header .header-sync-control { min-height: 44px; min-width: 44px; }
 .app-global-header button { min-height: 44px; }
@@ -9,6 +10,3 @@
 .app-side-panel { width: var(--app-panel-width, 320px); }
 .app-side-panel-body { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px; }
 .app-side-panel-footer { padding: 16px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
-@media (max-width: 767px) {
-  .workspace-page-actions { margin-bottom: 12px; }
-}
