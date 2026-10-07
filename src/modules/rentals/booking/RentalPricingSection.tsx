@@ -294,7 +294,7 @@ export function RentalPricingSection({
 
               {/* Promo code */}
               <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                <Field label="Promo Code *">
+                <Field label="Promo code (optional)">
                   <div style={{ display: 'flex', gap: 8 }}>
                     <Input
                       value={promoCodeInput}
