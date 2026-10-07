@@ -46,7 +46,7 @@ export function RentalHoverCard({
         {onOpenClient ? <button type="button" onClick={onOpenClient} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--link)', fontSize: 13, cursor: 'pointer', textAlign: 'left', minHeight: 'var(--tap)' }}>
           {preview.clientName} ›
         </button> : <div>{preview.clientName}</div>}
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{preview.pickupAt} → {preview.returnAt}{preview.rentalDays === null ? '' : ` · ${preview.rentalDays} rental day${preview.rentalDays === 1 ? '' : 's'}`}</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}><span style={{ color: 'var(--booking-date-text)' }}>{preview.pickupAt} → {preview.returnAt}</span>{preview.rentalDays === null ? '' : ` · ${preview.rentalDays} rental day${preview.rentalDays === 1 ? '' : 's'}`}</div>
         {beforeHandover && blocked ? (
           <p role={blocked === 'Readiness verification unavailable' ? 'status' : 'alert'} style={{ margin: '6px 0 0', fontSize: 13, color: blocked === 'Readiness verification unavailable' ? 'var(--muted)' : 'var(--danger-text)' }}>{blocked === 'Readiness verification unavailable' ? 'Handover readiness not verified' : `🔴 Handover blocked — ${blocked}`}</p>
         ) : (

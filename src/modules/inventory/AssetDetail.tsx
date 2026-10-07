@@ -24,7 +24,6 @@ import {
   getAssetDetail,
   INVENTORY_STATES,
   UNIT_CONDITIONS,
-  stockLabel,
   unitLocationOf,
   INV_STYLE,
   INV_TONE,
@@ -525,41 +524,6 @@ function AssetDetailView() {
           </div>
         </div>
 
-        {/* Derived Availability Ratio — real unit rows, retired excluded (§4.3) */}
-        <div className="asset-availability-pill">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <span style={{ fontSize: '10px', color: 'var(--muted)', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.06em' }}>
-              Live Availability
-            </span>
-            {serialised ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
-                <span className="figure" style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--success-text)' }}>
-                  {inStockCount}
-                </span>
-                <span style={{ fontSize: '1.1rem', color: 'var(--muted)' }}>/</span>
-                <span className="figure" style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text)' }}>
-                  {liveUnitCount} Units
-                </span>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span className="figure" style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text)' }}>{stockLabel(product)}</span>
-                <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>On-hand for quantity SKUs is not tracked yet</span>
-              </div>
-            )}
-          </div>
-          {serialised && (
-            <div
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: 'var(--r-badge)',
-                background: inStockCount > 0 ? 'var(--success-text)' : 'var(--danger-text)',
-                boxShadow: inStockCount > 0 ? '0 0 6px rgba(16, 185, 129, 0.4)' : '0 0 6px rgba(239, 68, 68, 0.4)',
-              }}
-            />
-          )}
-        </div>
       </div>
 
       {/* Answer Strip: real figures where a column exists, honest gaps where not */}
@@ -578,29 +542,29 @@ function AssetDetailView() {
           ) : (
             <>
               <div className="figure" style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
-                {stockLabel(product)}
+                Not tracked yet
               </div>
-              <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>On-hand is not tracked for quantity SKUs</div>
+              <div style={{ fontSize: 'var(--t-th)', color: 'var(--text2)', marginTop: 2 }}>Available stock has not been recorded.</div>
             </>
           )}
         </div>
 
         <div style={{ ...cardStyle, padding: '14px 18px' }}>
           <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>NEXT FREE</div>
-          <NotTracked>Not tracked yet — needs the per-unit booking timeline.</NotTracked>
+          <NotTracked>Not tracked yet.</NotTracked>
         </div>
 
         {utilization && (
           <div style={{ ...cardStyle, padding: '14px 18px' }}>
             <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>UTILISATION (90D)</div>
-            <NotTracked>Not tracked yet — needs the utilization engine.</NotTracked>
+            <NotTracked>Not tracked yet.</NotTracked>
           </div>
         )}
 
         {money && (
           <div style={{ ...cardStyle, padding: '14px 18px' }}>
             <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>RECOVERY %</div>
-            <NotTracked>Not tracked yet — needs the revenue engine.</NotTracked>
+            <NotTracked>Not tracked yet.</NotTracked>
           </div>
         )}
       </div>
@@ -960,7 +924,7 @@ function AssetDetailView() {
             </div>
             <div style={{ ...cardStyle, padding: '14px 18px' }}>
               <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>LIFETIME EARNINGS</div>
-              <NotTracked>Not tracked yet — needs the revenue engine.</NotTracked>
+              <NotTracked>Not tracked yet.</NotTracked>
             </div>
             <div style={{ ...cardStyle, padding: '14px 18px' }}>
               <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>REPAIRS TO DATE</div>
@@ -970,7 +934,7 @@ function AssetDetailView() {
 
           <Card title="Monthly Fleet Revenue Progression">
             <div style={{ padding: '12px 4px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              Not tracked yet — needs the revenue engine.
+              Not tracked yet.
             </div>
           </Card>
         </div>

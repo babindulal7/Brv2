@@ -21,6 +21,7 @@ vi.mock('../../operations/OperationsWorkspaceContext', () => ({
   useOperationsWorkspace: () => ({ openOperations: mockOpenOperations, closeOperations: vi.fn() }),
 }))
 
+let currentTrackingMode = 'Serialised'
 let currentStage = 'Booked'
 const BOOKING_ROW = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -67,6 +68,7 @@ vi.mock('../../../lib/queries/bookings', () => ({
         qty: 1,
         lineType: 'Equipment',
         description: 'Sony FX3',
+        trackingMode: currentTrackingMode,
         productId: 'p-1',
         parentLineId: null,
         units: [],
@@ -199,6 +201,17 @@ describe('BookingDetail Simplification (Task 4)', () => {
     expect(link).toBeDefined()
     expect(link?.textContent).toContain('Himalayan Films Pvt. Ltd.')
     expect(text()).toContain('9841234567')
+  })
+
+  it('does not demand serial assignments for quantity-tracked equipment', async () => {
+    currentTrackingMode = 'Quantity'
+    try {
+      await mount()
+      expect(text()).not.toContain('missing serial assignment')
+      expect(text()).toContain('Security deposit required: Rs 50,000')
+    } finally {
+      currentTrackingMode = 'Serialised'
+    }
   })
 
   it('shows Attention card with blockers (unassigned serials, deposit)', async () => {

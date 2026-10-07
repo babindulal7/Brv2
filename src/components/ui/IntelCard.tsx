@@ -73,6 +73,7 @@ export interface IntelGlance {
 export interface IntelField {
   label: string
   value: ReactNode
+  tone?: 'booking-date'
   /** "Currently booked items (list, each a trigger)" — a field that navigates rather than just displays. */
   trigger?: IntelTrigger
 }
@@ -216,7 +217,7 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
     const r = wrapperRef.current?.getBoundingClientRect()
     if (!r) return
     const width = Math.min(480, window.innerWidth - 24)
-    const height = Math.min(560, window.innerHeight - 24)
+    const height = cardRef.current?.getBoundingClientRect().height ?? Math.min(560, window.innerHeight - 24)
     const below = window.innerHeight - r.bottom
     const above = r.top
     const y = below >= height + 6 || below >= above ? r.bottom + 6 : r.top - height - 6
@@ -234,16 +235,21 @@ export function IntelCard({ children, glance, detailTitle, detailSubtitle, detai
     measureAnchor()
   }, [open])
 
-  /* Re-track the trigger while open so scrolling never detaches the card. */
+  const anchorReady = anchor !== null
+  /* Track the measured frame as tabs and asynchronously loaded content change. */
   useEffect(() => {
-    if (!open) return
+    if (!open || !anchorReady) return
+    measureAnchor()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureAnchor)
+    if (cardRef.current) observer?.observe(cardRef.current)
     window.addEventListener('scroll', measureAnchor, true)
     window.addEventListener('resize', measureAnchor)
     return () => {
       window.removeEventListener('scroll', measureAnchor, true)
       window.removeEventListener('resize', measureAnchor)
+      observer?.disconnect()
     }
-  }, [open])
+  }, [open, anchorReady])
 
   const holdStart = () => {
     if (hasHover) return
@@ -572,6 +578,11 @@ function DirectIntelCard({ id, glance, content, reducedMotion, cardRef, onFocus,
         width: 'min(480px, calc(100vw - 24px))',
         maxHeight: 'min(560px, calc(100dvh - 24px))',
         overflow: 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        boxSizing: 'border-box',
+        overflowWrap: 'anywhere',
+        whiteSpace: 'normal',
         borderRadius: 'var(--r-card)',
         background: 'var(--hover-card)',
         border: '1px solid var(--border)',
@@ -581,12 +592,12 @@ function DirectIntelCard({ id, glance, content, reducedMotion, cardRef, onFocus,
         transition: reducedMotion ? 'none' : `opacity ${INTEL_CARD_IN_MS}ms ease`,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', flex: '0 0 auto', alignItems: 'center', gap: 8, padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
         <strong style={{ minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'var(--t-ui)' }}>{glance.title}</strong>
         <button type="button" aria-label="Close Intel" onClick={onClose} style={{ width: 44, height: 44, display: 'grid', placeItems: 'center', border: 'none', borderRadius: 'var(--r-btn)', background: 'var(--card2)', color: 'var(--text)', cursor: 'pointer' }}><Icon name="close" size={18} /></button>
       </div>
-      <div style={{ padding: '0 12px 12px' }}>{content}</div>
-      {glance.primaryAction ? <div style={{ borderTop: '1px solid var(--border)', padding: '8px 12px' }}><Link to={glance.primaryAction.to} onClick={(e) => e.stopPropagation()} style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', padding: '0 12px', borderRadius: 'var(--r-btn)', color: 'var(--btn-primary-fg)', background: 'var(--btn-primary-bg)', textDecoration: 'none', fontWeight: 600 }}>{glance.primaryAction.label}</Link></div> : null}
+      <div style={{ padding: '0 12px 12px', minHeight: 0, minWidth: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}>{content}</div>
+      {glance.primaryAction ? <div style={{ flex: '0 0 auto', borderTop: '1px solid var(--border)', padding: '8px 12px' }}><Link to={glance.primaryAction.to} onClick={(e) => e.stopPropagation()} style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', padding: '0 12px', borderRadius: 'var(--r-btn)', color: 'var(--btn-primary-fg)', background: 'var(--btn-primary-bg)', textDecoration: 'none', fontWeight: 600 }}>{glance.primaryAction.label}</Link></div> : null}
     </div>
   )
 }
@@ -610,11 +621,11 @@ function DetailGroups({ groups, onFollow }: { groups: IntelGroup[]; onFollow?: (
           >
             {g.title}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px 16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(200px, 100%), 1fr))', gap: '10px 16px', overflowWrap: 'anywhere' }}>
             {g.fields.map((f) => (
               <div key={f.label} style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{f.label}</div>
-                <div style={{ fontSize: 'var(--t-ui)', color: 'var(--text)', marginTop: 2, lineHeight: 1.4 }}>
+                <div style={{ fontSize: 'var(--t-ui)', color: f.tone === 'booking-date' ? 'var(--booking-date-text)' : 'var(--text)', marginTop: 2, lineHeight: 1.4 }}>
                   {f.trigger ? (
                     <Link to={f.trigger.to} onClick={(event) => {
                       if (onFollow && isLinkedIntelPath(f.trigger!.to)) {

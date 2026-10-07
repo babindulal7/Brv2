@@ -34,8 +34,6 @@ import {
   BRANCHES,
   DOC_STATUS,
   DOC_STATUSES,
-  MISSING_TOTAL,
-  PENDING_SIGNATURE_TOTAL,
   PER_PAGE,
   RELATED_TARGET,
   SORTS,
@@ -52,6 +50,8 @@ import { DateField } from '../../components/ui/DateField'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { ListControlRow } from '../../components/ui/ListWorkspace'
 import { Pagination } from '../../components/ui/Pagination'
+import { IS_MOCK } from '../../lib/supabase'
+import { ErrorBanner } from '../../components/ui/StateViews'
 
 /* Law 15 — the law is the hit area, and `--tap` holds the number. Kept as
    `minHeight` so the three call sites that used to bump this to 34 or shrink it
@@ -229,33 +229,33 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   // it on every render.
   const gctx = useMemo(() => gateContext(role), [role])
 
-  const [docRows, setDocRows] = useState<DocRow[]>(() => documentsFor(money))
+  const [docRows, setDocRows] = useState<DocRow[]>(() => IS_MOCK ? documentsFor(money) : [])
+  const [docError, setDocError] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
 
   const refetchDocs = useCallback(() => {
+    setDocError(null)
     listDocuments().then((res) => {
-      if (res.rows.length > 0) {
-        setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
-      }
-    }).catch(() => {})
+      setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
+    }).catch((error: unknown) => setDocError(error instanceof Error ? error.message : 'Documents could not be loaded.'))
   }, [money])
 
   useEffect(() => {
     let mounted = true
     listDocuments().then((res) => {
-      if (mounted && res.rows.length > 0) {
+      if (mounted) {
         setDocRows(money ? res.rows : res.rows.filter((d) => !d.finance))
       }
-    }).catch(() => {})
+    }).catch((error: unknown) => { if (mounted) setDocError(error instanceof Error ? error.message : 'Documents could not be loaded.') })
     return () => {
       mounted = false
     }
   }, [money])
 
-  const allDocs: DocRow[] = docRows.length > 0 ? docRows : documentsFor(money)
+  const allDocs: DocRow[] = docRows
   const categories = useMemo(() => categoriesFor(money, allDocs), [money, allDocs])
-  const missing = useMemo(() => missingFor(money), [money])
-  const expiring = useMemo(() => expiringFor(money), [money])
+  const missing = useMemo(() => IS_MOCK ? missingFor(money) : [], [money])
+  const expiring = useMemo(() => IS_MOCK ? expiringFor(money) : [], [money])
   const total = useMemo(() => categories.reduce((a, c) => a + c.count, 0), [categories])
 
   /*
@@ -298,7 +298,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   const desktop = viewport === 'desktop'
   const [cards, setCards] = useState(false)
   const cardView = viewport === 'phone' ? true : cards
-  const [perPage, setPerPage] = useState<number>(PER_PAGE[0] ?? 10)
+  const [perPage, setPerPage] = useState<number>(25)
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
@@ -462,6 +462,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
   return (
     <PageShell width="full">
       <div className="doc-v2">
+        {docError && <ErrorBanner title="Documents could not be loaded." message={docError} onRetry={refetchDocs} />}
         <ScreenHeader
           embedded={embedded}
           leading={
@@ -1018,7 +1019,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                   </div>
                 ))}
               <p style={{ margin: 0, paddingTop: 2, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                <span className="figure doc-mono">{PENDING_SIGNATURE_TOTAL}</span> documents pending signature across the
+                <span className="figure doc-mono">{allDocs.filter((doc) => doc.status === 'Pending Signature').length}</span> documents pending signature across the
                 installation.
               </p>
             </div>
@@ -1058,7 +1059,7 @@ export default function Documents({ embedded = false }: { embedded?: boolean }) 
                 </div>
               ))}
               <p style={{ margin: 0, paddingTop: 2, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                <span className="figure doc-mono">{MISSING_TOTAL}</span> missing in active rentals — each blocks its own gate.
+                {IS_MOCK ? <><span className="figure doc-mono">{missing.length}</span> missing in active rentals.</> : 'Missing-document checks are not tracked yet.'}
               </p>
             </div>
           </Card>

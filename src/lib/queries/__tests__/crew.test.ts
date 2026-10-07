@@ -1,29 +1,26 @@
-import { describe, it, expect, vi } from 'vitest'
-import { listCrewAssignments, listCrewMembers, CREW_DATA, CREW_ROSTER } from '../crew'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { listCrewAssignments, listCrewMembers } from '../crew'
 
+const db = vi.hoisted(() => ({ error: null as { message: string } | null }))
 vi.mock('../../supabase', () => ({
-  supabase: {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        order: vi.fn().mockResolvedValue({
-          data: null,
-          error: new Error('Simulated database error'),
-        }),
-      })),
-    })),
-  },
+  IS_MOCK: false,
+  supabase: { from: () => ({ select: () => ({ order: async () => ({ data: [], error: db.error }), then: (resolve: (result: { data: never[]; error: typeof db.error }) => unknown) => Promise.resolve({ data: [], error: db.error }).then(resolve) }) }) },
 }))
 
-describe('crew query module', () => {
-  it('falls back to CREW_DATA on error or empty table', async () => {
-    const res = await listCrewAssignments()
-    expect(res.rows).toEqual(CREW_DATA)
-    expect(res.total).toBe(CREW_DATA.length)
+beforeEach(() => { db.error = null })
+describe('live crew queries', () => {
+  it('keeps an empty assignment registry empty', async () => {
+    expect(await listCrewAssignments()).toEqual({ rows: [], total: 0 })
   })
-
-  it('falls back to CREW_ROSTER on error or empty table', async () => {
-    const res = await listCrewMembers()
-    expect(res.rows).toEqual(CREW_ROSTER)
-    expect(res.total).toBe(CREW_ROSTER.length)
+  it('keeps an empty roster empty', async () => {
+    expect(await listCrewMembers()).toEqual({ rows: [], total: 0 })
+  })
+  it('reports assignment read failure instead of showing demo assignments', async () => {
+    db.error = { message: 'Session expired' }
+    await expect(listCrewAssignments()).rejects.toThrow('Session expired')
+  })
+  it('reports roster read failure instead of showing demo people', async () => {
+    db.error = { message: 'Session expired' }
+    await expect(listCrewMembers()).rejects.toThrow('Session expired')
   })
 })

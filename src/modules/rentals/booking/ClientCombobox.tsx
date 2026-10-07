@@ -150,6 +150,7 @@ export interface ClientComboboxProps {
   inputStyle?: CSSProperties
   /** `id` of the label element, for `aria-labelledby`. */
   labelledBy?: string
+  required?: boolean
   /** Money gating — pass the page's `canViewMoneyField(gctx, 'client-balance')`. */
   showOutstanding?: boolean
   /** §64: "starts searching at 2–3 characters". */
@@ -158,6 +159,8 @@ export interface ClientComboboxProps {
   maxResults?: number
   /** Rendered inside the field's right edge — the page puts the §11 eye here. */
   trailing?: ReactNode
+  /** One 44px icon action embedded in the input's right edge. */
+  inputAction?: ReactNode
   disabled?: boolean
   /** Inline, persistent error (never a toast, never an alert). */
   error?: string
@@ -189,10 +192,12 @@ export function ClientCombobox({
   recentClientIds,
   inputStyle,
   labelledBy,
+  required = false,
   showOutstanding = true,
   minQueryChars = 2,
   maxResults = 8,
   trailing,
+  inputAction,
   disabled = false,
   error,
   suppressNextFocusOpen,
@@ -376,7 +381,7 @@ export function ClientCombobox({
     // up `Input.tsx`'s own `minHeight: 44` for free. Set directly here instead
     // of relying on whatever `inputStyle` the calling page passed in.
     minHeight: 44,
-    paddingRight: 34,
+    paddingRight: inputAction ? 82 : 34,
     ...(error ? { borderColor: 'var(--danger)' } : {}),
   }
 
@@ -408,6 +413,7 @@ export function ClientCombobox({
           aria-expanded={open}
           aria-controls={listboxId}
           aria-autocomplete="list"
+          aria-required={required || undefined}
           aria-haspopup="listbox"
           {...(labelledBy ? { 'aria-labelledby': labelledBy } : {})}
           {...(activeId ? { 'aria-activedescendant': activeId } : {})}
@@ -440,7 +446,7 @@ export function ClientCombobox({
           aria-hidden="true"
           style={{
             position: 'absolute',
-            right: 10,
+            right: inputAction ? 58 : 10,
             top: '50%',
             transform: 'translateY(-50%)',
             display: 'inline-flex',
@@ -450,6 +456,11 @@ export function ClientCombobox({
         >
           <Icon name={open ? 'chevron_up' : 'search'} size={15} />
         </span>
+        {inputAction && (
+          <div style={{ position: 'absolute', right: 4, top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}>
+            {inputAction}
+          </div>
+        )}
 
         {open && (
           <ClientListbox

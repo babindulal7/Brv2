@@ -1,3 +1,4 @@
+import { formatAd } from '../bs'
 /**
  * Canonical Team Internal Notes & Dispatch Log — Babin Rentals OS
  *
@@ -269,7 +270,7 @@ export function addInternalNote(params: {
   }
 
   const now = new Date()
-  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  const dateStr = formatAd(now)
   const timeStr = now.toTimeString().slice(0, 5)
   const at = `${dateStr} · ${timeStr}`
 
@@ -433,7 +434,7 @@ export function formatShiftHandoverMarkdown(notes?: InternalNote[]): string {
   const source = notes ?? listInternalNotes()
   const activeNotes = source.filter(n => n.status !== 'resolved')
   const now = new Date()
-  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+  const dateStr = formatAd(now)
   const timeStr = now.toTimeString().slice(0, 5)
 
   let md = `*BABIN RENTALS OS — SHIFT HANDOVER BRIEF*\n`

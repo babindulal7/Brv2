@@ -1,3 +1,4 @@
+import { formatAd, formatAdDateTime } from '../../lib/bs'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
@@ -463,7 +464,7 @@ export default function OperationsReports() {
                         </Link>
                       </td>
                       <td style={td}>{p.clientName}</td>
-                      <td style={td}>{new Date(p.pickupAt).toLocaleString('en-GB')}</td>
+                      <td style={td}>{formatAdDateTime(p.pickupAt)}</td>
                       <td style={td}>{p.deliveryType}</td>
                       <td style={td}>{p.receiverName}</td>
                       <td style={td}>
@@ -583,7 +584,7 @@ export default function OperationsReports() {
                         </Link>
                       </td>
                       <td style={td}>{r.clientName}</td>
-                      <td style={td}>{new Date(r.returnAt).toLocaleString('en-GB')}</td>
+                      <td style={td}>{formatAdDateTime(r.returnAt)}</td>
                       <td style={td}>{r.returningPerson}</td>
                       <td style={td}>
                         <span
@@ -666,7 +667,7 @@ export default function OperationsReports() {
                       </td>
                       <td style={td}>{o.clientName}</td>
                       <td style={td}>{o.project}</td>
-                      <td style={td}>{new Date(o.scheduledReturn).toLocaleDateString('en-GB')}</td>
+                      <td style={td}>{formatAd(new Date(o.scheduledReturn))}</td>
                       <td style={{ ...td, fontWeight: 600, color: 'var(--status-danger-text)' }}>
                         {o.daysOverdue} days late
                       </td>
@@ -769,7 +770,7 @@ export default function OperationsReports() {
                       </td>
                       <td style={td}>{pj.clientName}</td>
                       <td style={td}>{pj.project}</td>
-                      <td style={td}>{new Date(pj.pickupScheduled).toLocaleString('en-GB')}</td>
+                      <td style={td}>{formatAdDateTime(pj.pickupScheduled)}</td>
                       <td style={td}>{pj.itemCount} items</td>
                       <td style={td}>
                         <span

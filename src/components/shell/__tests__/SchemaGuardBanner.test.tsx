@@ -92,7 +92,7 @@ describe('SchemaGuardBanner', () => {
     await mount()
     const text = container.textContent ?? ''
 
-    expect(text).toContain('behind this build')
+    expect(text).toContain('A database update is needed')
     // The summary carries what the operator acts on: which migrations, and what
     // stops working. Object names are one click away, in the details list.
     expect(text).toContain('0147')
@@ -138,7 +138,7 @@ describe('SchemaGuardBanner', () => {
     await mount()
     const text = container.textContent ?? ''
 
-    expect(text).toContain('Could not verify')
+    expect(text).toContain('Could not check the database version')
     // The dangerous half: a clean bill of health for a schema nobody asked about.
     expect(text).not.toMatch(/schema is current|up to date|in sync/i)
   })

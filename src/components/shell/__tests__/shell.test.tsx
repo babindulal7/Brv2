@@ -45,7 +45,7 @@ const { default: Sidebar } = await import('../Sidebar')
 const { default: BottomBar } = await import('../BottomBar')
 const { default: Header } = await import('../Header')
 const { PageActions } = await import('../../ui/PageActions')
-const { PageHeader } = await import('../../ui/Page')
+const { PageHeader, Rail } = await import('../../ui/Page')
 const { Button } = await import('../../ui/Button')
 const { Unavailable } = await import('../../ui/Unavailable')
 
@@ -72,16 +72,26 @@ afterEach(async () => {
   container.remove()
 })
 
+describe('Page summaries — always visible', () => {
+  it.each<Viewport>(['desktop', 'tablet', 'phone'])('ignores a stored collapse preference on %s', async (size) => {
+    viewport = size
+    collapsedPref = true
+    await mount(<Rail><p>Booking Summary</p></Rail>)
+    expect(container.querySelector('aside')?.textContent).toContain('Booking Summary')
+    expect(container.querySelector('button')).toBeNull()
+  })
+})
+
 describe('Sidebar — Law 13, width decides', () => {
   it('uses the expanded sidebar token at desktop, with all primary labels readable', async () => {
     await mount(<Sidebar active="/dashboard" />)
     const aside = container.querySelector('aside')
     expect(aside?.style.width).toBe('var(--app-sidebar-width)')
-    expect(container.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(10)
-    expect(container.textContent).toContain('Dashboard')
+    expect(container.querySelectorAll('nav[aria-label="Main"] a')).toHaveLength(11)
+    expect(container.textContent).toContain('Today')
     expect(container.textContent).toContain('Rentals')
-    expect(container.textContent).toContain('Operations')
-    expect(container.textContent).toContain('More')
+    expect(container.textContent).toContain('Operation')
+    expect(container.textContent).toContain('Tools')
   })
 
   it('keeps a manual expand toggle available on a collapsed tablet rail', async () => {
@@ -100,7 +110,7 @@ describe('Sidebar — Law 13, width decides', () => {
     await mount(<Sidebar active="/dashboard" />)
     const labels = [...container.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.getAttribute('aria-label'))
     expect(labels).toContain('Rentals')
-    expect(labels).toContain('Operations')
+    expect(labels).toContain('Operation')
     expect(labels.every((l) => l !== null && l.length > 0)).toBe(true)
   })
 
@@ -132,7 +142,7 @@ describe('Sidebar — exactly one active row', () => {
 
   it('/rentals/new lights Rentals', async () => {
     await mount(<Sidebar active="/rentals/new" />)
-    expect(current()).toEqual(['Rentals'])
+    expect(current()).toEqual(['New Rental'])
   })
 
   it('/rentals lights Rentals alone', async () => {
@@ -152,7 +162,7 @@ describe('Sidebar — exactly one active row', () => {
 
   it('/operations?queue=packing lights Operations alone', async () => {
     await mount(<Sidebar active="/operations?queue=packing" />)
-    expect(current()).toEqual(['Operations'])
+    expect(current()).toEqual(['Operation'])
   })
 })
 
@@ -165,7 +175,7 @@ describe('BottomBar — five fixed slots', () => {
     await mount(<BottomBar active="/dashboard" />)
     const nav = container.querySelector('nav[aria-label="Main"]')
     const slots = [...(nav?.children ?? [])].map((el) => el.textContent)
-    expect(slots).toEqual(['Today', 'Rentals', 'New', 'Inventory', 'More'])
+    expect(slots).toEqual(['Today', 'Rentals', 'Scan', 'Inventory', 'More'])
   })
 
   it('triggers the one Scanner rather than carrying its own', async () => {
@@ -346,7 +356,7 @@ describe('Sidebar — R1 footer rationalization', () => {
     expect(container.textContent).not.toContain('VAT: 623587106')
   })
 
-  it('retains branding wordmark and 3 core navigation groups', async () => {
+  it('retains branding and one flat navigation group', async () => {
     viewport = 'desktop'
     await mount(<Sidebar active="/dashboard" />)
     expect(container.textContent).toContain('BR')
@@ -354,11 +364,9 @@ describe('Sidebar — R1 footer rationalization', () => {
     expect(container.textContent).toContain('Rentals OS')
     // 3 core navigation domains
     const navGroups = container.querySelectorAll('[data-nav-group]')
-    expect(navGroups).toHaveLength(3)
+    expect(navGroups).toHaveLength(1)
     const groupTitles = Array.from(navGroups).map((g) => g.getAttribute('data-nav-group'))
-    expect(groupTitles).toContain('Daily Dispatch')
-    expect(groupTitles).toContain('Assets & Relationships')
-    expect(groupTitles).toContain('Business & Back Office')
+    expect(groupTitles).toEqual([''])
   })
 })
 
@@ -404,7 +412,7 @@ describe('PageActions & PageHeader — R1 action hierarchy & placeholder removal
 
     // Click overflow menu button reveals excess actions
     await act(async () => overflowBtn?.click())
-    const menu = container.querySelector('[role="menu"]')
+    const menu = document.querySelector('[role="menu"]')
     expect(menu).not.toBeNull()
     expect(menu?.textContent).toContain('Scan Barcode')
     expect(menu?.textContent).toContain('Refresh')
@@ -441,4 +449,3 @@ describe('PageActions & PageHeader — R1 action hierarchy & placeholder removal
     expect(container.textContent).toContain('Sync')
   })
 })
-

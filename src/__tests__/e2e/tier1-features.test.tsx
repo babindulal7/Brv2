@@ -91,6 +91,7 @@ vi.mock('../../lib/supabase', () => {
   }
 
   return {
+    IS_MOCK: false,
     newClientUuid: () => '11111111-1111-4111-8111-111111111111',
     supabase: {
       from: () => ({
@@ -280,9 +281,9 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', { timeout: 90000 
       expect(nav).not.toBeNull()
 
       // Core operational destinations
-      expect(container.textContent).toContain('Dashboard')
+      expect(container.textContent).toContain('Today')
       expect(container.textContent).toContain('Rentals')
-      expect(container.textContent).toContain('Operations')
+      expect(container.textContent).toContain('Operation')
       expect(container.textContent).toContain('Inventory')
       expect(container.textContent).toContain('Clients')
       expect(container.textContent).toContain('Finance')
@@ -360,7 +361,7 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', { timeout: 90000 
 
       // Primary CTA
       const newRentalBtn = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('New Rental'))
-      expect(newRentalBtn).toBeDefined()
+      expect(newRentalBtn).toBeUndefined()
 
       // Table headers
       const table = container.querySelector('table')
@@ -447,8 +448,8 @@ describe('Tier 1: Feature Coverage (Happy Path & Isolations)', { timeout: 90000 
       const { default: OperationsQueues } = await import('../../modules/operations/OperationsQueues')
       await mountComponent(<OperationsQueues />, ['/operations'])
 
-      expect(container.textContent).toContain('Operations')
-      expect(container.textContent).toContain('Packing')
+      expect(container.textContent).toContain('Operation')
+      expect(container.textContent).toContain('Pack')
       expect(container.textContent).toMatch(/Handover|Pickup/)
       expect(container.textContent).toContain('Return')
       expect(container.textContent).toContain('Reset')

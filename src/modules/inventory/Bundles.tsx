@@ -1520,9 +1520,8 @@ function SummaryCard({ bundle, facts }: { bundle: BundleRecord; facts: BundleFac
         </p>
       )}
       <p style={{ margin: '8px 0 0', ...subtle, lineHeight: 1.5 }}>
-        The donut counts the {facts.totalItems} items {bundle.name} requires. The tree above counts stock units, which is
-        a different question — §6.1.
-      </p>
+        The donut counts the {facts.totalItems} items {bundle.name} {/* requires. The tree above counts stock units, which is
+        a different question — §6.1. */}requires. The tree above counts stock units, which is a different question — </p>
     </Card>
   )
 }
@@ -1558,8 +1557,7 @@ function PricingCard({ bundle, facts }: { bundle: BundleRecord; facts: BundleFac
         </span>
       </div>
       <p style={{ margin: '8px 0 0', ...subtle, lineHeight: 1.5 }}>
-        Crew and vehicle are not in this rate — they are priced in the booking's Crew and Transport sections (§8).
-      </p>
+        {/* Crew and vehicle are not in this rate — they are priced in the booking's Crew and Transport sections (§8). */}Crew and vehicle are not in this rate — they are priced in the booking's Crew and Transport sections . </p>
     </Card>
   )
 }

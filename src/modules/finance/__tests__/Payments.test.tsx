@@ -252,7 +252,7 @@ describe('row → cell', () => {
   it('renders the instant in Kathmandu, not UTC', () => {
     // 09:30 UTC on 11 Aug is 15:15 the same day in Kathmandu.
     expect(formatPaymentAt(RECEIPT.paymentDateAd)).toContain('15:15')
-    expect(formatPaymentAt(RECEIPT.paymentDateAd)).toContain('11 Aug 2026')
+    expect(formatPaymentAt(RECEIPT.paymentDateAd)).toContain('11/8/2026')
   })
 
   it('refuses to print a date it cannot parse', () => {
@@ -271,7 +271,7 @@ describe('row → cell', () => {
    *     TABLE, so this asserts a year the table genuinely cannot name.
    */
   it('omits the BS reading rather than inventing one outside the years bs.ts vouches for', () => {
-    expect(paymentBsLabel('2026-08-11T09:30:00.000Z')).toBe('26 Shrawan 2083 BS')
+    expect(paymentBsLabel('2026-08-11T09:30:00.000Z')).toBe('26 Shrawan')
     expect(paymentBsLabel('2040-01-01T00:00:00.000Z')).toBeNull()
   })
 
@@ -572,7 +572,7 @@ describe('the ledger rows', () => {
 describe('nav — Payments is a Finance TAB, not a twelfth nav item', () => {
   it('records where the tab goes without touching primary nav', async () => {
     const { NAV, SPEC_TABS, FINANCE_TAB_ROUTES } = await import('../../../data/nav')
-    expect(NAV).toHaveLength(10)
+    expect(NAV).toHaveLength(11)
     expect(NAV.map((s) => s.to)).not.toContain('/finance/payments')
     expect(SPEC_TABS['/finance']).toContain('Payments')
     expect(FINANCE_TAB_ROUTES['Payments']).toBe('/finance/payments')

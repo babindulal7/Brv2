@@ -543,7 +543,7 @@ export default function ScannerFab() {
         </div>
       )}
 
-      {!phone && (
+      {!phone && open && (
         <button
           ref={fabRef}
           type="button"

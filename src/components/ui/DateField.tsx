@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { CSSProperties } from 'react'
 import Icon from './Icon'
 import { TouchTarget } from './TouchTarget'
+import { floatingLayer } from './floatingLayer'
 import { toBs, formatBs, formatAd, BS_MONTHS } from '../../lib/bs'
 
 /**
@@ -90,7 +91,7 @@ export function parseTimeInput(text: string): string | null {
   return null
 }
 
-/** ISO day → '16 Jul 2026'. Unparseable text is handed back untouched. */
+/** ISO day → '16/7/2026'. Unparseable text is handed back untouched. */
 export function displayDate(v: string): string {
   if (!v) return ''
   const d = new Date(v)
@@ -927,12 +928,15 @@ export interface DateFieldProps {
    * the one flag to flip.
    */
   showBs?: boolean
+  /** Use the shared orange for a booking schedule rather than a filter date. */
+  bookingDate?: boolean
   /** Offers Clear in the popover and permits '' — for a range bound. */
   clearable?: boolean
   /** Anchor the popover to the control's right edge. */
   align?: 'left' | 'right'
   error?: string | undefined
   disabled?: boolean
+  required?: boolean
   id?: string
   placeholder?: string
   /** Header title override for the popover */
@@ -966,10 +970,12 @@ export function DateField({
   label,
   style,
   showBs = true,
+  bookingDate = false,
   clearable = false,
   align = 'left',
   error,
   disabled = false,
+  required = false,
   id,
   placeholder = 'dd/mm/yyyy',
   title,
@@ -1092,7 +1098,7 @@ export function DateField({
       {showBs && (
         <div
           className="figure"
-          style={{ marginBottom: 3, fontSize: 'var(--t-th)', fontWeight: 700, color: bs ? 'var(--text)' : 'var(--muted)' }}
+          style={{ marginBottom: 3, fontSize: 'var(--t-th)', fontWeight: 700, color: bs ? bookingDate ? 'var(--booking-date-text)' : 'var(--text)' : 'var(--muted)' }}
         >
           {bs ? formatBs(bs) : value ? 'BS not available for this date' : '—'}
         </div>
@@ -1116,6 +1122,7 @@ export function DateField({
           id={id}
           value={text}
           disabled={disabled}
+          required={required}
           placeholder={placeholder}
           onChange={(e) => setText(e.target.value)}
           onBlur={(e) => commit(e.target.value)}
@@ -1129,7 +1136,7 @@ export function DateField({
             minWidth: 0,
             border: 'none',
             background: 'transparent',
-            color: 'var(--text)',
+            color: bookingDate ? 'var(--booking-date-text)' : 'var(--text)',
             fontSize: 'var(--t-meta)',
             fontFamily: 'inherit',
             outline: 'none',
@@ -1157,7 +1164,7 @@ export function DateField({
       )}
 
       {open && panelPos && createPortal(
-        <div ref={panelRef} style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, width: 0, height: 0, zIndex: 'var(--z-dropdown)' }}>
+        <div ref={panelRef} style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, width: 0, height: 0, zIndex: floatingLayer(buttonRef.current) }}>
           <CalendarPopover
           value={value}
           clearable={clearable}

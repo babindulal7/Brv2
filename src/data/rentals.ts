@@ -433,7 +433,7 @@ export interface RentalChip {
  * prevent."
  */
 export const PAYMENT_DUE_UNAVAILABLE =
-  'Payment Due needs an outstanding balance. bookings carries none — deposit_required is the deposit required, payments (0006:176) is not joined by listBookings, and rental total minus payments is the Financial Engine’s figure, deliberately kept off the list row (Law 1).'
+  /* Payment Due needs an outstanding balance. bookings carries none — deposit_required is the deposit required, payments (0006:176) is not joined by listBookings, and rental total minus payments is the Financial Engine’s figure, deliberately kept off the list row (Law 1). */ "Payment-due filtering is not available on this list. Check the invoice balance in Finance."
 
 /* ═══════════════════════════════════════════════════════════════════════
  * THE SUB-RENTAL CHIP — rulings §11.1, ruled 13 Aug 2026
@@ -579,7 +579,7 @@ export async function subRentalBookingIds(forBookingIds?: readonly string[]): Pr
 
 /** What the footer says about the chip, so the sentence has one home. */
 export const SUB_RENTAL_NOTE =
-  'Sub-Rental is a line-level fact (booking_lines.line_type) — a booking counts as sub-rental when any of its lines does, and the chip narrows the query server-side on that derived set'
+  /* Sub-Rental is a line-level fact (booking_lines.line_type) — a booking counts as sub-rental when any of its lines does, and the chip narrows the query server-side on that derived set */ "Includes rentals with equipment supplied by another rental house."
 
 /** While the derived set is still in flight. Short-lived, but never silent. */
 export const SUB_RENTAL_PENDING =
@@ -1001,9 +1001,9 @@ export interface RentalListRow {
   progress: number
   progressTone: BrandKey
   /** `pickup_at`, split into the date and the Kathmandu wall clock. */
-  pickup: { date: string; time: string }
+  pickup: { date: string; time: string; ad?: string }
   /** `return_at`, same split. */
-  ret: { date: string; time: string }
+  ret: { date: string; time: string; ad?: string }
   /** `bookings.delivery_type`. An enum member, not UI copy (Law 17). */
   deliveryType: BookingListRow['deliveryType']
   /** `bookings.quote_expires_at`, rendered. `null` means none was set. */
@@ -1039,8 +1039,8 @@ export interface RentalListRow {
 }
 
 /** "31 Jul 2026" + "09:00 AM", both rendered in Kathmandu (Law 7). */
-function stampOf(instantAd: string): { date: string; time: string } {
-  return { date: formatAd(new Date(instantAd)), time: clockPad(kathmanduMinutes(instantAd)) }
+function stampOf(instantAd: string): { date: string; time: string; ad: string } {
+  return { date: formatAd(new Date(instantAd)), time: clockPad(kathmanduMinutes(instantAd)), ad: instantAd }
 }
 
 /**
@@ -1106,6 +1106,10 @@ export function toRentalListRow(
     flags,
     ...(isOverdue
       ? { statusNote: lateDays > 0 ? `${lateDays} day${lateDays === 1 ? '' : 's'} late` : 'Late today' }
+      : row.stage === 'Quote' && !row.isCancelled && row.quoteExpiresAtAd && row.quoteExpiresAtAd < nowAd
+        ? { statusNote: 'Quote expired' }
+      : row.stage === 'Quote' && !row.isCancelled && row.pickupAtAd < nowAd
+        ? { statusNote: 'Pickup date passed' }
       : {}),
     isCancelled: row.isCancelled,
     isClosed: row.isClosed,

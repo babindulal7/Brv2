@@ -751,7 +751,7 @@ export default function MovementList({
                 </div>
 
                 <div
-                  style={{ marginTop: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                  style={{ marginTop: 'var(--sp-xs)', fontSize: 'var(--t-meta)', color: 'var(--booking-date-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
                 >
                   {r.due}
                 </div>
@@ -809,20 +809,20 @@ export default function MovementList({
                             borderRadius: 'var(--r-badge)',
                             background: 'rgba(245, 158, 11, 0.12)',
                             border: '1px solid rgba(245, 158, 11, 0.4)',
-                            color: 'var(--amber-text, #b45309)',
+                            color: 'var(--booking-date-text)',
                             fontWeight: 700,
                             fontSize: 'var(--t-meta)',
                             whiteSpace: 'nowrap',
                           }}
                           title="Overdue return"
                         >
-                          <Icon name="timer" size={12} style={{ color: 'var(--amber-text, #b45309)' }} />
+                          <Icon name="timer" size={12} style={{ color: 'var(--booking-date-text)' }} />
                           <span>{clock[0]}</span>
                           <span style={{ fontSize: 'var(--t-th)', opacity: 0.85 }}>{clock[1]}</span>
                         </span>
                       ) : (
-                        <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                          {clock[0]} <span style={{ color: 'var(--muted)' }}>{clock[1]}</span>
+                        <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--booking-date-text)', whiteSpace: 'nowrap' }}>
+                          {clock[0]} <span style={{ color: 'var(--booking-date-text)' }}>{clock[1]}</span>
                         </span>
                       )}
                       {bookingChip}
@@ -851,24 +851,24 @@ export default function MovementList({
                           borderRadius: 'var(--r-badge)',
                           background: 'rgba(245, 158, 11, 0.12)',
                           border: '1px solid rgba(245, 158, 11, 0.4)',
-                          color: 'var(--amber-text, #b45309)',
+                          color: 'var(--booking-date-text)',
                           fontWeight: 700,
                           fontSize: 'var(--t-meta)',
                           whiteSpace: 'nowrap',
                         }}
                         title="Overdue return"
                       >
-                        <Icon name="timer" size={12} style={{ color: 'var(--amber-text, #b45309)' }} />
+                        <Icon name="timer" size={12} style={{ color: 'var(--booking-date-text)' }} />
                         <span>{clock[0]}</span>
                         <span style={{ fontSize: 'var(--t-th)', opacity: 0.85 }}>{clock[1]}</span>
                       </div>
                     ) : (
                       <div
                         className="figure"
-                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', paddingTop: 2 }}
+                        style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--booking-date-text)', paddingTop: 2 }}
                       >
                         <span>{clock[0]}</span>
-                        <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', marginTop: -2 }}>{clock[1]}</span>
+                        <span style={{ fontSize: 'var(--t-th)', color: 'var(--booking-date-text)', marginTop: -2 }}>{clock[1]}</span>
                       </div>
                     )}
 

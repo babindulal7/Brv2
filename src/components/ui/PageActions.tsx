@@ -3,6 +3,9 @@ import type { CSSProperties, ReactNode, KeyboardEvent as ReactKeyboardEvent } fr
 import Icon from './Icon'
 import { OverflowMenu, type OverflowMenuItem } from './OverflowMenu'
 import { Unavailable } from './Unavailable'
+import { createPortal } from 'react-dom'
+import { floatingLayer } from './floatingLayer'
+import { useFloatingMenu } from './useFloatingMenu'
 
 export interface PageActionsProps {
   /** Maximum one filled primary action in a visible action area */
@@ -117,6 +120,7 @@ function ActionsOverflowMenu({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuId = useId()
+  const position = useFloatingMenu(open, triggerRef, menuRef)
 
   const closeMenu = (returnFocus = false) => {
     setOpen(false)
@@ -132,7 +136,7 @@ function ActionsOverflowMenu({
   useEffect(() => {
     if (!open) return
     const onDown = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      if (!menuRef.current?.contains(e.target as Node) && ref.current && !ref.current.contains(e.target as Node)) {
         closeMenu(false)
       }
     }
@@ -196,7 +200,7 @@ function ActionsOverflowMenu({
         <Icon name="more_vert" size={16} />
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           id={menuId}
           ref={menuRef}
@@ -204,11 +208,15 @@ function ActionsOverflowMenu({
           aria-label={ariaLabel}
           onKeyDown={onMenuKeyDown}
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            right: 0,
-            zIndex: 40,
-            minWidth: 220,
+            position: 'fixed',
+            top: position?.top ?? 0,
+            left: position?.left ?? 0,
+            width: position?.width ?? 230,
+            maxHeight: position?.maxHeight,
+            visibility: position ? 'visible' : 'hidden',
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+            zIndex: floatingLayer(triggerRef.current),
             background: 'var(--card)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--r-card)',
@@ -321,7 +329,7 @@ function ActionsOverflowMenu({
               {customOverflowNode}
             </div>
           )}
-        </div>
+        </div>, document.body
       )}
     </span>
   )

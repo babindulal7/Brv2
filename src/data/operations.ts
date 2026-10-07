@@ -1,3 +1,4 @@
+import { formatAd } from '../lib/bs'
 import { operationQueue, type BookingListRow } from '../lib/queries/bookings'
 import type { ListFilters } from '../lib/queries/listQuery'
 import { JOBS, JOB_ORDER, type BookingStatus, type JobName } from '../lib/workflow'
@@ -66,9 +67,9 @@ export interface Queue {
 }
 
 export const QUEUES: Queue[] = [
-  { job: 'Pack', title: 'Packing', action: 'Pack against the list', icon: 'box' },
-  { job: 'Handover', title: 'Pickup', action: 'Complete pickup', icon: 'truck' },
-  { job: 'Return', title: 'Return & Inspection', action: 'Receive, count and inspect', icon: 'return_arrow' },
+  { job: 'Pack', title: 'Pack', action: 'Pack against the list', icon: 'box' },
+  { job: 'Handover', title: 'Handover', action: 'Complete pickup', icon: 'truck' },
+  { job: 'Return', title: 'Return', action: 'Receive, count and inspect', icon: 'return_arrow' },
   { job: 'Reset', title: 'Reset', action: 'Clean, reset, re-shelf', icon: 'sparkles' },
   { job: 'Cases', title: 'Cases', action: 'Resolve missing and damage', icon: 'eye' },
 ]
@@ -345,7 +346,7 @@ export function jobRoute(bookingNo: string, job: JobName): string {
 export function formatDueAt(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  const day = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kathmandu' })
+  const day = formatAd(d)
   const time = d.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',

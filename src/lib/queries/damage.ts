@@ -1,3 +1,4 @@
+import { formatAd } from '../bs'
 import { supabase } from '../supabase'
 import { DAMAGE_FINDINGS, type DamageFinding } from '../../data/damage'
 import { rupees } from '../money'
@@ -77,7 +78,7 @@ interface DamageFindingRow {
         client: bookingPath?.client?.name || 'Unknown Client',
         raisedBy: row.creator?.name || 'Staff',
         raisedAtBs: '',
-        raisedAtAd: row.created_at ? new Date(row.created_at).toLocaleDateString() : '',
+        raisedAtAd: row.created_at ? formatAd(new Date(row.created_at)) : '',
         state: row.approval_state === 'Approved' ? 'Approved' : 'Awaiting Approval',
         description: row.description,
         photos: 1, // Assumption as photos are stored externally or via another relation

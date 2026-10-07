@@ -1,3 +1,4 @@
+import { formatAd } from '../../../lib/bs'
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Button'
@@ -71,7 +72,7 @@ export function ExtendRentalModal({
     const base = new Date(currentReturnDate)
     if (Number.isNaN(base.getTime())) return null
     base.setDate(base.getDate() + days)
-    return base.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    return formatAd(base)
   })()
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -167,7 +168,7 @@ export function ExtendRentalModal({
       title={`Extend Rental — ${bookingId}`}
       /* The "Current Return: …" clause is only stated when there is a real
          date behind it. It used to state the `'2026-08-12'` default as fact. */
-      subtitle={`Client: ${client}${currentReturnDate ? ` · Current Return: ${currentReturnDate}` : ''}`}
+      subtitle={<>Client: {client}{currentReturnDate && <> · Current Return: <span style={{ color: 'var(--booking-date-text)' }}>{formatAd(new Date(currentReturnDate))}</span></>}</>}
       size="md"
       footer={
         <>
@@ -325,7 +326,7 @@ export function ExtendRentalModal({
               the form is holding, which is the defect this pass removes. */}
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>New Projected Return Date:</span>
-            <span style={{ fontWeight: 700, color: 'var(--nav-active-accent)' }}>{newReturnDateStr ?? '—'}</span>
+            <span style={{ fontWeight: 700, color: newReturnDateStr ? 'var(--booking-date-text)' : 'var(--muted)' }}>{newReturnDateStr ?? '—'}</span>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>

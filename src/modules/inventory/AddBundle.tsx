@@ -1611,7 +1611,7 @@ export function AddBundle(props: AddBundleProps = {}) {
                     {formatMoney(effectiveRatePaisa)}
                   </span>
                   <span style={subtle}>
-                    {override ? 'Override active' : 'Computed from the lines below (§7.3)'}
+                    {override ? 'Override active' : /* Computed from the lines below (§7.3) */ "Computed from the lines below"}
                   </span>
                 </span>
 
@@ -1703,7 +1703,7 @@ export function AddBundle(props: AddBundleProps = {}) {
                   />
                 </span>
                 <p style={{ margin: '8px 0 0', ...subtle, lineHeight: 1.5 }}>
-                  Select equipment models and their children to add to the bundle. §5.1 —{' '}
+                  {/* Select equipment models and their children to add to the bundle. §5.1 — */}Select equipment models and their children to add to the bundle. {' '}
                   <span className="figure">stock = available + reserved + on rent + maintenance</span>, asserted per row.
                 </p>
               </div>
@@ -1914,8 +1914,7 @@ export function AddBundle(props: AddBundleProps = {}) {
                       Search or browse the inventory tree on the left. Click any model to add it — required children (like batteries for a camera) are included automatically.
                     </p>
                     <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                      §14 — a bundle needs at least one equipment line to be created.
-                    </p>
+                      {/* §14 — a bundle needs at least one equipment line to be created. */}a bundle needs at least one equipment line to be created. </p>
                   </div>
                 ) : (
                   /* BOTTOM corners here, not top: the Section draws its own
@@ -2117,7 +2116,7 @@ export function AddBundle(props: AddBundleProps = {}) {
                   <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>Boxes and bags</span>
                 </div>
                 <p style={{ margin: '0 0 8px', ...subtle, lineHeight: 1.5 }}>
-                  §10.4 — <strong>boxes are different.</strong> A case is equipment and <em>is</em> priced in the bundle
+                  {/* §10.4 — */}Not tracked yet. <strong>boxes are different.</strong> A case is equipment and <em>is</em> priced in the bundle
                   rate, so each one is a Bundle Item line above with its own availability.
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -2162,7 +2161,7 @@ export function AddBundle(props: AddBundleProps = {}) {
               style={{ ...controlBase, height: 'auto', padding: '8px 9px', resize: 'vertical', lineHeight: 1.5 }}
             />
             <div style={{ display: 'flex', marginTop: 6 }}>
-              <span style={subtle}>§11 — internal only. Never printed, never visible to the client.</span>
+              <span style={subtle}>{/* §11 — internal only. Never printed, never visible to the client. */}internal only. Never printed, never visible to the client. </span>
               <span className="figure" style={{ marginLeft: 'auto', ...subtle }}>
                 {notes.length} / {NOTES_LIMIT}
               </span>
@@ -2275,7 +2274,7 @@ export function AddBundle(props: AddBundleProps = {}) {
                 ]}
               />
               <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>
-                §9 — <span className="figure">{breakdown.equipment} + {breakdown.crew} + {breakdown.vehicle} + {breakdown.boxes} = {breakdown.totalItems}</span>
+                {/* §9 — */}Not tracked yet. <span className="figure">{breakdown.equipment} + {breakdown.crew} + {breakdown.vehicle} + {breakdown.boxes} = {breakdown.totalItems}</span>
                 , asserted on render. The donut counts the {availability.totalItems} stocked items these lines require;
                 crew and vehicle carry no stock record here, so they count in Total Items but not in the ready ratio.
               </p>
@@ -2326,9 +2325,8 @@ export function AddBundle(props: AddBundleProps = {}) {
                 </span>
               </div>
               <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>
-                Every figure is the sum of the {lines.length} lines above. Crew and vehicle are not in this rate — they
-                are priced in the booking's Crew and Transport sections (§10.4).
-              </p>
+                Every figure is the sum of the {lines.length} {/* lines above. Crew and vehicle are not in this rate — they
+                are priced in the booking's Crew and Transport sections (§10.4). */}lines above. Crew and vehicle are not in this rate — they are priced in the booking's Crew and Transport sections . </p>
             </Card>
 
             {/* §8.2 — one computation, two views. */}
@@ -2365,9 +2363,8 @@ export function AddBundle(props: AddBundleProps = {}) {
 
               {availability.blocked.length === 0 ? (
                 <p style={{ margin: '9px 0 0', ...subtle, lineHeight: 1.5 }}>
-                  §8.1 — a line is blocked only when it has fewer available units than it requires. Every line here is
-                  satisfied. Raise a required quantity above its free units to see the shortfall and its return date.
-                </p>
+                  {/* §8.1 — a line is blocked only when it has fewer available units than it requires. Every line here is
+                  satisfied. Raise a required quantity above its free units to see the shortfall and its return date. */}a line is blocked only when it has fewer available units than it requires. Every line here is satisfied. Raise a required quantity above its free units to see the shortfall and its return date. </p>
               ) : (
                 <>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 10 }}>
@@ -2454,8 +2451,7 @@ export function AddBundle(props: AddBundleProps = {}) {
               {packingOpen && (
                 <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--border)' }}>
                   <p style={{ margin: '0 0 6px', ...subtle, lineHeight: 1.5 }}>
-                    §12 — models only, never serials. A unit is assigned at packing from whatever is free.
-                  </p>
+                    {/* §12 — models only, never serials. A unit is assigned at packing from whatever is free. */}models only, never serials. A unit is assigned at packing from whatever is free. </p>
                   <ul style={{ margin: 0, paddingLeft: 'var(--sp-lg)', display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {lines.map((l) => {
                       const m = modelOf(l.modelId)
@@ -2506,7 +2502,7 @@ export function AddBundle(props: AddBundleProps = {}) {
               })}
             </ul>
           }
-          note="Children are priced inside this line's rate, at Rs 0 of their own (§5.3)."
+          note={/* Children are priced inside this line's rate, at Rs 0 of their own (§5.3). */ "Children are priced inside this line's rate, at Rs 0 of their own ."}
           actions={[
             {
               key: 'all',
@@ -3071,7 +3067,7 @@ function LineRow({
           <td colSpan={cols} style={{ ...td, paddingLeft: 46 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
               <strong style={{ fontSize: 'var(--t-meta)' }}>Included in this line</strong>
-              <span style={subtle}>Priced inside the line's rate, at Rs 0 of their own (§5.3).</span>
+              <span style={subtle}>{/* Priced inside the line's rate, at Rs 0 of their own (§5.3). */}Priced inside the line's rate, at Rs 0 of their own . </span>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--sp-sm)' }}>
                 <button
                   type="button"

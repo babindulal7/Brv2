@@ -103,9 +103,9 @@ describe('CalendarPopover & Date Selection UI (Booqable Availability & Range Spe
       )
     })
 
-    const cell22 = host!.querySelector('button[aria-label*="22 Jul 2026"]') as HTMLButtonElement
-    const cell25 = host!.querySelector('button[aria-label*="25 Jul 2026"]') as HTMLButtonElement
-    const cell26 = host!.querySelector('button[aria-label*="26 Jul 2026"]') as HTMLButtonElement
+    const cell22 = host!.querySelector('button[aria-label*="22/7/2026"]') as HTMLButtonElement
+    const cell25 = host!.querySelector('button[aria-label*="25/7/2026"]') as HTMLButtonElement
+    const cell26 = host!.querySelector('button[aria-label*="26/7/2026"]') as HTMLButtonElement
 
     expect(cell22).not.toBeNull()
     expect(cell22.style.background).toBe('rgb(72, 187, 120)') // #48BB78 Green
@@ -131,9 +131,9 @@ describe('CalendarPopover & Date Selection UI (Booqable Availability & Range Spe
       )
     })
 
-    const startWrapper = host!.querySelector('button[aria-label*="22 Jul 2026"]')?.parentElement as HTMLDivElement
-    const midWrapper = host!.querySelector('button[aria-label*="23 Jul 2026"]')?.parentElement as HTMLDivElement
-    const endWrapper = host!.querySelector('button[aria-label*="24 Jul 2026"]')?.parentElement as HTMLDivElement
+    const startWrapper = host!.querySelector('button[aria-label*="22/7/2026"]')?.parentElement as HTMLDivElement
+    const midWrapper = host!.querySelector('button[aria-label*="23/7/2026"]')?.parentElement as HTMLDivElement
+    const endWrapper = host!.querySelector('button[aria-label*="24/7/2026"]')?.parentElement as HTMLDivElement
 
     expect(startWrapper).not.toBeNull()
     expect(midWrapper).not.toBeNull()

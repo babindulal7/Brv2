@@ -674,7 +674,7 @@ export const DEPOSIT_BY_CATEGORY_UNAVAILABLE =
  * TODO(decision) — the cancellation fee tiers. Rendered as "not tracked yet".
  */
 export const CANCELLATION_TIERS_UNAVAILABLE =
-  'No cancellation fee tiers exist in this build. A booking is cancelled as a named terminal transition (Law 3) and no fee is computed. The notice periods and their percentages are an owner decision that has not been taken, so this reads "not tracked yet" rather than showing a schedule the business never agreed.'
+  /* No cancellation fee tiers exist in this build. A booking is cancelled as a named terminal transition (Law 3) and no fee is computed. The notice periods and their percentages are an owner decision that has not been taken, so this reads "not tracked yet" rather than showing a schedule the business never agreed. */ "Cancellation fees have not been defined. Cancelling a booking does not calculate a fee."
 
 /* ── system summary ────────────────────────────────────────────────────── */
 

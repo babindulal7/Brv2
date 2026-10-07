@@ -1,6 +1,6 @@
 import type { IconName } from '../components/ui/Icon'
 import type { StatusKey } from '../lib/status'
-import { toBs } from '../lib/bs'
+import { toBs, formatAd } from '../lib/bs'
 import { grouped } from '../lib/money'
 
 /**
@@ -644,7 +644,7 @@ export function transferActivity(transfers: StockTransfer[]): TransferDay[] {
   for (const t of [...transfers].sort((a, b) => a.dateAD.localeCompare(b.dateAD))) {
     if (t.status === 'Cancelled') continue
     const ad = new Date(`${t.dateAD}T00:00:00Z`)
-    const label = ad.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kathmandu' })
+    const label = formatAd(ad)
     const row = byDay.get(t.dateAD) ?? { label, completed: 0, inProgress: 0, pending: 0 }
     if (t.status === 'Completed') row.completed += 1
     else if (t.status === 'Pending') row.pending += 1

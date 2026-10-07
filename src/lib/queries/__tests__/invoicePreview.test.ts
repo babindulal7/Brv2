@@ -347,7 +347,7 @@ describe('previewInvoiceForBooking — it refuses exactly where createInvoice re
     const p = await previewInvoiceForBooking('B-715', 'Owner', NOW)
     expect(p.kind).toBe('refused')
     if (p.kind !== 'refused') return
-    expect(p.reason).toContain('§4.16')
+    expect(p.reason).toContain('no invoice can be raised')
   })
 
   it('refuses a booking with no billable lines rather than raising a permanent Rs 0 invoice', async () => {

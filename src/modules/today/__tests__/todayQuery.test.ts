@@ -211,13 +211,13 @@ describe('toMovementRow · the fields that survived, and the shapes of the ones 
   })
 
   it('formats the due stamp in Kathmandu', () => {
-    expect(toMovementRow(raw(), 'outgoing', NOW_AD).due).toBe('Due 2 Aug 2026 · 06:00 AM')
+    expect(toMovementRow(raw(), 'outgoing', NOW_AD).due).toBe('Due 2/8/2026 · 06:00 AM')
   })
 
   it('states the duration as two dates and does NOT count rental days', () => {
     // Law 1 — a rental-day count is the Financial Engine's figure, not a page's.
     const { duration } = toMovementRow(raw(), 'outgoing', NOW_AD)
-    expect(duration).toBe('31 Jul 2026 → 2 Aug 2026')
+    expect(duration).toBe('31/7/2026 → 2/8/2026')
     expect(duration).not.toMatch(/day/)
   })
 
@@ -500,7 +500,7 @@ describe('alerts · built from rows, never typed', () => {
   it('states a quote date rather than ruling the quote dead', () => {
     const alert = quoteLapsedAlert(raw({ stage: 'Quote', quoteExpiresAtAd: '2026-07-28T04:00:00.000Z' }))
     expect(alert.priority).toBe('High')
-    expect(alert.right).toBe('28 Jul 2026')
+    expect(alert.right).toBe('28/7/2026')
     // 0002:37 leaves "does a quote lapse" unresolved; the row must not answer it.
     expect(alert.title).not.toMatch(/expired|lapsed|dead/i)
   })

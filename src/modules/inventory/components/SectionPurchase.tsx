@@ -104,7 +104,7 @@ export function SectionPurchase() {
                 <Field label="Depreciation group">
                   <Unavailable reason={DEPRECIATION_UNAVAILABLE_REASON} style={{ width: '100%' }}>
                     <select disabled style={{ ...inputStyle(), opacity: 0.55, width: '100%' }}>
-                      <option>Not defined yet — §16</option>
+                      <option>{/* Not defined yet — §16 */}Not defined yet — </option>
                     </select>
                   </Unavailable>
                 </Field>

@@ -264,7 +264,7 @@ describe('Task 5 — Operations popup navigation and state', () => {
     expect(container.textContent).toContain('Booking:')
     expect(container.textContent).toContain('B-715')
     expect(container.textContent).toContain('Pickup:')
-    expect(container.textContent).toContain('2026-09-20')
+    expect(container.textContent).toContain('20/9/2026')
   })
 
   it('switches between unlocked stages using 1-4 number keys', async () => {

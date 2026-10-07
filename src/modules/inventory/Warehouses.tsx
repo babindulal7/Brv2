@@ -533,7 +533,7 @@ export default function Warehouses() {
   const [alertFilter, setAlertFilter] = useState<AlertKey | null>(null)
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'capacity', dir: 'desc' })
   const [view, setView] = useState<'table' | 'cards'>('table')
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [rowsPerPage, setRowsPerPage] = useState(25)
   const [page, setPage] = useState(1)
 
   /* profile */
@@ -1701,11 +1701,10 @@ export default function Warehouses() {
 
                     <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)', paddingTop: 'var(--sp-md)', borderTop: '1px solid var(--border)' }}>
                       <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                      The spec's Description, GPS, Google Maps link, Floor and Building are not fields on a warehouse record
+                      {/* The spec's Description, GPS, Google Maps link, Floor and Building are not fields on a warehouse record
                       in this build, so they are absent rather than estimated — and no per-warehouse category split exists,
                       so §Equipment Summary stays at the whole-set Inventory Distribution card above.
-                      TODO(decision): whether a warehouse carries a geocode and a floor/building line.
-                    </p>
+                      TODO(decision): whether a warehouse carries a geocode and a floor/building line. */}Open a warehouse to see its recorded details. </p>
                   </div>
                 )}
 
@@ -1849,10 +1848,9 @@ export default function Warehouses() {
 
                     <p style={{ margin: 0, display: 'flex', gap: 6, alignItems: 'flex-start', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                       <Icon name="info" size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                      Reserved and expansion capacity are in the spec but are not fields on a warehouse record in this build,
+                      {/* Reserved and expansion capacity are in the spec but are not fields on a warehouse record in this build,
                       so they are absent rather than estimated. TODO(decision): whether reserved slots are tracked per zone or
-                      per warehouse.
-                    </p>
+                      per warehouse. */}Reserved and expansion capacity are not tracked yet. </p>
                   </div>
                 )}
 

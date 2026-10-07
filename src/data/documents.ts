@@ -266,7 +266,7 @@ export type SortKey = (typeof SORTS)[number]
  * The render's footer reads `10 / page`. §11 asks for 25. The render's density
  * is what this pass is matching, so 10 leads and 25 is one click away.
  */
-export const PER_PAGE = [10, 25, 50, 100]
+export const PER_PAGE = [25, 50, 100]
 
 /* ── role filtering — §14 ───────────────────────────────────────────────── */
 

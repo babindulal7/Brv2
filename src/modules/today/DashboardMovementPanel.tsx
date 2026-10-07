@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { useMemo, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import Icon, { type IconName } from '../../components/ui/Icon'
@@ -181,7 +182,7 @@ export default function DashboardMovementPanel({
                   (row.statusNote ?? '').toLowerCase().includes('still with client')
 
                 const displayTime = side === 'outgoing'
-                  ? `${row.atDayAd !== today ? `${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${row.atDayAd}T00:00:00Z`))} · ` : ''}${timeOf(row)}`
+                  ? `${row.atDayAd !== today ? `${formatAd(new Date(`${row.atDayAd}T00:00:00Z`))} · ` : ''}${timeOf(row)}`
                   : row.due.replace(/^Due\s+/i, '')
                 const pickupMoment = side === 'outgoing'
                   ? displayTime
@@ -232,11 +233,11 @@ export default function DashboardMovementPanel({
 
                     <div className="movement-card__schedule movement-card__schedule--pickup">
                       <span>Pickup</span>
-                      <strong className="movement-card__time figure">{pickupMoment}</strong>
+                      <strong className="movement-card__time figure" style={{ color: 'var(--booking-date-text)' }}>{pickupMoment}</strong>
                     </div>
                     <div className="movement-card__schedule movement-card__schedule--return">
                       <span>Return</span>
-                      <strong className="figure">{returnMoment}</strong>
+                      <strong className="figure" style={{ color: 'var(--booking-date-text)' }}>{returnMoment}</strong>
                     </div>
 
                     <div className="movement-card__status-action">

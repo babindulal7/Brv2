@@ -438,7 +438,7 @@ export default function DuplicateCenter({ embedded = false }: DuplicateCenterPro
         </div>
       </PageBody>
 
-      <FooterNote extra={['Merging closes a record — Law 3: nothing is deleted, every entity has a named terminal action']} />
+      <FooterNote extra={[/* Merging closes a record — Law 3: nothing is deleted, every entity has a named terminal action */ "Merging closes the duplicate record and preserves its history."]} />
 
       <Modal
         isOpen={!!pendingMerge}

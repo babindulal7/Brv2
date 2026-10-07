@@ -271,10 +271,7 @@ export async function listDocuments(filters?: ListFilters): Promise<ListQueryRes
     const { data, error, count } = await query
 
     if (error) {
-      return {
-        rows: [],
-        total: 0,
-      }
+      throw new Error(error.message)
     }
 
     const mapped = ((data ?? []) as unknown as DocumentRowDb[]).map(mapDbRowToDocRow)
@@ -282,11 +279,8 @@ export async function listDocuments(filters?: ListFilters): Promise<ListQueryRes
       rows: mapped,
       total: count ?? mapped.length,
     }
-  } catch {
-    return {
-      rows: [],
-      total: 0,
-    }
+  } catch (error) {
+    throw error instanceof Error ? error : new Error('Documents could not be loaded.')
   }
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { cardStyle } from '../../components/ui/Page'
 import { DataTableShell } from '../../components/ui/DataTable'
-import { Input } from '../../components/ui/Input'
+import { DateField } from '../../components/ui/DateField'
 import { findShortages, type ShortageRow } from '../../lib/shortages'
 import { readShortageInputs, type ShortageInputs } from '../../lib/queries/shortages'
 import { availabilityRules } from '../../lib/queries/availability'
@@ -81,8 +81,8 @@ export default function ShortageSection() {
           Products whose bookings, at the busiest moment in the period, need more than the stock the product owns.
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-md)', marginTop: 'var(--sp-sm)' }}>
-          <Input label="From" type="date" value={fromDay} onChange={(e) => setFromDay(e.target.value)} />
-          <Input label="To" type="date" value={toDay} onChange={(e) => setToDay(e.target.value)} />
+          <DateField label="From" ariaLabel="From" showBs={false} clearable value={fromDay} onChange={setFromDay} />
+          <DateField label="To" ariaLabel="To" showBs={false} clearable value={toDay} onChange={setToDay} />
         </div>
         {!window && (
           <p role="alert" style={{ margin: 'var(--sp-sm) 0 0', fontSize: 'var(--t-meta)', color: 'var(--danger-text)' }}>

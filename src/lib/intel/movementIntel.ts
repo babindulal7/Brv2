@@ -25,8 +25,8 @@ export function movementDetail(row: MovementRow): IntelGroup[] {
   return [
     { title: 'Schedule', fields: [
       { label: 'Client', value: row.client, trigger: { label: 'Open', to: `/clients/${row.clientId}` } },
-      { label: 'Pickup', value: row.duration.split(' → ')[0] ?? '—' },
-      { label: 'Return', value: row.due.replace(/^Due\s+/i, '') },
+      { label: 'Pickup', value: row.duration.split(' → ')[0] ?? '—', tone: 'booking-date' },
+      { label: 'Return', value: row.due.replace(/^Due\s+/i, '') , tone: 'booking-date' },
       { label: 'Items', value: String(row.itemCount) },
     ] },
   ]

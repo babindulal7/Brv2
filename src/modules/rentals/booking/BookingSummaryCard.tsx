@@ -1,7 +1,7 @@
 import Icon from '../../../components/ui/Icon'
 import { Card } from '../../../components/ui/Page'
 import { formatMoney, type Paisa } from '../../../lib/money'
-import { formatAd } from '../../../lib/bs'
+import { BsAdDate } from '../../../components/ui/BsAdDate'
 import { MoneyRow } from './BookingFormWidgets'
 import type { BlockingNotice } from './newRentalGuards'
 
@@ -21,6 +21,7 @@ export interface BookingSummaryCardProps {
     advanceRequiredPaisa: Paisa
   }
   blockingNotices: BlockingNotice[]
+  validationAttempted?: boolean
   runNoticeAction: (action: string) => void
 }
 
@@ -36,6 +37,7 @@ export function BookingSummaryCard({
   canBookingMoney,
   pricing,
   blockingNotices,
+  validationAttempted = false,
   runNoticeAction,
 }: BookingSummaryCardProps) {
   return (
@@ -48,13 +50,13 @@ export function BookingSummaryCard({
         <div>
           <dt>Pickup</dt>
           <dd>
-            {pickupAt ? formatAd(new Date(pickupAt)) : 'Choose date'} · {pickupTime || 'Choose time'}
+            {pickupAt ? <BsAdDate date={pickupAt} tone="booking" /> : 'Choose date'} <span style={{ color: pickupAt ? 'var(--booking-date-text)' : undefined }}>{pickupTime || 'Choose time'}</span>
           </dd>
         </div>
         <div>
           <dt>Return</dt>
           <dd>
-            {returnAt ? formatAd(new Date(returnAt)) : 'Choose date'} · {returnTime || 'Choose time'}
+            {returnAt ? <BsAdDate date={returnAt} tone="booking" /> : 'Choose date'} <span style={{ color: returnAt ? 'var(--booking-date-text)' : undefined }}>{returnTime || 'Choose time'}</span>
           </dd>
         </div>
         <div>
@@ -117,20 +119,20 @@ export function BookingSummaryCard({
             style={{
               padding: '10px 12px',
               borderRadius: 'var(--r-btn)',
-              background: 'var(--st-danger-bg)',
-              border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
-              color: 'var(--st-danger-fg)',
+              background: validationAttempted ? 'var(--st-danger-bg)' : 'var(--card2)',
+              border: '1px solid var(--border)',
+              color: validationAttempted ? 'var(--st-danger-fg)' : 'var(--text2)',
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 'var(--t-meta)' }}>
               <Icon name="error" size={14} style={{ flexShrink: 0 }} />
               <span>
-                {blockingNotices.length} {blockingNotices.length === 1 ? 'thing needs' : 'things need'} attention:
+                {validationAttempted ? `${blockingNotices.length} ${blockingNotices.length === 1 ? 'thing needs' : 'things need'} attention:` : `Ready ${Number(Boolean(client)) + Number(totalUnits > 0) + Number(Boolean(pickupAt && returnAt))}/3`}
               </span>
             </div>
             <ul style={{ listStyle: 'disc', margin: '6px 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)' }}>
               {blockingNotices.map((n) => (
-                <li key={n.text} style={{ lineHeight: 1.35 }}>
+                <li key={n.text} style={{ lineHeight: 1.35, display: 'flex', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
                   <span>{n.text}</span>
                   {n.action && (
                     <button
@@ -140,12 +142,12 @@ export function BookingSummaryCard({
                       style={{
                         display: 'inline-block',
                         minHeight: 44,
-                        marginLeft: 6,
+                        marginLeft: 0,
                         padding: '1px 8px',
                         borderRadius: 'var(--r-badge)',
-                        border: '1px solid var(--st-danger-fg)',
+                        border: '1px solid var(--border)',
                         background: 'transparent',
-                        color: 'var(--st-danger-fg)',
+                        color: 'inherit',
                         fontSize: 'var(--t-th)',
                         fontWeight: 700,
                         cursor: 'pointer',

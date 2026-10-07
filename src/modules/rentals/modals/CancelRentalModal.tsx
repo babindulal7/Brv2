@@ -128,8 +128,7 @@ export function CancelRentalModal({
           }}
         >
           <strong style={{ color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-            Law 3 & Inventory Allocation
-          </strong>
+            {/* Law 3 & Inventory Allocation */}Inventory Allocation </strong>
           Cancelling will immediately release all reserved equipment and inventory allocations for{' '}
           <span style={{ color: 'var(--text)', fontWeight: 600 }}>{bookingNo}</span>. This action is irreversible.
         </div>

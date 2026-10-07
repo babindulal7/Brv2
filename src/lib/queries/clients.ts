@@ -253,6 +253,7 @@ export function toClientRecord(row: DirectoryRow): ClientRecord {
     // Do not reconnect a reader to this field. The way to make credit-used
     // compute again is a ruled formula plus a real column.
     creditUsedPaisa: 0 as Paisa,
+    lastRentalAtAd: row.last_pickup_at ?? null,
     lastRentalAd: row.last_pickup_at ? formatAd(new Date(row.last_pickup_at)) : '—',
     // Law 7: BS is rendered from the AD instant, never stored. '—' when there
     // has been no rental, rather than a fabricated date.

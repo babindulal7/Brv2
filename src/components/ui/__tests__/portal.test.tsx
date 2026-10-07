@@ -78,4 +78,22 @@ describe('popup portal regression', () => {
     expect(anchor.parentElement).toBe(document.body)
     expect(container.contains(dialog)).toBe(false)
   })
+
+  it('Select stays within viewport edges and above its owning modal', async () => {
+    await mount(<div role="dialog" aria-modal="true"><Select defaultValue="a"><option value="a">Alpha</option></Select></div>)
+    const trigger = container.querySelector<HTMLButtonElement>('[role="combobox"]')!
+    trigger.getBoundingClientRect = () => ({ top: 100, bottom: window.innerHeight - 190, left: window.innerWidth - 30, width: 180 } as DOMRect)
+    await act(async () => trigger.click())
+    const list = document.querySelector<HTMLElement>('[role="listbox"]')!
+    expect(Number.parseFloat(list.style.left) + Number.parseFloat(list.style.width)).toBeLessThanOrEqual(window.innerWidth - 8)
+    expect(Number.parseFloat(list.style.top) + Number.parseFloat(list.style.maxHeight)).toBeLessThanOrEqual(window.innerHeight - 8)
+    expect(list.style.zIndex).toBe('calc(var(--z-modal) + 1)')
+  })
+
+  it('DateField calendar stays above its owning modal', async () => {
+    await mount(<div role="dialog" aria-modal="true"><DateField value="" onChange={() => {}} ariaLabel="purchase date" /></div>)
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!.click())
+    const calendar = document.querySelector<HTMLElement>('[role="dialog"][aria-label]')!
+    expect(calendar.parentElement?.style.zIndex).toBe('calc(var(--z-modal) + 1)')
+  })
 })

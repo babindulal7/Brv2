@@ -256,8 +256,8 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
                   width: 30,
                   height: 30,
                   borderRadius: 'var(--r-sm)',
-                  background: BRAND[k.accent],
-                  color: BRAND_ON[k.accent],
+                  background: BRAND[isZero ? 'neutral' : k.accent],
+                  color: BRAND_ON[isZero ? 'neutral' : k.accent],
                   display: 'grid',
                   placeItems: 'center',
                   flexShrink: 0,
@@ -382,11 +382,9 @@ export function KpiStrip({ items, columns }: { items: Kpi[]; columns?: number })
 /* ── side rails ────────────────────────────────────────────────────────── */
 
 /**
- * The right-hand summary/detail rail every deep screen carries. Collapsible —
- * the parent grid's rail track must be sized `auto` (not a fixed px) so the
- * column actually shrinks when this collapses to its handle. `width` should
- * match whatever px the track used before switching to `auto`, so the
- * expanded layout is pixel-identical to before.
+ * User ruling, 7 Oct 2026: right-hand summaries stay visible everywhere;
+ * remove the collapse handle and ignore old per-route collapse preferences.
+ * Desktop retains its sticky, scrollable rail; smaller screens reflow.
  */
 export function Rail({
   children,
@@ -399,29 +397,25 @@ export function Rail({
   width?: number
   label?: string
 }) {
+  const desktop = useViewport() === 'desktop'
   return (
-    <CollapsibleAside side="right" width={width} label={label} {...(id !== undefined ? { id } : {})}>
-      {children}
-    </CollapsibleAside>
+    <aside
+      aria-label={label}
+      {...(id !== undefined ? { id } : {})}
+      style={{ position: desktop ? 'sticky' : 'relative', top: desktop ? 'calc(var(--header-h) + var(--sp-md))' : undefined, alignSelf: 'flex-start', minWidth: 0, width: desktop ? width : '100%', maxWidth: '100%' }}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0, maxHeight: desktop ? 'calc(100dvh - var(--header-h) - var(--sp-md) * 2)' : undefined, overflowY: desktop ? 'auto' : undefined, overscrollBehavior: desktop ? 'contain' : undefined }}>
+        {children}
+      </div>
+    </aside>
   )
 }
 
 /**
  * `Rail` at desktop; the same children as a plain column below 1280.
  *
- * Rulings §7 (binding): *"'Right rails collapse below 1280' means **reflow**,
- * not **hide**… Do not wrap those in `CollapsibleAside`, and do not change its
- * default: other pages depend on it."* (The ruling was written against the old
- * 1180 line; v4.1 §7.7 moved it to 1280 and the rule itself is unchanged.)
- * `Rail` **is** `CollapsibleAside`, which defaults to collapsed at tablet *and*
- * phone, so any screen that renders `<Rail>` unconditionally puts its rail
- * content behind a handle on the warehouse tablet this product targets.
- *
- * The pages that got this right hand-rolled the same three lines each
- * (`Finance.tsx`, `OperationsQueues.tsx`, `Payments.tsx`). This is that shape
- * once, so a screen only has to pick the right component rather than remember
- * the rule. The parent grid still has to drop its rail track below 1280 —
- * `RailGrid` below does that half.
+ * Rulings §7: below 1280 means reflow, not hide. The parent grid must
+ * drop its rail track too; useRailGridColumns below handles that half.
  */
 export function ReflowRail({
   children,
@@ -472,7 +466,7 @@ export function useBandColumns(): (n: number) => number {
 
 /**
  * The left-hand filter/navigation rail a handful of list screens carry.
- * Same collapse mechanics as `Rail`, mirrored to the left edge.
+ * Retains its own collapse mechanics; right-hand summaries stay visible.
  */
 export function SideRail({
   children,
@@ -503,7 +497,7 @@ export function SummaryRows({ rows }: { rows: Array<{ label: string; value: Reac
             className="figure"
             style={{
               fontWeight: 600,
-              color: r.tone ? BRAND_TEXT[r.tone] : 'var(--text)',
+              color: (typeof r.value === 'number' && r.value === 0) || (typeof r.value === 'string' && /^(?:(?:Rs\.?|NPR)\s*)?0(?:\.0+)?\s*%?$/.test(r.value.trim())) ? 'var(--muted)' : r.tone ? BRAND_TEXT[r.tone] : 'var(--text)',
               whiteSpace: 'nowrap',
             }}
           >

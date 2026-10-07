@@ -777,7 +777,7 @@ export function useEquipmentFormState() {
             </div>
           ))}
           <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>
-            §4 — one code drives both. The barcode and QR <strong>images</strong> are not drawn: a glyph no scanner can
+            {/* §4 — one code drives both. The barcode and QR */}one code drives both. The barcode and QR <strong>images</strong> are not drawn: a glyph no scanner can
             read would be fabricated data on the one panel whose job is identifiers. Rendering arrives with label printing.
           </p>
         </div>

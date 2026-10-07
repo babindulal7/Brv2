@@ -21,6 +21,7 @@ import { Badge } from '../../components/ui/Badge'
 import type { StatusKey } from '../../lib/status'
 import { useViewport } from '../../lib/device'
 import { getBusinessToday } from '../../lib/bs'
+import { IS_MOCK } from '../../lib/supabase'
 import { canAssignPricedCrew } from '../../lib/crewAssignment'
 import { BookCrewFlow } from './BookCrewFlow'
 import './crew.css'
@@ -188,8 +189,9 @@ export function CrewBooking() {
   // owns the three-chips-over-four-states union (law 1), so the count and the
   // predicate can never drift apart.
   const [rosterChip, setRosterChip] = useState<RosterChip>('All')
-  const [crewAssignments, setCrewAssignments] = useState<CrewAssignment[]>(CREW_DATA)
-  const [crewMembers, setCrewMembers] = useState<CrewMember[]>(CREW_ROSTER)
+  const [crewAssignments, setCrewAssignments] = useState<CrewAssignment[]>(IS_MOCK ? CREW_DATA : [])
+  const [crewMembers, setCrewMembers] = useState<CrewMember[]>(IS_MOCK ? CREW_ROSTER : [])
+  const openRoleRequests = useMemo(() => IS_MOCK ? OPEN_ROLE_REQUESTS : [], [])
   /* A failed read, never swallowed: the seed stays on screen behind the banner,
      and the banner says the data did not load live. */
   const [rosterLoadError, setRosterLoadError] = useState<string | null>(null)
@@ -205,8 +207,9 @@ export function CrewBooking() {
 
   useEffect(() => {
     let active = true
+    setRosterLoadError(null)
     listCrewAssignments().then((res) => {
-      if (active && res.rows.length > 0) {
+      if (active) {
         setCrewAssignments(res.rows)
       }
     }).catch((err: unknown) => {
@@ -214,7 +217,7 @@ export function CrewBooking() {
     })
 
     listCrewMembers().then((res) => {
-      if (active && res.rows.length > 0) {
+      if (active) {
         setCrewMembers(res.rows)
       }
     }).catch((err: unknown) => {
@@ -245,7 +248,7 @@ export function CrewBooking() {
   const travelWarnings = useMemo(() => detectTravelWarnings(crewAssignments), [crewAssignments])
   const roster = useMemo(() => rosterSummary(crewMembers), [crewMembers])
   const crewDays = useMemo(() => crewDaysBooked(crewAssignments), [crewAssignments])
-  const fill = useMemo(() => fillRate(crewAssignments, OPEN_ROLE_REQUESTS), [crewAssignments])
+  const fill = useMemo(() => fillRate(crewAssignments, openRoleRequests), [crewAssignments, openRoleRequests])
 
   const crewBookedToday = useMemo(() => crewAssignments.filter((a) => onShootToday(a)).length, [crewAssignments])
   const ledger = useMemo(() => payoutLedger(crewAssignments), [crewAssignments])
@@ -335,16 +338,15 @@ export function CrewBooking() {
             ]}
           />
           <div style={{ marginTop: 8, fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-            TDS needs a ruled rate — PLAN.md §4.12. Never derived from an assumed one.
-          </div>
+            {/* TDS needs a ruled rate — PLAN.md §4.12. Never derived from an assumed one. */}Tax deductions are not tracked yet. </div>
         </RailSection>
       )}
 
-      <RailSection title="Alerts" badge={String(railAlertCount(conflicts.length, travelWarnings.length, OPEN_ROLE_REQUESTS.length, crewAssignments))}>
+      <RailSection title="Alerts" badge={String(railAlertCount(conflicts.length, travelWarnings.length, openRoleRequests.length, crewAssignments))}>
         <AlertsList
           conflicts={conflicts}
           travelWarnings={travelWarnings}
-          openRoles={OPEN_ROLE_REQUESTS}
+          openRoles={openRoleRequests}
           assignments={crewAssignments}
         />
       </RailSection>
@@ -482,7 +484,7 @@ export function CrewBooking() {
                 value: `${crewDays} days · ${fill.pct}%`,
                 note: `${fill.filled} of ${fill.requested} roles filled`,
                 icon: 'users',
-                accent: 'primary',
+                accent: crewDays === 0 && fill.pct === 0 ? 'neutral' : 'primary',
               },
             ]}
             columns={4}

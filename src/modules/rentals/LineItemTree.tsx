@@ -16,42 +16,20 @@ export interface LineItemTreeProps {
   bookingStage?: string | undefined
 }
 
-/** Determine optical / sensor QC verification status based on item name */
-function getQcStatus(productName: string | null): { label: string; passed: boolean } | null {
-  if (!productName) return null
-  const lower = productName.toLowerCase()
-  if (lower.includes('fx3') || lower.includes('camera') || lower.includes('body') || lower.includes('sensor') || lower.includes('red') || lower.includes('arri') || lower.includes('komodo')) {
-    return { label: 'Sensor Clean ✓', passed: true }
-  }
-  if (lower.includes('lens') || lower.includes('zoom') || lower.includes('prime') || lower.includes('anamorphic') || lower.includes('optics') || lower.includes('collimator')) {
-    return { label: 'Optics QC Pass', passed: true }
-  }
-  if (lower.includes('ronin') || lower.includes('gimbal') || lower.includes('stabilizer')) {
-    return { label: 'Motor Calibrated', passed: true }
-  }
-  if (lower.includes('monitor') || lower.includes('wireless') || lower.includes('teradek') || lower.includes('transmitter')) {
-    return { label: 'RF Paired & Tested', passed: true }
-  }
-  return null
-}
+/** No per-unit QC source is recorded in this projection. */
+function getQcStatus(_name: string | null): { label: string; passed: boolean } | null { return null }
 
-/** Synthesize a deterministic flight case tag if none recorded */
-function getCaseTag(parentLine: FloorLine, index: number): string {
-  const code = (parentLine.productName || parentLine.description || 'CASE')
-    .replace(/[^A-Za-z0-9]/g, '')
-    .slice(0, 6)
-    .toUpperCase()
-  return `PEL-1510-${code}-${String(index + 1).padStart(2, '0')}`
-}
+/** Asset tags identify equipment; they are not evidence of a flight-case tag. */
+function getCaseTag(_parentLine: FloorLine, _index: number): string { return 'No case tag recorded' }
 
-/** Synthesize realistic stock availability matching Booqable telemetry */
-function getStockAvailability(line: FloorLine, index: number): { count: number; tone: 'warning' | 'success' | 'neutral' } {
-  // Deterministic mock stock count based on line id length / index
-  const count = (line.id.charCodeAt(0) + index) % 4
-  if (count === 0) {
-    return { count: 0, tone: 'warning' }
-  }
-  return { count, tone: count === 1 ? 'neutral' : 'success' }
+/** Availability must come from the windowed inventory query, never equipment names. */
+function getStockAvailability(_line: FloorLine, _index: number): { count: null; tone: 'warning' | 'success' | 'neutral' } { return { count: null, tone: 'neutral' } }
+
+// Ruling 7 Oct: a stage transition is not evidence of a per-unit scan or QC.
+function assignmentLabel(line: FloorLine, stage: string) {
+  if (line.trackingMode === 'Quantity' || line.trackingMode === 'Consumable') return 'Quantity tracked'
+  if (line.lineType !== 'Equipment' && line.lineType !== 'Bundle') return 'No serial required'
+  return stage === 'Returned' || stage === 'Closed' ? 'No unit record' : 'Assign during packing'
 }
 
 export function LineItemTree({
@@ -62,7 +40,7 @@ export function LineItemTree({
   pastPacked: _pastPacked = false,
   subRentedRowStyle,
   isSubRented = isSubRentedLine,
-  bookingStage: _bookingStage = 'Booked',
+  bookingStage = 'Booked',
 }: LineItemTreeProps) {
   const [collapsedCases, setCollapsedCases] = useState<Record<string, boolean>>({})
   const [searchQuery, setSearchQuery] = useState('')
@@ -105,22 +83,7 @@ export function LineItemTree({
       if (line.parentLineId && childrenByParentId[line.parentLineId]) {
         childrenByParentId[line.parentLineId]?.push(line)
       } else {
-        // Check if it belongs to any package heuristically
-        const assignedParent = packageParents.find((p) => {
-          const pName = (p.productName || '').toLowerCase()
-          const lName = (line.productName || '').toLowerCase()
-          return (
-            (pName.includes('fx3') && (lName.includes('v-mount') || lName.includes('handle') || lName.includes('cfexpress') || lName.includes('battery'))) ||
-            ((pName.includes('komodo') || pName.includes('camera') || pName.includes('red') || pName.includes('arri')) && (lName.includes('vespid') || lName.includes('cfexpress') || lName.includes('battery') || lName.includes('monitor') || lName.includes('mount') || lName.includes('c-stand'))) ||
-            (pName.includes('lighting') && (lName.includes('amaran') || lName.includes('softbox') || lName.includes('stand') || lName.includes('cable')))
-          )
-        })
-
-        if (assignedParent) {
-          childrenByParentId[assignedParent.id]?.push(line)
-        } else {
-          loose.push(line)
-        }
+        loose.push(line)
       }
     })
 
@@ -423,12 +386,12 @@ export function LineItemTree({
                               ? 'var(--danger-text, #dc2626)'
                               : stock.tone === 'neutral'
                               ? 'var(--warning-text, #d97706)'
-                              : 'var(--success-text, #059669)',
+                              : 'var(--muted)',
                         }}
                         title="Warehouse Stock Status"
                       >
                         <span style={{ fontSize: 9 }}>●</span>
-                        <span>{stock.count === 0 ? '0 left' : `${stock.count} in vault`}</span>
+                        <span>{'Availability not checked'}</span>
                       </span>
                     </div>
 
@@ -459,7 +422,7 @@ export function LineItemTree({
                         fontSize: '0.75rem',
                         fontWeight: 700,
                         background: isCasePacked ? 'rgba(16, 185, 129, 0.14)' : 'rgba(245, 158, 11, 0.14)',
-                        color: isCasePacked ? 'var(--success-text, #059669)' : 'var(--warning-text, #d97706)',
+                        color: isCasePacked ? 'var(--muted)' : 'var(--warning-text, #d97706)',
                         border: `1px solid ${isCasePacked ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
                       }}
                     >
@@ -520,14 +483,14 @@ export function LineItemTree({
                                 />
                               ))
                             ) : (
-                              <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>Auto-assign on scan</span>
+                              <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>{assignmentLabel(parent, bookingStage)}</span>
                             )}
                           </div>
                         </td>
                         <td style={{ textAlign: 'center', padding: '10px', fontWeight: 600 }}>{parent.qty}</td>
                         <td style={{ padding: '10px 12px' }}>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--success-text, #059669)', fontWeight: 600 }}>
-                            ● Assigned
+                          <span style={{ fontSize: '0.75rem', color: 'var(--muted)', fontWeight: 600 }}>
+                            {parent.units.length ? 'Assigned' : assignmentLabel(parent, bookingStage)}
                           </span>
                         </td>
                         <td style={{ padding: '10px 12px' }}>
@@ -538,7 +501,7 @@ export function LineItemTree({
                                 alignItems: 'center',
                                 gap: 3,
                                 fontSize: '0.725rem',
-                                color: 'var(--success-text, #059669)',
+                                color: 'var(--muted)',
                                 fontWeight: 600,
                               }}
                             >
@@ -546,11 +509,11 @@ export function LineItemTree({
                               <span>{getQcStatus(parent.productName)?.label}</span>
                             </span>
                           ) : (
-                            <span style={{ color: 'var(--muted)', fontSize: '0.725rem' }}>Standard QC</span>
+                            <span style={{ color: 'var(--muted)', fontSize: '0.725rem' }}>Not recorded</span>
                           )}
                         </td>
                         <td style={{ padding: '10px 12px', fontSize: '0.75rem', color: 'var(--text2)' }}>
-                          {parent.units[0]?.location || 'Vault Shelf A'}
+                          {parent.units[0]?.location || 'Not recorded'}
                         </td>
                       </tr>
 
@@ -625,7 +588,7 @@ export function LineItemTree({
                                     />
                                   ))
                                 ) : (
-                                  <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>Auto-assign on scan</span>
+                                  <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>{assignmentLabel(child, bookingStage)}</span>
                                 )}
                               </div>
                             </td>
@@ -643,15 +606,15 @@ export function LineItemTree({
                                   background:
                                     childStock.tone === 'warning'
                                       ? 'rgba(239, 68, 68, 0.1)'
-                                      : 'rgba(16, 185, 129, 0.1)',
+                                      : 'var(--card2)',
                                   color:
                                     childStock.tone === 'warning'
                                       ? 'var(--danger-text, #dc2626)'
-                                      : 'var(--success-text, #059669)',
+                                      : 'var(--muted)',
                                 }}
                               >
                                 <span>●</span>
-                                <span>{childStock.count === 0 ? '0 left (Shortage)' : `${childStock.count} left in vault`}</span>
+                                <span>{'Availability not checked'}</span>
                               </span>
                             </td>
                             <td style={{ padding: '10px 12px' }}>
@@ -662,7 +625,7 @@ export function LineItemTree({
                                     alignItems: 'center',
                                     gap: 3,
                                     fontSize: '0.725rem',
-                                    color: 'var(--success-text, #059669)',
+                                    color: 'var(--muted)',
                                     fontWeight: 600,
                                   }}
                                 >
@@ -774,7 +737,7 @@ export function LineItemTree({
                               />
                             ))
                           ) : (
-                            <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>Auto-assign on scan</span>
+                            <span style={{ color: 'var(--muted)', fontSize: '0.75rem' }}>{assignmentLabel(line, bookingStage)}</span>
                           )}
                         </div>
                       </td>
@@ -792,19 +755,19 @@ export function LineItemTree({
                             background:
                               stock.tone === 'warning'
                                 ? 'rgba(239, 68, 68, 0.1)'
-                                : 'rgba(16, 185, 129, 0.1)',
+                                : 'var(--card2)',
                             color:
                               stock.tone === 'warning'
                                 ? 'var(--danger-text, #dc2626)'
-                                : 'var(--success-text, #059669)',
+                                : 'var(--muted)',
                           }}
                         >
                           <span>●</span>
-                          <span>{stock.count === 0 ? '0 left' : `${stock.count} left in vault`}</span>
+                          <span>{'Availability not checked'}</span>
                         </span>
                       </td>
                       <td style={{ padding: '10px 12px', fontSize: '0.75rem', color: 'var(--text2)' }}>
-                        {line.units[0]?.location || 'Floor Bay'}
+                        {line.units[0]?.location || 'Not recorded'}
                       </td>
                     </tr>
                   )

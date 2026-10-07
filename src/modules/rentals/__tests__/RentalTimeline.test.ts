@@ -35,6 +35,11 @@ function row(pickup: string, ret: string): RentalListRow {
 }
 
 describe('buildTimelineWindow', () => {
+  it('reads compact day/month/year labels without swapping the day and month', () => {
+    const result = buildTimelineWindow([row('30/9/2026', '2/10/2026')])
+    expect(result.start).toBe(new Date(2026, 8, 30).getTime())
+    expect(result.dayCount).toBe(3)
+  })
   it('fits the visible bookings into complete day columns', () => {
     const result = buildTimelineWindow([row('15 Sep 2026', '18 Sep 2026')])
     expect(result.dayCount).toBe(4)

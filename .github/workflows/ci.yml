@@ -77,6 +77,9 @@ jobs:
       - name: Page shell design invariants
         run: npm run lint:shell
 
+      - name: Staff UI contains no developer notes
+        run: npm run lint:ui-copy
+
       # WCAG AA on the SHIPPED theme.css, both themes.
       #
       # This gate existed and was never in this file, which is how three real

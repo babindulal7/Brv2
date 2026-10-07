@@ -9,7 +9,7 @@ import { DataTableShell } from '../../components/ui/DataTable'
 import { STATUS, PAYMENT_STATUS_TONE } from '../../lib/status'
 import { useViewport } from '../../lib/device'
 import { formatMoney, toRupees } from '../../lib/money'
-import { toBs, formatBs } from '../../lib/bs'
+import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useAuth } from '../../lib/auth'
 import { canRecordPayment, canReversePayment } from '../../lib/rbac'
@@ -235,12 +235,7 @@ export const NO_METHOD_TITLE =
 export function formatPaymentAt(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  const day = d.toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'Asia/Kathmandu',
-  })
+  const day = formatAd(d)
   const time = d.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',

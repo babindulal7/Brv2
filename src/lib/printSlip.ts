@@ -1,3 +1,4 @@
+import { formatAdDateTime } from './bs'
 import { formatMoney } from './money'
 import type { Paisa } from './money'
 
@@ -35,7 +36,7 @@ export function printRentalSlip(data: RentalSlipData): void {
 
   const branch = data.branchName || 'Babin Rentals Kathmandu'
   const vat = data.branchVat || 'VAT: 601234567'
-  const dateStr = new Date().toLocaleString('en-GB')
+  const dateStr = formatAdDateTime(new Date().toISOString())
 
   const itemsHtml = data.lines
     .map(

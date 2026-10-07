@@ -59,11 +59,11 @@ describe('CL-04 — the directory KPI is labelled with what it counts', () => {
     expect(src).not.toMatch(/\bon rent\b/i)
   })
 
-  it('states "Active" on the KPI, the chip and the saved view', () => {
+  it('states Open rentals on the KPI, chip and saved view', () => {
     const src = code(directorySrc)
-    expect(src).toContain(`label: 'Active',`)
-    expect(src).toContain(`{ label: 'Active', key: 'active', count: metrics.onRent }`)
-    expect(src).toContain(`{ label: 'Active', filter: 'active'`)
+    expect(src).toContain(`label: 'Open rentals',`)
+    expect(src).toContain(`{ label: 'Open rentals', key: 'active', count: metrics.onRent }`)
+    expect(src).toContain(`{ label: 'Open rentals', filter: 'active'`)
   })
 
   /*

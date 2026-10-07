@@ -53,25 +53,24 @@ describe('ScannerFab — AUD-014 Mobile Dual Scanner Collision Resolution', () =
     document.body.innerHTML = ''
   })
 
-  it('renders floating trigger button on desktop (width >= 1280px)', async () => {
+  it('keeps desktop free of a duplicate floating trigger', async () => {
     mockViewport = 'desktop'
     await act(async () => {
       root.render(<ScannerFab />)
     })
 
     const fab = host.querySelector<HTMLButtonElement>('button[aria-label="Scanner"]')
-    expect(fab).not.toBeNull()
-    expect(fab?.style.display).not.toBe('none')
+    expect(fab).toBeNull()
   })
 
-  it('renders floating trigger button on tablet (768px <= width < 1280px)', async () => {
+  it('keeps tablet free of a duplicate floating trigger', async () => {
     mockViewport = 'tablet'
     await act(async () => {
       root.render(<ScannerFab />)
     })
 
     const fab = host.querySelector<HTMLButtonElement>('button[aria-label="Scanner"]')
-    expect(fab).not.toBeNull()
+    expect(fab).toBeNull()
   })
 
   it('hides floating trigger button on phone (< 768px) to prevent dual scanner collision', async () => {

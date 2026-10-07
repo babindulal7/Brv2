@@ -304,7 +304,7 @@ describe('HO-12 — the override reason names the write it reaches', () => {
       document.body.querySelector('textarea[aria-label="Reason for handing over with money outstanding"]')
 
     expect(field()).toBeTruthy()
-    expect(text()).toContain('booking_stage_transitions.reason')
+    expect(text()).toContain('Saved with the rental history')
 
     // The §11.4 block disappears once its three gates pass; the R-06 field must not,
     // because that is precisely when the dispatch that sends it becomes possible.

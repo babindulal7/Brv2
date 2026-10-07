@@ -1394,10 +1394,10 @@ export default function PackingWorkspace({
               ].map((f) => (
                 <div key={f.l} className="floor-summary-cell">
                   <div className="floor-summary-label">{f.l}</div>
-                  <div className={`floor-summary-value ${f.big ? 'is-primary' : ''}`}>
+                  <div className={`floor-summary-value ${f.big ? 'is-primary' : ''}`} style={{ color: ['Pickup', 'Return', 'Expected Return', 'Due back'].includes(f.l) && f.s ? 'var(--booking-date-text)' : undefined }}>
                     {f.v}
                   </div>
-                  {f.s && <div className="floor-summary-sub">{f.s}</div>}
+                  {f.s && <div className="floor-summary-sub" style={{ color: ['Pickup', 'Return', 'Expected Return', 'Due back'].includes(f.l) ? 'var(--booking-date-text)' : undefined }}>{f.s}</div>}
                 </div>
               ))}
             </div>
@@ -2183,10 +2183,9 @@ export default function PackingWorkspace({
                     <RowAction label="Take Photo" onClick={() => setPhotoCount((n) => n + 1)} />
                   </div>
                   <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                    Ruled mandatory (§4.31): one photo per booking, not per case. This count is local to this
+                    {/* Ruled mandatory (§4.31): one photo per booking, not per case. This count is local to this
                     session — no photo is uploaded from here yet; capture, matching and storage live in the
-                    Evidence Workspace.
-                  </p>
+                    Evidence Workspace. */}One photo is required per booking. Use the Evidence workspace to capture and save it. </p>
                 </Card>
 
                 <Card title="Packing Notes">

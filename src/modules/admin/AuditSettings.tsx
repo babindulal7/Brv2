@@ -89,7 +89,7 @@ const ROW_MENU_UNAVAILABLE = 'The rule row menu is specified but not built yet.'
 
 /** Law 16 — no AI panel until it is backed by a validated computation. */
 const ASSISTANT_UNAVAILABLE =
-  'No AI assistant runs in this build (Law 16 — no AI panel until it is backed by a validated computation), so this box would send the question nowhere.'
+  /* No AI assistant runs in this build (Law 16 — no AI panel until it is backed by a validated computation), so this box would send the question nowhere. */ "The audit assistant is not available yet."
 
 /**
  * The one stored fact the "Global Audit Logging" row claims. A seed value

@@ -137,7 +137,9 @@ input[type='search']::-webkit-search-results-decoration {
   }
 }
 .animate-entrance {
-  animation: fluidFadeUp 180ms var(--ease) both;
+  /* Release the transformed page layer after entry so settled text paints
+     normally. Backwards still provides the initial frame during any delay. */
+  animation: fluidFadeUp 180ms var(--ease) backwards;
 }
 
 /* Skeleton Shimmer Wave (Replaces flat opacity blink) */

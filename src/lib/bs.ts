@@ -244,10 +244,10 @@ export function hasBs(ad: Date): boolean {
   return toBs(ad) !== null
 }
 
-/** "16 Shrawan 2083 BS" — Latin digits always (Foundation §03). */
-export function formatBs(bs: BsDate, opts: { suffix?: boolean } = {}): string {
+/** "16 Shrawan" — compact day/month labels; legacy suffix options stay source-compatible. */
+export function formatBs(bs: BsDate, _opts: { suffix?: boolean } = {}): string {
   const name = BS_MONTHS[bs.month - 1] ?? ''
-  return `${bs.day} ${name} ${bs.year}${opts.suffix === false ? '' : ' BS'}`
+  return `${bs.day} ${name}`
 }
 
 /**
@@ -264,18 +264,20 @@ export function formatBsOrAd(ad: Date, opts: { suffix?: boolean } = {}): string 
 }
 
 /**
- * "31 Jul 2026" — rendered in Kathmandu, not UTC.
+ * "31/7/2026" — rendered in Kathmandu, not UTC, without zero padding.
  *
  * Same defect as `toBs` had: `timeZone: 'UTC'` puts the AD line a day behind
  * the BS line above it for the last 5h45m of every UTC day, so the pair would
  * have disagreed with each other on the same screen.
  */
 export function formatAd(ad: Date): string {
-  return ad.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kathmandu' })
+  if (Number.isNaN(ad.getTime())) return '—'
+  const civil = new Date(kathmanduCivil(ad))
+  return `${civil.getUTCDate()}/${civil.getUTCMonth() + 1}/${civil.getUTCFullYear()}`
 }
 
 /**
- * `"16 Jul 2026, 02:25 PM"` — a stored AD/UTC instant rendered in Kathmandu.
+ * `"16/7/2026, 02:25 PM"` — a stored AD/UTC instant rendered in Kathmandu.
  *
  * Exists because the floor workspaces were stamping their session-close times
  * as string literals (`closedAt: '16 Jul 2026, 02:25 PM'`), which would have
@@ -287,9 +289,18 @@ export function formatAd(ad: Date): string {
 export function formatAdDateTime(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kathmandu' })
+  const date = formatAd(d)
   const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kathmandu' })
   return `${date}, ${time.toUpperCase()}`
+}
+
+/** Compact booking hovercard timestamp, with both calendars in Kathmandu. */
+export function formatBookingHoverDateTime(iso: string | null | undefined): string {
+  if (!iso) return 'Not scheduled'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  const bs = toBs(d)
+  return `${formatAdDateTime(iso)}${bs ? ` · ${formatBs(bs)}` : ''}`
 }
 
 /**
@@ -354,7 +365,7 @@ export function formatAdWeekday(ad: Date): string {
 }
 
 /**
- * "14 Apr 2021 – 13 Apr 2039" — the window `toBs` answers inside.
+ * "14/4/2021 – 13/4/2039" — the window `toBs` answers inside.
  *
  * **Derived from the table, never hand-typed**, so it cannot drift from what
  * the engine actually covers: the day count is the sum of all 216 month

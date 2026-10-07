@@ -53,7 +53,7 @@ export function UsersPane() {
 
       <Card
         title="Permissions Matrix"
-        action={<span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>Computed live from lib/rbac — not a copy of it</span>}
+        action={<span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{/* Computed live from lib/rbac — not a copy of it */}Permissions for each role </span>}
       >
         <DataTableShell ariaLabel="Permissions matrix" data-table-scroll style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>

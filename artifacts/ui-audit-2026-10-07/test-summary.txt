@@ -1,0 +1,9 @@
+ ✓ src/modules/finance/__tests__/invoicesCsv.test.ts (4 tests) 9ms
+ ✓ src/components/ui/__tests__/SavedViewsMenu.test.ts (2 tests) 4ms
+
+ Test Files  314 passed (314)
+      Tests  4100 passed (4100)
+   Start at  16:11:01
+   Duration  232.69s (transform 118.93s, setup 0ms, collect 387.21s, tests 312.02s, environment 600.74s, prepare 106.36s)
+
+JSON report written to C:/Users/use/.codex-temp/babin-rentals-current/.audit-release-tests.json

@@ -1,7 +1,7 @@
 import type { RefObject, MutableRefObject } from 'react'
 import type { NavigateFunction } from 'react-router-dom'
 import Icon from '../../../components/ui/Icon'
-import { Button, Input, Select } from '../../../components/ui'
+import { Input, Select } from '../../../components/ui'
 import { Field, Section, AddClientButton, inputStyle } from './BookingFormWidgets'
 import { ClientCombobox } from './ClientCombobox'
 import { ClientHealthEye } from './ClientHealthChip'
@@ -81,8 +81,6 @@ export function BookingClientSection({
   setKind,
   kindOther,
   setKindOther,
-  govId,
-  setGovId,
   title = 'Client & Schedule',
 }: BookingClientSectionProps) {
   return (
@@ -112,7 +110,9 @@ export function BookingClientSection({
       onToggle={onToggle}
       summary={client ? `${client.name} · ${days} ${dayWord}` : 'No client selected'}
     >
-      <Field label="Client" labelId="new-rental-client-label">
+      {/* User accepted required-field clarity, 7 Oct: match confirmation gates. */}
+      <p style={{ margin: '0 0 8px', color: 'var(--muted)', fontSize: 'var(--t-meta)' }}>* Required to confirm</p>
+      <Field label="Client *" labelId="new-rental-client-label">
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
           <div
             ref={clientFieldRef as RefObject<HTMLDivElement>}
@@ -130,8 +130,22 @@ export function BookingClientSection({
               onViewAll={() => navigate('/clients')}
               inputStyle={inputStyle}
               labelledBy="new-rental-client-label"
+              required
               showOutstanding={canClientBalance}
               suppressNextFocusOpen={suppressClientListOnFocus}
+              // User ruling, 7 Oct: history is an icon inside client search.
+              inputAction={client ? (
+                <button
+                  type="button"
+                  className="press"
+                  aria-label="Client History"
+                  title="Client History"
+                  onClick={onOpenHistory}
+                  style={{ width: 44, minHeight: 44, display: 'grid', placeItems: 'center', padding: 0, border: 'none', borderRadius: 'var(--r-btn)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer' }}
+                >
+                  <Icon name="activity" size={18} />
+                </button>
+              ) : undefined}
               {...(client || !clientFieldTouched
                 ? {}
                 : { error: 'Select a client before confirming this booking.' })}
@@ -166,7 +180,6 @@ export function BookingClientSection({
               </div>
             )}
           </div>
-          {client && <Button icon="activity" onClick={onOpenHistory}>Client History</Button>}
         </div>
 
         {client && (client.isBlocked || client.onStop || (canBookingMoney && client.outstandingPaisa > 0) || health?.level === 'attention') && (
@@ -211,7 +224,7 @@ export function BookingClientSection({
           <Input value={project} onChange={(e) => setProject(e.target.value)} style={inputStyle} />
         </Field>
         <Field
-          label="Project Type"
+          label="Project Type *"
           error={
             kind.trim() !== ''
               ? (validateProjectType(kind, kindOther).message ?? undefined)
@@ -220,6 +233,7 @@ export function BookingClientSection({
         >
           <Select
             aria-label="Project type"
+            required
             value={kind}
             placeholder="Select project type"
             options={PROJECT_TYPES.map((t) => ({ value: t, label: t }))}
@@ -233,9 +247,10 @@ export function BookingClientSection({
         </Field>
         {kind === 'Other' && (
           <div style={{ gridColumn: isPhone ? 'auto' : '1 / -1' }}>
-            <Field label="Specify Project Type">
+            <Field label="Specify Project Type *">
               <Input
                 value={kindOther}
+                aria-required="true"
                 onChange={(e) => setKindOther(e.target.value)}
                 placeholder="e.g. Live Theatre Production"
                 style={inputStyle}
@@ -243,14 +258,6 @@ export function BookingClientSection({
             </Field>
           </div>
         )}
-        <div style={{ gridColumn: isPhone ? 'auto' : '1 / -1' }}>
-          <Field
-            label="Government ID / PAN"
-            error={client && govId.trim().length === 0 ? 'Required before confirming. Enter the PAN or citizenship number, or add it on the client record.' : undefined}
-          >
-            <Input value={govId} onChange={(e) => setGovId(e.target.value)} style={inputStyle} />
-          </Field>
-        </div>
       </div>
     </Section>
   )

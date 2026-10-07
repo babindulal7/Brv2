@@ -62,7 +62,7 @@ afterEach(() => {
 describe('BsAdDate inside the convertible month', () => {
   it.each(LAYOUTS)('%s renders real Bikram Sambat and no AD tag', async (layout) => {
     const text = await mount({ date: INSIDE, layout })
-    expect(text).toContain('Shrawan 2083 BS')
+    expect(text).toContain('31 Shrawan 2083')
     // The tag is for the failure case only — its presence here would mean the
     // component had stopped trusting a conversion that actually succeeded.
     // Substring, not `\bAD\b`: `textContent` concatenates the tag straight onto

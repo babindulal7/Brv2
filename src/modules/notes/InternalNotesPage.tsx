@@ -13,7 +13,7 @@ import { Button } from '../../components/ui/Button'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
 import { useAuth } from '../../lib/auth'
 import { useOptionalToast } from '../../components/ui/Toast'
-import { toBs, formatBs } from '../../lib/bs'
+import { toBs, formatBs, formatAd } from '../../lib/bs'
 import {
   listInternalNotes,
   addInternalNote,
@@ -147,8 +147,8 @@ export default function InternalNotesPage() {
       const now = new Date()
       const bs = toBs(now)
       const bsStr = bs ? formatBs(bs) : ''
-      const adStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-      return bsStr ? `${bsStr} BS (${adStr} AD)` : `${adStr} AD`
+      const adStr = formatAd(now)
+      return bsStr ? `${adStr} · ${bsStr}` : adStr
     } catch {
       return 'Kathmandu HQ'
     }

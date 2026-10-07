@@ -1,4 +1,7 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
+import { floatingLayer } from './floatingLayer'
+import { useFloatingMenu } from './useFloatingMenu'
 import Icon from './Icon'
 import type { IconName } from './Icon'
 import { Unavailable } from './Unavailable'
@@ -26,6 +29,7 @@ export function OverflowMenu({ items, ariaLabel = 'More actions', style }: Overf
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuId = useId()
+  const position = useFloatingMenu(open, triggerRef, menuRef, expanded)
 
   const closeMenu = (returnFocus = false) => {
     setOpen(false)
@@ -43,7 +47,7 @@ export function OverflowMenu({ items, ariaLabel = 'More actions', style }: Overf
   useEffect(() => {
     if (!open) return
     const onDown = (e: PointerEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) closeMenu()
+      if (!menuRef.current?.contains(e.target as Node) && ref.current && !ref.current.contains(e.target as Node)) closeMenu()
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -103,7 +107,7 @@ export function OverflowMenu({ items, ariaLabel = 'More actions', style }: Overf
         <Icon name="more_vert" size={16} />
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           id={menuId}
           ref={menuRef}
@@ -111,11 +115,16 @@ export function OverflowMenu({ items, ariaLabel = 'More actions', style }: Overf
           aria-label={ariaLabel}
           onKeyDown={onMenuKeyDown}
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            right: 0,
-            zIndex: 40,
-            minWidth: 230,
+            // User shell audit: escape clipping cards/tables and fit the viewport.
+            position: 'fixed',
+            top: position?.top ?? 0,
+            left: position?.left ?? 0,
+            width: position?.width ?? 230,
+            maxHeight: position?.maxHeight,
+            visibility: position ? 'visible' : 'hidden',
+            overflowY: 'auto',
+            overscrollBehavior: 'contain',
+            zIndex: floatingLayer(triggerRef.current),
             background: 'var(--card)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--r-card)',
@@ -178,7 +187,7 @@ export function OverflowMenu({ items, ariaLabel = 'More actions', style }: Overf
             )
 
             return (
-              <div key={it.label} style={{ display: 'flex', flexDirection: 'column' }}>
+              <div key={it.label} style={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
                 {it.unavailable ? (
                   <Unavailable reason={it.unavailable} style={{ width: '100%' }}>
                     {itemButton}
@@ -249,7 +258,7 @@ export function OverflowMenu({ items, ariaLabel = 'More actions', style }: Overf
               </div>
             )
           })}
-        </div>
+        </div>, document.body
       )}
     </span>
   )

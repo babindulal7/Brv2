@@ -1,5 +1,292 @@
 # Progress Log
 
+## 2026-10-07 — Orange booking schedule dates
+
+**Did**
+- Added a shared theme-aware orange booking-date text token, an explicit BsAdDate booking tone and DateField bookingDate flag.
+- Applied orange to both booking dates and their times across New Rental fields/summary, rental lists/cards/details, floor summaries and operation shells, calendar booking details, client rental history, hover/Intel details and extension/sub-rental dialogs.
+- Kept date engines, missing values, role gates and writes unchanged. Light orange ink is deeper for small-text contrast; dark uses the existing orange family. Modal subtitles can render a colored date while existing strings keep the same output.
+- Saved screenshots and verification logs in artifacts/booking-date-orange-2026-10-07/.
+
+**Ruled**
+- User explicitly requested orange booking dates everywhere and highlighted both Pickup and Return. Recorded the ruling in RULINGS-2026-10-07.md and theme.css.
+
+**Verified**
+- Typecheck passed. Nine date/calendar/booking/operations/Today/Tier 1 suites passed 106/106; five further hover/Intel/modal suites passed 20/20 after the additional display refinements.
+- Changed-file ESLint, UI-copy and scoped whitespace checks passed. Existing contrast gate passed 54/54; eight date-color checks cleared 4.5:1 on surface, card2, surface-2 and inset2 in both themes (lowest 4.83:1 light, 8.02:1 dark).
+- PGlite applied 155/155 migrations; lifecycle passed 30/30; production build passed with 297 precache entries.
+- Browser inspected the New Rental summary and fields in light/dark, Rentals list and Booking Detail, plus phone summary. Restored dark theme and normal viewport; preview kept open. No live record or migration writes.
+- Completion below retains the separately recorded earlier full-suite result; this change was checked with the 126 focused tests above.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T16:47:00.601Z). Suite: 4100/4100 passed (recorded 2026-10-07T10:30:21.542Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T16:47:01.897Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining work on this booking-date color request. Broader audit data/read-model boundaries remain in docs/UI_UX_AUDIT_DISPOSITION_2026-10-07.md.
+
+## 2026-10-07 — New Rental field and summary refinements
+
+**Did**
+- Embedded the Client History icon in the client search input with a 44px hit area and accessible label. Retained the existing history panel, client selection and health quick view.
+- Swapped the actual pricing panel order: Discounts & Taxes first/left, Rental Charges second/right, with Security Deposit beneath charges. Preserved all pricing handlers and policies.
+- Removed collapse controls from the shared right-hand Rail and ignored old collapsed preferences. Kept desktop sticky scrolling and smaller-screen reflow; left filters, navigation and section disclosures retain their controls.
+- Saved desktop, phone, pricing and Finance evidence in artifacts/booking-layout-refinements-2026-10-07/. Updated the existing BookingDetail menu assertion to inspect its body portal.
+
+**Ruled**
+- Applied the user's three annotated browser comments. Recorded the presentation choices in RULINGS-2026-10-07.md and implementation comments in BookingClientSection, RentalPricingSection and Page.
+
+**Verified**
+- Typecheck passed; seven focused client/pricing/health/shell/booking/operations suites passed 103/103, including history interaction and summary visibility despite old collapsed preferences.
+- Changed-file ESLint, UI-copy check and scoped diff whitespace check passed. PGlite applied 155/155 migrations; lifecycle passed 30/30; production build passed.
+- Browser checked desktop 1304px, tablet 1194px and phone 375px. History icon fits inside the input and opens the existing panel. Pricing swaps on desktop and stacks in the requested order. New Rental and Finance summaries remain visible without collapse arrows.
+- Reset viewport and kept the preview open. No live record or migration write. Completion below retains the separately recorded earlier full-suite result; this change was checked with the 103 focused tests above.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T16:31:23.318Z). Suite: 4100/4100 passed (recorded 2026-10-07T10:30:21.542Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T16:31:24.065Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining work on these three UI comments. Broader audit data/read-model boundaries remain in docs/UI_UX_AUDIT_DISPOSITION_2026-10-07.md.
+
+## 2026-10-07 — Shell clearance and popup clipping
+
+**Did**
+- Reproduced the highlighted catalogue clipping. Made inline catalogue expand the Equipment card, recentered the actual workspace on its heading, and restricted cursor scrolling to results with sticky-heading clearance.
+- Measured catalogue space above the actual action bar, preserved the filter/legend controls outside result scrolling, and wrapped phone item names before status/rate chips.
+- Portaled shared overflow/excess PageActions menus with viewport bounds. Clamped Select menus and corrected Select/date/time portal layers inside dialogs. Retained intentional shell/card clipping and existing booking behavior.
+- Recorded checked surfaces and screenshot evidence in docs/SHELL_CLEARANCE_AUDIT_2026-10-07.md and artifacts/shell-clearance-2026-10-07/. Preserved earlier audit and typography edits.
+
+**Ruled**
+- User requested checking content hidden behind the shell, with the catalogue highlighted. RULINGS-2026-10-07.md records the presentation ruling; implementation comments document flow, scroll and popup-layer decisions.
+
+**Verified**
+- Typecheck passed; eleven focused booking/popup/shell/Tier 1 suites passed 109/109. Added regression coverage for clipped hosts, actual footer clearance, portal interaction, viewport bounds and modal layers. Existing menu keyboard/action behavior passed after assertions were updated to inspect body portals.
+- Changed-file ESLint, UI-copy check and scoped diff whitespace check passed. PGlite applied 155/155 migrations; lifecycle passed 30/30; production build passed with 297 precache entries.
+- Browser checked desktop 1304px with both navigation widths, tablet 1194px and phone 375px. Catalogue clears the action bar; native arrow navigation scrolls results without moving the workspace/card. Booking overflow, bottom-row operations, client/date/project popups, New Client/Bundle Preview dialogs, profile and command palette checked.
+- Restored collapsed navigation and normal viewport. No live booking, client, item, finance, custody or migration write. Completion below includes the separately recorded earlier full-suite run; this change was verified with the 109 focused tests above.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T16:15:19.770Z). Suite: 4100/4100 passed (recorded 2026-10-07T10:30:21.542Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T16:15:20.680Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining clipping issue in the inspected surfaces. This is a representative shared-surface audit, not every workflow/device; broader data/read-model boundaries remain in docs/UI_UX_AUDIT_DISPOSITION_2026-10-07.md.
+
+## 2026-10-07 — Global font clarity
+
+**Did**
+- Loaded actual Source Sans 3 medium and bold font files, made body text medium by default, prevented synthesized bold and restored native platform smoothing. Kept the existing application font families and italic styling.
+- Rounded shared UI/meta/caption size tokens to whole CSS pixels where supported, retaining the rem fallback and user/browser scaling. Released page entrance animation transforms after completion.
+- Preserved prior audit and New Rental work. Screenshots and build/test logs: artifacts/global-font-clarity-2026-10-07/.
+
+**Ruled**
+- User requested a global sharpness change because text appeared blurry. RULINGS-2026-10-07.md records application typography changes; OS/display settings were not changed. Implementation comments are in main.tsx, theme.css and ui-v2.css.
+
+**Verified**
+- Typecheck passed; four existing i18n, breakpoint, shell and New Rental suites passed 64/64. Main-entry ESLint and UI-copy check passed; contrast passed 54/54; scoped git diff check passed.
+- PGlite applied 155/155 migrations with security gates green; lifecycle passed 30/30; production build passed with new font assets included in the offline precache.
+- Browser measured body weight 500, shared small input/table type at 13px and no retained page transform. Verified New Rental, Rentals table and Today across light/dark desktop and phone without document horizontal overflow. Theme restored to dark and viewport reset after checks.
+- Completion below uses the separately recorded earlier full-suite run. This typography change was checked with the focused 64-test run above. No live business record was changed.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T15:45:54.387Z). Suite: 4100/4100 passed (recorded 2026-10-07T10:30:21.542Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T15:45:55.611Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining application font-clarity work. Broader audit data/read-model boundaries remain in docs/UI_UX_AUDIT_DISPOSITION_2026-10-07.md.
+## 2026-10-07 — New Rental reorganization
+
+**Did**
+- Compacted Client and Rental period into a responsive first row using available form width. Pickup/return fields lead, separate start-day and duration shortcuts follow, and shoot presets stay behind a disclosure.
+- Brought equipment higher, shortened its empty state, paired optional Crew/Delivery and opened Pricing & Terms by default. Preserved field identity, role gates, draft restoration and existing write paths.
+- Made the desktop summary scroll above the action footer, retained inline summary below 1280, and organized phone actions with a wide confirmation button beside Save draft. The phone footer sits directly above navigation with enough trailing space to reach all form content.
+
+**Ruled**
+- User requested reorganizing New Rental. RULINGS-2026-10-07.md records the continuous form order and responsive presentation. Implementation comments are in NewRental.tsx and new-rental-flow.css.
+
+**Verified**
+- Typecheck passed; six existing New Rental/client/equipment/hook suites passed 43/43, including draft restoration and phone field identity. Changed-file ESLint, UI-copy check and git diff check passed.
+- PGlite applied 155/155 migrations with security gates green; lifecycle passed 30/30. Production build passed.
+- Browser verified 1440px desktop with expanded/collapsed navigation, 1194px tablet inline summary and 375px phone layout without horizontal overflow. Summary shortcut and phone footer clearance checked. Screenshots: artifacts/new-rental-reorganization-2026-10-07/.
+- Completion includes the separately recorded earlier full-suite run; this reorganization was verified with the 43 focused tests above. No live booking, payment, inventory or custody write was executed.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T15:35:38.235Z). Suite: 4100/4100 passed (recorded 2026-10-07T10:30:21.542Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T15:35:39.479Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining New Rental reorganization work. Broader audit data/read-model boundaries remain in docs/UI_UX_AUDIT_DISPOSITION_2026-10-07.md.
+## 2026-10-07 — Today color accents
+
+**Did**
+- Added blue dispatch/pickup accents, green return accents, amber upcoming-packing accents, soft section tints and thin category borders. The date and search controls use the existing blue interaction tokens.
+- Kept zero/unknown figures and metric icons neutral. The overdue overview card gains a red tint/border only for a positive live count. The three overview cards use the full desktop row; packing spans the phone row.
+- Scoped every new color rule to Today and reused existing light/dark theme tokens. Screenshots are in `artifacts/today-color-2026-10-07/`.
+
+**Ruled**
+- User asked to colorize Today smartly. `RULINGS-2026-10-07.md`, Today color direction: category color identifies dispatch, returns and future packing; red indicates actual overdue work. Missing Shift Handover stays neutral. Implementation comment is in `dashboard.css`.
+
+**Verified**
+- Typecheck passed; three existing Today suites passed 81/81. Changed-file ESLint and UI-copy check passed. Contrast passed 54/54.
+- PGlite applied 155/155 migrations with security gates green; lifecycle passed 30/30; production build passed.
+- Live browser verified dark and light desktop views, 375px phone layout, both date arrows, full-width packing card, neutral zeros and both pickup/return panels. Restored dark mode and normal viewport after checks.
+- Completion below includes the separately recorded earlier 4,100-test full run; this color change was verified with the 81 focused Today tests above.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T15:24:34.701Z). Suite: 4100/4100 passed (recorded 2026-10-07T10:30:21.542Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T15:24:45.071Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining Today color work. Broader audit data/read-model boundaries remain in `docs/UI_UX_AUDIT_DISPOSITION_2026-10-07.md`.
+## 2026-10-07 — UI/UX audit and restored navigation
+
+**Did**
+- Implemented the user audit across shell/login, Today, Rentals/detail/New Rental, Operation/Cases, Calendar, Inventory/Asset, Clients, Crew, Finance/Documents/Reports and Settings/Tools. Full disposition: `docs/UI_UX_AUDIT_DISPOSITION_2026-10-07.md`.
+- Removed live demo fallbacks and misleading stage-derived evidence, added honest empty/unknown/error states, neutral zeros, plain staff copy and an AST-based UI-copy CI check.
+- Restored eleven navigation items, phone Scan, one New Rental navigation action, synchronized Today date control/search, BS/AD operational dates and bottom-only pagination.
+- Added actual registry chip counts, safer serial/quantity handling, clearer booking payment/invoice actions, full-width payment history, readable Finance charts and responsive tables/cards. Rental Amount remains visible beside Actions with expanded navigation.
+- Recovered live rental/operational reads by retrying the existing pre-0144 projection on the exact bookings permission error. Project Type filters/sorts and genuine table denials still fail. No grants or live records changed.
+- Preserved pre-existing compact-date changes and other concurrent edits. Changes are in the checkout serving localhost, `C:/Users/use/.codex-temp/babin-rentals-current`; the older Desktop checkout was not overwritten.
+
+**Ruled**
+- `RULINGS-2026-10-07.md`: explicit user navigation ruling is New Rental · Today · Operation · Rentals · Calendar · Crew Assist · Inventory · Clients · Finance · Tools · Settings. Documents and Reports remain under Finance.
+- Missing evidence is not inferred from stages; quantity stock is not fabricated into serial identities. Prior rulings retain Membership, cinematography, Settings System, RecordForm equipment editing and smaller-screen inline Finance rail reflow.
+- Project Type columns added by 0144 lack the later read grant in the reviewed chain; a narrower existing read keeps operational lists available without widening permissions. Implementation comments and regression tests record the decision.
+
+**Verified**
+- Typecheck and full Vitest run passed: 314 files / 4,100 tests, process exit zero. Final rental layout/detail checks passed 57/57 after the last column and copy adjustments.
+- Full lint and final changed-file lint passed. UI-copy check found zero violations, its four regression tests passed, and contrast passed 54/54. `git diff --check` passed.
+- Final PGlite chain applied 155/155 migrations, with view/RPC/definer gates green; lifecycle passed 30/30. These are local checks, not a production migration or JWT/PostgREST certification.
+- Production build passed. Fixture guard passed: 601 production source files, zero forbidden fixture imports; no mock client in the production bundle. An existing delivery.css property warning remains non-blocking.
+- Live Owner browser verified three Rentals records, unclipped amounts at 1440px with expanded navigation, booking #2 currently Closed, successful Today and Operation reads, neutral queue zeros, Finance charts, Clients, Inventory phone cards, Documents/Crew/Pulse empty or unavailable states, and provisional/history Calendar bars. Phone Today date arrows fit at 375px. Screenshots: `artifacts/ui-audit-2026-10-07/`.
+- Payment history formats the stored payment_date using Asia/Kathmandu; no timestamp correction was invented. No live financial, inventory or custody write was executed.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-07T10:31:23.562Z). Suite: 4100/4100 passed (recorded 2026-10-07T10:30:21.542Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T10:31:31.646Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- Project Type read access still requires a reviewed database grant; explicit Project Type filters/sorts remain unavailable. No live migration was applied.
+- Whole-registry Rental Amount sorting needs a server read model; only Client and Status sorting were added.
+- Imported stock/tracking/brand values, missing actual serial units, payment account and historical invoice-state inconsistencies require verified source data and owner reconciliation.
+- Missing scan/QC/crew/signature sources remain honestly unknown. No new money-blind live login or complete live custody/financial workflow was performed.
+- Completion figures describe repository structure, not closure of these audit boundaries.
+## 2026-10-07 — Compact dates across the app
+
+**Did**
+- Shared AD formatting is day/month/year without padding; BS labels contain day and month. Applied to booking details, lists, hovercards, notes, payments, operational screens, dashboard, calendar, reports, print/PDF documents, and date fields.
+- Numeric date parsing supports rental timelines and payment date labels. Seed correctness checks compare calendar components independently of display text. Required vendor return dates retain form validation.
+
+**Ruled**
+- User extended the compact booking date request to every screen. Times and Kathmandu calendar conversion remain intact; calendar month/year navigation headings remain contextual.
+
+**Verified**
+- Live Chrome verified booking #2, rental list, booking detail, dashboard and calendar display the compact dates.
+- Full suite found one stale ISO expectation after 4,080 passes; updated it and the operations suite passed 12/12. Date field and shortage checks passed 11/11. Final typecheck and production build passed.
+- PGlite 155/155 and lifecycle 30/30 passed; production build passed including the last date field replacements.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 54 | 52 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-06T19:48:13.346Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Gates read from .lifecycle-result.json, written 2026-10-06T19:48:16.486Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining date-format work. The final full rerun passed 4,047 tests with 23 failed assertions and a storage transform failure after concurrent unrelated edits appeared (navigation/copy, crew mocks, storage syntax, document view and inventory copy). These edits were preserved; this rerun does not certify the concurrently changing workspace.
+
+## 2026-10-07 — Compact booking hovercard dates
+
+**Did**
+- Booking hovercards show numeric AD dates and day/month BS labels: `30/9/2026, 07:00 AM · 14 Ashwin`. Both ends use Kathmandu time and the shared Date Engine.
+
+**Ruled**
+- User explicitly requested the compact date format for booking #2 (Babin Dulal).
+
+**Verified**
+- Opened live booking #2 hovercard in Chrome: both pickup and return display the requested compact format.
+- Typecheck passed; full suite 312 files / 4,078 tests passed; PGlite 155/155 migrations and lifecycle 30/30 passed.
+- Production build passed. Browser screenshot capture timed out; accessibility state confirmed the displayed result.
+
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 54 | 52 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 155 files · check:pglite 155/155 applied, 0 failed (recorded 2026-10-06T19:25:46.462Z). Suite: not run this session (static inspection; pass --tests to execute suite).
+Gates read from .lifecycle-result.json, written 2026-10-06T19:25:49.997Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- No remaining date-format work.
+
 ## 2026-10-06 (l) — Audit triggers for the four trigger-less tables (migration 0157)
 
 **Did**

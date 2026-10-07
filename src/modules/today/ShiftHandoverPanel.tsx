@@ -12,6 +12,7 @@ import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
 import { useToast } from '../../components/ui/Toast'
 import { useViewport } from '../../lib/device'
+import { IS_MOCK } from '../../lib/supabase'
 import {
   SHIFT_CHECKLIST,
   getHandoverRecords,
@@ -89,6 +90,11 @@ const noteBoxStyle: React.CSSProperties = {
 // ── Component ────────────────────────────────────────────────────────
 
 export default function ShiftHandoverPanel() {
+  if (!IS_MOCK) return <Card title="Shift Handover"><p style={{ margin: 0, color: 'var(--muted)' }}>Not tracked yet.</p></Card>
+  return <DemoShiftHandoverPanel />
+}
+
+function DemoShiftHandoverPanel() {
   const { showSuccessToast } = useToast()
   const viewport = useViewport()
   const isPhone = viewport === 'phone'

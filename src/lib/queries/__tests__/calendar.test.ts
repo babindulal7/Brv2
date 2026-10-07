@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { calendarWindow, fetchCalendarBars, listCalendarBookings } from '../calendar'
+import { calendarWindow, fetchCalendarBars, listCalendarBookings, listCalendarDrafts } from '../calendar'
 
 /**
  * # What this suite pins
@@ -38,12 +38,13 @@ const db = vi.hoisted(() => {
     selectOptions: unknown
     calls: Array<[string, ...unknown[]]>
     rows: unknown[]
+    draftRows: unknown[]
     /** What PostgREST reports as the full matching count, independent of `rows`. */
     count: number | null
     error: { message: string } | null
   }
 
-  const state: State = { table: '', columns: '', selectOptions: undefined, calls: [], rows: [], count: null, error: null }
+  const state: State = { table: '', columns: '', selectOptions: undefined, calls: [], rows: [], draftRows: [], count: null, error: null }
 
   function reset(): void {
     state.table = ''
@@ -51,6 +52,7 @@ const db = vi.hoisted(() => {
     state.selectOptions = undefined
     state.calls = []
     state.rows = []
+    state.draftRows = []
     state.count = null
     state.error = null
   }
@@ -63,6 +65,10 @@ const db = vi.hoisted(() => {
     },
     limit(n: number) {
       state.calls.push(['limit', n])
+      return builder
+    },
+    eq(column: string, value: unknown) {
+      state.calls.push(['eq', column, value])
       return builder
     },
     in(column: string, values: readonly unknown[]) {
@@ -88,7 +94,7 @@ const db = vi.hoisted(() => {
     then(
       onFulfilled: (value: { data: unknown[] | null; error: { message: string } | null; count: number | null }) => unknown,
     ): void {
-      onFulfilled({ data: state.rows, error: state.error, count: state.count })
+      onFulfilled({ data: state.table === 'rental_drafts' ? state.draftRows : state.rows, error: state.error, count: state.table === 'rental_drafts' ? state.draftRows.length : state.count })
     },
   }
 
@@ -166,7 +172,7 @@ describe('listCalendarBookings — the query', () => {
 
   it('asks only for the stages that have a bar kind', async () => {
     await listCalendarBookings(WINDOW.from, WINDOW.to)
-    expect(callFor('in', 'stage')).toEqual(['in', 'stage', ['Booked', 'Packed', 'On Rent']])
+    expect(callFor('in', 'stage')).toEqual(['in', 'stage', ['Quote', 'Booked', 'Packed', 'On Rent', 'Returned', 'Closed']])
   })
 
   it('excludes cancellations by the flag, never by a stage', async () => {
@@ -292,7 +298,7 @@ describe('listCalendarBookings — booking → bar', () => {
   it('says so when the client join is missing rather than printing a dash', async () => {
     db.state.rows = [rawBooking({ clients: null, project: null })]
     const { rows } = await listCalendarBookings(WINDOW.from, WINDOW.to)
-    expect(rows[0]?.sub).toBe('(client not joined)')
+    expect(rows[0]?.sub).toBe('Client not recorded')
   })
 
   it('lands from/to on UTC midnight of the operational day each instant belongs to', async () => {
@@ -321,6 +327,23 @@ describe('listCalendarBookings — booking → bar', () => {
 })
 
 describe('calendarWindow / fetchCalendarBars — the useList adapter', () => {
+  it('shows finished bookings quietly and quotes without claiming a reservation', async () => {
+    db.state.rows = [rawBooking({ stage: 'Returned' }), rawBooking({ id: 'b', stage: 'Closed' }), rawBooking({ id: 'c', stage: 'Quote' })]
+    const result = await listCalendarBookings(WINDOW.from, WINDOW.to)
+    expect(result.rows.map(row => row.kind)).toEqual(['Completed', 'Completed', 'Quote'])
+    expect(result.rows[2]?.sub).toContain('not reserved')
+    expect(db.state.calls.some(call => ['insert', 'update', 'rpc'].includes(call[0]))).toBe(false)
+  })
+
+  it('shows provisional draft dates without reading their money snapshot or creating reservations', async () => {
+    db.state.draftRows = [{ id: 'draft-uuid', booking_no: '3', client_name: 'Babin', project: '', pickup: '2026-09-03', return_date: '2026-09-05' }]
+    const result = await listCalendarDrafts(WINDOW.from, WINDOW.to)
+    expect(result.rows[0]).toMatchObject({ kind: 'Draft', draftId: 'draft-uuid', label: 'Draft #3', sub: 'Babin · not reserved' })
+    expect(result.rows[0]?.from.toISOString()).toBe('2026-09-03T00:00:00.000Z')
+    expect(db.state.columns.split(',').map(column => column.trim())).not.toContain('data')
+    expect(db.state.columns).not.toMatch(/rate|total|deposit|amount|discount/)
+  })
+
   it('round-trips the window through the filter set', async () => {
     await fetchCalendarBars(calendarWindow(WINDOW.from, WINDOW.to))
     expect(callFor('lte', 'pickup_at')).toEqual(['lte', 'pickup_at', WINDOW_CLOSE])

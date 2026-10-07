@@ -42,8 +42,8 @@ export function rs(n: number): string {
 }
 
 /**
- * Renders a BS/AD date pair per Foundation §3.2 — BS leads at field size with a
- * "BS" suffix, AD sits one step smaller. Digits are Latin always (§3.4), and the
+ * Renders a compact BS/AD date pair — BS leads at field size with its day and
+ * month, AD sits one step smaller. Digits are Latin always (§3.4), and the
  * month spelling is the locked romanization (§3.3), never Devanagari — that
  * applies even under Nepal Mode with English UI, which is the default (§3.1).
  *
@@ -52,8 +52,8 @@ export function rs(n: number): string {
  * for now callers supply the already-known BS day/month/year, matched to the
  * capsule's reference dates.
  */
-export function bsAdPair(bsDay: number, bsMonth: string, bsYear: number, adLabel: string): { bs: string; ad: string } {
-  return { bs: `${bsDay} ${bsMonth} ${bsYear} BS`, ad: adLabel }
+export function bsAdPair(bsDay: number, bsMonth: string, _bsYear: number, adLabel: string): { bs: string; ad: string } {
+  return { bs: `${bsDay} ${bsMonth}`, ad: adLabel }
 }
 
 /**

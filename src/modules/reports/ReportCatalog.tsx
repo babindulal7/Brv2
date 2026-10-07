@@ -312,10 +312,10 @@ export function ReportCatalog() {
           <Card title={`${matches.length} report${matches.length === 1 ? '' : 's'} matching “${query.trim()}”`} bodyStyle={{ padding: 0 }}>
             {matches.length === 0 ? (
               <p style={{ margin: 0, padding: 'var(--sp-md)', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
-                No report in the register of {REPORTS.length} has that name. The four Sales &amp; Marketing reports were cut —
-                §9.6: no <span className="identifier">leads</span>, <span className="identifier">campaigns</span>,{' '}
-                <span className="identifier">conversion</span> or <span className="identifier">acquisition</span> table exists.
-                Two more names moved rather than went: rulings §11.3 collapsed <strong>Outstanding</strong> into{' '}
+                No report in the register of {REPORTS.length} {/* has that name. The four Sales &amp; Marketing reports were cut —
+                §9.6: no */}has that name. The four Sales &amp; Marketing reports were cut — : no <span className="identifier">leads</span>, <span className="identifier">campaigns</span>,{' '}
+                <span className="identifier">conversion</span> or <span className="identifier">acquisition</span> {/* table exists.
+                Two more names moved rather than went: rulings §11.3 collapsed */}table exists. Two more names moved rather than went: rulings collapsed <strong>Outstanding</strong> into{' '}
                 <strong>06 Receivables</strong>, and <strong>Profit &amp; Loss</strong> now lives in <strong>01 Overview</strong> only.
               </p>
             ) : (
@@ -338,7 +338,7 @@ export function ReportCatalog() {
       <FooterNote
         extra={[
           dates ? (dates.bs ? `As of ${dates.ad} · BS ${dates.bs}` : `As of ${dates.ad}`) : `Ledger covers ${LEDGER_COVERAGE}`,
-          `${REPORTS.length} reports, each with one home. The four Sales & Marketing reports were cut — no backing tables exist — and rulings §11.3 deduplicated §9.6's remaining 45.`,
+          `${REPORTS.length} reports. Choose a report to open its details.`,
         ]}
       />
     </div>
@@ -352,9 +352,8 @@ function SimpleView({ figures, whyNoFigures }: { figures: PeriodFigures | null; 
     return (
       <Card title="Not tracked yet">
         <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
-          {whyNoFigures ?? 'The selected period is outside the ledger.'} The ledger covers {LEDGER_COVERAGE}. No figure
-          is shown rather than a zero — §9.7.
-        </p>
+          {whyNoFigures ?? 'The selected period is outside the ledger.'} The ledger covers {LEDGER_COVERAGE}{/* . No figure
+          is shown rather than a zero — §9.7. */}. No figure is shown rather than a zero — </p>
       </Card>
     )
   }

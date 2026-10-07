@@ -68,6 +68,8 @@ const AD_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep'
  * the BS offset, per `lib/bs.ts`'s own rule.
  */
 function parseAdLabel(label: string): Date | null {
+  const numeric = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(label)
+  if (numeric) return new Date(Date.UTC(Number(numeric[3]), Number(numeric[2]) - 1, Number(numeric[1])))
   const m = /^(\d{1,2}) (\w{3}) (\d{4})$/.exec(label)
   if (!m) return null
   const [, dayStr, monStr, yearStr] = m

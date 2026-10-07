@@ -100,6 +100,8 @@ const ROW: BookingListRow = {
    because a `vi.mock` factory is hoisted above ordinary consts and cannot close
    over one. Reset in `afterEach`. */
 const stub = vi.hoisted(() => ({ total: 1 }))
+vi.mock('../../../actions/rentals/saveDraft', () => ({ listActiveDrafts: async () => [] }))
+vi.mock('../../../lib/queries/rentalViews', async (importOriginal) => { const real = await importOriginal<typeof import('../../../lib/queries/rentalViews')>(); return { ...real, listRentalViewCounts: async () => ({ rows: real.RENTAL_VIEWS.map(v => ({ id: v.id, count: 0 })) }) } })
 const authStub = vi.hoisted(() => ({ role: 'Owner' as SystemRole }))
 
 /* The real named filter sets are kept (the screen builds its four KPI queries
@@ -186,7 +188,7 @@ afterEach(async () => {
 
 const text = () => document.body.textContent ?? ''
 const allButtons = () => [...document.body.querySelectorAll('button')]
-const button = (label: string) => allButtons().find((b) => b.textContent?.trim() === label)
+const button = (label: string) => allButtons().find((b) => (b.querySelector('[data-view-label]')?.textContent ?? b.textContent)?.trim() === label)
 
 describe('§4.1 — one list, no tabs', () => {
   it('renders no tab strip and no trace of Productions', async () => {
@@ -201,13 +203,13 @@ describe('§4.1 — one list, no tabs', () => {
     await mount(1280)
     const chips = allButtons()
       .filter((b) => b.getAttribute('aria-pressed') !== null)
-      .map((b) => b.textContent?.trim())
-    expect(chips.slice(0, 5)).toEqual(['All', 'Upcoming', 'Out', 'Returns', 'Closed'])
+      .map((b) => (b.querySelector('[data-view-label]')?.textContent ?? b.textContent)?.trim())
+    expect(chips.slice(0, 7)).toEqual(['All', 'Draft', 'Quote', 'Upcoming', 'Out', 'Returns', 'Closed'])
   })
 
   it('gives every operational view chip an icon beside its word (Law 11 — never colour alone)', async () => {
     await mount(1280)
-    const upcoming = allButtons().find((b) => b.textContent?.trim() === 'Upcoming')
+    const upcoming = allButtons().find((b) => b.getAttribute('aria-label') === 'Upcoming')
     expect(upcoming?.querySelector('svg')).not.toBeNull()
   })
 
@@ -215,7 +217,7 @@ describe('§4.1 — one list, no tabs', () => {
     await mount(1280)
     expect(text()).not.toContain('Active Rentals')
     expect(text()).toContain('1 Rental found')
-    expect(text()).toContain('Rows per page')
+    expect(text()).not.toContain('Rows per page')
   })
 })
 
@@ -311,7 +313,7 @@ describe('§18 — this screen’s filters are the query string', () => {
 
   it('puts a picked operational view on the URL', async () => {
     await mount(1280)
-    const out = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Out')!
+    const out = [...container.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Out')!
     await act(async () => out.click())
     expect(search).toBe('?stage=On+Rent')
   })
@@ -356,7 +358,7 @@ describe('§18 — this screen’s filters are the query string', () => {
     // client truncated, a URL from before a stage was renamed. None of it may
     // reach `rentalsQuery` unchecked.
     await mount(1280, '/rentals?quick=DropTable&stage=Nonsense')
-    const all = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'All')
+    const all = [...container.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'All')
     expect(all?.getAttribute('aria-pressed')).toBe('true')
     expect(container.querySelector('[aria-label="Active filters"]')).toBeNull()
   })
@@ -428,7 +430,7 @@ describe('§Step 6 — cross-page and filter selection state', () => {
     expect(text()).toContain('1 rental selected')
 
     // Changing filter drops selection immediately
-    const out = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Out')!
+    const out = [...container.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'Out')!
     await act(async () => {
       out.click()
     })
@@ -462,10 +464,10 @@ describe('§Step 7 — CSV Export selection behavior', () => {
 })
 
 describe('§Step 8 & 9 — quick action permissions and mobile card parity', () => {
-  it('renders New Rental, Fast Return, and Record Payment for Owner', async () => {
+  it('keeps Fast Return and Record Payment with New Rental in the shell', async () => {
     authStub.role = 'Owner'
     await mount(1280)
-    expect(button('New Rental')).toBeDefined()
+    expect(button('New Rental')).toBeUndefined()
     expect(button('Fast Return')).toBeDefined()
     expect(button('Record Payment')).toBeDefined()
     // Scan Barcode and Refresh are in the overflow menu (•••)

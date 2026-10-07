@@ -1,15 +1,12 @@
 import { useMemo } from 'react'
+import { getBusinessToday, kathmanduCivil } from '../../../lib/bs'
 import { TouchTarget } from '../../../components/ui/TouchTarget'
 import type { Paisa } from '../../../lib/money'
 import { formatMoney } from '../../../lib/money'
 
 /** Today as YYYY-MM-DD in UTC (Kathmandu civil day starts at 06:00, but we use UTC for ISO) */
 function todayIso(): string {
-  const now = new Date()
-  const y = now.getUTCFullYear()
-  const m = String(now.getUTCMonth() + 1).padStart(2, '0')
-  const d = String(now.getUTCDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
+  return new Date(kathmanduCivil(getBusinessToday())).toISOString().slice(0, 10)
 }
 
 /**
@@ -31,8 +28,7 @@ export interface DatePreset {
 
 /** Default presets — ordered by frequency in Babin Rentals operations */
 export const DEFAULT_PRESETS: DatePreset[] = [
-  { label: 'Today', days: 0 },
-  { label: 'Tomorrow', days: 1 },
+  { label: '1 day', days: 1 },
   { label: '3 days', days: 3 },
   { label: '1 week', days: 7 },
 ]
@@ -95,7 +91,11 @@ export function DatePresets({
 
   if (presetButtons.length === 0) return null
 
-  return (
+  return (<>
+    <div role="group" aria-label="Start day" style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+      <span style={{ alignSelf: 'center', color: 'var(--muted)' }}>Start</span>
+      {['Today', 'Tomorrow'].map((label, i) => <button key={label} type="button" disabled={disabled} className="press" style={{ minHeight: 44, padding: '0 14px', border: '1px solid var(--border)', borderRadius: 'var(--r-btn)', background: 'var(--card2)', color: 'var(--text)' }} onClick={() => { const day = addDays(today, i); onPick(day, addDays(day, 1)) }}>{label}</button>)}
+    </div>
     <div
       style={{
         display: 'flex',
@@ -105,8 +105,9 @@ export function DatePresets({
         padding: '4px 0',
       }}
       role="group"
-      aria-label="Quick date presets"
+      aria-label="Rental duration"
     >
+      <span style={{ alignSelf: 'center', color: 'var(--muted)' }}>Duration</span>
       {presetButtons.map((p) => (
         <button
           key={p.label}
@@ -164,7 +165,7 @@ export function DatePresets({
           )}
         </button>
       ))}
-    </div>
+    </div></>
   )
 }
 

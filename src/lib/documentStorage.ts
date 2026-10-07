@@ -1,3 +1,4 @@
+import { formatAd } from './bs'
 import { supabase, IS_MOCK } from './supabase'
 
 /**
@@ -140,7 +141,7 @@ export function buildPdfByteArray(lines: string[]): Uint8Array {
  * Generates a document PDF Blob from metadata and line items.
  */
 export function generateDocumentPdfBlob(options: GeneratePdfOptions): Blob {
-  const dateStr = options.dateStr || new Date().toISOString().split('T')[0]
+  const dateStr = options.dateStr ? (/^\d{4}-\d{2}-\d{2}/.test(options.dateStr) ? formatAd(new Date(options.dateStr)) : options.dateStr) : formatAd(new Date())
   const contentLines: string[] = [
     '============================================================',
     `                 BABIN RENTALS OS — ${options.docType.toUpperCase()}`,

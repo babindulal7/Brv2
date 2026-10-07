@@ -1,3 +1,4 @@
+import { formatAdDateTime } from '../../lib/bs'
 /**
  * Shared preview primitives — one payment row, one summary, one clearance
  * block used by client, rental and invoice cards alike (§43).
@@ -73,7 +74,7 @@ export function PaymentTransactionRow({ t }: { t: PaymentTransaction }) {
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>{t.status.toUpperCase()}</span>
       </div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-        {t.type.replace(/_/g, ' ')}{t.method ? ` · ${t.method.replace(/_/g, ' ')}` : ''} · {t.paidAt ?? t.createdAt}
+        {t.type.replace(/_/g, ' ')}{t.method ? ` · ${t.method.replace(/_/g, ' ')}` : ''} · {formatAdDateTime(t.paidAt ?? t.createdAt)}
         {t.rentalNo ? ` · #${t.rentalNo}` : ''}
         {t.reference ? ` · ${t.reference}` : ''}{t.createdBy ? ` · by ${t.createdBy}` : ''}
       </div>

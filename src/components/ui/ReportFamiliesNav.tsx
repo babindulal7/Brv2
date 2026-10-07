@@ -100,8 +100,8 @@ export function ReportFamiliesNav({ current }: ReportFamiliesNavProps) {
         <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
           {unbuiltTabs.length > 0 && (
             <>
-              Not built: {unbuiltTabs.join(' · ')} — Reports §8 names these families; nothing behind them exists in this
-              build yet.{' '}
+              Not built: {unbuiltTabs.join(' · ')} {/* — Reports §8 names these families; nothing behind them exists in this
+              build yet. */}These reports are not available yet. {' '}
             </>
           )}
           {gatedTabs.length > 0 && <>Not in your role&rsquo;s view: {gatedTabs.join(' · ')}.</>}

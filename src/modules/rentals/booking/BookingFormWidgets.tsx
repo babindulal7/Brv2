@@ -380,18 +380,18 @@ export function AddClientButton({ onClick }: { onClick: () => void }) {
       type="button"
       className="press"
       onClick={onClick}
-      aria-label="Add a new client"
-      title="Add a new client"
+      aria-label="New client"
+      title="New client"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 'var(--tap)',
+        width: 'auto',
         height: 'var(--tap)',
         minWidth: 'var(--tap)',
         minHeight: 'var(--tap)',
         flexShrink: 0,
-        padding: 0,
+        padding: '0 10px',
         borderRadius: 'var(--r-btn)',
         background: 'var(--btn-secondary-bg)',
         color: 'var(--text)',
@@ -400,7 +400,7 @@ export function AddClientButton({ onClick }: { onClick: () => void }) {
         cursor: 'pointer',
       }}
     >
-      <Icon name="plus" size={20} />
+      <Icon name="plus" size={20} /><span style={{ marginLeft: 6 }}>New client</span>
     </button>
   )
 }

@@ -42,9 +42,9 @@ async function mount() {
 const buttons = () => [...container.querySelectorAll('button')]
 /*
  * Substring, not equality. The filter triggers used to be found by their exact
- * aria-label ("Choose pickup date filter"), but WCAG 2.5.3 "Label in Name"
+ * aria-label ("choose dispatch date filter"), but WCAG 2.5.3 "Label in Name"
  * requires the accessible name to CONTAIN the visible period, so the label is
- * now "Today — Choose pickup date filter" and moves as the period changes.
+ * now "Today — choose dispatch date filter" and moves as the period changes.
  * These tests care about WHICH control, not its exact wording; the label's
  * composition is asserted on its own below.
  */
@@ -67,10 +67,11 @@ describe('focused pickup and return dashboard', () => {
     expect(container.textContent).not.toContain('Cash due')
   })
 
-  it('gives each panel its own accessible calendar control', async () => {
+  it('gives both panels one accessible calendar control', async () => {
     await mount()
-    expect(buttonByLabel('Choose pickup date filter')).toBeDefined()
-    expect(buttonByLabel('Choose return date filter')).toBeDefined()
+    expect(buttons().filter((b) => b.getAttribute('aria-label')?.includes('choose dispatch date filter'))).toHaveLength(1)
+    expect(buttonByLabel('Choose pickup date filter')).toBeUndefined()
+    expect(buttonByLabel('Choose return date filter')).toBeUndefined()
   })
 
   /*
@@ -82,8 +83,8 @@ describe('focused pickup and return dashboard', () => {
    * name carries the period, not just that the period is on screen.
    */
   it.each([
-    ['Choose pickup date filter', 'pickup'],
-    ['Choose return date filter', 'return'],
+    ['choose dispatch date filter', 'pickup'],
+    ['choose dispatch date filter', 'return'],
   ])('names the %s control after the period it shows', async (label) => {
     await mount()
     const button = buttonByLabel(label)
@@ -92,27 +93,26 @@ describe('focused pickup and return dashboard', () => {
     expect(button?.getAttribute('aria-label') ?? '').toContain(visible)
   })
 
-  it('changes the pickup period without changing returns', async () => {
+  it('changes the pickup period and returns together', async () => {
     await mount()
-    const pickup = buttonByLabel('Choose pickup date filter')
-    const returns = buttonByLabel('Choose return date filter')
-    expect(pickup?.textContent).toContain('Today')
-    expect(returns?.textContent).toContain('Today')
+    const pickup = buttonByLabel('choose dispatch date filter')
+    const returns = buttonByLabel('choose dispatch date filter')
+    expect(pickup).toBe(returns)
 
     await act(async () => pickup?.click())
     // The open calendar is portaled to document.body, outside the mount
     // container — query it in the document, not the container.
-    const tomorrow = [...document.querySelectorAll<HTMLButtonElement>('#pickup-date-dialog button')].find((button) => button.textContent === 'Tomorrow')
+    const tomorrow = [...document.querySelectorAll<HTMLButtonElement>('#dispatch-date-dialog button')].find((button) => button.textContent === 'Tomorrow')
     await act(async () => tomorrow?.click())
 
-    expect(buttonByLabel('Choose pickup date filter')?.textContent).toContain('Tomorrow')
-    expect(buttonByLabel('Choose return date filter')?.textContent).toContain('Today')
+    expect(window.sessionStorage.getItem('dashboard.pickupDateFilter')).toContain('Tomorrow')
+    expect(window.sessionStorage.getItem('dashboard.returnDateFilter')).toContain('Tomorrow')
   })
 
-  it('selects a date range with the shared calendar and keeps returns independent', async () => {
+  it('selects a date range with the shared calendar and synchronizes both panels', async () => {
     await mount()
-    await act(async () => buttonByLabel('Choose pickup date filter')?.click())
-    const dialog = document.querySelector('#pickup-date-dialog')!
+    await act(async () => buttonByLabel('choose dispatch date filter')?.click())
+    const dialog = document.querySelector('#dispatch-date-dialog')!
     expect(dialog.textContent).toContain('Single day')
     expect(dialog.textContent).toContain('Date range')
     expect(dialog.textContent).toContain('BS')
@@ -123,9 +123,9 @@ describe('focused pickup and return dashboard', () => {
     expect(dialog.textContent).toContain('Choose an end date')
     await act(async () => dialog.querySelectorAll<HTMLButtonElement>('[role="gridcell"]')[1]?.click())
 
-    expect(document.querySelector('#pickup-date-dialog')).toBeNull()
-    expect(buttonByLabel('Choose pickup date filter')?.textContent).not.toContain('Today')
-    expect(buttonByLabel('Choose return date filter')?.textContent).toContain('Today')
+    expect(document.querySelector('#dispatch-date-dialog')).toBeNull()
+    expect(window.sessionStorage.getItem('dashboard.pickupDateFilter')).toBe(window.sessionStorage.getItem('dashboard.returnDateFilter'))
+    expect(window.sessionStorage.getItem('dashboard.dispatchDateFilter')).toContain('custom')
   })
 
   it('does not contain a duplicate New Rental button in the page header', async () => {
@@ -141,14 +141,14 @@ describe('focused pickup and return dashboard', () => {
 
   it('restores focus after choosing a filter and after Escape', async () => {
     await mount()
-    const pickup = buttonByLabel('Choose pickup date filter')!
+    const pickup = buttonByLabel('choose dispatch date filter')!
     await act(async () => pickup.click())
     expect(document.activeElement?.getAttribute('role')).toBe('dialog')
-    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('#pickup-date-dialog button')].find((button) => button.textContent === 'Tomorrow')!.click())
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('#dispatch-date-dialog button')].find((button) => button.textContent === 'Tomorrow')!.click())
     expect(document.activeElement).toBe(pickup)
     await act(async () => pickup.click())
     await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
-    expect(document.querySelector('#pickup-date-dialog')).toBeNull()
+    expect(document.querySelector('#dispatch-date-dialog')).toBeNull()
     expect(document.activeElement).toBe(pickup)
   })
 
@@ -159,6 +159,7 @@ describe('focused pickup and return dashboard', () => {
   ])('recovers from invalid stored date ranges: %j', async (range) => {
     window.sessionStorage.setItem('dashboard.pickupDateFilter', JSON.stringify({ kind: 'custom', ...range }))
     await mount()
-    expect(buttonByLabel('Choose pickup date filter')?.textContent).toContain('Today')
+    expect(buttonByLabel('choose dispatch date filter')).toBeDefined()
+    expect(window.sessionStorage.getItem('dashboard.pickupDateFilter')).toContain('Today')
   })
 })

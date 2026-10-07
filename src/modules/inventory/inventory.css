@@ -444,4 +444,13 @@
   font-weight: 700;
   letter-spacing: 0.02em;
 }
+.inventory-list-toolbar > .list-workspace__controls {
+  flex: 1 1 auto;
+  order: 1;
+}
+
+@media (max-width: 767px) {
+  .inventory-list-toolbar > .list-workspace__controls { flex-basis: 100%; }
+  .inventory-list-toolbar > button { order: 0 !important; }
+}
 

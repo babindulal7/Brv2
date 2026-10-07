@@ -1144,10 +1144,10 @@ export default function ResetWorkspace({
               ].map((f) => (
                 <div key={f.l} className="floor-summary-cell">
                   <div className="floor-summary-label">{f.l}</div>
-                  <div className="floor-summary-value" style={f.tone ? { color: f.tone } : undefined}>
+                  <div className="floor-summary-value" style={{ color: ['Due back', 'Actually returned'].includes(f.l) && f.s ? 'var(--booking-date-text)' : f.tone }}>
                     {f.v}
                   </div>
-                  {f.s && <div className="floor-summary-sub figure">{f.s}</div>}
+                  {f.s && <div className="floor-summary-sub figure" style={{ color: ['Due back', 'Actually returned'].includes(f.l) ? 'var(--booking-date-text)' : undefined }}>{f.s}</div>}
                 </div>
               ))}
             </div>
@@ -1753,9 +1753,8 @@ export default function ResetWorkspace({
                                           Add Evidence Photo ({draft.evidence})
                                         </Button>
                                         <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                                          Required before recording — Warehouse records the finding, never a cost (§8.3). The count is
-                                          local to this session; capture and storage live in the Evidence Workspace.
-                                        </p>
+                                          {/* Required before recording — Warehouse records the finding, never a cost (§8.3). The count is
+                                          local to this session; capture and storage live in the Evidence Workspace. */}Add evidence before recording the finding. Use the Evidence workspace to save it. </p>
                                       </>
                                     )}
                                     <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
@@ -1910,14 +1909,12 @@ export default function ResetWorkspace({
                       Exceptions do not block completion — a recorded problem routed the item out of this queue.
                       {hasSerializedUnits ? (
                         <>
-                          {' '}Completing writes <span className="identifier">reset_completed_at</span> on {readyAssetIds.length} unit{readyAssetIds.length === 1 ? '' : 's'} and,
-                          per §1.5, changes no booking status.
-                        </>
+                          {' '}Completing writes <span className="identifier">reset_completed_at</span> on {readyAssetIds.length} unit{readyAssetIds.length === 1 ? '' : 's'} {/* and,
+                          per §1.5, changes no booking status. */}and, per , changes no booking status. </>
                       ) : (
                         <>
-                          {' '}All items are quantity-tracked. Completing records warehouse floor reset verification and,
-                          per §1.5, changes no booking status.
-                        </>
+                          {' '}{/* All items are quantity-tracked. Completing records warehouse floor reset verification and,
+                          per §1.5, changes no booking status. */}All items are quantity-tracked. Completing records warehouse floor reset verification and, per , changes no booking status. </>
                       )}
                     </p>
                   </div>
@@ -2140,8 +2137,7 @@ function QcRowControls({
         </button>
       </div>
       <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-        Failing returns the item to Waiting with a reason (§10)
-      </span>
+        {/* Failing returns the item to Waiting with a reason (§10) */}Failing returns the item to Waiting with a reason </span>
     </div>
   )
 }

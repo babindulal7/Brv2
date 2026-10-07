@@ -641,7 +641,7 @@ const NEEDS_UNIT_EMBED = (column: string) =>
   `Lives on booking_line_units.${column}, two embeds from bookings; applyListFilters cannot scope a filter to an embedded table.`
 
 const CATEGORY_REASON =
-  'Equipment category is inventory_categories.name, reached bookings → booking_lines → products.category_id (0004:89). No embed-scoped filter in ListFilters.'
+  /* Equipment category is inventory_categories.name, reached bookings → booking_lines → products.category_id (0004:89). No embed-scoped filter in ListFilters. */ "Filtering pickups by equipment category is not available yet."
 
 const CLIENT_TYPE_REASON =
   'Client type is clients.type_parent / clients.org_subtype (0005:42-43). Filtering it needs clients!inner(…) plus a referencedTable-scoped filter, which ListFilters does not express.'
@@ -664,7 +664,7 @@ export const FILTER_SUPPORT: Readonly<Record<string, FilterSupport>> = {
   'Deposit Pending': {
     kind: 'unavailable',
     reason:
-      'bookings.deposit_required is the figure REQUIRED; nothing on the booking records what has been received, and the column is unmasked money (Law 6).',
+      /* bookings.deposit_required is the figure REQUIRED; nothing on the booking records what has been received, and the column is unmasked money (Law 6). */ "bookings.deposit_required is the figure REQUIRED; nothing on the booking records what has been received, and the column is unmasked money .",
   },
   'Payment Pending': {
     kind: 'unavailable',

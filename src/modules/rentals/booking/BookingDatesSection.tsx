@@ -76,6 +76,33 @@ export function BookingDatesSection({
           : `${pickupBs ? formatBs(pickupBs) : formatAd(new Date(pickup))} → ${days} ${dayWord}`
       }
     >
+      <div className="new-rental-period-fields">
+        <DateTimeField
+          label="Out"
+          required
+          dateValue={pickup}
+          timeValue={pickupTime}
+          onDateChange={onPickupChange}
+          onTimeChange={onPickupTimeChange}
+        />
+        <DateTimeField
+          label="Return"
+          required
+          dateValue={ret}
+          timeValue={returnTime}
+          onDateChange={onReturnChange}
+          onTimeChange={onReturnTimeChange}
+          error={days === 0 ? 'Return must be later than pickup. Change the return date or its time.' : undefined}
+        />
+      </div>
+      <div className="new-rental-date-shortcuts">
+        <DatePresets
+          outDate={pickup}
+          onPick={onPresetDatesPick}
+          minReturnDate={pickup}
+          {...(pricingHints ? { priceHints: pricingHints } : {})}
+        />
+      </div>
       <details className="new-rental-preset-disclosure">
         <summary>Use a shoot preset</summary>
         <div className="new-rental-shoot-presets" role="group" aria-label="Production shoot presets">
@@ -93,35 +120,6 @@ export function BookingDatesSection({
           ))}
         </div>
       </details>
-
-      {/* Quick date presets — one-tap common rental durations */}
-      <DatePresets
-        outDate={pickup}
-        onPick={onPresetDatesPick}
-        minReturnDate={pickup}
-        {...(pricingHints ? { priceHints: pricingHints } : {})}
-      />
-
-      <div
-        className="new-rental-period-fields"
-        style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr)', gap: 11, alignItems: 'start' }}
-      >
-        <DateTimeField
-          label="Out"
-          dateValue={pickup}
-          timeValue={pickupTime}
-          onDateChange={onPickupChange}
-          onTimeChange={onPickupTimeChange}
-        />
-        <DateTimeField
-          label="Return"
-          dateValue={ret}
-          timeValue={returnTime}
-          onDateChange={onReturnChange}
-          onTimeChange={onReturnTimeChange}
-          error={days === 0 ? 'Return must be later than pickup. Change the return date or its time.' : undefined}
-        />
-      </div>
     </Section>
   )
 }

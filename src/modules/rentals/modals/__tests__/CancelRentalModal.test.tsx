@@ -93,7 +93,7 @@ describe('CancelRentalModal', () => {
   it('renders modal details and Law 3 inventory warning', async () => {
     await mountModal(defaultProps)
     expect(container.textContent).toContain('Cancel Booking — BK-2026-0042')
-    expect(container.textContent).toContain('Law 3 & Inventory Allocation')
+    expect(container.textContent).toContain('Inventory Allocation')
     expect(container.textContent).toContain('0/10 characters minimum')
   })
 

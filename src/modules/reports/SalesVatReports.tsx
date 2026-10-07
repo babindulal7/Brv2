@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
@@ -166,7 +167,7 @@ export default function SalesVatReports() {
           inv.bookingNo,
           inv.clientName,
           inv.clientPan || 'N/A',
-          inv.issueDate,
+          formatAd(new Date(inv.issueDate)),
           inv.dueDate,
           formatMoney(inv.subtotal),
           formatMoney(inv.taxAmount),
@@ -199,7 +200,7 @@ export default function SalesVatReports() {
         ['Invoice No', 'Date', 'Client', 'Client PAN', 'Taxable Amount', '13% VAT', 'Grand Total'],
         ...(data?.vat.taxRegister.map((tr): ReportCsvRow => [
           tr.invoiceNo,
-          tr.issueDate,
+          formatAd(new Date(tr.issueDate)),
           tr.clientName,
           tr.clientPan || 'Unregistered',
           formatMoney(tr.subtotal),
@@ -399,7 +400,7 @@ export default function SalesVatReports() {
                       <td style={{ ...td, fontWeight: 600, color: 'var(--primary)' }}>{inv.invoiceNo}</td>
                       <td style={{ ...td, fontWeight: 600 }}>{inv.clientName}</td>
                       <td style={{ ...td, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{inv.clientPan || '—'}</td>
-                      <td style={td}>{inv.issueDate}</td>
+                      <td style={td}>{formatAd(new Date(inv.issueDate))}</td>
                       <td style={{ ...td, textAlign: 'right' }}>{formatMoney(inv.subtotal)}</td>
                       <td style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{formatMoney(inv.taxAmount)}</td>
                       <td style={{ ...td, textAlign: 'right', fontWeight: 600 }}>{formatMoney(inv.grandTotal)}</td>
@@ -507,7 +508,7 @@ export default function SalesVatReports() {
                   {data?.vat.taxRegister.map((tr) => (
                     <tr key={tr.id}>
                       <td style={{ ...td, fontWeight: 600, color: 'var(--primary)' }}>{tr.invoiceNo}</td>
-                      <td style={td}>{tr.issueDate}</td>
+                      <td style={td}>{formatAd(new Date(tr.issueDate))}</td>
                       <td style={{ ...td, fontWeight: 600 }}>{tr.clientName}</td>
                       <td style={{ ...td, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{tr.clientPan || 'Unregistered'}</td>
                       <td style={{ ...td, textAlign: 'right' }}>{formatMoney(tr.subtotal)}</td>

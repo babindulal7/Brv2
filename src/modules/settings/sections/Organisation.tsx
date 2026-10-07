@@ -90,7 +90,7 @@ export const ORGANISATION_SECTIONS: Section[] = [
            this stopped being a read-only row with an excuse and became a real
            setting. `lib/i18n.ts` still owns the gate; if coverage ever
            regresses below 100% the option disappears again on its own. */
-        note: `English and ${LANGUAGE_LABEL.ne}. Nepali is at ${NE_COVERAGE.percent}% coverage (${NE_COVERAGE.translated}/${NE_COVERAGE.total} strings); numbers, IDs and NPR stay Latin in both.`,
+        note: `English and ${LANGUAGE_LABEL.ne}. ${NE_COVERAGE.translated} shared labels have Nepali translations; numbers, IDs and NPR stay Latin in both.`,
         settingKey: 'language',
       },
       {

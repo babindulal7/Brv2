@@ -239,7 +239,7 @@ describe('Spec 03 §3.1 — queue chips filter ONE time-ordered list', () => {
   it('draws the four verb chips over the shared list', async () => {
     await mount(<OperationsQueues />, '/operations')
     const labels = buttons().map((b) => b.textContent ?? '')
-    for (const chip of ['Packing', 'Pickup', 'Return & Inspection', 'Reset']) {
+    for (const chip of ['Pack', 'Handover', 'Return', 'Reset']) {
       expect(labels.some((l) => l.startsWith(chip))).toBe(true)
     }
     // §3.1's row: time │ BR# │ client │ items │ stage badge │ [verb] ⋮

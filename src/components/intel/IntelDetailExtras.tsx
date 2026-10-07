@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ActionContext } from '../../actions/core'
 import { addBookingNote } from '../../actions/notes/addBookingNote'
@@ -113,7 +114,7 @@ export function IntelDetailExtras({ entityType, entityId, context, gateContext, 
         {notes.map((note) => (
           <div key={note.id} style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
             <div style={{ color: 'var(--muted)', fontSize: 'var(--t-meta)' }}>
-              AD {note.createdAt.slice(0, 10)} · {note.visibility.replace('_', ' ')}
+              {formatAd(new Date(note.createdAt))} · {note.visibility.replace('_', ' ')}
             </div>
             <div style={{ whiteSpace: 'pre-wrap' }}>{note.body}</div>
           </div>

@@ -1,3 +1,4 @@
+import { formatAdDateTime } from '../../lib/bs'
 import { useEffect, useMemo, useState } from 'react'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
@@ -355,7 +356,7 @@ export default function ActivityReports() {
                       </td>
                       <td style={td}>{s.recentAction ?? '—'}</td>
                       <td className="figure" style={{ ...td, color: 'var(--text2)' }}>
-                        {s.lastActive ? new Date(s.lastActive).toLocaleString('en-GB') : '—'}
+                        {s.lastActive ? formatAdDateTime(s.lastActive) : '—'}
                       </td>
                     </tr>
                   ))}
@@ -443,7 +444,7 @@ export default function ActivityReports() {
                       {s.actionsBreakdown['Finance'] ?? 0}
                     </td>
                     <td className="figure" style={{ ...td, color: 'var(--text2)' }}>
-                      {s.lastActive ? new Date(s.lastActive).toLocaleString('en-GB') : '—'}
+                      {s.lastActive ? formatAdDateTime(s.lastActive) : '—'}
                     </td>
                   </tr>
                 ))}
@@ -493,7 +494,7 @@ export default function ActivityReports() {
                 {data?.recentEvents.map((e) => (
                   <tr key={e.id}>
                     <td className="figure" style={{ ...td, whiteSpace: 'nowrap' }}>
-                      {new Date(e.timestamp).toLocaleString('en-GB')}
+                      {formatAdDateTime(e.timestamp)}
                     </td>
                     <td style={td}>
                       <div style={{ fontWeight: 600, color: 'var(--text)' }}>{e.actorName}</div>

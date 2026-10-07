@@ -29,6 +29,13 @@ beforeEach(() => {
 })
 
 describe('settingsStore — defaults', () => {
+  it('corrects the former built-in company PAN and preserves other explicit PAN values', () => {
+    expect(getSetting('vatNumber')).toBe('623587106')
+    window.localStorage.setItem('br.settings.vatNumber', '601928473')
+    expect(readSettings().vatNumber).toBe('623587106')
+    writeSettings({ vatNumber: '123456789' })
+    expect(getSetting('vatNumber')).toBe('123456789')
+  })
   it('reads defaults when nothing is stored', () => {
     expect(readSettings()).toEqual(SETTINGS_DEFAULTS)
   })

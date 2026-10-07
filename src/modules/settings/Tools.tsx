@@ -614,7 +614,7 @@ drop-frame, at 29.97 and 59.94 only:
           {
             label: 'Timecode, read back from the frame count',
             value: `${pad(roundTrip.hh)}:${pad(roundTrip.mm)}:${pad(roundTrip.ss)}${separator}${pad(roundTrip.ff)}`,
-            note: 'Must equal what was typed. A mismatch is the drop-frame bug §3.6 names.',
+            note: /* Must equal what was typed. A mismatch is the drop-frame bug §3.6 names. */ "The result must match the timecode entered.",
           },
         ]}
       />
@@ -666,11 +666,11 @@ function StorageCalculator() {
         ]}
       />
       <Gap>
-        <strong style={{ color: 'var(--text)' }}>Not yet inventory-aware.</strong> §2.1 wants camera, codec, resolution and
+        <strong style={{ color: 'var(--text)' }}>Not yet inventory-aware.</strong> {/* §2.1 wants camera, codec, resolution and
         frame rate picked from the item master, the result to name the card size, and a stock check offering to add that
-        card to the booking — "the step that turns a calculator into revenue". The item master in{' '}
+        card to the booking — "the step that turns a calculator into revenue". The item master in */}Enter the bitrate from your camera settings to estimate storage. {' '}
         <code>data/inventory.ts</code> carries no codec or bitrate field, so the bitrate is typed and no card is named. A
-        seeded bitrate table would be a figure nobody supplied. <strong style={{ color: 'var(--text)' }}>TODO(decision)</strong> —
+        seeded bitrate table would be a figure nobody supplied. <strong style={{ color: 'var(--text)' }}>{/* TODO(decision) */}Not available yet </strong> —
         add codec and bitrate to the item master, or drop the inventory-aware claim.
       </Gap>
     </>
@@ -713,11 +713,11 @@ batteries needed = ceil(shoot hours ÷ runtime) + 1  spare`}</Formula>
         ]}
       />
       <Gap>
-        <strong style={{ color: 'var(--text)' }}>Draw is typed, not looked up.</strong> §3.8 says draw comes from the item
+        <strong style={{ color: 'var(--text)' }}>Draw is typed, not looked up.</strong> {/* §3.8 says draw comes from the item
         master, "measured per body — not a manufacturer figure", and §12 asks Babin directly whether those figures are
         measured or specified. Neither the watt-hours nor the draw exists in the build, and seeding either would be
-        inventing the number the whole answer rests on.{' '}
-        <strong style={{ color: 'var(--text)' }}>TODO(decision)</strong> — measured per body, or manufacturer spec?
+        inventing the number the whole answer rests on. */}says draw comes from the item master, "measured per body — not a manufacturer figure", and asks Babin directly whether those figures are measured or specified. Neither the watt-hours nor the draw exists in the build, and seeding either would be inventing the number the whole answer rests on. {' '}
+        <strong style={{ color: 'var(--text)' }}>{/* TODO(decision) */}Not available yet </strong> — measured per body, or manufacturer spec?
       </Gap>
     </>
   )
@@ -749,11 +749,11 @@ function PriceCalculator() {
 
   return (
     <>
-      <Formula>{`Foundation §2.1, in order — lib/money.ts price()
+      <Formula>{/* Foundation §2.1, in order — lib/money.ts price()
 
   subtotal → discount → taxable → VAT → rental total → outstanding
 
-Each step rounds half-up to the whole rupee. Nothing is recomputed here.`}</Formula>
+Each step rounds half-up to the whole rupee. Nothing is recomputed here. */ "Pricing includes the subtotal, discount, VAT and rental total."}</Formula>
       <div style={fieldGrid}>
         <NumField label="Equipment" value={equipment} onChange={setEquipment} suffix="Rs" />
         <NumField label="Sub-rental" value={subRental} onChange={setSubRental} suffix="Rs" />
@@ -766,7 +766,7 @@ Each step rounds half-up to the whole rupee. Nothing is recomputed here.`}</Form
           value={vatPercent}
           onChange={setVatPercent}
           suffix="%"
-          hint="§2.1 reads this from Settings ▸ Finance. No settings store exists, so it is an input."
+          hint={/* §2.1 reads this from Settings ▸ Finance. No settings store exists, so it is an input. */ "Enter the VAT rate."}
         />
         <NumField label="Paid so far" value={payments} onChange={setPayments} suffix="Rs" />
       </div>
@@ -781,17 +781,17 @@ Each step rounds half-up to the whole rupee. Nothing is recomputed here.`}</Form
             label: 'Outstanding',
             value: formatMoney(breakdown.outstanding),
             tone: breakdown.outstanding > 0 ? 'danger' : 'success',
-            note: 'Deposits are liabilities and never enter this figure (§2.2).',
+            note: /* Deposits are liabilities and never enter this figure (§2.2). */ "Deposits are liabilities and never enter this figure .",
           },
         ]}
       />
       <Gap>
-        §5 — “a rental calculator that produces a different price to the booking page is worse than no calculator, because
-        someone will quote from it.” Every figure above comes from <code>lib/money.ts</code>’s <code>price()</code>, the
+        {/* §5 — “a rental calculator that produces a different price to the booking page is worse than no calculator, because
+        someone will quote from it.” Every figure above comes from */}Use the rental pricing calculator for a quote. <code>{/* lib/money.ts */}Shared rental pricing </code>’s <code>price()</code>, the
         same call the booking page makes. The spec’s last line, “a Manager may open the same figures in a real quotation
         with one action”, needs a booking draft to hand off to; <code>/rentals/new</code> takes no prefill, so that action
         is not drawn rather than drawn dead.{' '}
-        <strong style={{ color: 'var(--text)' }}>TODO(decision)</strong> — what should a quotation handoff carry?
+        <strong style={{ color: 'var(--text)' }}>{/* TODO(decision) */}Not available yet </strong> — what should a quotation handoff carry?
       </Gap>
     </>
   )
@@ -812,11 +812,11 @@ function DiscountCalculator() {
 
   return (
     <>
-      <Formula>{`Law 10 (amended 31 Aug 2026) — lib/money.ts discountGate()
+      <Formula>{/* Law 10 (amended 31 Aug 2026) — lib/money.ts discountGate()
 
   0–100%   allowed outright. No reason, no approver, no cap — ruled by the owner.
   < 0%     refused. A negative discount is a price increase.
-  > 100%   refused. That is a negative price, not a discount.`}</Formula>
+  > 100%   refused. That is a negative price, not a discount. */ "Shared rental pricing"}</Formula>
       <div style={fieldGrid}>
         <NumField label="Discount" value={percent} onChange={setPercent} suffix="%" />
       </div>
@@ -1092,7 +1092,7 @@ function groupAccent(key: GroupKey): BrandKey {
  * pair itself is still wrong and `lib/status.ts` is not this file's to fix.
  */
 const KPIS: Kpi[] = [
-  { label: 'Tools Used Today', value: '—', icon: 'tool', accent: 'primary', note: 'No tool-execution log exists (§11)' },
+  { label: 'Tools Used Today', value: '—', icon: 'tool', accent: 'primary', note: /* No tool-execution log exists (§11) */ "No usage history available" },
   { label: 'Documents Generated', value: '—', icon: 'file', accent: 'primary', note: 'Counted by Finance ▸ Documents' },
   { label: 'Labels Printed', value: '—', icon: 'package', accent: 'primary', note: 'Nothing prints a label yet' },
   { label: 'Failed Jobs', value: '—', icon: 'alert_triangle', accent: 'primary', note: 'Owned by System Monitor' },
@@ -1245,10 +1245,9 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
       <div style={{ ...cardStyle, padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
         <Icon name="info" size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
         <span>
-          §6 locks these four headline figures and the build cannot supply one of them — there is no tool-execution log,
+          {/* §6 locks these four headline figures and the build cannot supply one of them — there is no tool-execution log,
           nothing prints a label, and Failed Jobs belongs to System Monitor. Each tile names its source rather than
-          showing a number nobody measured.
-        </span>
+          showing a number nobody measured. */}Usage statistics are not tracked yet. </span>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 'var(--sp-md)', alignItems: 'start' }}>
@@ -1396,9 +1395,8 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
             <Card title="Favourite Tools">
               {favouriteTools.length === 0 ? (
                 <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.55 }}>
-                  Nothing flagged yet. The flag on a tool adds it here, and the list is kept in this browser — §6 makes
-                  favourite a flag on a tool, never a slice of the total.
-                </p>
+                  {/* Nothing flagged yet. The flag on a tool adds it here, and the list is kept in this browser — §6 makes
+                  favourite a flag on a tool, never a slice of the total. */}Nothing flagged yet. The flag on a tool adds it here, and the list is kept in this browser — makes favourite a flag on a tool, never a slice of the total. </p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {favouriteTools.map((t) => (
@@ -1411,9 +1409,8 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
             <Card title="Recent Tools">
               {recentTools.length === 0 ? (
                 <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.55 }}>
-                  Nothing opened yet. Recent is this session only — §11 wants every tool execution audited, and no
-                  execution log exists to read a longer history from.
-                </p>
+                  {/* Nothing opened yet. Recent is this session only — §11 wants every tool execution audited, and no
+                  execution log exists to read a longer history from. */}Nothing opened yet. Recent tools appear here during this session. </p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {recentTools.map((t) => (
@@ -1447,18 +1444,16 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
                 More — show every tool →
               </button>
               <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-                §0 — <strong style={{ color: 'var(--text)' }}>Backup Database</strong> is deliberately not here. The render
-                puts it one press from a Rental Officer, against Administration §25.2’s Owner-only, 2FA-gated rule.
-              </p>
+                {/* §0 — */}Not tracked yet. <strong style={{ color: 'var(--text)' }}>Backup Database</strong> {/* is deliberately not here. The render
+                puts it one press from a Rental Officer, against Administration §25.2’s Owner-only, 2FA-gated rule. */}Restore is available in Settings. </p>
             </Card>
           </div>
 
           <Card title="Where the render’s fifteen categories went">
             <p style={{ margin: '0 0 10px', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
-              The reference render is a Tools Center of fifteen numbered categories and 118 tools. §0 and §1 rule on every
+              {/* The reference render is a Tools Center of fifteen numbered categories and 118 tools. §0 and §1 rule on every
               one of them. Two stay, one is cut, one is gated, and the rest deep-link — so this page is not a partial copy
-              of the render, it is the render after the scoping rule was applied.
-            </p>
+              of the render, it is the render after the scoping rule was applied. */}Choose a calculator below. </p>
             <DataTableShell ariaLabel="Render category disposition">
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 440 }}>
                 <thead>
@@ -1490,9 +1485,8 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
 
           <Card title="Open — needs Babin">
             <p style={{ margin: '0 0 10px', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
-              §12. None of these is guessed at anywhere on this page; where one blocks a figure, the field is an input and
-              the calculator says so.
-            </p>
+              {/* §12. None of these is guessed at anywhere on this page; where one blocks a figure, the field is an input and
+              the calculator says so. */}Enter the values needed by each calculator. </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {OPEN_DECISIONS.map((d) => (
                 <div key={d.q} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
@@ -1518,7 +1512,7 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
               <RailRow label="Opened this session" value={String(recent.length)} flag />
             </div>
             <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-              §6 — <span className="figure">Available + Unavailable = Registered</span>, and favourite and recently used
+              {/* §6 — */}Not tracked yet. <span className="figure">Available + Unavailable = Registered</span>, and favourite and recently used
               are flags that overlap available, never segments beside it. Both figures are counted from the registry, so
               they cannot drift the way the render’s 98 + 6 = 104 against 118 does.
             </p>
@@ -1526,8 +1520,8 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
 
           <Card title="What Tools owns">
             <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.55 }}>
-              <strong style={{ color: 'var(--text)' }}>Tools owns only what has no home elsewhere</strong> (§1). A
-              deep-linked tool opens the owning module with the right filter and carries{' '}
+              <strong style={{ color: 'var(--text)' }}>Tools owns only what has no home elsewhere</strong> {/* (§1). A
+              deep-linked tool opens the owning module with the right filter and carries */}. A deep-linked tool opens the owning module with the right filter and carries {' '}
               <em>that module’s</em> permissions — backup, integrations and diagnostics answer to Administration, not to
               this page.
             </p>
@@ -1545,7 +1539,7 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
           */}
           <Card title="Alerts">
             <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.55 }}>
-              Empty on purpose. §10 — <strong style={{ color: 'var(--text)' }}>alerts read the owning module</strong>, and
+              {/* Empty on purpose. §10 — */}Empty on purpose. <strong style={{ color: 'var(--text)' }}>alerts read the owning module</strong>, and
               none of the render’s four belongs to Tools: labels are Inventory’s, warranties are Inventory ▸ Maintenance’s,
               the backup state is Administration’s and pending approvals are Documents’. Restating them here is how the
               render ends up claiming a backup was missed while the Backup module records one at 02:15 the same morning.
@@ -1554,11 +1548,10 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
 
           <Card title="AI Tool Recommendations">
             <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.55 }}>
-              Dark on purpose. §9 gates every AI utility on the data policy in Administration §21.2, which is unanswered,
+              {/* Dark on purpose. §9 gates every AI utility on the data policy in Administration §21.2, which is unanswered,
               and Foundation §5.4 keeps AI panels dark until the feature is real. The render’s three suggestions each end
               in a button that would send client data to an external provider with no logged provider, token count or
-              cost.
-            </p>
+              cost. */}Automated suggestions are not available yet. </p>
           </Card>
 
           <Card title="Keyboard">
@@ -1567,7 +1560,7 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
               <ShortcutRow keys="Ctrl / ⌘ + B" what="Scanner" />
             </div>
             <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-              Only the two the shell actually binds are listed. §7 proposes ⌘K as the primary way into a tool — type{' '}
+              {/* Only the two the shell actually binds are listed. §7 proposes ⌘K as the primary way into a tool — type */}Use the keyboard shortcuts shown below. {' '}
               <span className="figure">dof</span> or <span className="figure">timecode</span> and it opens — but the
               palette indexes navigation only and cannot reach this registry. The shell owns it; see the note in the
               handover.
@@ -1576,7 +1569,7 @@ export default function Tools({ embedded = false }: ToolsProps = {}) {
         </Rail>
       </div>
 
-      <FooterNote extra={['Tools lives inside Settings — Foundation §5.1 keeps it out of the sidebar']} />
+      <FooterNote extra={[/* Tools lives inside Settings — Foundation §5.1 keeps it out of the sidebar */ "Tools"]} />
     </div>
   )
 }

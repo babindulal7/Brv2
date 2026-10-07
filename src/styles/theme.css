@@ -152,6 +152,9 @@
   --warn: #d46218;
   --on-warn: #231a05;
   --warn-text: #a05818;
+  /* User ruling, 7 Oct 2026: booking pickup/return dates use orange everywhere. */
+  /* Slightly deeper ink keeps small dates readable on the darkest light inset. */
+  --booking-date-text: #985014;
 
   --ready: #d4a315;       /* Desaturated from #e3b117. */
   --on-ready: #231a05;
@@ -299,6 +302,7 @@
   --warn: #d47026;         /* ORANGE — "out with the client". Never a button. Desaturated from #e8762d. */
   --on-warn: #1c1005;
   --warn-text: #e8a06e;
+  --booking-date-text: var(--warn-text);
 
   --ready: #d4a824;        /* YELLOW — in-house work / waiting. Never a button. Desaturated from #edbe2a. */
   --on-ready: #1c1405;
@@ -838,6 +842,17 @@ body,
   --t-base: var(--t-body); /* auth/HandoverSheet */
 }
 
+/* RULINGS-2026-10-07: clearer small text at the shared type scale. Keep rem
+   sizing and user scale, but round UI/meta/caption sizes to whole CSS pixels.
+   Older browsers keep the existing fractional scale declared above. */
+@supports (font-size: round(nearest, 1rem, 1px)) {
+  :root {
+    --t-ui: round(nearest, 0.93rem, 1px);
+    --t-meta: round(nearest, 0.85rem, 1px);
+    --t-th: round(nearest, 0.75rem, 1px);
+  }
+}
+
 /*
   §4.3.6 — the root. 15px at 1280 → 17px at 1920, then it stops: on a wide
   screen a dense operations tool should show *more information*, not bigger
@@ -922,9 +937,13 @@ body {
   color: var(--text);
   font-family: var(--font-body);
   font-size: var(--t-body);
+  font-weight: 500;
   line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  /* Native rasterization, real font weight outlines; italic remains available.
+     Smoothing switches are platform-specific, not a Windows sharpness filter. */
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  font-synthesis: style;
   /*
     NO transition here, deliberately — measured 1 Sep, not assumed.
 

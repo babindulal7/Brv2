@@ -8,7 +8,7 @@
 
 import { IS_MOCK, supabase } from './supabase'
 import { formatMoney, type Paisa } from './money'
-import { toBs, formatBs, formatAdDateTime } from './bs'
+import { toBs, formatBs, formatAdDateTime, formatBookingHoverDateTime, formatAd } from './bs'
 import { canViewMoneyField } from './fieldGating'
 import {
   fetchFloorBooking,
@@ -223,8 +223,8 @@ export async function loadRentalPreview(
     stage: floor.stage,
     clientName: floor.clientName ?? '—',
     clientId: booking.clientId,
-    pickupAt: adWithBs(floor.pickupAtAd),
-    returnAt: adWithBs(floor.returnAtAd),
+    pickupAt: formatBookingHoverDateTime(floor.pickupAtAd),
+    returnAt: formatBookingHoverDateTime(floor.returnAtAd),
     rentalDays: rentalDaysBetween(floor.pickupAtAd, floor.returnAtAd),
     readiness,
     equipment: floor.lines.map(l => ({ label: l.productName ?? '—', qty: l.qty, packed: l.units.every(u => u.packed) })),
@@ -315,8 +315,8 @@ export async function loadInvoicePreview(
     invoiceNo: invoice.invoiceNo,
     clientName: invoice.clientName,
     rentalNo: invoice.bookingNo,
-    invoiceDate: invoice.issueDateAd,
-    dueDate: invoice.dueDateAd,
+    invoiceDate: formatAd(new Date(invoice.issueDateAd)),
+    dueDate: formatAd(new Date(invoice.dueDateAd)),
     ...(canSeeMoney ? {
       subtotalPaisa: moneyOrNull(invoice.subtotal, true),
       vatPaisa: moneyOrNull(invoice.vatAmount, true),

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from '../../../components/ui/Icon'
 import { TouchTarget } from '../../../components/ui/TouchTarget'
+import { floatingLayer } from '../../../components/ui/floatingLayer'
 import {
   CalendarPopover,
   TimeListPopover,
@@ -60,6 +61,7 @@ const iconBtnStyle = {
 
 export interface DateTimeFieldProps {
   label: string
+  required?: boolean
   /** 'YYYY-MM-DD' */
   dateValue: string
   /** 'HH:mm' — never blank; callers seed a default (09:00 pickup / 18:00 return per redesign v1 §4). */
@@ -69,7 +71,7 @@ export interface DateTimeFieldProps {
   error?: string | undefined
 }
 
-export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTimeChange, error }: DateTimeFieldProps) {
+export function DateTimeField({ label, required = false, dateValue, timeValue, onDateChange, onTimeChange, error }: DateTimeFieldProps) {
   const [dateText, setDateText] = useState(() => displayDate(dateValue))
   const [timeText, setTimeText] = useState(timeValue)
   const [calendarOpen, setCalendarOpen] = useState(false)
@@ -169,7 +171,7 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
 
   return (
     <div ref={rootRef} style={{ position: 'relative', minWidth: 0 }}>
-      <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', marginBottom: 3 }}>{label}</span>
+      <span style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--muted)', marginBottom: 3 }}>{label}{required ? ' *' : ''}</span>
       {/* 01_NEW_RENTAL §1.1 DATES box — "BS above AD on both". The wireframe and
           Foundation §3.2's "BS leads AD" put it first, so it sits above the
           input rather than under it. `lib/bs.ts` is the one Date Engine: nothing
@@ -177,7 +179,7 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
           it says so instead of rendering a plausible one. */}
       <div
         className="figure"
-        style={{ marginBottom: 3, fontSize: 'var(--t-th)', fontWeight: 700, color: bs ? 'var(--text)' : 'var(--muted)' }}
+        style={{ marginBottom: 3, fontSize: 'var(--t-th)', fontWeight: 700, color: bs ? 'var(--booking-date-text)' : 'var(--muted)' }}
       >
         {bs ? formatBs(bs) : 'BS not available for this date'}
       </div>
@@ -196,7 +198,8 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
             setCalendarOpen(true)
           }}
           aria-label={`${label} date`}
-          style={{ flex: '1 1 auto', minWidth: 0, border: 'none', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+          aria-required={required || undefined}
+          style={{ flex: '1 1 auto', minWidth: 0, border: 'none', background: 'transparent', color: 'var(--booking-date-text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
         />
         <button
           type="button"
@@ -221,7 +224,8 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
             if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
           }}
           aria-label={`${label} time`}
-          style={{ width: 46, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', textAlign: 'center', paddingLeft: 7 }}
+          aria-required={required || undefined}
+          style={{ width: 46, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'transparent', color: 'var(--booking-date-text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', textAlign: 'center', paddingLeft: 7 }}
         />
         <button
           type="button"
@@ -242,7 +246,7 @@ export function DateTimeField({ label, dateValue, timeValue, onDateChange, onTim
       {error && <span role="alert" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--danger-text)', marginTop: 3 }}>{error}</span>}
 
       {(calendarOpen || timeListOpen) && panelPos && createPortal(
-        <div ref={panelRef} style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, width: panelPos.width, height: 0, zIndex: 'var(--z-dropdown)' }}>
+        <div ref={panelRef} style={{ position: 'fixed', top: panelPos.top, left: panelPos.left, width: panelPos.width, height: 0, zIndex: floatingLayer(rootRef.current) }}>
           {calendarOpen && (
         <CalendarPopover
           value={dateValue}

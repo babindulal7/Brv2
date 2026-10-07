@@ -4,19 +4,15 @@ import { Rail, SideRail } from '../../components/ui/Page'
 /**
  * **Rulings §7 — "right rails collapse below 1280" means REFLOW, not hide.**
  *
- * `Rail`/`SideRail` wrap `CollapsibleAside`, which defaults to *collapsed* at
- * phone **and tablet** — the 28px-handle behaviour the list screens rely on,
- * and which `CollapsibleAside.tsx:31-37` defends in writing.
- *
  * Spec 03's tablet drawings need the opposite. §3.2 puts the progress column
  * beside the list ("split, scan-first"), §3.3 puts the client rail on top as a
  * bar, §3.4 drops the compare strip below. All three are rail content still on
  * screen, which a 28px handle is not.
  *
- * So above 1280 this is the shared collapsible aside, and below it the same
+ * Above 1280 use the shared summary or filter aside; below it the same
  * children render as a plain column that the page's grid places explicitly.
- * `CollapsibleAside`'s own default is untouched — other pages depend on it,
- * and changing it there would move rails on screens nobody asked about.
+ * Right summaries stay visible under the user's 7 Oct ruling. Left filter
+ * rails retain their collapse behavior.
  *
  * It lives in `modules/operations/` rather than in `components/ui/` because it
  * encodes a *floor-workspace* layout ruling, not a design-system primitive:

@@ -11,7 +11,7 @@ export interface PaginationProps {
 }
 
 /** One pager for full tables and narrow cards, without changing the data source. */
-export function Pagination({ page, total, pageSize, onPageChange, onPageSizeChange, pageSizeOptions = [30, 50, 100] }: PaginationProps) {
+export function Pagination({ page, total, pageSize, onPageChange, onPageSizeChange, pageSizeOptions = [25, 50, 100] }: PaginationProps) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const currentPage = Math.min(Math.max(page, 1), totalPages)
   const start = total === 0 ? 0 : (currentPage - 1) * pageSize + 1
@@ -27,6 +27,7 @@ export function Pagination({ page, total, pageSize, onPageChange, onPageSizeChan
     pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages)
   }
   const sizes = [...new Set([...pageSizeOptions, pageSize])].sort((a, b) => a - b)
+  if (total <= pageSize && page <= 1) return null
 
   return (
     <nav className="app-pagination" aria-label="Pagination">

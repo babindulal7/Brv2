@@ -2,6 +2,7 @@ import React, { forwardRef, useState, useRef, useEffect, useId, useCallback, Rea
 import { createPortal } from 'react-dom'
 import Icon from './Icon'
 import { InfoTooltip } from './InfoTooltip'
+import { floatingLayer } from './floatingLayer'
 
 export interface SelectOption {
   value: string
@@ -101,13 +102,15 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
       const r = el.getBoundingClientRect()
       const MENU_GAP = 6
       const MENU_MAX = 300
-      const roomBelow = window.innerHeight - r.bottom - MENU_GAP - 8
-      const roomAbove = r.top - MENU_GAP - 8
+      const roomBelow = Math.max(0, window.innerHeight - r.bottom - MENU_GAP - 8)
+      const roomAbove = Math.max(0, r.top - MENU_GAP - 8)
       const openUp = roomBelow < 160 && roomAbove > roomBelow
+      const width = Math.min(r.width, Math.max(0, window.innerWidth - 16))
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
       setMenuPos(
         openUp
-          ? { top: Math.max(8, r.top - MENU_GAP - Math.min(MENU_MAX, roomAbove)), left: r.left, width: r.width, maxHeight: Math.min(MENU_MAX, Math.max(120, roomAbove)) }
-          : { top: r.bottom + MENU_GAP, left: r.left, width: r.width, maxHeight: MENU_MAX },
+          ? { top: Math.max(8, r.top - MENU_GAP - Math.min(MENU_MAX, roomAbove)), left, width, maxHeight: Math.min(MENU_MAX, roomAbove) }
+          : { top: Math.max(8, r.bottom + MENU_GAP), left, width, maxHeight: Math.min(MENU_MAX, roomBelow) },
       )
     }, [])
 
@@ -330,7 +333,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             /* Label + own content, so a screen reader hears "Payment method,
                Cash, combobox" rather than the label alone. */
             aria-labelledby={label ? `${labelId} ${triggerId}` : undefined}
+            aria-label={props['aria-label']}
             aria-invalid={error ? true : undefined}
+            aria-required={props.required || props['aria-required'] || undefined}
             onClick={() => {
               if (props.disabled) return
               if (isOpen) closeMenu()
@@ -391,7 +396,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
                 top: menuPos.top,
                 left: menuPos.left,
                 width: menuPos.width,
-                zIndex: 'var(--z-dropdown)',
+                zIndex: floatingLayer(triggerRef.current),
                 maxHeight: menuPos.maxHeight,
                 overflowY: 'auto',
                 background: 'var(--dropdown)',

@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { type ReactNode, createContext, useContext, useState, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -231,9 +232,9 @@ export function RentalOperationShell({
 
         {pickupAtAd && returnAtAd && (
           <div style={{ marginLeft: 'auto', fontSize: 'var(--t-meta)', color: 'var(--text2)', display: 'flex', gap: 10 }}>
-            <span>Pickup: <strong style={{ color: 'var(--text)' }}>{pickupAtAd.slice(0, 10)}</strong></span>
+            <span>Pickup: <strong style={{ color: 'var(--booking-date-text)' }}>{formatAd(new Date(pickupAtAd))}</strong></span>
             <span>·</span>
-            <span>Return: <strong style={{ color: 'var(--text)' }}>{returnAtAd.slice(0, 10)}</strong></span>
+            <span>Return: <strong style={{ color: 'var(--booking-date-text)' }}>{formatAd(new Date(returnAtAd))}</strong></span>
           </div>
         )}
       </div>

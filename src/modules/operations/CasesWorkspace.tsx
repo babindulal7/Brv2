@@ -6,7 +6,7 @@ import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import { Button } from '../../components/ui/Button'
 import { SearchInput } from '../../components/ui/SearchInput'
-import { EmptyState } from '../../components/ui/StateViews'
+import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { Badge } from '../../components/ui/Badge'
 import Icon from '../../components/ui/Icon'
@@ -174,18 +174,28 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
   const [isLogCaseOpen, setIsLogCaseOpen] = useState(false)
   const [selectedCaseForResolve, setSelectedCaseForResolve] = useState<Case | null>(null)
   const [casesList, setCasesList] = useState<Case[]>([])
+  const [casesLoading, setCasesLoading] = useState(true)
+  const [casesError, setCasesError] = useState<string | null>(null)
+  const [readVersion, setReadVersion] = useState(0)
+  const countsKnown = !casesLoading && casesError === null
 
   useEffect(() => {
     let mounted = true
+    setCasesLoading(true)
+    setCasesError(null)
     listCases().then((res) => {
       if (mounted) {
         setCasesList(res.rows)
       }
-    }).catch(() => {})
+    }).catch((error: unknown) => {
+      if (mounted) setCasesError(error instanceof Error ? error.message : 'Cases could not be loaded.')
+    }).finally(() => {
+      if (mounted) setCasesLoading(false)
+    })
     return () => {
       mounted = false
     }
-  }, [])
+  }, [readVersion])
 
   /**
    * **RS-09 — one row per case id, however many times this screen is told
@@ -375,7 +385,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
             Open Cases
           </span>
           <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--text)', marginTop: 'var(--sp-xs)' }}>
-            {counts.open}
+            {countsKnown ? counts.open : '—'}
           </div>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
             All active & unresolved
@@ -385,8 +395,8 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
             Awaiting Decision
           </span>
-          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--ready-text)', marginTop: 'var(--sp-xs)' }}>
-            {counts.awaitingDecision}
+          <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: countsKnown && counts.awaitingDecision > 0 ? 'var(--ready-text)' : 'var(--text2)', marginTop: 'var(--sp-xs)' }}>
+            {countsKnown ? counts.awaitingDecision : '—'}
           </div>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
             Ready for manager review
@@ -397,8 +407,8 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
             <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
               Exposure
             </span>
-            <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--bad)', marginTop: 'var(--sp-xs)' }}>
-              {formatMoney(counts.exposure)}
+            <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: countsKnown && counts.exposure > 0 ? 'var(--bad)' : 'var(--text2)', marginTop: 'var(--sp-xs)' }}>
+              {countsKnown ? formatMoney(counts.exposure) : '—'}
             </div>
             <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
               Assessed value of open cases
@@ -410,8 +420,8 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
             <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)', textTransform: 'uppercase' }}>
               Recovered This Month
             </span>
-            <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: 'var(--good)', marginTop: 'var(--sp-xs)' }}>
-              {formatMoney(counts.recoveredThisMonth)}
+            <div className="figure" style={{ fontSize: 26, fontWeight: 700, color: countsKnown && counts.recoveredThisMonth > 0 ? 'var(--good)' : 'var(--text2)', marginTop: 'var(--sp-xs)' }}>
+              {countsKnown ? formatMoney(counts.recoveredThisMonth) : '—'}
             </div>
             <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, display: 'block' }}>
               Charged, claimed, and settled
@@ -420,6 +430,7 @@ export function CasesWorkspace({ embedded = false }: { embedded?: boolean } = {}
         )}
       </div>
 
+      {casesError && <ErrorBanner title="Could not load cases" message={casesError} onRetry={() => setReadVersion((v) => v + 1)} />}
       {/* Toolbar & Chips */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--sp-md)' }}>
         <div

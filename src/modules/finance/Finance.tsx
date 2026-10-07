@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
-import { Card, PageHeader, Button, KpiStrip, Rail, SummaryRows } from '../../components/ui/Page'
+import { Card, PageHeader, Button, KpiStrip, Rail } from '../../components/ui/Page'
 import { SearchInput } from '../../components/ui/SearchInput'
 import { ListControlRow } from '../../components/ui/ListWorkspace'
 import { PageShell } from '../../components/ui/PageShell'
@@ -13,7 +13,7 @@ import { PageBody } from '../../components/ui/PageBody'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { Donut, Legend } from '../../components/ui/Charts'
 import type { Slice } from '../../components/ui/Charts'
-import { formatAd, BS_UNSUPPORTED_NOTE } from '../../lib/bs'
+import { formatAd, formatBs, toBs, kathmanduCivil } from '../../lib/bs'
 import { rupees, formatMoney, toRupees } from '../../lib/money'
 import { csvCell } from '../../lib/csv'
 import type { Paisa } from '../../lib/money'
@@ -39,7 +39,6 @@ import {
   INVOICE_TOKEN,
   businessDayAd,
   businessNowAd,
-  todayDate,
   SPEC_TABS,
   fetchInvoiceLines,
   type InvoiceRow,
@@ -52,6 +51,7 @@ import { RecordPaymentModal } from './modals/RecordPaymentModal'
 import { CreateInvoiceModal } from './modals/CreateInvoiceModal'
 import type { CreateInvoiceResult } from '../../actions/finance/createInvoice'
 import { VoidInvoiceModal } from './modals/VoidInvoiceModal'
+import Documents from '../documents/Documents'
 import Payments from './Payments'
 import Expenses from './Expenses'
 import DailyClosing from './DailyClosing'
@@ -61,6 +61,7 @@ import { exportInvoicePdf } from '../../lib/pdf/exportPdf'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { Pagination } from '../../components/ui/Pagination'
 import './finance.css'
+import { BsAdDate } from '../../components/ui/BsAdDate'
 
 export const ROWS_PER_PAGE = 25
 
@@ -191,7 +192,7 @@ function reportingPeriod(dayAd: string): ReportingPeriod {
   return {
     fromAd,
     toAd,
-    label: `${formatAd(new Date(`${fromAd}T00:00:00.000Z`))} – ${formatAd(new Date(`${toAd}T00:00:00.000Z`))}`,
+    label: [fromAd, toAd].map(day => { const bs = toBs(new Date(day)); return bs ? `${formatBs(bs)} ${bs.year}` : formatAd(new Date(day)) }).join(' – '),
   }
 }
 
@@ -257,7 +258,7 @@ const OUTSTANDING_INVOICES: ListFilters = outstandingInvoices()
  * ruling.
  */
 const FINANCE_TABS = SPEC_TABS['/finance'] ?? []
-type FinanceTab = 'Dashboard' | 'Invoices' | 'Payments' | 'Expenses' | 'Closing' | 'Reports'
+type FinanceTab = 'Dashboard' | 'Invoices' | 'Payments' | 'Expenses' | 'Closing' | 'Documents' | 'Reports'
 
 /**
  * §9.2's chip row — `(All)(Draft)(Sent)(Partially Paid)(Paid)(Overdue)(Void)`.
@@ -494,7 +495,6 @@ export default function Finance() {
    */
   const dayAd = businessDayAd()
   const period = useMemo(() => reportingPeriod(dayAd), [dayAd])
-  const asOf = todayDate()
   /* Keyed on the DAY although the factory reads the clock: `businessNowAd()`
      cannot express "recompute at midnight", and the Overdue set has to. The
      lint rule sees an unused dependency; it is the one that makes this correct. */
@@ -616,7 +616,7 @@ export default function Finance() {
    * column, so the rail offers Issue date | Due date as a toggle rather than
    * pretending two ranges can be sent.
    */
-  const [railSearch, setRailSearch] = useState('')
+  const [railSearch, setRailSearch] = useState(() => params.get('search') ?? '')
   const [dateCol, setDateCol] = useState<'issue_date' | 'due_date'>('issue_date')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -880,7 +880,8 @@ export default function Finance() {
     if (receivedTotal === null) return []
     const byDay = new Map<string, number>()
     for (const p of received.rows) {
-      byDay.set(p.paymentDateAd, (byDay.get(p.paymentDateAd) ?? 0) + (p.amount as number))
+      const key = new Date(kathmanduCivil(new Date(p.paymentDateAd))).toISOString().slice(0, 10)
+      byDay.set(key, (byDay.get(key) ?? 0) + (p.amount as number))
     }
     return [...byDay.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
@@ -1103,19 +1104,6 @@ export default function Finance() {
    */
   const railCards = (
     <>
-      <Card title="Summary">
-        {/* Three rows, all query results. Revenue, Gross Profit and Net Profit
-            were here as constants and are gone with the P&L chain — see the
-            header. */}
-        <SummaryRows
-          rows={[
-            { label: `Received · ${period.label}`, value: moneyOf(receivedTotal), tone: 'success' },
-            { label: 'Receivable (outstanding)', value: moneyOf(receivableTotal), tone: 'progress' },
-            { label: 'Of which past due', value: moneyOf(overdueTotal), tone: 'danger' },
-          ]}
-        />
-      </Card>
-
       {/*
         §9.1's `P&L SUMMARY` — `Revenue − Cost of rental = Gross profit −
         Operating expenses = Net profit`.
@@ -1132,15 +1120,6 @@ export default function Finance() {
         order the statement wants them.
       */}
       <Card title="P&L summary">
-        <SummaryRows
-          rows={[
-            { label: 'Revenue', value: 'Not tracked yet' },
-            { label: '− Cost of rental', value: 'Not tracked yet' },
-            { label: '= Gross profit', value: 'Not tracked yet' },
-            { label: '− Operating expenses', value: 'Not tracked yet' },
-            { label: '= Net profit', value: 'Not tracked yet' },
-          ]}
-        />
         <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.6 }}>
           Profit and loss figures will appear when rental costs and approved expenses are available.
         </p>
@@ -1165,9 +1144,9 @@ export default function Finance() {
           </p>
         ) : (
           <>
-            <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'center', flexWrap: 'wrap' }}>
-              <Donut slices={methodSlices} centreLabel="Received" centreValue={formatMoney(receivedTotal)} size={116} />
-              <Legend slices={methodSlices} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', alignItems: 'stretch' }}>
+              <div style={{ alignSelf: 'center' }}><Donut slices={methodSlices} centreLabel="Methods" size={116} /></div>
+              <Legend slices={methodSlices} showValues={methodSlices.length > 1} />
             </div>
           </>
         )}
@@ -1178,23 +1157,7 @@ export default function Finance() {
 
   const headerActions = (
     <>
-      <span
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 7, height: 34, padding: '0 11px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)' }}
-      >
-        <Icon name="calendar" size={14} style={{ color: 'var(--muted)' }} />
-        <span style={{ lineHeight: 1.2, textAlign: 'left' }}>
-          <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-            {asOf.bs ?? asOf.ad}
-          </span>
-          {asOf.bs ? (
-            <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>{asOf.ad}</span>
-          ) : (
-            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }} title={BS_UNSUPPORTED_NOTE}>
-              Nepali date unavailable
-            </span>
-          )}
-        </span>
-      </span>
+      <BsAdDate date={dayAd} />
       {/* Launcher 1 of 2 money launchers. Hidden, not disabled, like its three
           siblings — a greyed button still says an invoice can be raised here.
           `canIssueInvoice` is `rbac.canIssueInvoice` (R-05: Owner · Admin ·
@@ -1362,6 +1325,7 @@ export default function Finance() {
       {tab === 'Payments' && <Payments embedded />}
       {tab === 'Expenses' && <Expenses embedded filtersOpen={expenseFiltersOpen} onFiltersClose={() => setExpenseFiltersOpen(false)} />}
       {tab === 'Closing' && <DailyClosing embedded />}
+      {tab === 'Documents' && <Documents embedded />}
       {tab === 'Reports' && <ReportCatalog />}
 
       {/*
@@ -1405,7 +1369,7 @@ export default function Finance() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'minmax(0,1fr)',
+              gridTemplateColumns: viewport === 'desktop' ? 'minmax(0,1fr) auto' : 'minmax(0,1fr)',
               gap: 'var(--sp-md)',
               alignItems: 'start',
             }}
@@ -1448,7 +1412,7 @@ export default function Finance() {
                     construction, and it is labelled as the quantity it actually
                     is rather than as the one the box is captioned.
                   */}
-                  <Card title={`Collections by day · ${period.label}`}>
+                  <Card title="Collections by day" action={<span style={{ display: 'flex', gap: 10, alignItems: 'center' }}><BsAdDate date={period.fromAd} /><span>–</span><BsAdDate date={period.toAd} /></span>}>
                     {receivedTotal === null ? (
                       <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
                         {received.loading
@@ -1463,26 +1427,19 @@ export default function Finance() {
                       </p>
                     ) : (
                       <>
-                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 110 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, height: 190, overflowX: 'auto', overflowY: 'hidden' }} role="img" aria-label="Daily collections">
                           {dailyCollections.map((d) => (
-                            <span
-                              key={d.dayAd}
-                              title={`${formatDayAd(d.dayAd)} · ${formatMoney(d.total as Paisa)}`}
-                              className="finance-daily-bar"
-                              style={{
-                                flex: 1,
-                                minWidth: 3,
-                                height: `${Math.max((d.total / dailyPeak) * 100, 2)}%`,
-                              }}
-                            />
+                            <div key={d.dayAd} style={{ width: 72, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', flexShrink: 0 }}>
+                              <span className="finance-daily-bar" title={formatMoney(d.total as Paisa)} style={{ width: 32, alignSelf: 'center', height: Math.max(d.total / dailyPeak * 100, 2), minHeight: 2 }} />
+                              <span style={{ marginTop: 8, fontSize: 'var(--t-th)', textAlign: 'center' }}><BsAdDate date={d.dayAd} /></span>
+                            </div>
                           ))}
                         </div>
                         {/* Law 11 — the bars are never the only statement. The
                             busiest day and the total are printed. */}
                         <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.6 }}>
-                          {formatMoney(receivedTotal)} received across {dailyCollections.length} day
-                          {dailyCollections.length === 1 ? '' : 's'}. Busiest: {formatDayAd(busiestDay.dayAd)} at{' '}
-                          {formatMoney(busiestDay.total as Paisa)}.
+                          Collections recorded on {dailyCollections.length} day
+                          {dailyCollections.length === 1 ? '' : 's'}. Busiest: <BsAdDate date={busiestDay.dayAd} layout="inline" />.
                         </p>
                       </>
                     )}
@@ -1529,7 +1486,7 @@ export default function Finance() {
                               <tr key={i.id} className="finance-row">
                                 <td className="identifier finance-mono" style={{ ...td, color: 'var(--link)', fontWeight: 600 }}>{i.invoiceNo}</td>
                                 <td style={td}>{i.clientName}</td>
-                                <td className="finance-mono" style={{ ...td, color: 'var(--text2)' }}>{formatDayAd(i.dueDateAd)}</td>
+                                <td className="finance-mono" style={{ ...td, color: 'var(--text2)' }}><BsAdDate date={i.dueDateAd} /></td>
                                 <td className="figure finance-mono" style={{ ...td, textAlign: 'right', fontWeight: 600 }}>
                                   {formatMoney(i.outstandingAmount)}
                                 </td>
@@ -1670,7 +1627,7 @@ export default function Finance() {
                                 >
                                   {formatMoney(i.outstandingAmount)}
                                 </td>
-                                <td className="finance-mono" style={{ ...td, color: 'var(--text2)' }}>{formatDayAd(i.dueDateAd)}</td>
+                                <td className="finance-mono" style={{ ...td, color: 'var(--text2)' }}><BsAdDate date={i.dueDateAd} /></td>
                                 <td style={td}>
                                   <StatusBadge row={i} />
                                 </td>
@@ -1970,7 +1927,7 @@ function RowActions({
           + Pay
         </button>
       )}
-      {canVoid && !row.isVoid && (
+      {canVoid && !row.isVoid && row.status !== 'Paid' && row.paidAmount === 0 && (
         <button type="button" onClick={onVoid} className="finance-action-btn is-danger" style={{ ...base, color: 'var(--danger)', fontWeight: 500 }}>
           Void
         </button>

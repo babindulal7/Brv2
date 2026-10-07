@@ -102,7 +102,7 @@ describe('UI/UX Ergonomics Upgrades (Gemma 4 Phased Plan)', () => {
       expect(bsDate).not.toBeNull()
       if (bsDate) {
         const formatted = formatBs(bsDate, { suffix: true })
-        expect(formatted).toBe('15 Shrawan 2083 BS')
+        expect(formatted).toBe('15 Shrawan')
       }
     })
 

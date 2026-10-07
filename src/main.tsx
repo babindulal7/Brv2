@@ -17,7 +17,7 @@ import { AuthProvider } from './lib/auth'
  *
  *  · **Outfit** 600/700 — headings and figures. §4.3.2 forbids it below 16px
  *    and in body copy: geometric letterforms tire the eye over a paragraph.
- *  · **Source Sans 3** 400/600 — body, tables, controls. Note the *3*: Pro is
+ *  · **Source Sans 3** 400/500/600/700/800 — body, tables, controls. Note the *3*: Pro is
  *    the frozen legacy release (§4.3.3).
  *  · **JetBrains Mono** — identifiers only. §4.3.4: a packer matching
  *    `SN-FX3-102` off a label needs `1`/`l`/`I` and `0`/`O` separated, and
@@ -30,7 +30,10 @@ import { AuthProvider } from './lib/auth'
 import '@fontsource/outfit/600.css'
 import '@fontsource/outfit/700.css'
 import '@fontsource/source-sans-3/400.css'
+// 7 Oct font clarity ruling: load the actual medium/bold outlines used by UI.
+import '@fontsource/source-sans-3/500.css'
 import '@fontsource/source-sans-3/600.css'
+import '@fontsource/source-sans-3/700.css'
 // 800 is not decorative: DESIGN_DIRECTION_SPEC_v4.1 §4 sets every status block
 // at weight 800, and without the real face the browser synthesises it.
 import '@fontsource/source-sans-3/800.css'
@@ -95,9 +98,8 @@ if (REFERENCE_CASE_ERROR) {
         <h1 style={{ fontSize: 22, margin: '0 0 10px' }}>The money engine is wrong. The app will not start.</h1>
         <p style={{ fontSize: 15, lineHeight: 1.6, margin: '0 0 14px' }}>{REFERENCE_CASE_ERROR}</p>
         <p style={{ fontSize: 15, lineHeight: 1.6, margin: 0, opacity: 0.75 }}>
-          Foundation §2.8 makes the reference case binding: any screen showing different figures for this booking is
-          a defect. Running with a broken engine would put wrong money in front of a client, so it stops here instead.
-        </p>
+          {/* Foundation §2.8 makes the reference case binding: any screen showing different figures for this booking is
+          a defect. Running with a broken engine would put wrong money in front of a client, so it stops here instead. */}The pricing check failed. Please contact support before continuing. </p>
       </main>
     </StrictMode>,
   )

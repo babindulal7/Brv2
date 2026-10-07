@@ -6,7 +6,6 @@ import type { BottomBarSlot } from '../../data/nav'
 import { useAuth } from '../../lib/auth'
 import { toggleScanner } from './ScannerFab'
 import MoreSheet from './MoreSheet'
-import { quickCreateActions } from './QuickCreateMenu'
 
 /** The bar's own height, above the home-indicator inset — see {@link BAR_BOX}. */
 export const BOTTOM_BAR_HEIGHT = 58
@@ -78,16 +77,8 @@ export default function BottomBar({ active }: { active: string }) {
      arrow would re-run the trap (and re-lock body scroll) on every render. */
   const closeMore = useCallback(() => setMoreOpen(false), [])
 
-  const canCreateRental = quickCreateActions(user?.role).some(action => action.id === 'rental')
-  const slots: BottomBarSlot[] = bottomBarSlots(user?.role).map(slot => {
-    if (slot.kind === 'scan' && canCreateRental) return { kind: 'nav', section: { label: 'New', to: '/rentals/new', icon: 'plus' } }
-    if (slot.kind === 'nav' && slot.section.to === '/dashboard') return { kind: 'nav', section: { ...slot.section, label: 'Today' } }
-    return slot
-  })
-  /* The same most-specific-wins rule the Sidebar uses, from the same function —
-     otherwise `/rentals/new` lights the Rentals slot on a phone and nothing on
-     a desktop, which is two different answers to one question. */
-  const activeTo = canCreateRental && active.split('?')[0] === '/rentals/new' ? '/rentals/new' : activeNavTo(permittedNav(user?.role), active)
+  const slots: BottomBarSlot[] = bottomBarSlots(user?.role)
+  const activeTo = activeNavTo(permittedNav(user?.role), active)
 
   return (
     <>

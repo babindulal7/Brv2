@@ -49,7 +49,7 @@ export const ReconciliationAssertion: React.FC<ReconciliationAssertionProps> = (
           borderRadius: 'var(--r-badge)',
           userSelect: 'none',
         }}
-        title="All financial lines reconcile to the exact paisa (Foundation §2)"
+        title={/* All financial lines reconcile to the exact paisa (Foundation §2) */ "Financial totals match."}
       >
         <IconCheck size={12} />
         <span>Reconciled</span>

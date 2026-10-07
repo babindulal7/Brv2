@@ -75,7 +75,7 @@ export function ClientHoverCard({
             {preview.history.map((h) => (
               <li key={h.rentalId} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
                 {onOpenRental ? <button type="button" onClick={() => onOpenRental(h.rentalNo)} style={{ minHeight: 'var(--tap)', border: 0, background: 'none', color: 'var(--link)', cursor: 'pointer' }}>#{h.rentalNo}</button> : <strong>#{h.rentalNo}</strong>} · {h.stage} · {h.itemCount} items
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{h.pickupAt} → {h.returnAt}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}><span style={{ color: 'var(--booking-date-text)' }}>{h.pickupAt} → {h.returnAt}</span></div>
               </li>
             ))}
             {preview.history.length === 0 ? <li style={{ listStyle: 'none', fontSize: 13, color: 'var(--muted)' }}>No past rentals.</li> : null}
@@ -138,7 +138,7 @@ function CurrentTab({ preview, onOpenRental }: { preview: ClientPreview; onOpenR
       {preview.current.map((r) => (
         <li key={r.rentalId} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
           {onOpenRental ? <button type="button" onClick={() => onOpenRental(r.rentalNo)} style={{ minHeight: 'var(--tap)', border: 0, background: 'none', color: 'var(--link)', cursor: 'pointer' }}>#{r.rentalNo}</button> : <strong>#{r.rentalNo}</strong>} · {r.stage} · {r.itemCount} items
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>{r.pickupAt} → {r.returnAt}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}><span style={{ color: 'var(--booking-date-text)' }}>{r.pickupAt} → {r.returnAt}</span></div>
           {r.packing ? <div style={{ fontSize: 12 }}>Packing {r.packing.packed} / {r.packing.total}</div> : null}
           {r.paymentClear !== undefined ? <div style={{ fontSize: 12 }}>{r.paymentClear ? 'Payment cleared' : 'Payment pending'}</div> : null}
         </li>

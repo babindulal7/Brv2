@@ -75,6 +75,7 @@ vi.mock('../../modules/operations/OperationsWorkspaceContext', () => ({
 }))
 
 vi.mock('../../lib/supabase', () => ({
+  IS_MOCK: false,
   newClientUuid: () => '11111111-1111-4111-8111-111111111111',
   supabase: {
     from: () => ({
@@ -137,6 +138,7 @@ const MOCK_BOOKING_ROW = {
 vi.mock('../../lib/queries/bookings', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../lib/queries/bookings')>()
   return {
+    IS_MOCK: false,
     ...real,
     listBookings: async () => ({
       rows: [MOCK_BOOKING_ROW],
@@ -271,11 +273,11 @@ describe('Tier 3: Cross-Feature Combinations & Invariants', () => {
   })
 
   describe('Cross-Feature 2: Filter Drawer & Stage Chip Synchronization', () => {
-    it('synchronizes 5-stage filter chips with drawer state without desynchronization', async () => {
+    it('synchronizes operational view chips with drawer state without desynchronization', async () => {
       await mountComponent(<RentalsList />, ['/rentals'])
 
-      // 5-stage operational views are present in the toolbar (All, Upcoming, Out, Returns, Closed)
-      const allChip = [...container.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'All')
+      // Operational views include All, Draft, Quote, Upcoming, Out, Returns and Closed
+      const allChip = [...container.querySelectorAll('button')].find((b) => b.getAttribute('aria-label') === 'All')
       const upcomingChip = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('Upcoming'))
       const outChip = [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('Out'))
 

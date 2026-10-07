@@ -70,7 +70,7 @@ export function BookingNotLoaded({
           This workspace has no per-booking query behind it yet. Its items, sessions and evidence come from a
           single seeded booking, so showing them here would put another booking&apos;s gear under this number —
           which is worse than showing nothing. Spec 03 requires these routes to work for any booking; the
-          missing piece is a floor-lines read on <span className="identifier">lib/queries/bookings.ts</span>,
+          missing piece is a floor-lines read on <span className="identifier">{/* lib/queries/bookings.ts */}shared tools </span>,
           not this screen.
         </p>
         <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>

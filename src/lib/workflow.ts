@@ -437,7 +437,7 @@ export function planTransition(req: TransitionRequest): TransitionPlan {
     const next = STATUS_ORDER[BOOKING_STATUS[from].order + 1]
     blockers.push({
       rule: 'forward-only',
-      label: `§1.2 is forward-only and stages may not be skipped: ${from} → ${to}`,
+      label: `Stages follow the required order: ${from} → ${to}`,
       blocking: next === undefined ? 'Closed is final — nothing follows it' : `the next stage is ${next}`,
     })
   }
@@ -453,7 +453,7 @@ export function planTransition(req: TransitionRequest): TransitionPlan {
     if (req.gates === undefined) {
       blockers.push({
         rule: 'close-gate',
-        label: '§1.7 — all four close gates must pass',
+        label: /* §1.7 — all four close gates must pass */ "all four close gates must pass",
         blocking: 'not evaluated: no CloseGateInput was supplied',
       })
     } else {

@@ -1,4 +1,5 @@
-import { supabase } from '../supabase'
+import { IS_MOCK, supabase } from '../supabase'
+import { toBs, formatBs } from '../bs'
 import { rupees } from '../money'
 import type { ListFilters } from './listQuery'
 import type { ListQueryResult } from './useList'
@@ -97,16 +98,18 @@ export async function listCrewAssignments(_filters?: ListFilters): Promise<ListQ
       .select('id, crew_booking_no, production_id, booking_id, crew_member_id, position, day_rate, days, start_date, end_date, location, state, payout_state, cancelled_at, created_at')
       .order('start_date', { ascending: false })
 
-    if (bookingErr || !bookingRows || bookingRows.length === 0) {
+    if (bookingErr) throw new Error(bookingErr.message)
+    if (!bookingRows || bookingRows.length === 0) {
       return {
-        rows: [...CREW_DATA],
-        total: CREW_DATA.length,
+        rows: IS_MOCK ? [...CREW_DATA] : [],
+        total: IS_MOCK ? CREW_DATA.length : 0,
       }
     }
 
-    const { data: memberRows } = await supabase
+    const { data: memberRows, error: memberError } = await supabase
       .from('crew_members_v')
       .select('id, full_name, position, phone, engagement_type, day_rate, deactivated_at')
+    if (memberError) throw new Error(memberError.message)
 
     const memberMap = new Map<string, CrewMemberDbRow>()
     if (memberRows) {
@@ -135,14 +138,14 @@ export async function listCrewAssignments(_filters?: ListFilters): Promise<ListQ
         crewId: b.crew_member_id || 'CR-UNKNOWN',
         name: member?.full_name || 'Unassigned Crew',
         role: (b.position || member?.position || 'Grip') as CrewRole,
-        phone: member?.phone || '+977 980-0000000',
-        production: 'Production Job',
-        linkedBooking: b.booking_id ? `B-${b.booking_id.slice(0, 4)}` : 'B-715',
-        location: b.location || 'Kathmandu',
-        startDateBs: '2083/04/10',
-        endDateBs: '2083/04/14',
-        startDateAd: b.start_date || '25 Jul 2026',
-        endDateAd: b.end_date || '29 Jul 2026',
+        phone: member?.phone || '',
+        production: '',
+        linkedBooking: b.booking_id ?? '',
+        location: b.location || '',
+        startDateBs: toBs(new Date(b.start_date)) ? formatBs(toBs(new Date(b.start_date))!) : 'BS unavailable',
+        endDateBs: toBs(new Date(b.end_date)) ? formatBs(toBs(new Date(b.end_date))!) : 'BS unavailable',
+        startDateAd: b.start_date,
+        endDateAd: b.end_date,
         days,
         dayRatePaisa: rupees(dayRate),
         totalCostPaisa: rupees(dayRate * days),
@@ -157,11 +160,8 @@ export async function listCrewAssignments(_filters?: ListFilters): Promise<ListQ
       rows,
       total: rows.length,
     }
-  } catch {
-    return {
-      rows: [...CREW_DATA],
-      total: CREW_DATA.length,
-    }
+  } catch (error) {
+    throw error instanceof Error ? error : new Error('Crew assignments could not be loaded.')
   }
 }
 
@@ -171,10 +171,11 @@ export async function listCrewMembers(_filters?: ListFilters): Promise<ListQuery
       .from('crew_members_v')
       .select('id, full_name, position, phone, day_rate, deactivated_at')
 
-    if (error || !memberRows || memberRows.length === 0) {
+    if (error) throw new Error(error.message)
+    if (!memberRows || memberRows.length === 0) {
       return {
-        rows: [...CREW_ROSTER],
-        total: CREW_ROSTER.length,
+        rows: IS_MOCK ? [...CREW_ROSTER] : [],
+        total: IS_MOCK ? CREW_ROSTER.length : 0,
       }
     }
 
@@ -182,19 +183,16 @@ export async function listCrewMembers(_filters?: ListFilters): Promise<ListQuery
       id: m.id,
       name: m.full_name,
       role: (m.position || 'Grip') as CrewRole,
-      phone: m.phone || '+977 980-0000000',
+      phone: m.phone || '',
       state: m.deactivated_at ? 'Off Duty' : 'Available',
-      dayRatePaisa: rupees(m.day_rate ?? 12000),
+      dayRatePaisa: rupees(m.day_rate ?? 0),
     }))
 
     return {
       rows,
       total: rows.length,
     }
-  } catch {
-    return {
-      rows: [...CREW_ROSTER],
-      total: CREW_ROSTER.length,
-    }
+  } catch (error) {
+    throw error instanceof Error ? error : new Error('Crew roster could not be loaded.')
   }
 }

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+vi.mock('../../supabase', () => ({ IS_MOCK: true }))
 import {
   getCouponStatus,
   listCoupons,
@@ -97,6 +98,10 @@ describe('coupons query and validation engine', () => {
   })
 
   describe('createCoupon and toggleCoupon', () => {
+    it('allows a valid 40% voucher without the retired 25% ceiling', () => {
+      createCoupon({ code: 'FORTY', type: 'pct', value: 40, from: '2026-01-01', to: '2026-12-31', minBooking: 0, capNpr: 0, limit: 100, perClient: 1, types: ['All'], cats: ['All'], stackable: true, by: 'Owner' })
+      expect(validateCoupon('FORTY', { today: '2026-10-07', preTotal: 10000 }).amount).toBe(4000)
+    })
     it('creates a new coupon and updates localStorage', () => {
       const created = createCoupon({
         code: 'NEWCODE',

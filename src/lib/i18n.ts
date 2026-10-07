@@ -279,7 +279,7 @@ export function nepaliFontStatus(): FontAvailability {
   return {
     available: true,
     missing: [],
-    reason: 'Asar 400 and Hind 400/600 load on the NE toggle — never eagerly, per §4.3.7.',
+    reason: /* Asar 400 and Hind 400/600 load on the NE toggle — never eagerly, per §4.3.7. */ "Asar 400 and Hind 400/600 load on the NE toggle — never eagerly, per",
   }
 }
 

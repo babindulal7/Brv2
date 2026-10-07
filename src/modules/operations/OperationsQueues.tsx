@@ -29,7 +29,6 @@ import {
   overdueAlert,
   quoteLapsedAlert,
   periodRange,
-  CASES,
   isOpenStatus,
   type JobRow,
   type Queue,
@@ -46,6 +45,8 @@ import './operations.css'
 import { useOperationsWorkspace } from './OperationsWorkspaceContext'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
+import { listCases, type Case } from '../../lib/queries/cases'
+import { BsAdDate } from '../../components/ui/BsAdDate'
 
 
 const th = {
@@ -166,7 +167,7 @@ const td = { height: 'var(--row-min-h)', padding: '10px', fontSize: 'var(--t-met
  * booking link.
  */
 /* Open cases, off the same seed the Cases page lists — chip equals page. */
-const openCases = CASES.filter((c) => isOpenStatus(c.status)).length
+const fetchCases = () => listCases()
 
 /**
  * The four verb chips. `QUEUES` still declares Cases; it is filtered out here,
@@ -213,7 +214,7 @@ const SCOPE_LABEL: Record<DayScope, string> = {
   custom: 'Custom',
 }
 /** The compact Operations picker intentionally keeps the four operational presets. */
-const DISPLAY_SCOPE_ORDER: DayScope[] = ['today', 'tomorrow', 'next7', 'custom']
+const DISPLAY_SCOPE_ORDER: DayScope[] = ['today', 'tomorrow', 'week', 'custom']
 
 function scopeFromParam(param: string | null): DayScope {
   return param === 'tomorrow' || param === 'week' || param === 'next7' || param === 'custom' ? param : 'today'
@@ -265,9 +266,14 @@ function scopeRange(scope: DayScope, from: string, to: string): { fromAd: string
  * sort column is what keeps "Today" meaning the same thing as the instant in
  * the row.
  */
-function withScope(filters: ListFilters, range: { fromAd?: string; toAd?: string } | null): ListFilters {
+function withScope(filters: ListFilters, range: { fromAd?: string; toAd?: string } | null, carryOver: boolean): ListFilters {
   if (!range) return filters
   const column = filters.sort?.column ?? 'pickup_at'
+  // 7 Oct audit: unfinished jobs remain due after their scheduled day passes.
+  // Today/week scopes include carry-over; future and custom dates stay bounded.
+  if (carryOver) {
+    return { ...filters, dateRange: { column, ...(range.toAd ? { toAd: range.toAd } : {}) } }
+  }
   return { ...filters, dateRange: { column, ...range } }
 }
 
@@ -283,8 +289,8 @@ const fetchBookings = (filters: ListFilters) => listBookings({ ...filters, withC
 const fetchQueueCount = (filters: ListFilters) => listBookings({ ...filters, headOnly: true })
 
 /** One chip's count, scoped to the same day range the list is showing (pure HEAD count, no row joins). */
-function useQueueCount(job: JobName, range: { fromAd?: string; toAd?: string } | null): ListResult<BookingListRow> {
-  return useList<BookingListRow>(fetchQueueCount, withScope(queueCountFilters(job), range), { isFilteredOverride: false })
+function useQueueCount(job: JobName, range: { fromAd?: string; toAd?: string } | null, carryOver: boolean): ListResult<BookingListRow> {
+  return useList<BookingListRow>(fetchQueueCount, withScope(queueCountFilters(job), range, carryOver), { isFilteredOverride: false })
 }
 
 /* ── Law L3: The four-way exception facet group ─────────────────────────── */
@@ -366,7 +372,7 @@ interface QueueChipProps {
 }
 
 function QueueChip({ queue, active, total, loading, error, onToggle }: QueueChipProps) {
-  const tok = queue.job === 'Reset' ? STATUS.progress : STATUS[statusToken(JOBS_META[queue.job].runsAt)]
+  const tok = total === 0 ? STATUS.neutral : queue.job === 'Reset' ? STATUS.progress : STATUS[statusToken(JOBS_META[queue.job].runsAt)]
 
   /*
    * The count, or an explicit non-value. `—` is not a zero and must not be
@@ -452,7 +458,7 @@ export default function OperationsQueues() {
   const [showMoreFilters, setShowMoreFilters] = useState(false)
   const [selectedBookingNos, setSelectedBookingNos] = useState<Set<string>>(() => new Set())
   const [page, setPage] = useState(0)
-  const [pageSize, setPageSize] = useState(20)
+  const [pageSize, setPageSize] = useState(25)
   const queueSearchRef = useRef<HTMLInputElement | null>(null)
   const dateMenuRef = useRef<HTMLDivElement | null>(null)
   /* Law 13/14 — width decides, at v4.1 §7.7's 768 / 1280. */
@@ -475,7 +481,7 @@ export default function OperationsQueues() {
      longer a chip, so it selects nothing rather than swapping the list out. */
   const activeJob: JobName | null = selected === 'Cases' ? null : selected
   const range = scopeRange(scope, customFrom, customTo)
-  const isFiltered = activeJob !== null || group !== null || range !== null || exception !== null
+  const isFiltered = activeJob !== null || group !== null || params.has('day') || exception !== null
 
   const patch = (next: Record<string, string | null>) => {
     const merged = new URLSearchParams(params)
@@ -539,8 +545,8 @@ export default function OperationsQueues() {
     if (exception) {
       return exceptionFilters(exception, nowAd, todayNepal)
     }
-    return withScope(jobListFilters(activeJob, group), range)
-  }, [exception, nowAd, todayNepal, activeJob, group, range])
+    return withScope(jobListFilters(activeJob, group), range, scope === 'today' || scope === 'week')
+  }, [exception, nowAd, todayNepal, activeJob, group, range, scope])
 
   /*
    * The one list. Every predicate server-side: a queue chip → that queue's
@@ -558,10 +564,12 @@ export default function OperationsQueues() {
    * for a single row and reads `total`, so the cost is four counts, not four
    * lists.
    */
-  const packCount = useQueueCount('Pack', range)
-  const handoverCount = useQueueCount('Handover', range)
-  const returnCount = useQueueCount('Return', range)
-  const resetCount = useQueueCount('Reset', range)
+  const packCount = useQueueCount('Pack', range, scope === 'today' || scope === 'week')
+  const handoverCount = useQueueCount('Handover', range, scope === 'today' || scope === 'week')
+  const returnCount = useQueueCount('Return', range, scope === 'today' || scope === 'week')
+  const resetCount = useQueueCount('Reset', range, scope === 'today' || scope === 'week')
+  const casesList = useList<Case>(fetchCases, {}, { isFilteredOverride: false })
+  const openCases = casesList.error || casesList.loading ? null : casesList.rows.filter((c) => isOpenStatus(c.status)).length
   const counts: Record<JobName, ListResult<BookingListRow>> = {
     Pack: packCount,
     Handover: handoverCount,
@@ -692,7 +700,7 @@ export default function OperationsQueues() {
               expanded={showMoreFilters}
             />
           }
-          title="Operations"
+          title="Operation"
           actions={
             <PageActions
               secondary={[
@@ -733,15 +741,16 @@ export default function OperationsQueues() {
       <div className="operations-v2__queues" role="group" aria-label="Operational queues">
         {CHIPS.map((q) => <QueueChip key={q.job} queue={q} active={selected === q.job} total={counts[q.job].total} loading={counts[q.job].loading} error={counts[q.job].error} onToggle={() => setActive(selected === q.job ? null : q.job)} />)}
         <Link to="/inventory/cases" onClick={(event) => { event.preventDefault(); patch({ queue: selected === 'Cases' ? null : 'cases', quick: null }) }} aria-pressed={selected === 'Cases'} className="operations-v2__queue" style={{ ...chipStyle(selected === 'Cases'), textDecoration: 'none' }}>
-          <Icon name="eye" size={15} style={{ color: STATUS.danger.fg }} /> Cases
-          <span className="figure" style={{ minWidth: 22, padding: '1px 6px', borderRadius: 'var(--r-badge)', background: STATUS.danger.bg, color: STATUS.danger.fg, textAlign: 'center' }}>{openCases}</span>
+          <Icon name="eye" size={15} style={{ color: openCases ? STATUS.danger.fg : STATUS.neutral.fg }} /> Cases
+          <span className="figure" title={casesList.error ?? undefined} style={{ minWidth: 22, padding: '1px 6px', borderRadius: 'var(--r-badge)', background: openCases ? STATUS.danger.bg : STATUS.neutral.bg, color: openCases ? STATUS.danger.fg : STATUS.neutral.fg, textAlign: 'center' }}>{openCases ?? '—'}</span>
         </Link>
       </div>
 
-      <div className="operations-v2__filters" aria-label="Operations filters">
+      {selected !== 'Cases' && <><div className="operations-v2__filters" aria-label="Operations filters">
         <div ref={dateMenuRef} className="operations-v2__date-wrap">
           <Button variant="outline" icon="calendar" iconRight={<Icon name={showDateMenu ? 'chevron_up' : 'chevron_down'} size={14} />} onClick={() => setShowDateMenu((open) => !open)} aria-expanded={showDateMenu} aria-controls="operations-date-menu">
-            {scope === 'custom' ? 'Custom range' : `${SCOPE_LABEL[scope]} · ${todayNepal}`}
+            {scope === 'custom' ? (range ? 'Custom range' : 'All days') : SCOPE_LABEL[scope]}
+            <BsAdDate date={todayNepal} />
           </Button>
           {showDateMenu && (
             <div id="operations-date-menu" className="operations-v2__popover operations-v2__date-popover">
@@ -780,12 +789,13 @@ export default function OperationsQueues() {
             page={currentPage + 1}
             total={visibleJobs.length}
             pageSize={pageSize}
-            pageSizeOptions={[20, 50, 100]}
+            pageSizeOptions={[25, 50, 100]}
             onPageChange={(nextPage) => setPage(nextPage - 1)}
             onPageSizeChange={setPageSize}
           />
         }
       />
+      </>}
 
       {selected === 'Cases' ? <CasesWorkspace embedded /> : (
         <Card style={{ overflow: 'hidden' }} bodyStyle={{ padding: 0 }}>
@@ -918,7 +928,7 @@ export default function OperationsQueues() {
               page={currentPage + 1}
               total={visibleJobs.length}
               pageSize={pageSize}
-              pageSizeOptions={[20, 50, 100]}
+              pageSizeOptions={[25, 50, 100]}
               onPageChange={(nextPage) => setPage(nextPage - 1)}
               onPageSizeChange={setPageSize}
             />
@@ -1019,7 +1029,7 @@ export default function OperationsQueues() {
         </div>
       </FilterDrawer>
       <div style={{ gridColumn: '1 / -1' }}>
-        <FooterNote extra={['Queues are stages — no page defines its own status names']} />
+        <FooterNote extra={['Queues show current floor work.']} />
       </div>
     </div>
     </PageShell>

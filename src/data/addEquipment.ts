@@ -234,7 +234,7 @@ export const PREVIEW_UNAVAILABLE_REASON =
   'Preview needs a saved record to open. Nothing is stored yet, so there is nothing to preview.'
 
 export const LABEL_PRINT_UNAVAILABLE_REASON =
-  'Label printing is not built. Asset tags are generated in Section 2 and shown per unit; the print path is Roadmap (§14).'
+  /* Label printing is not built. Asset tags are generated in Section 2 and shown per unit; the print path is Roadmap (§14). */ "Label printing is not available yet. Asset tags are shown for each unit."
 
 export const PACKING_PREVIEW_UNAVAILABLE_REASON =
   'A packing list preview needs a saved record with units. Nothing is stored yet.'
@@ -245,14 +245,14 @@ export const PACKING_PREVIEW_UNAVAILABLE_REASON =
  * question is about, so the control states the gap instead.
  */
 export const DEPRECIATION_UNAVAILABLE_REASON =
-  'TODO(decision) — depreciation groups are undefined. Add Equipment §16 asks which asset lives the accountant uses; none may be invented here.'
+  /* TODO(decision) — depreciation groups are undefined. Add Equipment §16 asks which asset lives the accountant uses; none may be invented here. */ "Depreciation groups have not been defined. Ask your accountant for the asset lives."
 
 /**
  * §6.1 — *"The container has a capacity; exceeding it warns."* No container in
  * this project's item master carries one, so the warning cannot fire yet.
  */
 export const CONTAINER_CAPACITY_REASON =
-  'TODO(decision) — no container in the item master carries a capacity, so §6.1’s over-capacity warning cannot be computed. Storage bins do carry one and are checked in Section 4.'
+  /* TODO(decision) — no container in the item master carries a capacity, so §6.1’s over-capacity warning cannot be computed. Storage bins do carry one and are checked in Section 4. */ "Container capacity is not recorded. Storage-bin capacity is checked separately."
 
 /* ── seed invariants — reported, never thrown ──────────────────────────── */
 

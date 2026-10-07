@@ -53,6 +53,7 @@ const db = vi.hoisted(() => {
     count: number | null
     error: { message: string; code?: string } | null
     missingProjectType: boolean
+    deniedProjectType: boolean
     queryCallsStart: number
   }
 
@@ -67,6 +68,7 @@ const db = vi.hoisted(() => {
     count: null,
     error: null,
     missingProjectType: false,
+    deniedProjectType: false,
     queryCallsStart: 0,
   }
 
@@ -81,6 +83,7 @@ const db = vi.hoisted(() => {
     state.count = null
     state.error = null
     state.missingProjectType = false
+    state.deniedProjectType = false
     state.queryCallsStart = 0
   }
 
@@ -140,9 +143,11 @@ const db = vi.hoisted(() => {
         ([method, value]) => method === 'or' && typeof value === 'string' && value.includes('project_type.'),
       )
       const missingColumn = state.missingProjectType && (state.columns.includes('project_type') || searchesProjectType)
+      const deniedColumn = state.deniedProjectType && (state.columns.includes('project_type') || searchesProjectType)
       onFulfilled({
-        data: missingColumn ? null : state.rows,
-        error: missingColumn ? { code: '42703', message: 'column bookings.project_type does not exist' } : state.error,
+        data: missingColumn || deniedColumn ? null : state.rows,
+        error: missingColumn ? { code: '42703', message: 'column bookings.project_type does not exist' }
+          : deniedColumn ? { code: '42501', message: 'permission denied for table bookings' } : state.error,
         count: state.count,
       })
     },
@@ -408,6 +413,36 @@ describe('toRow — raw DB row → BookingListRow', () => {
     db.state.error = { code: '42501', message: 'permission denied for bookings' }
     await expect(listBookings()).rejects.toThrow(/permission denied for bookings/)
     expect(db.state.selects).toHaveLength(1)
+  })
+
+  it('loads operational rows when 0144 columns exist without read grants', async () => {
+    db.state.deniedProjectType = true
+    db.state.rows = [{ ...RAW, project_type: undefined, project_type_other: undefined }]
+    const result = await listBookings({ ...todaysOutgoing('2026-10-07'), withCount: true })
+    expect(result.rows[0]).toMatchObject({ bookingNo: RAW.booking_no, projectType: null, itemCount: 7 })
+    expect(db.state.selects).toHaveLength(2)
+    expect(db.state.selects[1]).not.toContain('project_type')
+    expect(db.state.calls.filter(([method]) => method === 'gte')).toHaveLength(2)
+  })
+
+  it('keeps denied project-type filters and genuine table denial as errors', async () => {
+    db.state.deniedProjectType = true
+    await expect(listBookings({ chips: { project_type: ['Documentary'] } })).rejects.toThrow(/permission denied/)
+    expect(db.state.selects).toHaveLength(1)
+    db.reset()
+    db.state.error = { code: '42501', message: 'permission denied for table bookings' }
+    await expect(listBookings()).rejects.toThrow(/permission denied/)
+    expect(db.state.selects).toHaveLength(2)
+  })
+
+  it('counts searched bookings through the granted projection', async () => {
+    db.state.deniedProjectType = true
+    db.state.count = 3
+    expect(await listBookings({ headOnly: true, search: 'FX3' })).toEqual({ rows: [], total: 3 })
+    expect(db.state.calls.filter(([method]) => method === 'or')).toEqual([
+      ['or', 'booking_no.ilike.*FX3*,project.ilike.*FX3*,project_type.ilike.*FX3*,project_type_other.ilike.*FX3*'],
+      ['or', 'booking_no.ilike.*FX3*,project.ilike.*FX3*'],
+    ])
   })
 
   it('retries count-only searches against pre-0144 searchable columns', async () => {

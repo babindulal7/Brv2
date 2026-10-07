@@ -377,11 +377,11 @@ describe('isPastDue — a claim about the instant on screen, and nothing more', 
 describe('formatDueAt — Law 7, rendered in Kathmandu', () => {
   it('renders the NPT wall clock, not UTC', () => {
     // 03:15Z is 09:00 in Kathmandu (+05:45).
-    expect(formatDueAt('2026-08-14T03:15:00.000Z')).toBe('14 Aug · 09:00')
+    expect(formatDueAt('2026-08-14T03:15:00.000Z')).toBe('14/8/2026 · 09:00')
   })
 
   it('renders the Kathmandu DAY, which is tomorrow for the last 5h45m of every UTC day', () => {
-    expect(formatDueAt('2026-08-14T18:30:00.000Z')).toBe('15 Aug · 00:15')
+    expect(formatDueAt('2026-08-14T18:30:00.000Z')).toBe('15/8/2026 · 00:15')
   })
 
   it('renders an unparseable instant as a non-value rather than "Invalid Date"', () => {

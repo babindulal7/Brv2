@@ -90,9 +90,13 @@ type BookingStageDb = Database['public']['Enums']['booking_stage']
  * excluded by presence below rather than here.
  */
 const STAGE_BAR_KIND = {
+  // 7 Oct audit: history and provisional quotes stay visible, without reserving stock.
+  Quote: 'Quote',
   Booked: 'Reserved',
   Packed: 'Reserved',
   'On Rent': 'On Rent',
+  Returned: 'Completed',
+  Closed: 'Completed',
 } as const satisfies Partial<Record<BookingStageDb, BarKind>>
 
 /** The stages above, as the `in (...)` list. Derived, so the two cannot drift. */
@@ -113,7 +117,7 @@ const CALENDAR_STAGES = Object.keys(STAGE_BAR_KIND) as BookingStageDb[]
  * Derived from the map above rather than typed out, so a stage gaining a kind
  * puts its chip on the screen in the same edit.
  */
-export const CALENDAR_BAR_KINDS: readonly BarKind[] = [...new Set(Object.values(STAGE_BAR_KIND))]
+export const CALENDAR_BAR_KINDS: readonly BarKind[] = [...new Set<BarKind>(Object.values(STAGE_BAR_KIND)), 'Draft']
 
 /**
  * The projection. **No money column appears here and none may be added** — see
@@ -232,7 +236,7 @@ function toBar(r: RawCalendarRow, startMinutes: number): Bar {
   const kind = STAGE_BAR_KIND[r.stage as keyof typeof STAGE_BAR_KIND]
   // A booking always has a client (NOT NULL + FK), so a missing join is a query
   // bug rather than a data state — say so instead of printing a friendly dash.
-  const clientName = r.clients?.name ?? '(client not joined)'
+  const clientName = r.clients?.name ?? 'Client not recorded'
   const from = dayOf(r.pickup_at, startMinutes)
   const to = dayOf(r.return_at, startMinutes)
 
@@ -242,7 +246,7 @@ function toBar(r: RawCalendarRow, startMinutes: number): Bar {
     id: `bk-${r.id}`,
     kind,
     label: r.booking_no,
-    sub: r.project ? `${clientName} · ${r.project}` : clientName,
+    sub: `${r.project ? `${clientName} · ${r.project}` : clientName}${r.stage === 'Quote' ? ' · not reserved' : ''}`,
     client: clientName,
     // The bar's own booking, carried explicitly. The screen used to decide
     // whether a bar could be opened by testing whether its LABEL looked like a
@@ -346,9 +350,29 @@ export async function fetchCalendarBars(filters: ListFilters): Promise<ListQuery
   if (!fromAd || !toAd) {
     throw new Error('fetchCalendarBars needs a window — build it with calendarWindow(fromAd, toAd).')
   }
-  return listCalendarBookings(fromAd, toAd)
+  const bookings = await listCalendarBookings(fromAd, toAd)
+  const drafts = await listCalendarDrafts(fromAd, toAd)
+  return { rows: [...bookings.rows, ...drafts.rows].sort((a, b) => a.from.getTime() - b.from.getTime() || a.id.localeCompare(b.id)), total: (bookings.total ?? bookings.rows.length) + (drafts.total ?? drafts.rows.length) }
+}
+
+/** Provisional dates only: never read the draft's pricing snapshot on this floor surface. */
+export async function listCalendarDrafts(fromAd: string, toAd: string): Promise<ListQueryResult<Bar>> {
+  const { data, error, count } = await supabase.from('rental_drafts')
+    .select('id, booking_no:data->>bookingNo, client_name:data->>clientName, project:data->>project, pickup:data->>pickup, return_date:data->>returnDate', { count: 'exact' })
+    .eq('status', 'Active').lte('data->>pickup', toAd).gte('data->>returnDate', fromAd)
+    .order('id', { ascending: true }).limit(CALENDAR_WINDOW_LIMIT)
+  if (error) throw new Error(`Calendar drafts could not load: ${error.message}`)
+  type DraftWindow = { id: string; booking_no: string | null; client_name: string | null; project: string | null; pickup: string | null; return_date: string | null }
+  const rows: Bar[] = []
+  for (const draft of (data ?? []) as unknown as DraftWindow[]) {
+    if (!draft.pickup || !draft.return_date) continue
+    const from = utcMidnight(draft.pickup)
+    const to = utcMidnight(draft.return_date)
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime())) continue
+    rows.push({ id: `draft-${draft.id}`, draftId: draft.id, kind: 'Draft', label: `Draft #${draft.booking_no ?? draft.id.slice(0, 8)}`, sub: `${draft.client_name || 'Client not selected'} · not reserved`, client: draft.client_name ?? '', from, to: to < from ? from : to })
+  }
+  return { rows, total: count ?? rows.length }
 }
 
 export * from '../../data/calendar'
 export { businessDayAd } from '../../data/today'
-

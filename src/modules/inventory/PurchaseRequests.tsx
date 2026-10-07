@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -448,7 +449,7 @@ export default function PurchaseRequests() {
                             Saying so beats painting every one of them `Low`. */}
                         {pr.priority === null ? (
                           <span
-                            title="Not scored — §6 needs refused-booking and sub-rental evidence, which nothing in this build records."
+                            title={/* Not scored — §6 needs refused-booking and sub-rental evidence, which nothing in this build records. */ "Not scored yet."}
                             style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}
                           >
                             Not scored
@@ -469,7 +470,7 @@ export default function PurchaseRequests() {
                       </td>
                       <td style={{ padding: '12px' }}>
                         <div style={{ color: 'var(--text2)', fontWeight: 500 }}>{pr.requestedBy.split(' ')[0]}</div>
-                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }} className="figure">{pr.dateCreatedAD}</div>
+                        <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }} className="figure">{formatAd(new Date(pr.dateCreatedAD))}</div>
                       </td>
                     </tr>
                   )

@@ -610,20 +610,21 @@ function ClientDetailView() {
       : undefined
 
   const kpis: Kpi[] = [
-    { label: 'Active Rentals', value: String(client.currentRentalsCount), icon: 'checklist', accent: 'primary', note: `${client.totalRentalsCount} total` },
+    { label: 'On rent now', value: rentals.error || rentals.loading ? '—' : String(rentals.rows.filter(row => row.stage === 'On Rent' && !row.isCancelled && !row.isClosed).length), icon: 'checklist', accent: 'neutral', note: `${client.totalRentalsCount} total rentals` },
     ...(money
       ? [
-          { label: 'Outstanding', value: formatMoney(client.outstandingPaisa), icon: 'card' as const, accent: (client.outstandingPaisa > 0 ? 'danger' : 'success') as BrandKey },
+          { label: 'Outstanding', value: formatMoney(client.outstandingPaisa), icon: 'card' as const, accent: (client.outstandingPaisa > 0 ? 'danger' : 'neutral') as BrandKey },
           ...(creditAvailablePaisa !== undefined
-            ? [{ label: 'Credit Available', value: formatMoney(creditAvailablePaisa), icon: 'card' as const, accent: 'progress' as const }]
-            : [{ label: 'Deposit Held', value: formatMoney(client.depositHeldPaisa), icon: 'box' as const, accent: 'progress' as const }]
+            ? [{ label: 'Credit Available', value: formatMoney(creditAvailablePaisa), icon: 'card' as const, accent: 'neutral' as const }]
+            : [{ label: 'Deposit Held', value: formatMoney(client.depositHeldPaisa), icon: 'box' as const, accent: 'neutral' as const }]
           ),
-          { label: 'Lifetime Spend', value: formatMoney(client.totalSpentPaisa), icon: 'activity' as const, accent: 'success' as const },
+          { label: 'Lifetime Spend', value: formatMoney(client.totalSpentPaisa), icon: 'activity' as const, accent: 'neutral' as const },
         ]
       : []),
   ]
 
   const overflowItems: OverflowMenuItem[] = [
+    ...(canBlock ? [{ label: client.isBlocked ? 'Unblock Client' : 'Block Client', icon: 'alert_triangle' as const, onClick: () => openBlockDialog(client.isBlocked ? 'unblock' : 'block') }] : []),
     {
       label: 'Verify KYC',
       icon: 'checklist',
@@ -706,25 +707,7 @@ function ClientDetailView() {
                   >
                     Edit Client
                   </Button>,
-                  canBlock ? (
-                    <Button
-                      key="block"
-                      icon={client.isBlocked ? 'checklist' : 'alert_triangle'}
-                      variant={client.isBlocked ? 'secondary' : 'danger'}
-                      onClick={() => openBlockDialog(client.isBlocked ? 'unblock' : 'block')}
-                    >
-                      {client.isBlocked ? 'Unblock Client' : 'Block Client'}
-                    </Button>
-                  ) : (
-                    <Unavailable
-                      key="block"
-                      reason={`Blocking a client is Owner, Admin or Manager only — lib/rbac.ts canBlockClient, which actions/core.ts maps the client.block capability to. Your role (${role}) would be refused by the dispatcher before the write, so the control is greyed rather than failing on press.`}
-                    >
-                      <Button icon={client.isBlocked ? 'checklist' : 'alert_triangle'} variant="secondary" disabled>
-                        {client.isBlocked ? 'Unblock Client' : 'Block Client'}
-                      </Button>
-                    </Unavailable>
-                  ),
+
                 ]
               }
               overflow={overflowItems}
@@ -873,8 +856,7 @@ function ClientDetailView() {
                 ]}
               />
               <p style={{ margin: '10px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                One contact per client today — a multi-contact model would be a schema change, not a display change.
-              </p>
+                {/* One contact per client today — a multi-contact model would be a schema change, not a display change. */}One contact is recorded for this client. </p>
             </Card>
           )}
 
@@ -901,7 +883,7 @@ function ClientDetailView() {
                 // when the query fell back to the AD date — nothing is appended here.
                 { label: 'Last Rental', value: client.lastRentalBs === '—' ? 'No rental yet' : `${client.lastRentalBs} · ${client.lastRentalAd}` },
                 // Open ⭐ #2 (HIS v2.1) — no benefit matrix is ruled yet.
-                { label: 'Benefits', value: 'Not yet defined (Open ⭐ #2)' },
+                { label: 'Benefits', value: /* Not yet defined (Open ⭐ #2) */ "Not recorded" },
                 ...(moneyScope(gctx) === 'full'
                   ? ([
                       /* §2.1 — grouped. Saving the percentage without its source
@@ -912,11 +894,11 @@ function ClientDetailView() {
                         label: 'Standing discount',
                         value: client.standingDiscountPercent !== undefined ? `${client.standingDiscountPercent}%` : '—',
                         as: 'number',
-                        hint: 'Saves together with Discount source. Any percent 0–100 — Law 10 carries no approval ceremony.',
+                        hint: /* Saves together with Discount source. Any percent 0–100 — Law 10 carries no approval ceremony. */ "Save the discount and its source together.",
                       },
                       { key: 'discountSource', label: 'Discount source', value: client.discountSource ?? '—', hint: 'Type Rule · Membership · Named Client' },
                       // Open ⭐ #1 (HIS v2.1) — no per-category deposit-% table is ruled yet.
-                      { label: 'Deposit override', value: 'Not set (Open ⭐ #1)' },
+                      { label: 'Deposit override', value: /* Not set (Open ⭐ #1) */ "Not set" },
                       { key: 'creditLimitPaisa', label: 'Credit limit', value: formatMoney(client.creditLimitPaisa) },
                     ] satisfies EditableRowDef[])
                   : []),
@@ -1112,7 +1094,7 @@ function ClientDetailView() {
                       {r.isCancelled && <span style={{ color: 'var(--danger-text)', fontSize: 'var(--t-th)' }}>Cancelled</span>}
                     </div>
                     <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>{r.project ?? '—'}</div>
-                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Pickup {formatAd(new Date(r.pickupAtAd))}</div>
+                    <div style={{ fontSize: 'var(--t-meta)', color: 'var(--booking-date-text)' }}>Pickup {formatAd(new Date(r.pickupAtAd))}</div>
                     <Link
                       to={`/rentals/${r.bookingNo}`}
                       style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, borderRadius: 'var(--r-btn)', background: 'var(--btn-secondary-bg)', border: '1px solid var(--btn-secondary-border)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}
@@ -1153,7 +1135,7 @@ function ClientDetailView() {
                             <span style={{ marginLeft: 6, color: 'var(--danger-text)', fontSize: 'var(--t-th)' }}>Cancelled</span>
                           )}
                         </td>
-                        <td className="figure client-mono" style={{ ...td, color: 'var(--text2)' }}>{formatAd(new Date(r.pickupAtAd))}</td>
+                        <td className="figure client-mono" style={{ ...td, color: 'var(--booking-date-text)' }}>{formatAd(new Date(r.pickupAtAd))}</td>
                         <td style={{ ...td, textAlign: 'right' }}>
                           <Link to={`/rentals/${r.bookingNo}`} style={{ color: 'var(--link)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}>
                             Open
@@ -1226,7 +1208,7 @@ function ClientDetailView() {
                           {formatMoney(inv.outstandingAmount)}
                         </span>
                       </div>
-                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Due {inv.dueDateAd}</div>
+                      <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Due {formatAd(new Date(inv.dueDateAd))}</div>
                       <Link
                         to={`/rentals/${inv.bookingNo}`}
                         style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, borderRadius: 'var(--r-btn)', background: 'var(--btn-secondary-bg)', border: '1px solid var(--btn-secondary-border)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontWeight: 600, textDecoration: 'none' }}
@@ -1279,7 +1261,7 @@ function ClientDetailView() {
                           <td style={td}>
                             <Tone text={inv.status} tone={INVOICE_TOKEN[inv.status]} />
                           </td>
-                          <td className="figure client-mono" style={{ ...td, color: 'var(--text2)' }}>{inv.dueDateAd}</td>
+                          <td className="figure client-mono" style={{ ...td, color: 'var(--text2)' }}>{formatAd(new Date(inv.dueDateAd))}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1391,10 +1373,9 @@ function ClientDetailView() {
             )}
           </ul>
           <p style={{ margin: '14px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-            This is derived from fields already on the record, not an audit trail. `lib/audit.ts` exists
+            {/* This is derived from fields already on the record, not an audit trail. `lib/audit.ts` exists
             but nothing calls `logAuditEvent` for client records yet — a real timeline needs that wired
-            up first, not fabricated here.
-          </p>
+            up first, not fabricated here. */}No activity recorded yet. </p>
         </Card>
       )}
 
@@ -1455,7 +1436,7 @@ function ClientDetailView() {
             title={blockDialogMode === 'unblock' ? `Lift the block on ${client.name}?` : `Block ${client.name}?`}
             subtitle={
               blockDialogMode === 'unblock'
-                ? 'The block is lifted, not deleted — who applied it, why, and who lifted it all stay on the record (Law 3).'
+                ? /* The block is lifted, not deleted — who applied it, why, and who lifted it all stay on the record (Law 3). */ "The blocking and unblocking history stays on the record."
                 : 'Start Rental is refused on this page while a block stands, and the clients directory reads the same flag. Existing bookings, invoices and rental history are untouched.'
             }
             footer={

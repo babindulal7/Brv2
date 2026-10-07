@@ -1,3 +1,4 @@
+import { DateField } from '../../components/ui/DateField'
 /**
  * CouponsManager — Full promo codes management & validation workspace.
  *
@@ -20,7 +21,7 @@ import {
   getCouponStatus,
   type Coupon,
 } from '../../lib/queries/coupons'
-import { getBusinessToday } from '../../lib/bs'
+import { getBusinessToday, formatAd } from '../../lib/bs'
 
 export default function CouponsManager() {
   const { showSuccessToast } = useToast()
@@ -148,10 +149,10 @@ export default function CouponsManager() {
       },
       {
         label: 'Stacking Policy',
-        value: '25% Cap',
+        value: '0–100%',
         icon: 'card',
         accent: 'neutral',
-        note: 'Hard ceiling per booking',
+        note: 'Valid percentage range',
       },
       {
         label: 'Expiring Soon',
@@ -181,7 +182,7 @@ export default function CouponsManager() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-lg)' }}>
       <PageHeader
         title="Coupons & Promotional Vouchers"
-        description="Manage promotional discount codes, enforce the 25% discount stacking ceiling, and track client redemptions."
+        description="Manage promotional discount codes, validate discounts, and track client redemptions."
         actions={
           <Button variant="primary" onClick={() => setIsModalOpen(true)}>
             <Icon name="plus" size={16} />
@@ -205,7 +206,7 @@ export default function CouponsManager() {
           <span style={{ fontWeight: 600, fontSize: 'var(--t-body)' }}>Voucher Simulator & Sandbox</span>
         </div>
         <div style={{ fontSize: 'var(--t-caption)', color: 'var(--muted)', marginBottom: 'var(--sp-md)' }}>
-          Test any voucher code against a booking subtotal to verify discount rates, minimum thresholds, and 25% cap behavior before client delivery.
+          Test any voucher code against a booking subtotal to verify discount rates, minimum thresholds, and voucher limits before client delivery.
         </div>
 
         <div style={{ display: 'flex', gap: 'var(--sp-md)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -285,7 +286,7 @@ export default function CouponsManager() {
                 </div>
                 <div style={{ fontSize: 'var(--t-caption)', color: 'var(--muted)' }}>
                   {testResult.ok
-                    ? `Eligible voucher applied successfully. Code status: ${testResult.status}. Stacking cap: 25% verified.`
+                    ? `Eligible voucher applied successfully. Code status: ${testResult.status}. Voucher conditions verified.`
                     : testResult.reason}
                 </div>
               </div>
@@ -411,7 +412,7 @@ export default function CouponsManager() {
                     </td>
 
                     <td style={{ padding: '14px 16px' }}>
-                      <div style={{ fontSize: 'var(--t-caption)' }}>{c.from} → {c.to}</div>
+                      <div style={{ fontSize: 'var(--t-caption)' }}>{formatAd(new Date(c.from))} → {formatAd(new Date(c.to))}</div>
                       <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
                         {status === 'Active' ? 'Active now' : status}
                       </div>
@@ -615,38 +616,14 @@ export default function CouponsManager() {
                 <label style={{ display: 'block', fontSize: 'var(--t-caption)', fontWeight: 600, marginBottom: 4 }}>
                   Valid From
                 </label>
-                <input
-                  type="date"
-                  value={newFrom}
-                  onChange={e => setNewFrom(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 'var(--r-btn)',
-                    border: '1px solid var(--border)',
-                    background: 'var(--input-bg)',
-                    color: 'var(--text)',
-                  }}
-                />
+                <DateField ariaLabel="Valid From" value={newFrom} onChange={setNewFrom} style={{ minHeight: 44 }} />
               </div>
 
               <div>
                 <label style={{ display: 'block', fontSize: 'var(--t-caption)', fontWeight: 600, marginBottom: 4 }}>
                   Valid Until
                 </label>
-                <input
-                  type="date"
-                  value={newTo}
-                  onChange={e => setNewTo(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px 12px',
-                    borderRadius: 'var(--r-btn)',
-                    border: '1px solid var(--border)',
-                    background: 'var(--input-bg)',
-                    color: 'var(--text)',
-                  }}
-                />
+                <DateField ariaLabel="Valid Until" value={newTo} onChange={setNewTo} style={{ minHeight: 44 }} />
               </div>
             </div>
 
@@ -704,7 +681,7 @@ export default function CouponsManager() {
                 style={{ width: 16, height: 16, accentColor: 'var(--accent)' }}
               />
               <label htmlFor="stackableCheck" style={{ fontSize: 'var(--t-caption)', color: 'var(--text)' }}>
-                Allow combining with client membership tiers (Subject to 25% max total discount cap)
+                Allow combining with client membership tiers
               </label>
             </div>
 

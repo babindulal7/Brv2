@@ -37,6 +37,12 @@ vi.mock('../../../components/ui/Toast', () => ({
   }),
 }))
 
+vi.mock('../../../lib/supabase', () => ({ IS_MOCK: true, supabase: {} }))
+vi.mock('../../../lib/queries/documents', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../lib/queries/documents')>()
+  return { ...real, listDocuments: async () => ({ rows: real.DOCUMENTS, total: real.DOCUMENTS.length }) }
+})
+
 let root: Root | null = null
 
 function render(ui: React.ReactNode) {

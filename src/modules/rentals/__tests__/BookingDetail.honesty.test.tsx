@@ -347,15 +347,15 @@ describe('BD-02 — an unanswered invoice read is not an answer about money', ()
     invoiceRows = [INVOICE]
     await mount()
 
-    expect(text()).toContain('Reading this booking’s invoices…')
-    expect(text()).not.toContain('No invoice raised yet')
+    expect(text()).toContain('invoices are still being read')
+    expect(text()).not.toContain('No invoice has been raised')
     expect(text()).not.toContain('there is no Rental Total to state yet')
 
     await act(async () => gate.release())
     await flush()
 
-    expect(text()).toContain('From this booking’s invoices')
-    expect(text()).not.toContain('Reading this booking’s invoices…')
+    expect(text()).toContain('Rental Total')
+    expect(text()).not.toContain('invoices are still being read')
   })
 
   it('refuses Record Payment for the RIGHT reason while the read is in flight', async () => {
@@ -376,15 +376,15 @@ describe('BD-02 — an unanswered invoice read is not an answer about money', ()
   it('states absence once absence is actually established', async () => {
     invoiceRows = []
     await mount()
-    expect(text()).toContain('No invoice raised yet')
-    expect(text()).not.toContain('Reading this booking’s invoices…')
+    expect(text()).toContain('No invoice has been raised')
+    expect(text()).not.toContain('invoices are still being read')
   })
 
   it('says the read FAILED rather than that no invoice exists', async () => {
     invoiceFails = true
     await mount()
-    expect(text()).toContain('Invoices could not be read')
-    expect(text()).not.toContain('No invoice raised yet')
+    expect(text()).toContain('invoices could not be read')
+    expect(text()).not.toContain('No invoice has been raised')
   })
 })
 

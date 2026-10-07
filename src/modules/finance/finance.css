@@ -272,7 +272,7 @@
 
 /* ── Chart & Collections Visuals ────────────────────────────────────────── */
 .finance-daily-bar {
-  flex: 1;
+  flex: 0 0 auto;
   min-width: 4px;
   border-radius: 3px 3px 0 0;
   background: var(--nav-active-accent);

@@ -32,11 +32,10 @@ describe('Pagination', () => {
     expect(node.textContent).toContain('Page 10 of 10')
     expect(node.textContent).toContain('Showing 181–200 of 200')
   })
-  it('uses a valid empty range and disables navigation on an empty result', () => {
-    const { node, button } = render(1, 0)
-    expect(node.textContent).toContain('Showing 0–0 of 0')
-    expect(button('Previous page').disabled).toBe(true)
-    expect(button('Next page').disabled).toBe(true)
+  it.each([0, 3, 20])('hides controls when all %s rows fit on the first page', (total) => {
+    const { node } = render(1, total)
+    expect(node.textContent).toBe('')
+    expect(node.querySelector('button')).toBeNull()
   })
   it('keeps paging controls out of form submission and navigates from the current page', () => {
     const { node, button, change } = render(5)

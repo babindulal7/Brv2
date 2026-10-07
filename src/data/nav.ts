@@ -3,16 +3,8 @@ import type { SystemRole } from '../types/database'
 import { canViewMoney, isStaff } from '../lib/rbac'
 
 /**
- * The application's navigation tree — simplified global navigation.
- *
- * Primary navigation (7 items):
- * Dashboard · Rentals · Calendar · Operations · Inventory · Clients · Finance
- *
- * Secondary navigation (More):
- * Crew Assist · Tools · Settings
- *
- * New Rental is an action, not a module — it lives under Header Create ▾
- * and redirects to `/rentals?action=new`.
+ * The user's locked eleven destinations, restored by the 7 Oct 2026 ruling.
+ * New Rental redirects to `/rentals?action=new`; Documents and Reports belong to Finance.
  */
 
 export interface NavChild {
@@ -45,43 +37,25 @@ export interface NavGroup {
 const SETTINGS_SECTION: NavSection = { label: 'Settings', icon: 'settings', to: '/settings' }
 
 /**
- * The 3 operational domains:
- * 1. Daily Dispatch (Dashboard, Rentals, Operations, Calendar)
- * 2. Assets & Relationships (Inventory, Clients, Crew Assist)
- * 3. Business & Back Office (Finance, Documents, Analytics)
+ * One flat sidebar; role restrictions still omit inaccessible destinations.
  */
+// RULING 2026-10-07: restore the user's locked eleven destinations in order.
 export const NAV_GROUPS: NavGroup[] = [
   {
     id: 'dispatch',
-    title: 'Daily Dispatch',
+    title: '',
     sections: [
-      { label: 'Dashboard', icon: 'home', to: '/dashboard' },
-      {
-        label: 'Rentals',
-        icon: 'checklist',
-        to: '/rentals',
-        action: { label: '+ New', to: '/rentals/new', title: 'Create new rental booking' },
-      },
-      { label: 'Operations', icon: 'queues', to: '/operations' },
+      { label: 'New Rental', icon: 'plus', to: '/rentals/new' },
+      { label: 'Today', icon: 'home', to: '/today' },
+      { label: 'Operation', icon: 'queues', to: '/operations' },
+      { label: 'Rentals', icon: 'checklist', to: '/rentals' },
       { label: 'Calendar', icon: 'calendar', to: '/calendar' },
-    ],
-  },
-  {
-    id: 'assets',
-    title: 'Assets & Relationships',
-    sections: [
+      { label: 'Crew Assist', icon: 'crew', to: '/crew' },
       { label: 'Inventory', icon: 'box', to: '/inventory' },
       { label: 'Clients', icon: 'users', to: '/clients' },
-      { label: 'Crew Assist', icon: 'crew', to: '/crew' },
-    ],
-  },
-  {
-    id: 'business',
-    title: 'Business & Back Office',
-    sections: [
       { label: 'Finance', icon: 'card', to: '/finance' },
-      { label: 'Documents', icon: 'file', to: '/documents' },
-      { label: 'Analytics', icon: 'chart', to: '/reports/pulse' },
+      { label: 'Tools', icon: 'tool', to: '/tools' },
+      SETTINGS_SECTION,
     ],
   },
 ]
@@ -94,10 +68,7 @@ export const PRIMARY_NAV: NavSection[] = NAV_GROUPS.flatMap((g) => g.sections)
 /**
  * Secondary lower-frequency modules exposed under More or Settings.
  */
-export const MORE_NAV: NavSection[] = [
-  { label: 'Tools', icon: 'tool', to: '/tools' },
-  SETTINGS_SECTION,
-]
+export const MORE_NAV: NavSection[] = []
 
 export const ALL_NAV: NavSection[] = [...PRIMARY_NAV, ...MORE_NAV]
 export const NAV: NavSection[] = PRIMARY_NAV
@@ -276,7 +247,9 @@ export function isStaffSurface(path: string): boolean {
  * would never be claimed by `/rentals`.
  */
 export function activeNavTo(sections: NavSection[], path: string): string | null {
-  const base = path.split('?')[0] ?? path
+  const rawBase = path.split('?')[0] ?? path
+  const base = rawBase === '/dashboard' ? '/today' : rawBase
+  if (new URLSearchParams(path.split('?')[1]).get('action') === 'new' && base === '/rentals') return sections.find((s) => s.to === '/rentals/new')?.to ?? null
   let best: NavSection | null = null
   for (const s of sections) {
     if (base === s.to || base.startsWith(s.to + '/')) {
@@ -286,8 +259,9 @@ export function activeNavTo(sections: NavSection[], path: string): string | null
   if (best) return best.to
   // Analytics opens Pulse directly, while the other reports are sibling routes.
   if (base === '/reports' || base.startsWith('/reports/')) {
-    return sections.find((s) => s.to === '/reports/pulse')?.to ?? null
+    return sections.find((s) => s.to === '/finance')?.to ?? null
   }
+  if (base === '/documents') return sections.find((s) => s.to === '/finance')?.to ?? null
   return null
 }
 
@@ -309,7 +283,7 @@ export function activeNavTo(sections: NavSection[], path: string): string | null
  * slot for it and the fixed bar cannot become an RBAC hole. A dropped slot
  * leaves four, not a dead button.
  */
-export const BOTTOM_BAR_ROUTES: readonly string[] = ['/dashboard', '/rentals', '/inventory']
+export const BOTTOM_BAR_ROUTES: readonly string[] = ['/today', '/rentals', '/inventory']
 
 /**
  * Where **Scan ⦿** sits among {@link BOTTOM_BAR_ROUTES} — index 2, the centre of
@@ -364,13 +338,12 @@ export function bottomBarSlots(role: SystemRole | undefined): BottomBarSlot[] {
  * New Rental is removed — global creation lives under Header Create ▾.
  */
 export const MORE_ROUTES: readonly string[] = [
-  '/calendar',
+  '/rentals/new',
   '/operations',
-  '/clients',
+  '/calendar',
   '/crew',
+  '/clients',
   '/finance',
-  '/documents',
-  '/reports/pulse',
   '/tools',
   '/settings',
 ]
@@ -421,11 +394,11 @@ export const SPEC_TABS: Record<string, string[]> = {
      "Warehouses now lives in Settings ▸ Branches & Warehouses"). The first tab
      is "Equipment", not "Inventory" — the page is Inventory, the tab is what it
      lists. */
-  '/inventory': ['Equipment', 'Bundles', 'Sub-Rentals', 'Stock Check', 'Maintenance'],
+  '/inventory': ['Equipment', 'Bundles', 'Stock Check', 'Maintenance'],
 
   /* Finance tabs: Dashboard · Invoices · Payments · Expenses · Closing · Reports.
      Documents is a dedicated primary module in Business & Back Office. */
-  '/finance': ['Dashboard', 'Invoices', 'Payments', 'Expenses', 'Closing', 'Reports'],
+  '/finance': ['Dashboard', 'Invoices', 'Payments', 'Expenses', 'Documents', 'Closing', 'Reports'],
 
   /* `08_CLIENTS.md` line 3 says "Directory only — no tabs." **Deliberately
      overridden, 12 Aug 2026 (user ruling).** Clients keeps Memberships.
@@ -459,6 +432,7 @@ export const FINANCE_TAB_ROUTES: Readonly<Record<string, string | null>> = {
   /* §9.4 — `modules/finance/Expenses.tsx`, added 12 Aug 2026. Reads `expenses`
      through `lib/queries/finance.ts`. */
   Expenses: '/finance/expenses',
+  Documents: '/finance/documents',
   Closing: '/finance/closing',
   /* §9.6's catalog of 45 is not built; Pulse is the report index that exists. */
   Reports: '/reports/pulse',

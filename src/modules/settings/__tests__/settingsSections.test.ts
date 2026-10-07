@@ -219,7 +219,7 @@ describe('§11.4 Financial — one fee definition, no invented figures', () => {
 
   it('renders “not tracked yet” for the two panels with no source', () => {
     expect(settings.DEPOSIT_BY_CATEGORY_UNAVAILABLE).toMatch(/not tracked yet/)
-    expect(settings.CANCELLATION_TIERS_UNAVAILABLE).toMatch(/not tracked yet/)
+    expect(settings.CANCELLATION_TIERS_UNAVAILABLE).toMatch(/have not been defined/)
     /* And neither carries a percentage anyone could mistake for a rule. */
     expect(settings.DEPOSIT_BY_CATEGORY_UNAVAILABLE).not.toMatch(/\d+\s?%/)
     expect(settings.CANCELLATION_TIERS_UNAVAILABLE).not.toMatch(/\d+\s?%/)

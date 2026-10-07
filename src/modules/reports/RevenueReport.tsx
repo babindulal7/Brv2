@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
@@ -282,8 +283,7 @@ export default function RevenueReport() {
           <Icon name="lock" size={32} style={{ color: 'var(--muted)' }} />
           <h3 style={{ margin: 0, fontSize: 'var(--t-h3)', color: 'var(--text)' }}>Revenue Intelligence Restricted</h3>
           <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', maxWidth: 440 }}>
-            Invoiced revenues, client settlement totals, and financial yields are money-blind under Law 6. This view is restricted to Owner, Manager, and Accounts roles.
-          </p>
+            {/* Invoiced revenues, client settlement totals, and financial yields are money-blind under Law 6. This view is restricted to Owner, Manager, and Accounts roles. */}Your role cannot view revenue reports. </p>
         </div>
       </div>
     )
@@ -522,7 +522,7 @@ export default function RevenueReport() {
                       </Link>
                     </td>
                     <td style={td}>{inv.clientName}</td>
-                    <td style={td}>{inv.issueDateAd}</td>
+                    <td style={td}>{formatAd(new Date(inv.issueDateAd))}</td>
                     <td style={td}>
                       <span
                         style={{

@@ -325,7 +325,7 @@ describe('dates — AD always, BS only when the engine can vouch for it', () => 
     /* The exact BS day is `lib/bs`'s to assert (bs.test.ts); what matters here
        is the SHAPE — "12 Sep 2026 (27 Bhadra)" — and that both halves are present. */
     const out = adBs(IN_BS_WINDOW)
-    expect(out).toMatch(/^\d{1,2} \w{3} \d{4} \(.+\)$/)
+    expect(out).toMatch(/^\d{1,2}\/\d{1,2}\/\d{4} \(\d{1,2} \w+\)$/)
     expect(out).not.toContain('BS)')
   })
 
@@ -334,7 +334,7 @@ describe('dates — AD always, BS only when the engine can vouch for it', () => 
     // resolves (1 Magh 2086). The bracket is dropped only where the table
     // genuinely cannot name the date, so this reaches past its last year.
     const out = adBs('2040-01-15T06:00:00.000Z')
-    expect(out).toMatch(/^\d{1,2} \w{3} \d{4}$/)
+    expect(out).toMatch(/^\d{1,2}\/\d{1,2}\/\d{4}$/)
   })
 
   it('renders an unusable date as an explicit non-value, never as Invalid Date', () => {

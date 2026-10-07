@@ -1,11 +1,13 @@
 import React from 'react'
-import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { toBs, formatBs } from '../../lib/bs'
 
 export interface BsAdDateProps {
   date: Date | string | number | null | undefined
   layout?: 'stacked' | 'inline' | 'bs-only' | 'ad-only'
   showTime?: boolean
   className?: string
+  /** Booking schedule dates share the theme's orange in every layout. */
+  tone?: 'default' | 'booking'
 }
 
 export const BsAdDate: React.FC<BsAdDateProps> = ({
@@ -13,6 +15,7 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
   layout = 'stacked',
   showTime = false,
   className = '',
+  tone = 'default',
 }) => {
   if (!date) {
     return <span style={{ color: 'var(--muted)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--t-ui)' }}>—</span>
@@ -24,8 +27,8 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
   }
 
   const bs = toBs(d)
-  const bsFormatted = bs ? formatBs(bs) : null
-  const adFormatted = formatAd(d)
+  const bsFormatted = bs ? `${formatBs(bs)} ${bs.year}` : null
+  const adFormatted = d.toLocaleDateString('en-GB', { timeZone: 'Asia/Kathmandu', day: 'numeric', month: 'short', year: 'numeric' })
 
   /*
    * ⛔ WHEN THERE IS NO BS DATE, SAY SO. Do not silently substitute the AD one.
@@ -51,9 +54,11 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
    * the reason is one hover away rather than a mystery.
    */
   const UNAVAILABLE =
-    'Bikram Sambat is unavailable for this date — the calendar table covers Shrawan 2083 only (PLAN.md §4.34). Showing AD.'
+    'Bikram Sambat is unavailable for this date. Showing AD.'
   const primary = bsFormatted ?? `${adFormatted} AD`
   const primaryTitle = bsFormatted ? undefined : UNAVAILABLE
+  const primaryColor = tone === 'booking' ? 'var(--booking-date-text)' : 'var(--text)'
+  const secondaryColor = tone === 'booking' ? 'var(--booking-date-text)' : 'var(--text2)'
 
   const timeFormatted = showTime
     ? d.toLocaleTimeString('en-US', {
@@ -66,16 +71,16 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
 
   if (layout === 'bs-only') {
     return (
-      <span className={className || undefined} style={{ color: 'var(--text)', fontSize: 'var(--t-ui)', fontWeight: 500 }} title={primaryTitle}>
-        {primary} {timeFormatted && <span style={{ color: 'var(--text2)', fontSize: 'var(--t-meta)', marginLeft: 4 }}>({timeFormatted})</span>}
+      <span className={className || undefined} style={{ color: primaryColor, fontSize: 'var(--t-ui)', fontWeight: 500 }} title={primaryTitle}>
+        {primary} {timeFormatted && <span style={{ color: secondaryColor, fontSize: 'var(--t-meta)', marginLeft: 4 }}>({timeFormatted})</span>}
       </span>
     )
   }
 
   if (layout === 'ad-only') {
     return (
-      <span className={className || undefined} style={{ color: 'var(--text)', fontSize: 'var(--t-ui)', fontWeight: 500 }}>
-        {adFormatted} {timeFormatted && <span style={{ color: 'var(--text2)', fontSize: 'var(--t-meta)', marginLeft: 4 }}>({timeFormatted})</span>}
+      <span className={className || undefined} style={{ color: primaryColor, fontSize: 'var(--t-ui)', fontWeight: 500 }}>
+        {adFormatted} {timeFormatted && <span style={{ color: secondaryColor, fontSize: 'var(--t-meta)', marginLeft: 4 }}>({timeFormatted})</span>}
       </span>
     )
   }
@@ -83,13 +88,13 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
   if (layout === 'inline') {
     return (
       <span className={className || undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-ui)' }}>
-        <span style={{ fontWeight: 500, color: 'var(--text)' }} title={primaryTitle}>
+        <span style={{ fontWeight: 500, color: primaryColor }} title={primaryTitle}>
           {primary}
         </span>
         {/* No parenthetical when BS is unavailable — the primary IS the AD date,
             and repeating it would read as two different dates. */}
-        {bsFormatted && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>({adFormatted})</span>}
-        {timeFormatted && <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{timeFormatted}</span>}
+        {bsFormatted && <span style={{ fontSize: 'var(--t-meta)', color: tone === 'booking' ? secondaryColor : 'var(--muted)' }}>({adFormatted})</span>}
+        {timeFormatted && <span style={{ fontSize: 'var(--t-meta)', color: secondaryColor, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{timeFormatted}</span>}
       </span>
     )
   }
@@ -97,10 +102,10 @@ export const BsAdDate: React.FC<BsAdDateProps> = ({
   // Default stacked layout
   return (
     <div className={className || undefined} style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25 }}>
-      <span style={{ fontSize: 'var(--t-ui)', fontWeight: 500, color: 'var(--text)' }} title={primaryTitle}>
+      <span style={{ fontSize: 'var(--t-ui)', fontWeight: 500, color: primaryColor }} title={primaryTitle}>
         {primary}
       </span>
-      <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+      <span style={{ fontSize: 'var(--t-meta)', color: secondaryColor }}>
         {/* The second line carries the AD date only when the first carries BS.
             When BS is unavailable the first line already IS the AD date, so this
             line states WHY rather than repeating it. */}

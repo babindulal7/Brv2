@@ -18,6 +18,7 @@ import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
 import './reports.css'
+import { IS_MOCK } from '../../lib/supabase'
 import {
   PERIODS,
   DEFAULT_PERIOD,
@@ -362,6 +363,19 @@ function KpiCard({ c }: { c: CardModel }) {
 /* ── page ──────────────────────────────────────────────────────────────── */
 
 export default function Pulse() {
+  if (!IS_MOCK) return (
+    <PageShell>
+      <PageHeader title="Pulse" description="Business overview" />
+      <section aria-label="Key figures" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-md)' }}>
+        {['Revenue', 'Cash', 'Equipment utilisation', 'Exceptions'].map((label) => <Card key={label} title={label}><p style={{ margin: 0, color: 'var(--muted)' }}>Not tracked yet.</p></Card>)}
+      </section>
+      <Card title="Reports"><p style={{ margin: 0 }}>Open a report to see recorded invoices, collections, and rental activity.</p><Link to="/finance?tab=reports" style={{ color: 'var(--link)', display: 'inline-block', padding: '12px 0', minHeight: 44 }}>Browse reports</Link></Card>
+    </PageShell>
+  )
+  return <DemoPulse />
+}
+
+function DemoPulse() {
   const money = useCanViewMoney()
   const { user } = useAuth()
   const periodRef = useRef<HTMLSelectElement>(null)
@@ -900,8 +914,8 @@ export default function Pulse() {
         <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
           {unbuiltTabs.length > 0 && (
             <>
-              Not built: {unbuiltTabs.join(' · ')} — Reports §8 names these families; nothing behind them exists in this
-              build yet.{' '}
+              Not built: {unbuiltTabs.join(' · ')} {/* — Reports §8 names these families; nothing behind them exists in this
+              build yet. */}These reports are not available yet. {' '}
             </>
           )}
           {gatedTabs.length > 0 && <>Not in your role&rsquo;s view: {gatedTabs.join(' · ')}.</>}
@@ -953,7 +967,7 @@ export default function Pulse() {
               <p style={{ margin: '9px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                 {activeView === 'utilization'
                   ? 'Axis in per cent of the rentable fleet — hover a mark for the exact figure.'
-                  : 'Axis in thousands of rupees — hover a mark for the exact figure, which is the one lib/money prints.'}
+                  : /* Axis in thousands of rupees — hover a mark for the exact figure, which is the one lib/money prints. */ "Amounts are shown in thousands of rupees. Hover a mark for the exact amount."}
               </p>
             )}
 
@@ -1143,8 +1157,7 @@ export default function Pulse() {
                 </table>
               </DataTableShell>
               <p style={{ margin: 0, padding: '10px 12px', borderTop: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                Ageing is measured from {formatAd(figures.to)}, the period's last day — the one clock this page uses (§4.3).
-              </p>
+                Ageing is measured from {formatAd(figures.to)}{/* , the period's last day — the one clock this page uses (§4.3). */}, the period's last day — the one clock this page uses . </p>
             </Card>
           )}
         </div>
@@ -1240,9 +1253,8 @@ export default function Pulse() {
                 ))}
               </div>
               <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-                Read-only. Creating, editing and retrying a schedule is Reports §11 and is not built, so no control is drawn
-                for it.
-              </p>
+                {/* Read-only. Creating, editing and retrying a schedule is Reports §11 and is not built, so no control is drawn
+                for it. */}Read-only. Schedule editing is not available yet. </p>
             </Card>
           )}
 
@@ -1267,16 +1279,15 @@ export default function Pulse() {
               ))}
             </div>
             <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              Saved reports and the custom builder are Reports §10 and are not built; these are the reports that exist
-              today.
-            </p>
+              {/* Saved reports and the custom builder are Reports §10 and are not built; these are the reports that exist
+              today. */}Saved reports and custom reports are not available yet. </p>
           </Card>
         </ReflowRail>
       </div>
 
       <FooterNote
         extra={[
-          'Every amount is integer paisa — see lib/money.ts',
+          /* Every amount is integer paisa — see lib/money.ts */ "Amounts shown in rupees",
           'Reports reads its figures from the owning engine; it never defines a metric',
         ]}
       />

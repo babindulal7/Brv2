@@ -242,8 +242,7 @@ export default function PricingCalculator({ embedded = false }: PricingCalculato
               </div>
             ))}
             <p style={{ margin: 0, padding: '0 14px 14px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              Law 9 — days are explicit on every priced line, never implied. A blank rate contributes nothing rather than zero.
-            </p>
+              {/* Law 9 — days are explicit on every priced line, never implied. A blank rate contributes nothing rather than zero. */}— days are explicit on every priced line, never implied. A blank rate contributes nothing rather than zero. </p>
           </Card>
 
           <Card title="Discount">
@@ -335,7 +334,7 @@ export default function PricingCalculator({ embedded = false }: PricingCalculato
                 onChange={setDeposit}
                 numeric
                 placeholder="Rs"
-                hint="Law 5 — a liability. It is shown separately below and never enters the rental total."
+                hint={/* Law 5 — a liability. It is shown separately below and never enters the rental total. */ "— a liability. It is shown separately below and never enters the rental total."}
               />
             </div>
           </Card>

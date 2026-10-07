@@ -12,6 +12,7 @@ import {
   filterGroupStyle,
 } from '../../components/ui/FilterDrawer'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
+import { BsAdDate } from '../../components/ui/BsAdDate'
 import { Pagination } from '../../components/ui/Pagination'
 import type { ActiveFilter } from '../../components/ui/FilterDrawer'
 import {
@@ -214,13 +215,14 @@ interface SavedView {
 const SAVED_VIEWS: SavedView[] = [
   { label: 'VIP Clients', filter: 'vip', sort: { key: 'name', dir: 'asc' } },
   { label: 'Payment Due', filter: 'paymentDue', sort: { key: 'outstanding', dir: 'desc' }, money: true },
-  { label: 'Active', filter: 'active', sort: { key: 'rentals', dir: 'desc' } },
+  { label: 'Open rentals', filter: 'active', sort: { key: 'rentals', dir: 'desc' } },
   { label: 'Recently Added', filter: 'all', sort: { key: 'lastRental', dir: 'desc' } },
   /* Now an OVERLAY over every client, not a status that excludes the rest. */
   { label: 'Blocked Clients', filter: 'all', sort: { key: 'name', dir: 'asc' }, overlays: { blocked: true } },
 ]
 
 const th = {
+  textTransform: 'none' as const,
   textAlign: 'left' as const,
   padding: '9px 12px',
   fontFamily: "'Outfit', var(--font-display), sans-serif",
@@ -1043,7 +1045,7 @@ export function ClientsDirectory({
      * null`), which is a migration, not a screen change.
      */
     {
-      label: 'Active',
+      label: 'Open rentals',
       value: String(metrics.onRent),
       icon: 'checklist',
       accent: 'success',
@@ -1079,7 +1081,7 @@ export function ClientsDirectory({
     { label: 'Organisation', key: 'typeOrg', count: metrics.typeOrg },
     { label: 'Individual', key: 'typeInd', count: metrics.typeInd },
     { label: 'Unassigned', key: 'typeUnassigned', count: metrics.typeUnassigned },
-    { label: 'Active', key: 'active', count: metrics.onRent },
+    { label: 'Open rentals', key: 'active', count: metrics.onRent },
     ...(money ? [{ label: 'Payment Due', key: 'paymentDue' as FilterKey, count: metrics.paymentDue }] : []),
     { label: 'VIP', key: 'vip', count: metrics.vip },
   ]
@@ -1134,12 +1136,36 @@ export function ClientsDirectory({
               <Button
                 key={v}
                 icon={v === 'Table' ? 'queues' : 'box'}
-                variant={view === v ? 'primary' : 'secondary'}
+                variant="secondary"
+                aria-pressed={view === v}
                 onClick={() => setView(v)}
               >
                 {v}
               </Button>
             ))}
+              {!phone && (
+                <button
+                  type="button"
+                  onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
+                  aria-pressed={density === 'compact'}
+                  aria-label={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
+                  title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
+                  style={{
+                    marginLeft: 'auto',
+                    minWidth: 44,
+                    minHeight: 44,
+                    borderRadius: 'var(--r-input)',
+                    border: '1px solid var(--input-border)',
+                    background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--input-bg)',
+                    color: density === 'compact' ? 'var(--nav-active-accent)' : 'var(--text2)',
+                    cursor: 'pointer',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <Icon name={density === 'compact' ? 'chevron_up' : 'chevron_down'} size={15} />
+                </button>
+              )}
         </span>
 
         {visibleChips.map((c) => {
@@ -1516,7 +1542,7 @@ export function ClientsDirectory({
                 />
               }
             />
-            <div
+            {selectedRowIds.size > 0 && <div
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1592,31 +1618,9 @@ export function ClientsDirectory({
                   )}
                 </>
               )}
-              {!phone && (
-                <button
-                  type="button"
-                  onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
-                  aria-pressed={density === 'compact'}
-                  aria-label={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
-                  title={density === 'compact' ? 'Compact rows — click for comfortable' : 'Comfortable rows — click for compact'}
-                  style={{
-                    marginLeft: 'auto',
-                    minWidth: 44,
-                    minHeight: 44,
-                    borderRadius: 'var(--r-input)',
-                    border: '1px solid var(--input-border)',
-                    background: density === 'compact' ? 'var(--nav-active-bg)' : 'var(--input-bg)',
-                    color: density === 'compact' ? 'var(--nav-active-accent)' : 'var(--text2)',
-                    cursor: 'pointer',
-                    display: 'grid',
-                    placeItems: 'center',
-                  }}
-                >
-                  <Icon name={density === 'compact' ? 'chevron_up' : 'chevron_down'} size={15} />
-                </button>
-              )}
 
-            </div>
+
+            </div>}
 
             {filteredClients.length === 0 ? (
               <div style={{ padding: 'var(--sp-lg)' }}>
@@ -1706,7 +1710,7 @@ export function ClientsDirectory({
                           <span className="figure client-outfit" style={{ color: 'var(--text)', fontWeight: 600 }}>
                             {client.currentRentalsCount}
                           </span>{' '}
-                          active
+                          open
                         </span>
                         {money && client.outstandingPaisa > 0 && (
                           <span className="figure client-outfit" style={{ color: 'var(--danger-text)', fontWeight: 600 }}>
@@ -1735,7 +1739,7 @@ export function ClientsDirectory({
                 in the profile panel, so nothing becomes unreachable.
               */
               <DataTableShell ariaLabel="Clients directory" data-table-scroll className="client-table-shell" style={{ overflowX: 'auto' }}>
-                <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: narrow ? 620 : money ? 1180 : 900 }}>
+                <table className="client-table" style={{ width: '100%', borderCollapse: 'collapse', minWidth: narrow ? 620 : 0 }}>
                   <thead>
                     <tr style={{ background: 'var(--th-bg)' }}>
                       <th style={{ ...th, width: 30 }}>
@@ -1753,7 +1757,7 @@ export function ClientsDirectory({
                       {/* "Active Rentals", not "Current Rentals": the figure is
                           `active_bookings_count` — every booking that is neither
                           Closed nor cancelled, see the KPI note above. */}
-                      {!narrow && <SortHeader label="Active Rentals" sortKey="rentals" sort={sort} onSort={applySortKey} />}
+                      {!narrow && <SortHeader label="Open rentals" sortKey="rentals" sort={sort} onSort={applySortKey} />}
                       {money && <SortHeader label="Outstanding" sortKey="outstanding" sort={sort} onSort={applySortKey} />}
                       {money && !narrow && <SortHeader label="Deposit Held" sortKey="deposit" sort={sort} onSort={applySortKey} />}
                       {!narrow && <SortHeader label="Last Rental (BS / AD)" sortKey="lastRental" sort={sort} onSort={applySortKey} />}
@@ -1906,7 +1910,7 @@ export function ClientsDirectory({
                           <td style={td}>
                             {client.currentRentalsCount > 0 ? (
                               <span className="figure client-outfit" style={{ color: 'var(--link)', fontWeight: 600 }}>
-                                {client.currentRentalsCount} active
+                                {client.currentRentalsCount} open
                               </span>
                             ) : (
                               <span className="figure client-outfit" style={{ color: 'var(--muted)' }}>
@@ -1949,7 +1953,7 @@ export function ClientsDirectory({
 
                           {!narrow && (
                           <td style={td}>
-                            {client.lastRentalBs === '—' ? (
+                            {client.lastRentalAtAd ? <BsAdDate date={client.lastRentalAtAd} tone="booking" /> : client.lastRentalBs === '—' ? (
                               <span style={{ color: 'var(--muted)' }}>No rental yet</span>
                             ) : (
                               <>

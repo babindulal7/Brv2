@@ -119,6 +119,7 @@ async function mount() {
       </MemoryRouter>,
     )
   })
+  await click(container.querySelector('button[aria-label="More actions"]'))
 }
 
 const dialog = () => container.querySelector('[role="dialog"]')
@@ -177,17 +178,11 @@ describe('ClientDetail — Block / Unblock is wired to the action', () => {
     expect(text()).not.toContain('is unruled')
   })
 
-  it('a role without the capability gets an inert control and a stated reason', async () => {
+  it('a role without the capability is not offered the destructive action', async () => {
     session.role = 'Coordinator'
     await mount()
     const btn = buttons('Block Client')[0]
-    expect(btn).toBeDefined()
-    expect(btn!.disabled).toBe(true)
-    /* `Unavailable` carries its reason as the accessible name (plus a hover
-       title and a long-press popover), so the reason is read off the wrapper
-       rather than off the page text. */
-    const wrapper = btn!.closest('[aria-disabled]')
-    expect(wrapper?.getAttribute('aria-label') ?? '').toContain('Owner, Admin or Manager only')
+    expect(btn).toBeUndefined()
     await click(btn)
     expect(blockSpy.fn).not.toHaveBeenCalled()
   })

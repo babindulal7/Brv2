@@ -1,3 +1,4 @@
+import { formatAd } from '../bs'
 /**
  * # Pure-TypeScript PDF 1.4 Binary Generator
  *
@@ -148,8 +149,8 @@ export function generateInvoicePdf(data: InvoicePdfData): Uint8Array {
   const docTitle = data.documentTitle || (data.status === 'Draft' ? 'DRAFT INVOICE' : 'TAX INVOICE')
   const invNo = data.invoiceNo || 'DRAFT (NO NUMBER)'
   const bookingNo = data.bookingNo || '—'
-  const issueDate = data.issueDateAd || new Date().toISOString().slice(0, 10)
-  const dueDate = data.dueDateAd || 'Due on Receipt'
+  const issueDate = formatAd(data.issueDateAd ? new Date(data.issueDateAd) : new Date())
+  const dueDate = data.dueDateAd ? formatAd(new Date(data.dueDateAd)) : 'Due on Receipt'
 
   const companyName = data.company?.name || 'BABIN RENTALS KATHMANDU'
   const companyVat = data.company?.panVat || 'VAT: 601234567'
@@ -386,7 +387,7 @@ export function generateDocumentPdf(data: DocumentPdfData): Uint8Array {
 
   // Metadata line
   streamOps.push(`${mutedText} rg`)
-  const metaLine = `Client: ${data.clientName || 'General'} | Booking: ${data.bookingNo || '—'} | Date: ${data.dateAd || new Date().toISOString().slice(0, 10)}`
+  const metaLine = `Client: ${data.clientName || 'General'} | Booking: ${data.bookingNo || '—'} | Date: ${formatAd(data.dateAd ? new Date(data.dateAd) : new Date())}`
   streamOps.push(`BT /F1 9 Tf 40 690 Td (${escapePdfText(metaLine)}) Tj ET`)
 
   // Content Paragraphs

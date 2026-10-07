@@ -65,7 +65,7 @@ export function SchemaGuardBanner() {
         <span style={{ minWidth: 0 }}>
           {isBehind ? (
             <>
-              Database schema is behind this build. {missing.length} checked object
+              {/* Database schema is behind this build. */}A database update is needed. {missing.length} checked object
               {missing.length === 1 ? '' : 's'} could not be found
               {migrations ? ` (migration ${migrations})` : ''}. Actions that need{' '}
               {Array.from(new Set(missing.map((m) => m.impact))).join(', ')} will fail until the
@@ -73,10 +73,7 @@ export function SchemaGuardBanner() {
             </>
           ) : (
             <>
-              Could not verify the database schema. This device could not reach the database for{' '}
-              {unverified.length} of the checks
-              {migrations ? ` (migration ${migrations})` : ''}, so the app cannot tell you whether it
-              is current. Check the connection and reload before starting work.
+              Could not check the database version. Check the connection and reload before starting work.
             </>
           )}
         </span>

@@ -101,7 +101,7 @@ describe('validate — nothing leaves the screen', () => {
   })
 
   it('refuses a day that is not a date', () => {
-    expect(v({ businessDate: '1 Sep 2026' })).toThrow(/YYYY-MM-DD/)
+    expect(v({ businessDate: '1/9/2026' })).toThrow(/YYYY-MM-DD/)
   })
 
   it('refuses a press with no idempotency key', () => {

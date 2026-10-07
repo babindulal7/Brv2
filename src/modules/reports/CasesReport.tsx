@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
@@ -96,21 +97,21 @@ export default function CasesReport() {
         value: money ? formatMoney(totalAssessed) : '—',
         icon: 'dollar',
         accent: 'danger',
-        note: money ? 'Total hardware risk evaluated' : 'Restricted (Law 6)',
+        note: money ? 'Total hardware risk evaluated' : /* Restricted (Law 6) */ "Restricted",
       },
       {
         label: 'Recovered Claims',
         value: money ? formatMoney(totalRecovered) : '—',
         icon: 'check',
         accent: 'success',
-        note: money ? `${resolutionRate}% resolution rate` : 'Restricted (Law 6)',
+        note: money ? `${resolutionRate}% resolution rate` : /* Restricted (Law 6) */ "Restricted",
       },
       {
         label: 'Absorbed Loss',
         value: money ? formatMoney(totalAbsorbed) : '—',
         icon: 'arrow_down',
         accent: (totalAbsorbed as number) > 0 ? 'danger' : 'neutral',
-        note: money ? 'Losses absorbed by Babin Rentals' : 'Restricted (Law 6)',
+        note: money ? 'Losses absorbed by Babin Rentals' : /* Restricted (Law 6) */ "Restricted",
       },
     ]
   }, [cases, money])
@@ -184,7 +185,7 @@ export default function CasesReport() {
           c.counterpartyName,
           c.priority,
           c.status,
-          c.openedAd.toLocaleDateString(),
+          formatAd(c.openedAd),
           money ? formatMoney(c.assessedPaisa) : 'Restricted',
           money ? formatMoney(c.absorbedPaisa) : 'Restricted',
         ]),
@@ -472,7 +473,7 @@ export default function CasesReport() {
                         {c.status}
                       </span>
                     </td>
-                    <td style={td}>{c.openedAd.toLocaleDateString()}</td>
+                    <td style={td}>{formatAd(c.openedAd)}</td>
                     <td style={td} className="figure">{money ? formatMoney(c.assessedPaisa) : 'Restricted'}</td>
                     <td style={td}>
                       {c.linked?.linkedRecordId ? (

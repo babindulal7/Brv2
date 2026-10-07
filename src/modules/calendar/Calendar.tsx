@@ -59,7 +59,6 @@ import {
   EVENT_ACTIONS,
   ZOOM_STEPS,
   DEFAULT_ZOOM,
-  LAYERS,
   layerOf,
   adDay,
   dayDiff,
@@ -378,7 +377,7 @@ function bsRangeLabel(days: Date[]): string {
   }
   if (a.year === b.year && a.month === b.month) {
     if (a.day === b.day) return formatBs(a)
-    return `${a.day} – ${b.day} ${BS_MONTHS[a.month - 1] ?? ''} ${a.year} BS`
+    return `${a.day} – ${b.day} ${BS_MONTHS[a.month - 1] ?? ''}`
   }
   return `${formatBs(a)} – ${formatBs(b)}`
 }
@@ -424,7 +423,7 @@ function weekdayShort(d: Date): string {
 }
 
 function adShort(d: Date): string {
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kathmandu' })
+  return formatAd(d)
 }
 
 function isToday(d: Date): boolean {
@@ -1138,8 +1137,8 @@ function MonthGrid({
       </div>
       <p style={{ margin: '10px 2px 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
         {head
-          ? `${BS_MONTHS[head.month - 1]} ${head.year} BS · ${days.length} days the Date Engine can name.`
-          : `${formatAdMonth(first ?? anchor)} · shown as the AD month because the BS month lengths for this period are not loaded yet (PLAN.md §4.34).`}{' '}
+          ? `${BS_MONTHS[head.month - 1]} ${head.year} BS.`
+          : `${formatAdMonth(first ?? anchor)} · BS dates are unavailable for this period.`}{' '}
         {desktop ? 'Pick a day to peek at its jobs.' : phone ? 'Pick a day to load the agenda below.' : 'Pick a day to open its sheet.'}
       </p>
     </div>
@@ -1323,9 +1322,8 @@ function DayJobList({
 
       {overlayNote && (
         <p style={{ margin: 0, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45 }}>
-          Crew, maintenance and transport layers are desktop-only (§5.1 Notes), so this list shows the booking
-          layer only.
-        </p>
+          {/* Crew, maintenance and transport layers are desktop-only (§5.1 Notes), so this list shows the booking
+          layer only. */}Crew, maintenance and transport layers are desktop-only , so this list shows the booking layer only. </p>
       )}
     </div>
   )
@@ -1752,8 +1750,8 @@ function DateBlock({ label, at, time, icon }: { label: string; at: Date; time: s
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 'var(--t-th)', fontWeight: 600, color: 'var(--text2)' }}>{label}</div>
         {/* BS above AD, both from the engine — §4.2. */}
-        <div className="figure calendar-mono" style={{ fontSize: 'var(--t-meta)', color: 'var(--text)' }}>{formatBsOrAd(at)}</div>
-        <div className="figure calendar-mono" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{formatAd(at)}, {time}</div>
+        <div className="figure calendar-mono" style={{ fontSize: 'var(--t-meta)', color: ['Pickup', 'Return', 'Handover Session', 'Return Session'].includes(label) ? 'var(--booking-date-text)' : 'var(--text)' }}>{formatBsOrAd(at)}</div>
+        <div className="figure calendar-mono" style={{ fontSize: 'var(--t-th)', color: ['Pickup', 'Return', 'Handover Session', 'Return Session'].includes(label) ? 'var(--booking-date-text)' : 'var(--muted)' }}>{formatAd(at)}, {time}</div>
       </div>
     </div>
   )
@@ -1899,6 +1897,7 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow 
           Open Booking
         </Button>
       )}
+      {bar.draftId && <Button icon="file" onClick={() => navigate(`/rentals?action=new&draft=${bar.draftId}`)}>Open draft</Button>}
     </Card>
   )
 }
@@ -2683,15 +2682,7 @@ export default function Calendar() {
    * because §5.1 asks for the overlays and the day the tables have rows this is
    * where they come back.
    */
-  const layerToggles = desktop && view === 'Month' && (
-    <span style={{ display: 'inline-flex', minWidth: 250, maxWidth: 430 }}>
-      <Unavailable
-        label={`Layers · ${LAYERS.map((l) => l.label).join(' · ')}`}
-        reason="Every bar on this grid is a booking, and a booking belongs to no overlay — so these three would filter nothing. They need crew assignments, maintenance records and vehicles, none of which has a row."
-        icon="eye_off"
-      />
-    </span>
-  )
+  const layerToggles = null
 
   /**
    * The Row Type filter — **Timeline only**.
@@ -2819,10 +2810,7 @@ export default function Calendar() {
         nothing else.
       */}
       <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45, flexBasis: '100%' }}>
-        The legend defines {BAR_KINDS.length} bar types in all; the other{' '}
-        {BAR_KINDS.length - CALENDAR_BAR_KINDS.length} — cleaning, maintenance, crew duty, sub-rental,
-        conflicts and the rest — cannot appear here, because this calendar reads bookings and draws only the
-        booked, packed and out ones. A chip for any of them could do nothing but empty the grid.
+        Quotes and drafts are provisional and do not reserve equipment.
       </span>
     </div>
   )
@@ -3116,9 +3104,8 @@ export default function Calendar() {
       )}
       {!desktop && (
         <p style={{ margin: 0, padding: '0 var(--sp-md) var(--sp-sm)', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>
-          Chips truncate to a dot below 1280, and the crew, maintenance and transport layers are desktop-only
-          (§5.1 Notes) — this grid shows the booking layer.
-        </p>
+          {/* Chips truncate to a dot below 1280, and the crew, maintenance and transport layers are desktop-only
+          (§5.1 Notes) — this grid shows the booking layer. */}Chips truncate to a dot below 1280, and the crew, maintenance and transport layers are desktop-only — this grid shows the booking layer. </p>
       )}
       {markerLegend}
     </Card>
@@ -3203,14 +3190,14 @@ export default function Calendar() {
 
   const railDefault = (
     <>
-      <MiniMonth anchor={start} onPickDay={pickDay} onStepMonth={stepMonth} busy={busyDays} />
+      {view !== 'Month' && <MiniMonth anchor={start} onPickDay={pickDay} onStepMonth={stepMonth} busy={busyDays} />}
       <FestivalCard />
       <Card bodyStyle={{ padding: 14 }}>
         <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700 }}>Today&apos;s Summary</div>
         <div className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', margin: '2px 0 10px' }}>
           {todaySummaryDate}
         </div>
-        <CountList rows={TODAY_SUMMARY} money={money} dots counts={counts} />
+        <CountList rows={TODAY_SUMMARY.filter(row => row.key !== null)} money={money} dots counts={counts} />
       </Card>
       <Card bodyStyle={{ padding: 14 }}>
         <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 10 }}>
@@ -3219,7 +3206,7 @@ export default function Calendar() {
               the card cannot promise seven days while counting a different span. */}
           Upcoming <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 'var(--t-th)' }}>({UPCOMING_PERIOD})</span>
         </div>
-        <CountList rows={UPCOMING} money={money} dots={false} counts={counts} />
+        <CountList rows={UPCOMING.filter(row => row.key !== null)} money={money} dots={false} counts={counts} />
       </Card>
     </>
   )
@@ -3375,7 +3362,7 @@ export default function Calendar() {
             <div className="figure" style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', margin: '2px 0 10px' }}>
               {todaySummaryDate}
             </div>
-            <CountList rows={TODAY_SUMMARY} money={money} dots counts={counts} />
+            <CountList rows={TODAY_SUMMARY.filter(row => row.key !== null)} money={money} dots counts={counts} />
           </Card>
           <Card bodyStyle={{ padding: 14 }}>
             <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 'var(--sp-sm)' }}>Conflicts</div>
@@ -3408,14 +3395,14 @@ export default function Calendar() {
                 utilization anywhere in the repo, so it states that instead. */}
             <NotTracked
               what="Utilization"
-              reason="has no source: no engine computes utilised days against available days, and this screen may not derive one (law 1)."
+              reason={/* has no source: no engine computes utilised days against available days, and this screen may not derive one (law 1). */ /* has no source: no engine computes utilised days against available days, and this screen may not derive one (law 1). */ "Utilisation is not tracked yet."}
             />
           </Card>
           <Card bodyStyle={{ padding: 14 }}>
             <div style={{ fontSize: 'var(--t-ui)', fontWeight: 700, marginBottom: 10 }}>
               Upcoming <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 'var(--t-th)' }}>({UPCOMING_PERIOD})</span>
             </div>
-            <CountList rows={UPCOMING} money={money} dots={false} counts={counts} />
+            <CountList rows={UPCOMING.filter(row => row.key !== null)} money={money} dots={false} counts={counts} />
           </Card>
         </div>
 
@@ -3458,9 +3445,6 @@ export default function Calendar() {
               </Button>
             }
             secondary={[
-              <Button key="new" icon="plus" onClick={() => navigate('/rentals/new')}>
-                New Rental
-              </Button>,
               ...(desktop ? [
                 <Button key="full" icon="eye" onClick={() => setFullChoice(true)}>
                   Full View

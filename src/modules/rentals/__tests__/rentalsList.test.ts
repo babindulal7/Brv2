@@ -164,12 +164,11 @@ describe('Payment Due — the chip with no column behind it', () => {
     expect(unavailable[0]?.unavailable).toBe(PAYMENT_DUE_UNAVAILABLE)
   })
 
-  it('names the three places an outstanding balance is NOT', () => {
+  it('directs staff to Finance for an outstanding invoice balance', () => {
     // A disabled control has to say why, and "not built yet" is not why. The
     // reason has to be actionable by whoever wires it next.
-    expect(PAYMENT_DUE_UNAVAILABLE).toContain('deposit_required')
-    expect(PAYMENT_DUE_UNAVAILABLE).toContain('payments')
-    expect(PAYMENT_DUE_UNAVAILABLE).toContain('Financial Engine')
+    expect(PAYMENT_DUE_UNAVAILABLE).toContain('invoice balance in Finance')
+    expect(PAYMENT_DUE_UNAVAILABLE).not.toMatch(/deposit_required|Financial Engine/)
   })
 
   it('never becomes a filter that quietly returns the unfiltered list', () => {
@@ -508,13 +507,13 @@ describe('toRentalListRow — the columns that survived', () => {
   })
 
   it('renders both instants on the Kathmandu wall clock (Law 7)', () => {
-    expect(map().pickup).toEqual({ date: '14 Aug 2026', time: '09:00 AM' })
-    expect(map().ret).toEqual({ date: '18 Aug 2026', time: '04:15 PM' })
+    expect(map().pickup).toMatchObject({ date: '14/8/2026', time: '09:00 AM' })
+    expect(map().ret).toMatchObject({ date: '18/8/2026', time: '04:15 PM' })
   })
 
   it('renders the Kathmandu DAY, which is tomorrow for the last 5h45m of every UTC day', () => {
-    expect(map({ pickupAtAd: '2026-08-14T18:30:00.000Z' }).pickup).toEqual({
-      date: '15 Aug 2026',
+    expect(map({ pickupAtAd: '2026-08-14T18:30:00.000Z' }).pickup).toMatchObject({
+      date: '15/8/2026',
       time: '12:15 AM',
     })
   })
@@ -550,7 +549,7 @@ describe('toRentalListRow — the columns that survived', () => {
 
 describe('toRentalListRow — created_at is NOT the Booked date', () => {
   it('renders the insert instant under its own name', () => {
-    expect(map().createdOn).toBe('12 Jul 2026')
+    expect(map().createdOn).toBe('12/7/2026')
   })
 
   it('never labels it "Booked"', () => {
@@ -838,8 +837,8 @@ describe('the Sub-Rental chip — narrows server-side on the derived set', () =>
   })
 
   it('states the derivation in the sentence the footer shows', () => {
-    expect(SUB_RENTAL_NOTE).toContain('booking_lines.line_type')
-    expect(SUB_RENTAL_NOTE).toContain('any of its lines')
+    expect(SUB_RENTAL_NOTE).toContain('equipment supplied by another rental house')
+    expect(SUB_RENTAL_NOTE).not.toContain('booking_lines')
   })
 })
 

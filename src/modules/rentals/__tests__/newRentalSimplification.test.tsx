@@ -121,7 +121,7 @@ describe('NewRental simplification (Part A - D)', () => {
 
     const attentionStatus = container.querySelector('[data-testid=booking-attention-status]')
     expect(attentionStatus).not.toBeNull()
-    expect(attentionStatus?.textContent).toContain('attention')
+    expect(attentionStatus?.textContent).toContain('Ready')
 
     const confirmBtn = [...container.querySelectorAll('button')].find(
       (b) => b.textContent?.trim() === 'Confirm Booking',

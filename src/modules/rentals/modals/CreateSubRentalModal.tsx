@@ -1,3 +1,4 @@
+import { DateField } from '../../../components/ui/DateField'
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Button'
@@ -208,14 +209,7 @@ export function CreateSubRentalModal({
           <label htmlFor="subrental-return-by" style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text)' }}>
             Vendor Return-By Date <span style={{ color: 'var(--danger)' }}>*</span>
           </label>
-          <input
-            id="subrental-return-by"
-            type="date"
-            required
-            value={returnByDate}
-            onChange={(e) => setReturnByDate(e.target.value)}
-            style={{ minHeight: 44, padding: '0 12px', borderRadius: 'var(--r-btn)', border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)', fontSize: 'var(--t-meta)' }}
-          />
+          <DateField id="subrental-return-by" bookingDate required ariaLabel="Vendor Return-By Date" value={returnByDate} onChange={setReturnByDate} style={{ minHeight: 44 }} />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-md)' }}>

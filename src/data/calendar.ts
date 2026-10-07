@@ -177,6 +177,9 @@ export type BarKind =
   | 'Available'
   | 'Reserved'
   | 'On Rent'
+  | 'Completed'
+  | 'Quote'
+  | 'Draft'
   | 'Cleaning'
   | 'Maintenance'
   | 'Crew Duty'
@@ -253,6 +256,9 @@ export const BAR_STYLE: Record<BarKind, BarSkin> = {
      word on the bar is the carrier §7.4 requires. */
   Available: { bg: 'var(--st-in-bg)', fg: 'var(--st-in-fg)', ink: 'var(--success-text)', line: 'var(--success)' },
   Reserved: { bg: 'var(--st-primary-bg)', fg: 'var(--st-primary-fg)', ink: 'var(--primary-text)', line: 'var(--st-primary-fg)', icon: 'calendar_event' },
+  Completed: { bg: 'var(--st-neutral-bg)', fg: 'var(--st-neutral-fg)', ink: 'var(--muted)', line: 'var(--border)', icon: 'check' },
+  Quote: { bg: 'transparent', fg: 'var(--muted)', ink: 'var(--muted)', line: 'var(--border)', dash: true, icon: 'file' },
+  Draft: { bg: 'transparent', fg: 'var(--muted)', ink: 'var(--muted)', line: 'var(--border)', dash: true, icon: 'file' },
   /* §4 — orange, "out with the client", and solid like every other status. */
   'On Rent': { bg: 'var(--st-out-bg)', fg: 'var(--st-out-fg)', ink: 'var(--warn-text)', line: 'var(--st-out-bg)', icon: 'calendar_event' },
   Cleaning: { bg: 'var(--st-progress-bg)', fg: 'var(--st-progress-fg)', ink: 'var(--ready-text)', line: 'var(--st-progress-fg)', icon: 'refresh' },
@@ -292,6 +298,7 @@ export interface Bar {
    * match. Absent means "this bar is not a booking", never "we could not tell".
    */
   bookingNo?: string
+  draftId?: string
   /** Second line — client / project / reason. */
   sub?: string
   /** Inclusive AD start day (UTC midnight). */
@@ -720,10 +727,7 @@ export function holidayOn(d: Date): Holiday | null {
 }
 
 /** Why the festival card and the grid say nothing about holidays. Rendered, not hidden in a tooltip. */
-export const HOLIDAYS_NOT_TRACKED =
-  'No holiday calendar is loaded. Nepal’s festival dates are BS calendar data fixed each year, like the ' +
-  'month lengths PLAN.md §4.34 will not infer, and no table in the schema holds them — so the grid shades ' +
-  'and labels nothing rather than showing dates it invented.'
+export const HOLIDAYS_NOT_TRACKED = 'No holiday calendar is loaded.'
 
 /**
  * The live counts the two rail cards can actually ask for.

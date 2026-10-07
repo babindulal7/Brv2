@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
@@ -79,14 +80,14 @@ export default function DamageMaintenanceReports() {
         value: money ? formatMoney(m.totalDamageCost) : '—',
         icon: 'dollar',
         accent: 'danger',
-        note: money ? 'Total hardware repair quote' : 'Restricted (Law 6)',
+        note: money ? 'Total hardware repair quote' : /* Restricted (Law 6) */ "Restricted",
       },
       {
         label: 'Client Recovered',
         value: money ? formatMoney(m.totalChargedToClient) : '—',
         icon: 'check',
         accent: 'success',
-        note: money ? 'Billed via deposit or case charge' : 'Restricted (Law 6)',
+        note: money ? 'Billed via deposit or case charge' : /* Restricted (Law 6) */ "Restricted",
       },
       {
         label: 'Active Cases',
@@ -122,7 +123,7 @@ export default function DamageMaintenanceReports() {
         value: money ? formatMoney(m.totalRepairSpend) : '—',
         icon: 'dollar',
         accent: 'neutral',
-        note: money ? 'Parts & technician servicing' : 'Restricted (Law 6)',
+        note: money ? 'Parts & technician servicing' : /* Restricted (Law 6) */ "Restricted",
       },
       {
         label: 'In-House Ratio',
@@ -632,7 +633,7 @@ export default function DamageMaintenanceReports() {
                       <td style={{ ...td, fontWeight: 600 }}>{srv.unitName}</td>
                       <td style={{ ...td, fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>{srv.serial}</td>
                       <td style={td}>{srv.serviceType}</td>
-                      <td style={td}>{new Date(srv.scheduledDate).toLocaleDateString('en-GB')}</td>
+                      <td style={td}>{formatAd(new Date(srv.scheduledDate))}</td>
                       <td style={td}>{srv.performedBy}</td>
                       <td style={td}>
                         <span

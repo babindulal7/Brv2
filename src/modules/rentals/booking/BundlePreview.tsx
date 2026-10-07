@@ -231,7 +231,7 @@ export function BundlePreview({
             {bookingWindow.pickupAd && bookingWindow.returnAd ? (
               <>
                 Checked for{' '}
-                <span className="figure" style={{ color: 'var(--text)', fontWeight: 600 }}>
+                <span className="figure" style={{ color: 'var(--booking-date-text)', fontWeight: 600 }}>
                   {formatAd(bookingWindow.pickupAd)} – {formatAd(bookingWindow.returnAd)}
                 </span>
               </>

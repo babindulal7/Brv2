@@ -1,3 +1,4 @@
+import { formatAd } from '../../../lib/bs'
 import Icon from '../../../components/ui/Icon'
 import { Button, Input } from '../../../components/ui'
 import { Field, MoneyRow, Section, inputStyle } from './BookingFormWidgets'
@@ -129,308 +130,309 @@ export function RentalPricingSection({
         style={{
           display: 'grid',
           gridTemplateColumns: isDesktop ? 'repeat(2, minmax(0,1fr))' : '1fr',
+          alignItems: 'start',
           gap: 'var(--sp-md)',
         }}
       >
-        {/* Column 1: Rental Charges Breakdown */}
+        {/* User ruling, 7 Oct: Discounts & Taxes precede Rental Charges. */}
         <div style={moneyBlock}>
-          <h3 style={sub}>Rental Charges</h3>
-          {[
-            { l: 'Equipment Rental', v: formatMoney(pricing.equipmentSubtotalPaisa) },
-            { l: 'Bundles', v: pricing.bundleSubtotalPaisa > 0 ? formatMoney(pricing.bundleSubtotalPaisa) : '—' },
-            { l: 'Sub-Rental', v: pricing.subRentalSubtotalPaisa > 0 ? formatMoney(pricing.subRentalSubtotalPaisa) : '—' },
-            {
-              l: 'Services & custom lines',
-              v: pricing.servicesSubtotalPaisa > 0 ? formatMoney(pricing.servicesSubtotalPaisa) : '—',
-            },
-            ...(canCrewMoney
-              ? [{ l: 'Crew Charges', v: pricing.crewSubtotalPaisa > 0 ? formatMoney(pricing.crewSubtotalPaisa) : '—' }]
-              : []),
-            { l: 'Transport', v: pricing.deliverySubtotalPaisa > 0 ? formatMoney(pricing.deliverySubtotalPaisa) : '—' },
-          ].map((r) => (
-            <MoneyRow key={r.l} label={r.l} value={r.v} {...(r.v === '—' ? { tone: 'var(--muted)' } : {})} />
-          ))}
-          <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
-            <MoneyRow label="Subtotal" value={formatMoney(pricing.grossSubtotalPaisa)} />
-            <MoneyRow
-              label={
-                pricing.discounts.appliedPercent > 0
-                  ? `Discount (${pricing.discounts.appliedPercent}%${pricing.discounts.capped ? ' - CAPPED' : ''})`
-                  : 'Discount'
-              }
-              value={pricing.discounts.discountPaisa > 0 ? `− ${formatMoney(pricing.discounts.discountPaisa)}` : '—'}
-              {...(pricing.discounts.discountPaisa > 0 ? { tone: 'var(--danger-text)' } : {})}
-            />
-            <MoneyRow label="Taxable Amount" value={formatMoney(pricing.taxableSubtotalPaisa)} />
-            <MoneyRow
-              label={vatOn ? `VAT (${pricing.vatRatePercent}%)` : 'VAT — off for this booking'}
-              value={vatOn ? formatMoney(pricing.vatPaisa) : '—'}
-              {...(vatOn ? {} : { tone: 'var(--muted)' })}
-            />
-          </div>
-          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-            <MoneyRow label="RENTAL TOTAL" value={formatMoney(pricing.rentalTotalPaisa)} big />
-          </div>
-          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-            <MoneyRow
-              label="Security Deposit (Refundable)"
-              value={formatMoney(pricing.securityDeposit.requiredPaisa)}
-              tone="var(--text2)"
-            />
-            <p style={{ margin: '2px 0 8px', fontSize: '11px', color: 'var(--muted)' }}>
-              Held as a separate liability guarantee. Not taxable, not rental revenue.
-            </p>
-            <MoneyRow
-              label={`Advance Required (${pricing.advanceRequiredPaisa === pricing.rentalTotalPaisa && pricing.rentalTotalPaisa <= 500000 ? '100%' : pricing.rentalTotalPaisa <= 1000000 ? 'Rs 5,000' : '50%'})`}
-              value={formatMoney(pricing.advanceRequiredPaisa)}
-              tone="var(--st-primary-fg)"
-              strong
-            />
-            <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
-              Tier policy: ≤ Rs 5,000 (100%) · ≤ Rs 10,000 (Rs 5,000) · &gt; Rs 10,000 (50%)
-            </p>
-          </div>
-        </div>
-
-        {/* Column 2: Discounts, VAT & Security Deposit Policy */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <div style={moneyBlock}>
-            <h3 style={sub}>Discounts & Taxes</h3>
+          <h3 style={sub}>Discounts & Taxes</h3>
+          <div style={{ marginTop: 8 }}>
+            {/* User accepted label clarity, 7 Oct: optional adjustments have no star. */}
+            <Field label="Manual Discount %">
+              <Input
+                type="number"
+                min={0}
+                max={DISCOUNT_STACKING_CAP_PERCENT}
+                value={discountPct}
+                onChange={(e) =>
+                  setDiscountPct(
+                    Math.min(DISCOUNT_STACKING_CAP_PERCENT, Math.max(0, Number(e.target.value) || 0)),
+                  )
+                }
+                style={inputStyle}
+              />
+            </Field>
             <div style={{ marginTop: 8 }}>
-              <Field label="Manual Discount % *">
-                <Input
-                  type="number"
-                  min={0}
-                  max={DISCOUNT_STACKING_CAP_PERCENT}
-                  value={discountPct}
-                  onChange={(e) =>
-                    setDiscountPct(
-                      Math.min(DISCOUNT_STACKING_CAP_PERCENT, Math.max(0, Number(e.target.value) || 0)),
-                    )
+              <DiscountChips
+                percent={discountPct}
+                onPercent={setDiscountPct}
+                amount={formatMoney(pricing.discounts.discountPaisa)}
+                onSelectPreset={(pct, reason) => {
+                  setDiscountPct(pct)
+                  if (reason && (!manualDiscountReason || manualDiscountReason.trim() === '')) {
+                    setManualDiscountReason(reason)
                   }
-                  style={inputStyle}
-                />
-              </Field>
-              <div style={{ marginTop: 8 }}>
-                <DiscountChips
-                  percent={discountPct}
-                  onPercent={setDiscountPct}
-                  amount={formatMoney(pricing.discounts.discountPaisa)}
-                  onSelectPreset={(pct, reason) => {
-                    setDiscountPct(pct)
-                    if (reason && (!manualDiscountReason || manualDiscountReason.trim() === '')) {
-                      setManualDiscountReason(reason)
-                    }
-                  }}
-                />
+                }}
+              />
+            </div>
+
+            {discountPct > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+                <Field label="Discount Reason *">
+                  <Input
+                    value={manualDiscountReason}
+                    onChange={(e) => setManualDiscountReason(e.target.value)}
+                    placeholder="e.g. Director courtesy"
+                    style={inputStyle}
+                  />
+                </Field>
+                <Field label="Authorized By *">
+                  <Input
+                    value={manualDiscountAuthorizedBy}
+                    onChange={(e) => setManualDiscountAuthorizedBy(e.target.value)}
+                    placeholder="e.g. Babin"
+                    style={inputStyle}
+                  />
+                </Field>
               </div>
+            )}
 
-              {discountPct > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
-                  <Field label="Discount Reason *">
-                    <Input
-                      value={manualDiscountReason}
-                      onChange={(e) => setManualDiscountReason(e.target.value)}
-                      placeholder="e.g. Director courtesy"
-                      style={inputStyle}
-                    />
-                  </Field>
-                  <Field label="Authorized By *">
-                    <Input
-                      value={manualDiscountAuthorizedBy}
-                      onChange={(e) => setManualDiscountAuthorizedBy(e.target.value)}
-                      placeholder="e.g. Babin"
-                      style={inputStyle}
-                    />
-                  </Field>
-                </div>
-              )}
+            {/* Women DoP / Director toggle */}
+            <label
+              htmlFor="women-dop-eligible"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: 12,
+                cursor: 'pointer',
+                fontSize: 'var(--t-meta)',
+              }}
+            >
+              <input
+                id="women-dop-eligible"
+                type="checkbox"
+                aria-label="Women DoP / Director (+5% discount)"
+                checked={womenDopEligible}
+                onChange={(e) => setWomenDopEligible(e.target.checked)}
+                style={{ cursor: 'pointer', width: 16, height: 16 }}
+              />
+              <span>
+                <strong>Women DoP / Director (+5% discount)</strong>
+                <span style={{ display: 'block', color: 'var(--muted)', fontSize: '11px' }}>
+                  Encouraging women cinematographers & filmmakers in Nepal.
+                </span>
+              </span>
+            </label>
 
-              {/* Women DoP / Director toggle */}
-              <label
-                htmlFor="women-dop-eligible"
+            {/* Student bundle indicator */}
+            {isStudentBundle && (
+              <div
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  marginTop: 12,
-                  cursor: 'pointer',
-                  fontSize: 'var(--t-meta)',
+                  marginTop: 10,
+                  padding: '6px 10px',
+                  borderRadius: 'var(--r-btn)',
+                  background: 'var(--st-info-bg, #eff6ff)',
+                  color: 'var(--st-info-fg, #1e40af)',
+                  fontSize: '12px',
                 }}
               >
-                <input
-                  id="women-dop-eligible"
-                  type="checkbox"
-                  aria-label="Women DoP / Director (+5% discount)"
-                  checked={womenDopEligible}
-                  onChange={(e) => setWomenDopEligible(e.target.checked)}
-                  style={{ cursor: 'pointer', width: 16, height: 16 }}
-                />
-                <span>
-                  <strong>Women DoP / Director (+5% discount)</strong>
-                  <span style={{ display: 'block', color: 'var(--muted)', fontSize: '11px' }}>
-                    Encouraging women cinematographers & filmmakers in Nepal.
-                  </span>
-                </span>
-              </label>
+                <Icon name="info" size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
+                Student/College bundle detected — subsidized flat rate lines are protected from stacking discounts.
+              </div>
+            )}
 
-              {/* Student bundle indicator */}
-              {isStudentBundle && (
-                <div
-                  style={{
-                    marginTop: 10,
-                    padding: '6px 10px',
-                    borderRadius: 'var(--r-btn)',
-                    background: 'var(--st-info-bg, #eff6ff)',
-                    color: 'var(--st-info-fg, #1e40af)',
-                    fontSize: '12px',
-                  }}
-                >
-                  <Icon name="info" size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
-                  Student/College bundle detected — subsidized flat rate lines are protected from stacking discounts.
-                </div>
-              )}
-
-              {/* Promo code */}
-              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-                <Field label="Promo Code *">
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <Input
-                      value={promoCodeInput}
-                      onChange={(e) => {
-                        setPromoCodeInput(e.target.value.toUpperCase())
-                        setPromoNotice(null)
-                      }}
-                      placeholder="e.g. NEPALFILM, MONSOON26"
-                      style={{ ...inputStyle, textTransform: 'uppercase' }}
-                    />
-                    <Button
-                      variant="secondary"
-                      type="button"
-                      onClick={() => {
-                        const code = promoCodeInput.trim().toUpperCase()
-                        if (!code) {
-                          setPromoNotice({ tone: 'danger', text: 'Enter a promo code.' })
-                          return
-                        }
-                        const promo = PROMO_CODES[code]
-                        if (!promo) {
-                          setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is invalid or expired.` })
-                          return
-                        }
-                        if (!promo.active) {
-                          setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is no longer active.` })
-                          return
-                        }
-                        if (pickupAt) {
-                          const pickupIso = pickupAt.toISOString()
-                          if (promo.validFrom && pickupIso < promo.validFrom) {
-                            setPromoNotice({
-                              tone: 'danger',
-                              text: `Promo code "${code}" is not valid until ${promo.validFrom}.`,
-                            })
-                            return
-                          }
-                          if (promo.validTo && pickupIso > promo.validTo) {
-                            setPromoNotice({
-                              tone: 'danger',
-                              text: `Promo code "${code}" expired on ${promo.validTo}.`,
-                            })
-                            return
-                          }
-                        }
-                        if (promo.minSpendPaisa && pricing.grossSubtotalPaisa < promo.minSpendPaisa) {
+            {/* Promo code */}
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+              <Field label="Promo Code">
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Input
+                    value={promoCodeInput}
+                    onChange={(e) => {
+                      setPromoCodeInput(e.target.value.toUpperCase())
+                      setPromoNotice(null)
+                    }}
+                    placeholder="e.g. NEPALFILM, MONSOON26"
+                    style={{ ...inputStyle, textTransform: 'uppercase' }}
+                  />
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    onClick={() => {
+                      const code = promoCodeInput.trim().toUpperCase()
+                      if (!code) {
+                        setPromoNotice({ tone: 'danger', text: 'Enter a promo code.' })
+                        return
+                      }
+                      const promo = PROMO_CODES[code]
+                      if (!promo) {
+                        setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is invalid or expired.` })
+                        return
+                      }
+                      if (!promo.active) {
+                        setPromoNotice({ tone: 'danger', text: `Promo code "${code}" is no longer active.` })
+                        return
+                      }
+                      if (pickupAt) {
+                        const pickupIso = pickupAt.toISOString()
+                        if (promo.validFrom && pickupIso < promo.validFrom) {
                           setPromoNotice({
                             tone: 'danger',
-                            text: `Promo "${code}" requires minimum rental spend of ${formatMoney(promo.minSpendPaisa)}.`,
+                            text: `Promo code "${code}" is not valid until ${formatAd(new Date(promo.validFrom))}.`,
                           })
                           return
                         }
-                        setPromoCodeApplied(code)
+                        if (promo.validTo && pickupIso > promo.validTo) {
+                          setPromoNotice({
+                            tone: 'danger',
+                            text: `Promo code "${code}" expired on ${formatAd(new Date(promo.validTo))}.`,
+                          })
+                          return
+                        }
+                      }
+                      if (promo.minSpendPaisa && pricing.grossSubtotalPaisa < promo.minSpendPaisa) {
                         setPromoNotice({
-                          tone: 'success',
-                          text: `Promo "${code}" applied: ${promo.discountPercent}% off${promo.description ? ` (${promo.description})` : ''}.`,
+                          tone: 'danger',
+                          text: `Promo "${code}" requires minimum rental spend of ${formatMoney(promo.minSpendPaisa)}.`,
                         })
-                      }}
-                    >
-                      Apply
-                    </Button>
-                    {promoCodeApplied && (
-                      <Button
-                        variant="ghost"
-                        type="button"
-                        onClick={() => {
-                          setPromoCodeApplied(null)
-                          setPromoCodeInput('')
-                          setPromoNotice(null)
-                        }}
-                      >
-                        Clear
-                      </Button>
-                    )}
-                  </div>
-                </Field>
-                {promoNotice && (
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: '12px',
-                      color:
-                        promoNotice.tone === 'success' ? 'var(--st-success-fg, #065f46)' : 'var(--danger-text)',
+                        return
+                      }
+                      setPromoCodeApplied(code)
+                      setPromoNotice({
+                        tone: 'success',
+                        text: `Promo "${code}" applied: ${promo.discountPercent}% off${promo.description ? ` (${promo.description})` : ''}.`,
+                      })
                     }}
                   >
-                    {promoNotice.text}
-                  </div>
-                )}
-              </div>
-
-              {/* Stacking cap indicator */}
-              {pricing.discounts.capped && (
-                <div
-                  style={{
-                    marginTop: 10,
-                    padding: '6px 10px',
-                    borderRadius: 'var(--r-btn)',
-                    background: 'var(--st-warning-bg, #fffbeb)',
-                    color: 'var(--st-warning-fg, #92400e)',
-                    fontSize: '12px',
-                  }}
-                >
-                  <Icon
-                    name="alert_triangle"
-                    size={12}
-                    style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }}
-                  />
-                  Discounts capped at 25% maximum per company policy.
-                </div>
-              )}
-
-              {/* Validation errors */}
-              {pricing.discounts.validationErrors.length > 0 && (
-                <div style={{ marginTop: 9, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
-                  {pricing.discounts.validationErrors.map((err, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        display: 'flex',
-                        gap: 6,
-                        alignItems: 'flex-start',
-                        fontSize: 'var(--t-meta)',
-                        fontWeight: 600,
-                        color: 'var(--st-danger-fg)',
-                        lineHeight: 1.4,
+                    Apply
+                  </Button>
+                  {promoCodeApplied && (
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      onClick={() => {
+                        setPromoCodeApplied(null)
+                        setPromoCodeInput('')
+                        setPromoNotice(null)
                       }}
                     >
-                      <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
-                      {err}
-                    </div>
-                  ))}
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              </Field>
+              {promoNotice && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: '12px',
+                    color:
+                      promoNotice.tone === 'success' ? 'var(--st-success-fg, #065f46)' : 'var(--danger-text)',
+                  }}
+                >
+                  {promoNotice.text}
                 </div>
               )}
             </div>
 
-            <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-              <VatToggle ratePercent={vatRatePercent} on={vatOn} onChange={setVatOn} />
+            {/* Stacking cap indicator */}
+            {pricing.discounts.capped && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '6px 10px',
+                  borderRadius: 'var(--r-btn)',
+                  background: 'var(--st-warning-bg, #fffbeb)',
+                  color: 'var(--st-warning-fg, #92400e)',
+                  fontSize: '12px',
+                }}
+              >
+                <Icon
+                  name="alert_triangle"
+                  size={12}
+                  style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }}
+                />
+                Discounts capped at 25% maximum per company policy.
+              </div>
+            )}
+
+            {/* Validation errors */}
+            {pricing.discounts.validationErrors.length > 0 && (
+              <div style={{ marginTop: 9, padding: 10, borderRadius: 'var(--r-btn)', background: 'var(--st-danger-bg)' }}>
+                {pricing.discounts.validationErrors.map((err, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: 'flex',
+                      gap: 6,
+                      alignItems: 'flex-start',
+                      fontSize: 'var(--t-meta)',
+                      fontWeight: 600,
+                      color: 'var(--st-danger-fg)',
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    <Icon name="error" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+                    {err}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+            <VatToggle ratePercent={vatRatePercent} on={vatOn} onChange={setVatOn} />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+          <div style={moneyBlock}>
+            <h3 style={sub}>Rental Charges</h3>
+            {[
+              { l: 'Equipment Rental', v: formatMoney(pricing.equipmentSubtotalPaisa) },
+              { l: 'Bundles', v: pricing.bundleSubtotalPaisa > 0 ? formatMoney(pricing.bundleSubtotalPaisa) : '—' },
+              { l: 'Sub-Rental', v: pricing.subRentalSubtotalPaisa > 0 ? formatMoney(pricing.subRentalSubtotalPaisa) : '—' },
+              {
+                l: 'Services & custom lines',
+                v: pricing.servicesSubtotalPaisa > 0 ? formatMoney(pricing.servicesSubtotalPaisa) : '—',
+              },
+              ...(canCrewMoney
+                ? [{ l: 'Crew Charges', v: pricing.crewSubtotalPaisa > 0 ? formatMoney(pricing.crewSubtotalPaisa) : '—' }]
+                : []),
+              { l: 'Transport', v: pricing.deliverySubtotalPaisa > 0 ? formatMoney(pricing.deliverySubtotalPaisa) : '—' },
+            ].map((r) => (
+              <MoneyRow key={r.l} label={r.l} value={r.v} {...(r.v === '—' ? { tone: 'var(--muted)' } : {})} />
+            ))}
+            <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
+              <MoneyRow label="Subtotal" value={formatMoney(pricing.grossSubtotalPaisa)} />
+              <MoneyRow
+                label={
+                  pricing.discounts.appliedPercent > 0
+                    ? `Discount (${pricing.discounts.appliedPercent}%${pricing.discounts.capped ? ' - CAPPED' : ''})`
+                    : 'Discount'
+                }
+                value={pricing.discounts.discountPaisa > 0 ? `− ${formatMoney(pricing.discounts.discountPaisa)}` : '—'}
+                {...(pricing.discounts.discountPaisa > 0 ? { tone: 'var(--danger-text)' } : {})}
+              />
+              <MoneyRow label="Taxable Amount" value={formatMoney(pricing.taxableSubtotalPaisa)} />
+              <MoneyRow
+                label={vatOn ? `VAT (${pricing.vatRatePercent}%)` : 'VAT — off for this booking'}
+                value={vatOn ? formatMoney(pricing.vatPaisa) : '—'}
+                {...(vatOn ? {} : { tone: 'var(--muted)' })}
+              />
+            </div>
+            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+              <MoneyRow label="RENTAL TOTAL" value={formatMoney(pricing.rentalTotalPaisa)} big />
+            </div>
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+              <MoneyRow
+                label="Security Deposit (Refundable)"
+                value={formatMoney(pricing.securityDeposit.requiredPaisa)}
+                tone="var(--text2)"
+              />
+              <p style={{ margin: '2px 0 8px', fontSize: '11px', color: 'var(--muted)' }}>
+                Held as a separate liability guarantee. Not taxable, not rental revenue.
+              </p>
+              <MoneyRow
+                label={`Advance Required (${pricing.advanceRequiredPaisa === pricing.rentalTotalPaisa && pricing.rentalTotalPaisa <= 500000 ? '100%' : pricing.rentalTotalPaisa <= 1000000 ? 'Rs 5,000' : '50%'})`}
+                value={formatMoney(pricing.advanceRequiredPaisa)}
+                tone="var(--st-primary-fg)"
+                strong
+              />
+              <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
+                Tier policy: ≤ Rs 5,000 (100%) · ≤ Rs 10,000 (Rs 5,000) · &gt; Rs 10,000 (50%)
+              </p>
             </div>
           </div>
 

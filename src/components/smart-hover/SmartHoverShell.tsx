@@ -34,6 +34,9 @@ const frame: CSSProperties = {
   borderRadius: `${HOVER_DIMS.radius}px`,
   boxShadow: 'var(--shadow-modal)',
   overflow: 'hidden',
+  minWidth: 0,
+  boxSizing: 'border-box',
+  overflowWrap: 'anywhere',
   animation: `smart-hover-in ${HOVER_TIMING.animMs}ms cubic-bezier(0.16, 1, 0.3, 1)`,
 }
 
@@ -42,14 +45,14 @@ export function SmartHoverShell({ labelledBy, large = false, sheet = false, head
   const style: CSSProperties = sheet
     ? {
         ...frame,
-        width: 'min(100vw - 32px, 480px)',
+        width: 'min(calc(100vw - 32px), 480px)',
         maxHeight: '70vh',
         borderRadius: '16px 16px 0 0',
       }
     : {
         ...frame,
         width: `${width}px`,
-        minWidth: `${HOVER_DIMS.minWidth}px`,
+        minWidth: `min(${HOVER_DIMS.minWidth}px, calc(100vw - 32px))`,
         maxWidth: `min(${HOVER_DIMS.maxWidth}px, calc(100vw - 32px))`,
         maxHeight: `min(${HOVER_DIMS.maxHeight}px, calc(100vh - 32px))`,
       }
@@ -87,7 +90,7 @@ export function SmartHoverTabs({
   onChange: (id: string) => void
 }) {
   return (
-    <div role="tablist" aria-label="Preview sections" style={{ display: 'flex', gap: 2, padding: '0 8px 8px', overflowX: 'auto' }}>
+    <div role="tablist" aria-label="Preview sections" style={{ display: 'flex', flexWrap: 'wrap', gap: 2, padding: '0 8px 8px', minWidth: 0 }}>
       {tabs.map((t) => {
         const selected = t.id === active
         return (
@@ -108,6 +111,7 @@ export function SmartHoverTabs({
               fontWeight: selected ? 700 : 600,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
+              flex: '0 0 auto',
             }}
           >
             {t.label}

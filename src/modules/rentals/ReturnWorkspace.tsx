@@ -142,7 +142,7 @@ const ACCENT_OUTLINE = { background: 'transparent', color: 'var(--primary-text)'
  * `'Bikash Thapa'` witness this file once shipped is the precedent.
  */
 const WITNESS_UNAVAILABLE =
-  'No witness identity is captured on this screen, so a witness signature cannot be attested here. §9 makes the witness optional — this return is recorded with no witness rather than with an invented one.'
+  /* No witness identity is captured on this screen, so a witness signature cannot be attested here. §9 makes the witness optional — this return is recorded with no witness rather than with an invented one. */ "Witness signatures are not captured here. The session is recorded without a witness signature."
 
 /**
  * The three states a row can hold. `Outstanding` is the absence of a mark;
@@ -1408,10 +1408,10 @@ export default function ReturnWorkspace({
               ].map((f) => (
                 <div key={f.l} className="floor-summary-cell">
                   <div className="floor-summary-label">{f.l}</div>
-                  <div className={`floor-summary-value ${f.big ? 'is-primary' : ''}`}>
+                  <div className={`floor-summary-value ${f.big ? 'is-primary' : ''}`} style={{ color: ['Pickup', 'Return', 'Expected Return', 'Due back'].includes(f.l) && f.s ? 'var(--booking-date-text)' : undefined }}>
                     {f.v}
                   </div>
-                  {f.s && <div className="floor-summary-sub">{f.s}</div>}
+                  {f.s && <div className="floor-summary-sub" style={{ color: ['Pickup', 'Return', 'Expected Return', 'Due back'].includes(f.l) ? 'var(--booking-date-text)' : undefined }}>{f.s}</div>}
                 </div>
               ))}
             </div>

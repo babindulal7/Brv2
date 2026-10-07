@@ -65,7 +65,7 @@ export const FINANCIAL_SECTIONS: Section[] = [
     fields: [
       {
         label: 'VAT rate',
-        note: 'Applied after discount, per Foundation §2.1.',
+        note: /* Applied after discount, per Foundation §2.1. */ "Applied after discount, per",
         settingKey: 'vatRatePercent',
         readBy: 'New Rental, the Pricing Calculator and Create Invoice',
       },
@@ -77,7 +77,7 @@ export const FINANCIAL_SECTIONS: Section[] = [
       },
       {
         label: 'Crew coordination fee',
-        note: `Per crew-day, billed as its own line on Crew Assist bookings — Crew Booking spec v3.2 §2. Defaults from data/crew.ts (Rs ${toRupees(FEE_PER_CREW_DAY_PAISA)}). Proposed default, not yet confirmed.`,
+        note: `Default charge per crew-day (Rs ${toRupees(FEE_PER_CREW_DAY_PAISA)}). Proposed default, not yet confirmed.`,
         settingKey: 'crewCoordinationFeeRupees',
         readBy: 'Crew Assist’s payout ledger',
       },
@@ -221,10 +221,9 @@ export function FinancialPane() {
           </table>
         </DataTableShell>
         <p style={{ margin: '10px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.55 }}>
-          Discounts are ungated — ruled by the owner, 31 Aug 2026 (Law 10 as amended). No reason, no approver, no cap
+          {/* Discounts are ungated — ruled by the owner, 31 Aug 2026 (Law 10 as amended). No reason, no approver, no cap
           below 100%; a negative discount is refused because it is a price rise, and above 100% because it is a negative
-          price. A plan discount simply sets the starting figure.
-        </p>
+          price. A plan discount simply sets the starting figure. */}Discounts may be between 0% and 100%. </p>
       </Card>
 
       <Card title="Cancellation fee tiers">

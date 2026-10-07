@@ -2317,7 +2317,8 @@
   }
 }
 
-/* Today is a working ledger. Reserve strong color for status and interaction. */
+/* RULINGS-2026-10-07: user requested smarter Today color. Category accents
+   belong to surfaces/labels; zero figures stay neutral and red needs overdue work. */
 .dashboard-workbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(18rem, 30rem);
@@ -2329,7 +2330,7 @@
 .dashboard-workbar__intro span {
   display: block;
   margin-bottom: 0.2rem;
-  color: var(--muted);
+  color: var(--primary-text);
   font-size: var(--t-caption, 11px);
   font-weight: 650;
   letter-spacing: 0.04em;
@@ -2349,12 +2350,59 @@
   width: 100%;
   max-width: none;
   min-height: 3rem;
-  border-color: color-mix(in srgb, var(--border) 75%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 24%, var(--border));
   box-shadow: none;
 }
 
 .dashboard-workbar .dashboard-counter-bar__icon {
-  color: var(--muted);
+  color: var(--primary-text);
+}
+
+.dashboard-overview {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.dashboard-overview .kpi-tile {
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-overview .kpi-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--border2);
+}
+
+.dashboard-overview .kpi-tile:first-child::before { background: var(--primary-text); }
+.dashboard-overview .kpi-tile:last-child::before { background: var(--warn-text); }
+.dashboard-overview[data-overdue='true'] .kpi-tile:nth-child(2)::before { background: var(--danger-text); }
+
+/* A transparent overlay tints existing shared cards without overriding their
+   inline styles. Labels, icons and numbers remain above it and use theme tokens. */
+.dashboard-overview .kpi-tile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--primary);
+  opacity: 0.055;
+  pointer-events: none;
+}
+
+.dashboard-overview .kpi-tile:nth-child(2)::after { opacity: 0; }
+.dashboard-overview .kpi-tile:last-child::after { background: var(--warn); }
+.dashboard-overview[data-overdue='true'] .kpi-tile:nth-child(2)::after { background: var(--danger); opacity: 0.065; }
+.dashboard-overview .kpi-tile > * { position: relative; z-index: 1; }
+
+.rental-dashboard .dashboard-master-date-control {
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+}
+
+.rental-dashboard .dashboard-master-date-control__date-btn.is-today {
+  background: color-mix(in srgb, var(--primary) 11%, var(--card));
+  color: var(--primary-text);
 }
 
 .dashboard-workbar .dashboard-alert {
@@ -2408,14 +2456,24 @@
 
 .rental-dashboard__panels .movement-panel--outgoing,
 .rental-dashboard__panels .movement-panel--incoming {
-  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-top: 3px solid var(--movement-accent);
+}
+
+.rental-dashboard__panels .movement-panel--outgoing {
+  --movement-accent: var(--primary-text);
+  --movement-tint: var(--primary);
+}
+
+.rental-dashboard__panels .movement-panel--incoming {
+  --movement-accent: var(--success-text);
+  --movement-tint: var(--success);
 }
 
 .rental-dashboard__panels .movement-panel__header {
   min-height: 6rem;
   padding: 1.1rem 1.5rem;
   gap: 1rem;
-  background: transparent;
+  background: color-mix(in srgb, var(--movement-tint) 7%, var(--card));
   border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
 }
 
@@ -2430,6 +2488,10 @@
   font-size: 1.3rem;
   font-weight: 650;
   letter-spacing: -0.025em;
+}
+
+.rental-dashboard__panels .movement-panel__heading h2 > span:first-child {
+  color: var(--movement-accent);
 }
 
 .rental-dashboard__panels .movement-panel__heading h2 .figure,
@@ -2450,7 +2512,7 @@
 
 .rental-dashboard__panels .movement-panel--compact,
 .rental-dashboard__panels .movement-panel--compact .movement-panel__header {
-  background: var(--card);
+  background: color-mix(in srgb, var(--movement-tint) 7%, var(--card));
 }
 
 .rental-dashboard__panels .movement-panel--compact .movement-panel__header {
@@ -2475,10 +2537,10 @@
   place-items: center;
   width: 3rem;
   height: 3rem;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--movement-accent) 25%, var(--border));
   border-radius: 11px;
-  background: var(--card2);
-  color: var(--muted);
+  background: color-mix(in srgb, var(--movement-tint) 9%, var(--card));
+  color: var(--movement-accent);
 }
 
 .movement-panel__empty-copy {
@@ -2758,11 +2820,17 @@
     margin-left: 1.6rem;
   }
 
+  .dashboard-date-actions, .dashboard-date-actions > span { width: 100%; min-width: 0; }
+
   .dashboard-master-date-control {
     display: flex;
     width: 100%;
+    max-width: 100%;
     min-width: 0;
+    box-sizing: border-box;
   }
+
+  .dashboard-master-date-control__btn { flex-shrink: 0; }
 
   .dashboard-master-date-control .dashboard-header-controls__label,
   .dashboard-master-date-control__calendar-btn {
@@ -2770,7 +2838,8 @@
   }
 
   .dashboard-master-date-control__date-btn {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    width: 0;
     min-width: 0;
     padding-inline: 0.35rem;
     overflow: hidden;
@@ -2785,6 +2854,10 @@
   .dashboard-workbar {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.9rem;
+  }
+
+  .dashboard-overview .kpi-tile:last-child {
+    grid-column: 1 / -1;
   }
 
   .dashboard-workbar .dashboard-counter-bar {

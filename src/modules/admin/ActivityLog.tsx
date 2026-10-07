@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { useMemo, useState, useEffect } from 'react'
 import type { CSSProperties } from 'react'
 import Icon from '../../components/ui/Icon'
@@ -154,7 +155,7 @@ export default function ActivityLog() {
       ) : (
         <div style={{ ...cardStyle, padding: viewport === 'phone' ? '4px 14px 14px' : '4px 18px 18px' }}>
           {groups.map(([date, entries]) => (
-            <section key={date} aria-label={`Activity on ${date}`}>
+            <section key={date} aria-label={`Activity on ${formatAd(new Date(date))}`}>
               <h2
                 style={{
                   margin: '14px 0 4px',
@@ -165,7 +166,7 @@ export default function ActivityLog() {
                   color: 'var(--muted)',
                 }}
               >
-                <span className="figure">{date}</span>
+                <span className="figure">{formatAd(new Date(date))}</span>
               </h2>
               <ol style={{ margin: 0, padding: 0, listStyle: 'none' }}>
                 {entries.map((r, i) => (
@@ -300,7 +301,7 @@ function Filter({
         <option value={ALL}>All {label.toLowerCase()}s</option>
         {options.map((o) => (
           <option key={o} value={o}>
-            {o}
+            {label === 'Date' ? formatAd(new Date(o)) : o}
           </option>
         ))}
       </select>

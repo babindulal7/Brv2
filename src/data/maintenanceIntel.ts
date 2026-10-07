@@ -110,7 +110,7 @@ export function maintenanceDetailGroups(row: MaintenanceRecord, gctx: GateContex
   groups.push({
     title: 'Repair',
     fields: [
-      { label: 'Booking flags (§1.9)', value: row.flags.length ? row.flags.join(', ') : 'None' },
+      { label: /* Booking flags (§1.9) */ "Booking flags", value: row.flags.length ? row.flags.join(', ') : 'None' },
       { label: 'Conditions', value: row.conditions.length ? row.conditions.join(', ') : 'None' },
       { label: 'Technician', value: row.technician ?? '—' },
       { label: 'Vendor', value: row.vendor ?? '—' },

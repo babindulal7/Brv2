@@ -318,7 +318,7 @@ describe('§4.2 — the phone segmented control', () => {
     // Items is the opening segment — witnessed by Block 2's heading, which
     // appears in no other segment.
     expect(text()).toContain('Equipment, Bundles & Services')
-    expect(text()).not.toContain('This booking\'s documents live')
+    expect(text()).not.toContain('No documents available for this rental yet.')
   })
 
   it('switches the page when a segment is picked', async () => {
@@ -327,35 +327,33 @@ describe('§4.2 — the phone segmented control', () => {
     await act(async () => {
       docs?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(text()).toContain('This booking\'s documents live')
+    expect(text()).toContain('No documents available for this rental yet.')
     expect(text()).not.toContain('Equipment, Bundles & Services')
   })
 })
 
-describe('§4.2 — the summary rail becomes a sticky bottom bar below 1280', () => {
+describe('audit — payments have one action and no obstructing bottom bar', () => {
   it('has no bar on desktop, where the rail itself is on screen', async () => {
     await mount(1280)
     expect(button('Record Payment')).toBeDefined() // Block 4's own button
     expect(stickyBars()).toHaveLength(0)
   })
 
-  it('renders the bar at tablet, carrying the INVOICE total and the shared modal’s button', async () => {
+  it('keeps the invoice total and one payment action in the body at tablet', async () => {
     await mount(1000)
     const sticky = stickyBars()
-    expect(sticky).toHaveLength(1)
-    expect(sticky[0]?.textContent).toContain('Rental Total')
+    expect(sticky).toHaveLength(0)
+    expect(text()).toContain('Rental Total')
     // formatMoney(13,950,600 paisa) — the invoice's own column, not a figure
     // the screen computed.
-    expect(sticky[0]?.textContent).toContain('1,39,506')
-    expect(sticky[0]?.querySelector('button')?.textContent).toContain('Record Payment')
+    expect(text()).toContain('1,39,506')
+    expect(allButtons().filter((b) => b.textContent?.trim() === 'Record Payment')).toHaveLength(1)
   })
 
-  it('clears the phone nav bar rather than sitting under it', async () => {
+  it('keeps the phone free of an obstructing payment bar', async () => {
     await mount(420)
     const sticky = stickyBars()
-    expect(sticky).toHaveLength(1)
-    expect(sticky[0]?.style.bottom).toContain('58px')
-    expect(sticky[0]?.style.bottom).toContain('safe-area-inset-bottom')
+    expect(sticky).toHaveLength(0)
   })
 })
 
@@ -407,7 +405,7 @@ describe('Law 5 — the deposit is a liability and says so where it could be mis
 describe('Law 16 — unwired surfaces do not invent booking data', () => {
   it('keeps only the activity gap and never invents an alert', async () => {
     await mount(1280)
-    expect(text()).toContain('booking_stage_transitions')
+    expect(text()).toContain('No activity recorded yet.')
     // And none of the seed's invented content survives.
     expect(text()).not.toContain('only 2 left this week')
     expect(text()).not.toContain('Draft created')
@@ -429,7 +427,7 @@ describe('§4.2 header — [Operations ▾] and [⋮], with dead controls remove
     await act(async () => {
       more?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    const items = [...container.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent?.trim())
+    const items = [...document.querySelectorAll('[role="menuitem"]')].map((i) => i.textContent?.trim())
     /* All remaining rows lead to a real action. The former Save draft entry
        had no persistence path and was removed rather than masquerading as a
        disabled action. */

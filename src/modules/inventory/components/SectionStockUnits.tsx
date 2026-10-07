@@ -37,7 +37,7 @@ export function SectionStockUnits() {
             id="sec-stock"
             n={sectionNumber('sec-stock')}
             title="Stock & Units"
-            note="One Tracking field — it replaces Equipment Type, Has Serial Number and Tracking Type (§5.1)."
+            note={/* One Tracking field — it replaces Equipment Type, Has Serial Number and Tracking Type (§5.1). */ "One Tracking field — it replaces Equipment Type, Has Serial Number and Tracking Type ."}
             action={
               serialised ? (
                 <>
@@ -216,11 +216,10 @@ export function SectionStockUnits() {
                   </Button>
                   <span style={{ display: 'flex', alignItems: 'flex-start', gap: 5, fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.45, flex: 1, minWidth: 240 }}>
                     <Icon name="info" size={12} style={{ flexShrink: 0, marginTop: 2 }} />
-                    Serials are the manufacturer’s and are typed or scanned — never generated (§4). Every serial is unique
+                    {/* Serials are the manufacturer’s and are typed or scanned — never generated (§4). Every serial is unique
                     across the whole system; a clash is named on the row. The asset tag is ours and may be generated; the
                     barcode and QR carry the same payload, drawn on the printed label. Status is engine-owned: a Draft’s
-                    units carry no status, and creation sets every one to In Stock (§5.3).
-                  </span>
+                    units carry no status, and creation sets every one to In Stock (§5.3). */}Serials are the manufacturer’s and are typed or scanned — never generated . Every serial is unique across the whole system; a clash is named on the row. The asset tag is ours and may be generated; the barcode and QR carry the same payload, drawn on the printed label. Status is engine-owned: a Draft’s units carry no status, and creation sets every one to In Stock . </span>
                 </div>
 
                 <input
@@ -295,8 +294,7 @@ export function SectionStockUnits() {
                 {tracking === 'Consumable' && (
                   <Field label="Behaviour" span={3}>
                     <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
-                      Consumed on return — this stock never comes back (§5.1). No units, no serials.
-                    </span>
+                      {/* Consumed on return — this stock never comes back (§5.1). No units, no serials. */}Consumed on return — this stock never comes back . No units, no serials. </span>
                   </Field>
                 )}
               </div>

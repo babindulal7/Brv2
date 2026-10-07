@@ -47,7 +47,7 @@
  * keyboard.
  */
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { useViewport } from '../../../lib/device'
 import Icon from '../../../components/ui/Icon'
@@ -97,7 +97,7 @@ type TabKey = 'all' | 'bundles' | 'equipment' | 'sub-rentals' | 'services' | 'cr
  * gives each its own heading.
  */
 const TAB_KINDS: Record<TabKey, ReadonlySet<ResultKind>> = {
-  all: new Set<ResultKind>(['bundle', 'equipment', 'accessory', 'service', 'crew', 'transport']),
+  all: new Set<ResultKind>(['bundle', 'equipment', 'accessory', 'service']),
   bundles: new Set<ResultKind>(['bundle']),
   equipment: new Set<ResultKind>(['equipment', 'accessory']),
   'sub-rentals': new Set<ResultKind>(['equipment', 'accessory']),
@@ -112,8 +112,6 @@ const TABS: ReadonlyArray<{ key: TabKey; label: string }> = [
   { key: 'equipment', label: 'Equipment' },
   { key: 'sub-rentals', label: 'Sub-Rentals' },
   { key: 'services', label: 'Services' },
-  { key: 'crew', label: 'Crew' },
-  { key: 'transport', label: 'Transport' },
 ]
 
 /*
@@ -343,20 +341,51 @@ export function AddItemPanel({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const scanInputRef = useRef<HTMLInputElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const resultsRef = useRef<HTMLDivElement | null>(null)
+  const catalogueRef = useRef<HTMLDivElement | null>(null)
+  const [catalogueHeight, setCatalogueHeight] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open || !inline) return
+    const root = rootRef.current
+    const section = root?.closest('section')
+    const workspace = root?.closest<HTMLElement>('#main-content')
+    const footer = workspace?.querySelector<HTMLElement>('[aria-label="Record actions"]')
+    if (!section || !workspace || !footer) return
+    const measure = () => {
+      const panel = catalogueRef.current
+      if (!panel) return
+      // Measure the space after recentering the heading, independently of
+      // current scroll position. Account for the actual action-bar height.
+      const offset = panel.getBoundingClientRect().top - section.getBoundingClientRect().top
+      const available = footer.getBoundingClientRect().top - workspace.getBoundingClientRect().top - offset - 24
+      setCatalogueHeight(Math.min(onPhone ? 480 : 560, Math.max(320, available)))
+    }
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(workspace)
+    observer?.observe(footer)
+    window.addEventListener('resize', measure)
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure) }
+  }, [open, inline, onPhone])
 
   const existing = useMemo(() => new Set(existingLineIds), [existingLineIds])
   const existingCrew = useMemo(() => new Set(existingCrewIds), [existingCrewIds])
 
   const recenterSearch = useCallback(() => {
     if (typeof window === 'undefined' || !rootRef.current) return
-    const rect = rootRef.current.getBoundingClientRect()
-    const targetScrollY = Math.max(0, window.scrollY + rect.top - 60)
+    const anchor = rootRef.current.closest('section') ?? rootRef.current
+    const workspace = rootRef.current.closest<HTMLElement>('#main-content')
     const prefersReducedMotion =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    window.scrollTo({
-      top: targetScrollY,
-      behavior: prefersReducedMotion ? 'auto' : 'smooth',
-    })
+    // The shell scrolls its workspace, not window. Keep the section heading
+    // above the search rather than scrolling the clipped card itself.
+    if (workspace) {
+      workspace.scrollTo({
+        top: Math.max(0, workspace.scrollTop + anchor.getBoundingClientRect().top - workspace.getBoundingClientRect().top - 12),
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      })
+    } else anchor.scrollIntoView?.({ block: 'start', behavior: prefersReducedMotion ? 'auto' : 'smooth' })
   }, [])
 
   const submitScan = async () => {
@@ -422,18 +451,25 @@ export function AddItemPanel({
   useEffect(() => {
     if (!open || !activeId) return
     const el = document.getElementById(activeId)
-    el?.scrollIntoView?.({ block: 'nearest' })
-  }, [open, activeId])
+    const results = resultsRef.current
+    if (!el || !results) return
+    // Only scroll results: scrollIntoView also moves overflow:hidden cards
+    // and the workspace, hiding headings and controls behind the shell.
+    const itemRect = el.getBoundingClientRect()
+    const listRect = results.getBoundingClientRect()
+    const headingHeight = el.parentElement?.previousElementSibling?.getBoundingClientRect().height ?? 0
+    const visibleTop = listRect.top + headingHeight
+    if (itemRect.top < visibleTop) results.scrollTop += itemRect.top - visibleTop
+    else if (itemRect.height > listRect.bottom - visibleTop) {
+      if (itemRect.top >= listRect.bottom) results.scrollTop += itemRect.top - visibleTop
+    } else if (itemRect.bottom > listRect.bottom) results.scrollTop += itemRect.bottom - listRect.bottom
+  }, [open, activeId, catalogueHeight])
 
   /** Close on outside pointer interaction */
   useEffect(() => {
     if (!open) return
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node | null
-      // The dropdown lives in a portal under document.body, so it is never
-      // inside rootRef — without this guard every click on the list itself
-      // would read as "outside" and close the panel before the click lands.
-      if (target instanceof Element && target.closest('[data-add-item-dropdown]')) return
       if (rootRef.current && !rootRef.current.contains(target)) {
         if (preview !== null || overrideUnit !== null) return
         setOpen(false)
@@ -823,21 +859,26 @@ export function AddItemPanel({
 
       {open && (
         <div
+          ref={catalogueRef}
           role="dialog"
           aria-label="Add item to booking"
           style={{
-            position: 'absolute' as const,
-            zIndex: 45,
-            top: 'calc(100% + 6px)',
-            ...(inline || onPhone
-              ? { left: 0, right: 0, width: '100%' }
-              : { right: 0, width: 'min(620px, calc(100vw - 32px))' }),
+            // User shell audit, 7 Oct: inline catalogue expands the card.
+            // Floating it inside an overflow:hidden section clips its actions.
+            position: inline ? 'relative' : 'absolute',
+            ...(inline ? { marginTop: 6, width: '100%' } : {
+              zIndex: 45,
+              top: 'calc(100% + 6px)',
+              ...(onPhone
+                ? { left: 0, right: 0, width: '100%' }
+                : { right: 0, width: 'min(620px, calc(100vw - 32px))' }),
+            }),
             background: 'var(--dropdown)',
             boxShadow: 'var(--shadow-modal)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--r-card)',
             overflow: 'hidden',
-            maxHeight: onPhone ? 'min(480px, 70vh)' : 'min(560px, 80vh)',
+            maxHeight: inline && catalogueHeight !== null ? catalogueHeight : onPhone ? 'min(480px, 70vh)' : 'min(560px, 80vh)',
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -893,7 +934,7 @@ export function AddItemPanel({
           )}
 
           {/* ── Tabs & filters ───────────────────────────────────────── */}
-          <div style={{ padding: 10, borderBottom: '1px solid var(--border)', display: 'grid', gap: 9 }}>
+          <div style={{ padding: 10, borderBottom: '1px solid var(--border)', display: 'grid', gap: 9, flexShrink: 0 }}>
             {/* ── Tabs (§27) ─────────────────────────────────────────── */}
             <div role="tablist" aria-label="Catalogue type" style={{ display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
               {TABS.map((t) => {
@@ -1054,7 +1095,7 @@ export function AddItemPanel({
           </div>
 
           {/* ── Results ──────────────────────────────────────────────── */}
-          <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+          <div ref={resultsRef} style={{ maxHeight: 400, minHeight: 0, overflowY: 'auto', flex: '1 1 auto', overscrollBehavior: 'contain' }}>
             {tab === 'sub-rentals' &&
               (inputStyle ? (
                 <SubRentalQuickAdd
@@ -1243,6 +1284,7 @@ export function AddItemPanel({
               alignItems: 'center',
               gap: 'var(--sp-md)',
               flexWrap: 'wrap',
+              flexShrink: 0,
               padding: '7px 12px',
               borderTop: '1px solid var(--border)',
               background: 'var(--card2)',
@@ -1586,11 +1628,12 @@ function BundleRow({
         background: active ? 'var(--hover-row)' : 'transparent',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}>
+      <div className="catalogue-result-heading" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}>
         <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--text2)' }}>
           <Icon name="package" size={15} />
         </span>
         <span
+          className="catalogue-result-name"
           style={{
             fontSize: 'var(--t-ui)',
             fontWeight: 600,
@@ -1796,12 +1839,14 @@ function EquipmentGroupRow({
       }}
     >
       <div
+        className="catalogue-result-heading"
         style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minWidth: 0 }}
       >
         <span style={{ display: 'inline-flex', flexShrink: 0, color: 'var(--text2)' }}>
           <Icon name={group.kind === 'accessory' ? 'box' : 'camera'} size={15} />
         </span>
         <span
+          className="catalogue-result-name"
           style={{
             fontSize: 'var(--t-ui)',
             fontWeight: 600,
@@ -1936,7 +1981,7 @@ function EquipmentGroupRow({
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--text2)' }}>
-              {group.units.length > 1 ? `Choose serial (${group.units.length} available):` : 'Serial number:'}
+              {group.units.length > 1 ? `Choose serial (${freeCount} free):` : 'Serial number:'}
             </span>
             {group.units.length > 1 && (
               <span style={{ fontSize: '11px', color: 'var(--muted)' }}>

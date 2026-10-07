@@ -30,8 +30,8 @@ export function RentalIntelFromFloor({ floor, context, role, children }: {
     { label: 'Booking', value: floor.bookingNo },
     { label: 'Client', value: floor.clientName ?? 'Not joined' },
     { label: 'Stage', value: floor.stage },
-    { label: 'Pickup', value: floor.pickupAtAd ? formatAdDateTime(floor.pickupAtAd) : 'Not scheduled' },
-    { label: 'Return', value: floor.returnAtAd ? formatAdDateTime(floor.returnAtAd) : 'Not scheduled' },
+    { label: 'Pickup', value: floor.pickupAtAd ? formatAdDateTime(floor.pickupAtAd) : 'Not scheduled', ...(floor.pickupAtAd ? { tone: 'booking-date' as const } : {}) },
+    { label: 'Return', value: floor.returnAtAd ? formatAdDateTime(floor.returnAtAd) : 'Not scheduled', ...(floor.returnAtAd ? { tone: 'booking-date' as const } : {}) },
   ] }]
   return <IntelCard glance={glance} detail={detail} detailTitle={floor.bookingNo} {...(floor.clientName ? { detailSubtitle: floor.clientName } : {})} entityType="rental" entityId={floor.id} context={context} gateContext={gateContext(role, { surface: 'floor' })}>{children}</IntelCard>
 }

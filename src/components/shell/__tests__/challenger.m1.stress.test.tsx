@@ -135,48 +135,16 @@ describe('Empirical Challenger — Sidebar R1 Verification', () => {
     })
   })
 
-  describe('Requirement 2: All 3 navigation groups render cleanly', () => {
-    it('renders all 3 navigation groups cleanly for full-access role (Owner)', async () => {
+  describe('Requirement 2: The locked flat navigation renders cleanly', () => {
+    it('renders the locked eleven items for full-access role (Owner)', async () => {
       currentRole = 'Owner'
       viewport = 'desktop'
       collapsedPref = false
       await mount(<Sidebar active="/dashboard" />)
 
-      const groupEls = container.querySelectorAll<HTMLElement>('[data-nav-group]')
-      expect(groupEls).toHaveLength(3)
-
-      const groupTitles = Array.from(groupEls).map((el) => el.getAttribute('data-nav-group'))
-      expect(groupTitles).toEqual([
-        'Daily Dispatch',
-        'Assets & Relationships',
-        'Business & Back Office',
-      ])
-
-      const group0 = groupEls[0]
-      const group1 = groupEls[1]
-      const group2 = groupEls[2]
-      expect(group0).toBeDefined()
-      expect(group1).toBeDefined()
-      expect(group2).toBeDefined()
-
-      // Verify Group 1: Daily Dispatch sections
-      const dispatchLinks = Array.from(group0?.querySelectorAll('a') ?? []).map((a) => a.textContent?.trim())
-      expect(dispatchLinks).toContain('Dashboard')
-      expect(dispatchLinks).toContain('Rentals')
-      expect(dispatchLinks).toContain('Operations')
-      expect(dispatchLinks).toContain('Calendar')
-
-      // Verify Group 2: Assets & Relationships sections
-      const assetsLinks = Array.from(group1?.querySelectorAll('a') ?? []).map((a) => a.textContent?.trim())
-      expect(assetsLinks).toContain('Inventory')
-      expect(assetsLinks).toContain('Clients')
-      expect(assetsLinks).toContain('Crew Assist')
-
-      // Verify Group 3: Business & Back Office sections
-      const businessLinks = Array.from(group2?.querySelectorAll('a') ?? []).map((a) => a.textContent?.trim())
-      expect(businessLinks).toContain('Finance')
-      expect(businessLinks).toContain('Documents')
-      expect(businessLinks).toContain('Analytics')
+      expect(container.querySelectorAll('[data-nav-group]')).toHaveLength(1)
+      const labels = [...container.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.textContent?.trim())
+      expect(labels).toEqual(['New Rental', 'Today', 'Operation', 'Rentals', 'Calendar', 'Crew Assist', 'Inventory', 'Clients', 'Finance', 'Tools', 'Settings'])
     })
 
     it('isolates money surfaces for Warehouse role (Law 6) while cleanly preserving non-money groups and items', async () => {
@@ -185,17 +153,13 @@ describe('Empirical Challenger — Sidebar R1 Verification', () => {
       collapsedPref = false
       await mount(<Sidebar active="/dashboard" />)
 
-      const groupEls = container.querySelectorAll<HTMLElement>('[data-nav-group]')
-      expect(groupEls).toHaveLength(3)
-
-      const group2 = groupEls[2]
-      expect(group2).toBeDefined()
-
-      // In Group 3 (Business & Back Office), Finance and Analytics must be omitted
-      const businessLinks = Array.from(group2?.querySelectorAll('a') ?? []).map((a) => a.textContent?.trim())
-      expect(businessLinks).not.toContain('Finance')
-      expect(businessLinks).not.toContain('Analytics')
-      expect(businessLinks).toContain('Documents')
+      expect(container.querySelectorAll('[data-nav-group]')).toHaveLength(1)
+      const labels = [...container.querySelectorAll('nav[aria-label="Main"] a')].map((a) => a.textContent?.trim())
+      expect(labels).toHaveLength(10)
+      expect(labels).not.toContain('Finance')
+      expect(labels).not.toContain('Documents')
+      expect(labels).not.toContain('Analytics')
+      expect(labels).toContain('Tools')
     })
 
     it('handles external Client role cleanly by omitting staff-only and money-sensitive items', async () => {
@@ -211,9 +175,9 @@ describe('Empirical Challenger — Sidebar R1 Verification', () => {
       expect(allLinks).not.toContain('Finance')
       expect(allLinks).not.toContain('Analytics')
       // Client can see dispatch, inventory, clients, documents
-      expect(allLinks).toContain('Dashboard')
+      expect(allLinks).toContain('Today')
       expect(allLinks).toContain('Inventory')
-      expect(allLinks).toContain('Documents')
+      expect(allLinks).not.toContain('Documents')
     })
 
     it('enforces Law 15 (>= 44px hit targets) on all navigation rows across expanded and collapsed states', async () => {
@@ -371,11 +335,11 @@ describe('Empirical Challenger — PageActions Clamping & Overflow Routing', () 
     expect(overflowTrigger?.style.minWidth).toBe('44px')
 
     // Sec 3 is not visible before opening overflow
-    expect(container.querySelector('[role="menu"]')).toBeNull()
+    expect(document.querySelector('[role="menu"]')).toBeNull()
 
     // Click trigger to open menu
     await act(async () => overflowTrigger?.click())
-    const menu = container.querySelector('[role="menu"]')
+    const menu = document.querySelector('[role="menu"]')
     expect(menu).not.toBeNull()
     expect(menu?.textContent).toContain('Sec 3')
   })
@@ -398,7 +362,7 @@ describe('Empirical Challenger — PageActions Clamping & Overflow Routing', () 
     expect(overflowTrigger).not.toBeNull()
 
     await act(async () => overflowTrigger?.click())
-    const menu = container.querySelector('[role="menu"]')
+    const menu = document.querySelector('[role="menu"]')
     expect(menu).not.toBeNull()
 
     for (let i = 3; i <= 10; i++) {
@@ -430,7 +394,7 @@ describe('Empirical Challenger — PageActions Clamping & Overflow Routing', () 
     expect(overflowTrigger).not.toBeNull()
 
     await act(async () => overflowTrigger?.click())
-    const menu = container.querySelector('[role="menu"]')
+    const menu = document.querySelector('[role="menu"]')
     expect(menu?.textContent).toContain('Sec 3')
   })
 
@@ -448,14 +412,14 @@ describe('Empirical Challenger — PageActions Clamping & Overflow Routing', () 
     const overflowTrigger = container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')
     await act(async () => overflowTrigger?.click())
 
-    const menu = container.querySelector('[role="menu"]')
+    const menu = document.querySelector('[role="menu"]')
     const sec3Btn = Array.from(menu?.querySelectorAll('button') ?? []).find((b) => b.textContent?.includes('Sec 3 Action'))
     expect(sec3Btn).toBeDefined()
 
     await act(async () => sec3Btn?.click())
     expect(clickHandler).toHaveBeenCalledTimes(1)
     // Menu closes after selection
-    expect(container.querySelector('[role="menu"]')).toBeNull()
+    expect(document.querySelector('[role="menu"]')).toBeNull()
   })
 
   it('closes overflow menu on Escape key press', async () => {
@@ -470,12 +434,12 @@ describe('Empirical Challenger — PageActions Clamping & Overflow Routing', () 
     )
     const overflowTrigger = container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')
     await act(async () => overflowTrigger?.click())
-    expect(container.querySelector('[role="menu"]')).not.toBeNull()
+    expect(document.querySelector('[role="menu"]')).not.toBeNull()
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     })
-    expect(container.querySelector('[role="menu"]')).toBeNull()
+    expect(document.querySelector('[role="menu"]')).toBeNull()
   })
 
   it('merges caller-provided overflow items with excess secondary actions in a unified menu', async () => {
@@ -494,7 +458,7 @@ describe('Empirical Challenger — PageActions Clamping & Overflow Routing', () 
     )
     const overflowTrigger = container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')
     await act(async () => overflowTrigger?.click())
-    const menu = container.querySelector('[role="menu"]')
+    const menu = document.querySelector('[role="menu"]')
     expect(menu).not.toBeNull()
 
     // Contains excess secondary action
@@ -537,13 +501,13 @@ describe('Empirical Challenger — PageActions Clamping & Overflow Routing', () 
     )
     const overflowTrigger = container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')
     await act(async () => overflowTrigger?.click())
-    expect(container.querySelector('[role="menu"]')).not.toBeNull()
+    expect(document.querySelector('[role="menu"]')).not.toBeNull()
 
     // Dispatch pointerdown on document body (outside menu)
     await act(async () => {
       document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
     })
-    expect(container.querySelector('[role="menu"]')).toBeNull()
+    expect(document.querySelector('[role="menu"]')).toBeNull()
   })
 
   it('navigates overflow menu items using keyboard (ArrowDown, ArrowUp, Home, End)', async () => {
@@ -560,7 +524,7 @@ describe('Empirical Challenger — PageActions Clamping & Overflow Routing', () 
     )
     const overflowTrigger = container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')
     await act(async () => overflowTrigger?.click())
-    const menu = container.querySelector<HTMLDivElement>('[role="menu"]')
+    const menu = document.querySelector<HTMLDivElement>('[role="menu"]')
     expect(menu).not.toBeNull()
 
     const items = menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []
@@ -607,7 +571,7 @@ describe('Empirical Challenger — PageActions Clamping & Overflow Routing', () 
     )
     const overflowTrigger = container.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')
     await act(async () => overflowTrigger?.click())
-    const menu = container.querySelector('[role="menu"]')
+    const menu = document.querySelector('[role="menu"]')
     expect(menu).not.toBeNull()
     expect(menu?.textContent).toContain('Sec 3')
     expect(menu?.querySelector('#custom-overflow-pane')?.textContent).toBe('Advanced Settings')
@@ -633,7 +597,7 @@ describe('Empirical Challenger — PageActions Clamping & Overflow Routing', () 
     expect(overflowTrigger).not.toBeNull()
 
     await act(async () => overflowTrigger?.click())
-    expect(container.querySelector('[role="menu"]')?.textContent).toContain('Valid 3')
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain('Valid 3')
   })
 
   it('extractValidActions handles nested arrays, fragments, booleans, and nulls recursively', () => {

@@ -43,6 +43,7 @@ describe('BookingClientSection', () => {
     document.body.appendChild(host)
     const root = createRoot(host)
     const setProject = vi.fn()
+    const onOpenHistory = vi.fn()
 
     try {
       await act(async () => {
@@ -68,7 +69,7 @@ describe('BookingClientSection', () => {
               canBookingMoney={true}
               gctx={gateContext('Owner')}
               user={{ id: 'usr-1', name: 'Babin', role: 'Owner', isSharedDevice: false }}
-              onOpenHistory={vi.fn()}
+              onOpenHistory={onOpenHistory}
               suppressClientListOnFocus={{ current: false }}
               clientFieldRef={{ current: null }}
               navigate={vi.fn()}
@@ -89,7 +90,13 @@ describe('BookingClientSection', () => {
       expect(host.textContent).toContain('Paramount Studios Nepal')
       expect(host.textContent).toContain('Project')
       expect(host.textContent).toContain('Project Type')
-      expect(host.textContent).toContain('Government ID / PAN')
+      expect(host.textContent).not.toContain('Government ID / PAN')
+      expect(host.textContent).toContain('New client')
+      const history = host.querySelector<HTMLButtonElement>('[aria-label="Client History"]')!
+      expect(history.textContent?.trim()).toBe('')
+      expect(history.parentElement?.parentElement?.querySelector('input[role="combobox"]')).not.toBeNull()
+      await act(async () => history.click())
+      expect(onOpenHistory).toHaveBeenCalledOnce()
     } finally {
       await act(async () => root.unmount())
       host.remove()

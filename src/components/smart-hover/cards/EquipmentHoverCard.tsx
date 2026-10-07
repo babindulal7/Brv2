@@ -54,7 +54,7 @@ export function EquipmentHoverCard({
             {preview.current.map((b) => (
               <li key={`${b.rentalId}-${b.pickupAt}`} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
                 <div><strong>{b.clientName}</strong> · {onOpenRental ? <button type="button" onClick={() => onOpenRental(b.rentalNo)} style={{ minHeight: 'var(--tap)', border: 0, background: 'none', color: 'var(--link)', cursor: 'pointer' }}>#{b.rentalNo}</button> : `#${b.rentalNo}`}</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{b.pickupAt} → {b.returnAt} · {b.qty}×</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}><span style={{ color: 'var(--booking-date-text)' }}>{b.pickupAt} → {b.returnAt}</span> · {b.qty}×</div>
                 {b.packingLabel ? <div style={{ fontSize: 12 }}>{b.packingLabel}</div> : null}
               </li>
             ))}
@@ -66,7 +66,7 @@ export function EquipmentHoverCard({
             {preview.history.map((h, i) => (
               <li key={`${h.rentalId}-${i}`} style={{ listStyle: 'none', padding: '8px 0', borderTop: '1px solid var(--border)', fontSize: 13 }}>
                 <div><strong>{h.clientName}</strong> · {onOpenRental ? <button type="button" onClick={() => onOpenRental(h.rentalNo)} style={{ minHeight: 'var(--tap)', border: 0, background: 'none', color: 'var(--link)', cursor: 'pointer' }}>#{h.rentalNo}</button> : `#${h.rentalNo}`}</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{h.pickupAt} → {h.returnAt}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}><span style={{ color: 'var(--booking-date-text)' }}>{h.pickupAt} → {h.returnAt}</span></div>
                 {h.note ? <div style={{ fontSize: 12 }}>{h.note}</div> : null}
               </li>
             ))}

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState, useRef, Suspense, lazy } fro
 import { useParams, Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
-import { Card, PageHeader, Button, Rail, SummaryRows, FooterNote, cardStyle } from '../../components/ui/Page'
+import { Card, PageHeader, Button, Rail, SummaryRows, cardStyle } from '../../components/ui/Page'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
@@ -19,7 +19,6 @@ import { OverflowMenu, type OverflowMenuItem } from '../../components/ui/Overflo
 import { getRentalPrimaryAction } from '../../lib/rentalActions'
 import { useViewport } from '../../lib/device'
 import type { Viewport } from '../../lib/device'
-import { BAR_BOX } from '../../components/shell/BottomBar'
 import { STATUS, STATUS_ICON, BRAND, BRAND_ON, BRAND_TEXT, PAYMENT_STATUS_TONE } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { BOOKING_STATUS, STATUS_ORDER } from '../../lib/workflow'
@@ -530,28 +529,10 @@ function Segmented({
 }
 
 /** Numbered block header — styled consistently with new-rental-section-card. */
-function Block({ no, title, children, action }: { no: string; title: string; children: React.ReactNode; action?: React.ReactNode }) {
+function Block({ title, children, action }: { no: string; title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
     <section className="new-rental-section-card" style={{ ...cardStyle, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'var(--card)' }}>
-        <span
-          className="figure"
-          aria-hidden
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: 'var(--r-badge, 999px)',
-            display: 'grid',
-            placeItems: 'center',
-            background: 'var(--btn-primary-bg)',
-            color: 'var(--btn-primary-fg)',
-            fontSize: 11,
-            fontWeight: 700,
-            flexShrink: 0,
-          }}
-        >
-          {no}
-        </span>
         <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.01em' }}>{title}</h2>
         {action && <span style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>{action}</span>}
       </div>
@@ -1583,9 +1564,7 @@ function BookingDetailView() {
   // TEMPLATE (not left visually empty) when this role can't see booking money.
   const factsCols =
     viewport === 'desktop'
-      ? canBookingMoney
-        ? 'repeat(3, minmax(0,1fr)) minmax(0,1.1fr)'
-        : 'repeat(3, minmax(0,1fr))'
+      ? 'repeat(3, minmax(0,1fr))'
       : viewport === 'tablet'
         ? 'repeat(2, minmax(0,1fr))'
         : '1fr'
@@ -1703,7 +1682,7 @@ function BookingDetailView() {
   const stage = (booking?.stage ?? 'Draft') as BookingStatus
   const lines: FloorLine[] = floor?.lines ?? []
   const missingSerialsCount = lines
-    .filter((l) => l.lineType === 'Equipment')
+    .filter((l) => l.lineType === 'Equipment' && l.trackingMode === 'Serialised')
     .reduce((sum, l) => sum + Math.max(0, l.qty - l.units.length), 0)
 
   const returnDamageItems = useMemo<ReturnSettlementDamageItem[]>(() => {
@@ -1888,30 +1867,16 @@ function BookingDetailView() {
      render. Zero counts stay visible: "0 Missing" is the reassurance. */
   const tally = [
     { label: 'Total Items', value: String(booking.itemCount), tone: 'neutral' as BrandKey },
-    { label: 'Packed', value: String(allUnits.filter((u) => u.packed).length), tone: 'success' as BrandKey },
-    { label: 'Missing', value: String(allUnits.filter((u) => u.unitState === 'Missing').length), tone: 'neutral' as BrandKey },
-    { label: 'Returned', value: String(allUnits.filter((u) => u.unitState === 'Returned').length), tone: 'neutral' as BrandKey },
-    { label: 'Damaged', value: String(allUnits.filter((u) => u.damaged).length), tone: 'danger' as BrandKey },
+    { label: 'Packed', value: allUnits.length ? String(allUnits.filter((u) => u.packed).length) : 'Not recorded', tone: 'neutral' as BrandKey },
+    { label: 'Missing', value: allUnits.length ? String(allUnits.filter((u) => u.unitState === 'Missing').length) : 'Not recorded', tone: 'neutral' as BrandKey },
+    { label: 'Returned', value: allUnits.length ? String(allUnits.filter((u) => u.unitState === 'Returned').length) : 'Not recorded', tone: 'neutral' as BrandKey },
+    { label: 'Damaged', value: allUnits.length ? String(allUnits.filter((u) => u.damaged).length) : 'Not recorded', tone: allUnits.some(u => u.damaged) ? 'danger' as BrandKey : 'neutral' as BrandKey },
   ]
 
   /* Booking Summary rows — invoice figures plus the 0061 deposit. Law 5: the
      two ledgers are never summed; deposit received/pending are NOT shown at
      all because `security_deposits` has no sanctioned read yet — absent, not
      zero. */
-  const summaryRows = [
-    ...(hasInvoice
-      ? [
-          { label: 'Rental Total', value: money(totals.total) },
-          { label: 'Rental Paid', value: money(totals.paid), tone: 'success' as BrandKey },
-          { label: 'Rental Outstanding', value: money(totals.outstanding), tone: 'danger' as BrandKey },
-        ]
-      : []),
-    {
-      label: 'Deposit Required',
-      value: booking.depositRequired !== null ? formatMoney(booking.depositRequired) : 'Not recorded',
-    },
-  ]
-
   const blockers: string[] = []
   if (missingSerialsCount > 0 && stage !== 'Returned' && stage !== 'Closed' && !booking.isCancelled) {
     blockers.push(`${missingSerialsCount} equipment item${missingSerialsCount === 1 ? '' : 's'} missing serial assignment`)
@@ -1929,12 +1894,12 @@ function BookingDetailView() {
        app does not know that yet, and saying it anyway is the Law 12 defect. */
     const reason = hasInvoice ? null : (invoicesUnknownReason ?? NO_INVOICE_PAYMENT_UNAVAILABLE)
     return reason === null ? (
-      <Button icon="dollar" variant="primary" onClick={() => setShowPaymentModal(true)}>
+      <Button icon="dollar" variant="secondary" onClick={() => setShowPaymentModal(true)}>
         {label}
       </Button>
     ) : (
       <Unavailable reason={reason}>
-        <Button icon="dollar" variant="primary" disabled>
+        <Button icon="dollar" variant="secondary" disabled>
           {label}
         </Button>
       </Unavailable>
@@ -1956,6 +1921,7 @@ function BookingDetailView() {
    * refuse is the shape MONEY-01 exists to remove.
    */
   const createInvoiceButton = (label: string) => {
+    if (hasInvoice) return <Link to={`/finance?tab=invoices&search=${encodeURIComponent(liveInvoices[0]?.invoiceNo ?? booking.bookingNo)}`}><Button icon="invoice">View invoice {liveInvoices[0]?.invoiceNo ?? 'Draft'}</Button></Link>
     const reason =
       cancelledReason ??
       invoicesUnknownReason ??
@@ -2014,29 +1980,14 @@ function BookingDetailView() {
           `Money` segment's rail content. */}
       {canBookingMoney && showSegment('Money') && (
         <Card title="Booking Summary">
-          <SummaryRows rows={summaryRows} />
           {!hasInvoice && (
             <p style={{ margin: '8px 0 0', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
               {invoicesUnknownReason ??
                 'No invoice has been raised for this booking, so there is no Rental Total to state yet.'}
             </p>
           )}
-          <p
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 5,
-              margin: '10px 0 0',
-              fontSize: 'var(--t-th)',
-              color: 'var(--muted)',
-            }}
-          >
-            <Icon name="info" size={11} style={{ flexShrink: 0, marginTop: 2 }} />
-            <span>Deposit is a liability. It never enters Rental Total and never reduces Outstanding.</span>
-          </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)', marginTop: 12 }}>
             {canRaiseInvoice && createInvoiceButton('Create Invoice')}
-            {canTakePayment && recordPaymentButton('Receive Payment')}
           </div>
         </Card>
       )}
@@ -2059,8 +2010,7 @@ function BookingDetailView() {
 
           <Card title="Activity Timeline">
             <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-              Stage transitions live in booking_stage_transitions. No activity recorded yet.
-            </p>
+              {/* Stage transitions live in booking_stage_transitions. No activity recorded yet. */}No activity recorded yet. </p>
           </Card>
         </>
       )}
@@ -2143,16 +2093,6 @@ function BookingDetailView() {
                     Cleaning & Reset
                   </Button>
                 )
-              ),
-              canBookingMoney && (stage === 'Returned' || stage === 'Closed' || lateFeeData !== null) && (
-                <Button
-                  key="settle"
-                  icon="receipt"
-                  variant="secondary"
-                  onClick={() => setSettlementModalOpen(true)}
-                >
-                  Deposit Settlement
-                </Button>
               ),
               <BookingOperationsMenu
                 key="ops"
@@ -2320,10 +2260,10 @@ function BookingDetailView() {
             {/* F2 — BS leads, AD follows. '—' when the instant is outside the
                 one month `lib/bs.ts` can vouch for: no BS label, never a wrong
                 one. */}
-            <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
+            <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--booking-date-text)' }}>
               {bsOrDash(m.iso)}
             </span>
-            <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--booking-date-text)' }}>
               {formatAdDateTime(m.iso)}
             </span>
           </Fact>
@@ -2342,35 +2282,6 @@ function BookingDetailView() {
           )}
         </Fact>
 
-        {canBookingMoney && (
-          <div
-            style={{
-              padding: '14px 16px',
-              gridColumn: viewport === 'desktop' ? undefined : '1 / -1',
-              borderRadius: viewport === 'desktop' ? '0 var(--r-card) var(--r-card) 0' : '0 0 var(--r-card) var(--r-card)',
-            }}
-          >
-            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Outstanding</div>
-            <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--danger-text)', letterSpacing: '-0.02em' }}>
-              {hasInvoice ? money(totals.outstanding) : '—'}
-            </div>
-            <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 6 }}>
-              {/* The dash above says "no figure". This line must say WHY, and
-                  "No invoice raised yet" is only one of the three reasons. */}
-              {hasInvoice
-                ? 'From this booking’s invoices'
-                : invoicesList.error !== null
-                  ? 'Invoices could not be read — no figure is stated'
-                  : !invoicesKnown
-                    ? 'Reading this booking’s invoices…'
-                    : 'No invoice raised yet'}
-              {' · Deposit Required '}
-              <span className="figure" style={{ color: 'var(--progress-text)', fontWeight: 600 }}>
-                {booking.depositRequired !== null ? formatMoney(booking.depositRequired) : 'not recorded'}
-              </span>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* The confirm dispatch's own failure, persistent until the next attempt
@@ -2475,7 +2386,7 @@ function BookingDetailView() {
                     ? user
                     : null
                 return editorUser ? (
-                  <ProjectTypeEditor
+                  <details><summary style={{ cursor: 'pointer', minHeight: 44, display: 'flex', alignItems: 'center' }}>Edit project type</summary><ProjectTypeEditor
                     key={`${booking.id}·${booking.projectType ?? ''}·${booking.projectTypeOther ?? ''}`}
                     bookingId={booking.id}
                     currentType={booking.projectType}
@@ -2483,7 +2394,7 @@ function BookingDetailView() {
                     userId={editorUser.id}
                     role={editorUser.role}
                     onSaved={() => refreshBookingData()}
-                  />
+                  /></details>
                 ) : null
               })()}
               {/* BD-08 — inline and persistent, in the block this failure is
@@ -2638,9 +2549,8 @@ function BookingDetailView() {
                     </div>
                   ))}
                   <NotWiredNote>
-                    Vehicle, driver and delivery instructions live in booking_transport, which has no query module
-                    yet.
-                  </NotWiredNote>
+                    {/* Vehicle, driver and delivery instructions live in booking_transport, which has no query module
+                    yet. */}Delivery details are not available yet. </NotWiredNote>
                 </div>
               </Card>
             </div>
@@ -2665,7 +2575,7 @@ function BookingDetailView() {
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: viewport === 'desktop' ? 'repeat(3, minmax(0,1fr))' : '1fr',
+                    gridTemplateColumns: viewport === 'desktop' ? 'repeat(2, minmax(0,1fr))' : '1fr',
                     gap: 'var(--sp-md)',
                   }}
                 >
@@ -2745,9 +2655,8 @@ function BookingDetailView() {
                       ]}
                     />
                     <NotWiredNote>
-                      Received and pending live in security_deposits / deposit_movements, which have no query module
-                      yet (Law 5 keeps them out of the payments ledger) — absent here, not zero.
-                    </NotWiredNote>
+                      {/* Received and pending live in security_deposits / deposit_movements, which have no query module
+                      yet (Law 5 keeps them out of the payments ledger) — absent here, not zero. */}Deposit movements are not available yet. </NotWiredNote>
                     <p
                       style={{
                         display: 'flex',
@@ -2760,8 +2669,7 @@ function BookingDetailView() {
                     >
                       <Icon name="info" size={11} style={{ flexShrink: 0, marginTop: 2 }} />
                       <span>
-                        A liability held on the client&apos;s behalf. It is never part of Rental Total and never
-                        reduces Outstanding — the two columns are deliberately not summed.
+                        The deposit is held separately and never reduces Outstanding.
                       </span>
                     </p>
                     {hasInvoice && (
@@ -2815,7 +2723,7 @@ function BookingDetailView() {
                     </div>
                   </div>
 
-                  <div className="booking-detail-financial-col">
+                  <div className="booking-detail-financial-col" style={{ gridColumn: '1 / -1', minWidth: 0 }}>
                     <h3 style={sub}>Payment History (Rental)</h3>
                     {paymentRows.length === 0 ? (
                       <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
@@ -2891,9 +2799,8 @@ function BookingDetailView() {
               }
             >
               <NotWiredNote>
-                This booking&apos;s documents live in document_registry, which has no query module yet — nothing is
-                listed rather than documents that belong to another booking.
-              </NotWiredNote>
+                {/* This booking&apos;s documents live in document_registry, which has no query module yet — nothing is
+                listed rather than documents that belong to another booking. */}No documents available for this rental yet. </NotWiredNote>
               {documentsList.rows.length > 0 && (
                 <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-card)', overflow: 'hidden', marginTop: 12 }}>
                   <DataTableShell ariaLabel="Booking documents">
@@ -2971,8 +2878,7 @@ function BookingDetailView() {
                       setOverrideModalOpen(true)
                     }}
                   >
-                    Close with Zero-Value Override (§4.51)
-                  </Button>
+                    {/* Close with Zero-Value Override (§4.51) */}Close with Zero-Value Override </Button>
                 </div>
               )}
             {/deposit/i.test(closeError) &&
@@ -2995,42 +2901,6 @@ function BookingDetailView() {
           </div>
         )}
       </div>
-
-      {/* §4.2's tablet/phone sticky bar — entirely money, so a money-blind
-          session gets NO bar (Law 6, omitted not greyed), and a booking with
-          no invoice gets none either: there is no Rental Total to state. */}
-      {viewport !== 'desktop' && canBookingMoney && hasInvoice && (
-        <div
-          style={{
-            position: 'sticky',
-            bottom: viewport === 'phone' ? BAR_BOX : 0,
-            zIndex: 40,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--sp-md)',
-            padding: '10px 14px',
-            borderRadius: 'var(--r-card)',
-            border: '1px solid var(--border)',
-            background: 'var(--card)',
-            boxShadow: 'var(--shadow-modal)',
-            backdropFilter: 'blur(16px)',
-            WebkitBackdropFilter: 'blur(16px)',
-          }}
-        >
-          <span style={{ minWidth: 0, flex: 1 }}>
-            <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Rental Total</span>
-            <span
-              className="figure"
-              style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}
-            >
-              {money(totals.total)}
-            </span>
-          </span>
-          {canTakePayment && recordPaymentButton('Record Payment')}
-        </div>
-      )}
-
-      <FooterNote extra={['Deposits are liabilities and never offset Rental Outstanding']} />
 
       {/*
         Create Invoice — R-01's second entry point, which this screen did not
@@ -3181,7 +3051,7 @@ function BookingDetailView() {
           void doReleaseUnit(unitRowId, label)
         }}
         title={`Release ${confirmRelease?.label ?? 'this unit'}?`}
-        description={`This booking is ${floorStage ?? 'past Packed'} — the unit has already been through packing. Releasing it marks the assignment ended (the row is kept, Law 3) and the serial leaves this booking's floor lists.`}
+        description="This removes the unit from this booking. Its previous assignment stays in the history."
         confirmLabel="Release unit"
         variant="danger"
         isSubmitting={releasingUnitId !== null}
@@ -3306,7 +3176,7 @@ function BookingDetailView() {
           }
         }}
         title="Zero-Value Close Override"
-        subtitle={`Booking ${booking.bookingNo} · Law 1 / OPEN_DECISIONS §4.51`}
+        subtitle={`Booking ${booking.bookingNo}`}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-sm)' }}>
             <Button

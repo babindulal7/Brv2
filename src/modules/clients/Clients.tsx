@@ -441,7 +441,7 @@ function CreditView({
       <Card
         title="Credit policy by membership tier"
         action={
-          <Unavailable reason="The Manager override gate is not built yet — Foundation §10 requires an authorisation step and an immutable audit row that do not exist">
+          <Unavailable reason={/* The Manager override gate is not built yet — Foundation §10 requires an authorisation step and an immutable audit row that do not exist */ "Manager overrides are not available yet."}>
             <Button icon="flag" disabled>
               Request Override
             </Button>

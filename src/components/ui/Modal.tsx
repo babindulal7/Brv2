@@ -64,7 +64,7 @@ export interface ModalProps {
   onClose: () => void
   onEscape?: () => void
   title?: string
-  subtitle?: string
+  subtitle?: ReactNode
   children: ReactNode
   footer?: ReactNode
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'

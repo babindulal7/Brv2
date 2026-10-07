@@ -36,6 +36,7 @@
     "completion": "node scripts/completion.mjs",
     "lint:progress": "node scripts/lint-progress.mjs",
     "lint:shell": "node scripts/check-page-shell-lint.mjs",
+    "lint:ui-copy": "node scripts/check-ui-copy.mjs && node --test scripts/check-ui-copy.test.mjs",
     "db:local": "node scripts/local-db.mjs",
     "storage:local": "node scripts/local-storage.mjs",
     "data:wipe": "node scripts/wipe-user-data.mjs",

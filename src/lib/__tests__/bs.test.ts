@@ -12,6 +12,8 @@ import {
   formatBs,
   formatBsOrAd,
   formatAd,
+  formatAdDateTime,
+  formatBookingHoverDateTime,
   eachDay,
   isWeekend,
 } from '../bs'
@@ -175,7 +177,7 @@ describe('toBs — the edge of the table', () => {
 
   it('states the span it covers, derived from the table rather than typed', () => {
     // The note screens print must move when the table does.
-    expect(BS_SUPPORTED_RANGE).toContain('14 Apr 2021')
+    expect(BS_SUPPORTED_RANGE).toContain('14/4/2021')
     expect(toBs(new Date(ad(2021, 4, 14).getTime()))).toEqual({ year: BS_MIN_YEAR, month: 1, day: 1 })
   })
 })
@@ -184,7 +186,7 @@ describe('toBs — the edge of the table', () => {
 
 describe('formatBsOrAd — the English date where BS cannot be named', () => {
   it('gives the BS date inside the table', () => {
-    expect(formatBsOrAd(SEEDED_OPERATING_DAY)).toBe('15 Shrawan 2083 BS')
+    expect(formatBsOrAd(SEEDED_OPERATING_DAY)).toBe('15 Shrawan')
   })
 
   it('gives the English date outside it — never an em dash', () => {
@@ -195,8 +197,8 @@ describe('formatBsOrAd — the English date where BS cannot be named', () => {
     // The dates that used to exercise this (1 Sept 2026, 17 Aug 2026) now resolve
     // in BS — the table covers them. Only genuinely uncovered years fall back now,
     // which is the point of the 2078–2095 table.
-    expect(formatBsOrAd(ad(2040, 1, 1))).toBe('1 Jan 2040')
-    expect(formatBsOrAd(ad(2019, 6, 30))).toBe('30 Jun 2019')
+    expect(formatBsOrAd(ad(2040, 1, 1))).toBe('1/1/2040')
+    expect(formatBsOrAd(ad(2019, 6, 30))).toBe('30/6/2019')
   })
 
   it('never returns an em dash or an empty string for any day across two years', () => {
@@ -210,7 +212,7 @@ describe('formatBsOrAd — the English date where BS cannot be named', () => {
   it('resolves the civil date in Kathmandu on the fallback path too', () => {
     // 31 Dec 2039 18:15 UTC is already 1 Jan 2040 in Kathmandu; the AD fallback
     // must not answer a day behind the BS path it stands in for.
-    expect(formatBsOrAd(ad(2039, 12, 31, 18, 15))).toBe('1 Jan 2040')
+    expect(formatBsOrAd(ad(2039, 12, 31, 18, 15))).toBe('1/1/2040')
   })
 })
 
@@ -231,17 +233,31 @@ describe('toBs — resolves the civil date in Kathmandu (UTC+05:45)', () => {
 
   it('the AD line and the BS line never disagree on the same screen', () => {
     const instant = ad(2026, 7, 16, 18, 30)
-    expect(formatAd(instant)).toBe('17 Jul 2026')
-    expect(formatBs(toBs(instant)!)).toBe('1 Shrawan 2083 BS')
+    expect(formatAd(instant)).toBe('17/7/2026')
+    expect(formatBs(toBs(instant)!)).toBe('1 Shrawan')
   })
 
   it('formatAd renders in Kathmandu, not UTC', () => {
-    expect(formatAd(ad(2026, 7, 31))).toBe('31 Jul 2026')
-    expect(formatAd(ad(2026, 7, 31, 19, 0))).toBe('1 Aug 2026')
+    expect(formatAd(ad(2026, 7, 31))).toBe('31/7/2026')
+    expect(formatAd(ad(2026, 7, 31, 19, 0))).toBe('1/8/2026')
   })
 })
 
 /* ── rendering ──────────────────────────────────────────────────────────── */
+
+describe('compact dual-calendar formatting', () => {
+  it('uses the requested numeric AD date and short BS label', () => {
+    const iso = '2026-09-30T01:15:00.000Z'
+    expect(formatAdDateTime(iso)).toBe('30/9/2026, 07:00 AM')
+    expect(formatBookingHoverDateTime(iso)).toBe('30/9/2026, 07:00 AM · 14 Ashwin')
+  })
+
+  it('keeps both calendars on the same Kathmandu day across UTC midnight', () => {
+    expect(formatBookingHoverDateTime('2026-09-29T18:30:00.000Z')).toBe('30/9/2026, 12:15 AM · 14 Ashwin')
+    expect(formatBookingHoverDateTime(null)).toBe('Not scheduled')
+    expect(formatBookingHoverDateTime('invalid')).toBe('—')
+  })
+})
 
 describe('BS month names and formatting', () => {
   it('holds twelve months', () => {
@@ -253,14 +269,14 @@ describe('BS month names and formatting', () => {
     expect(BS_MONTHS).not.toContain('Shravan')
   })
 
-  it('renders Latin digits and the BS suffix', () => {
-    expect(formatBs({ year: 2083, month: 4, day: 15 })).toBe('15 Shrawan 2083 BS')
-    expect(formatBs({ year: 2083, month: 1, day: 1 })).toBe('1 Baishakh 2083 BS')
-    expect(formatBs({ year: 2083, month: 12, day: 30 })).toBe('30 Chaitra 2083 BS')
+  it('renders Latin digits and the day/month without the year or suffix', () => {
+    expect(formatBs({ year: 2083, month: 4, day: 15 })).toBe('15 Shrawan')
+    expect(formatBs({ year: 2083, month: 1, day: 1 })).toBe('1 Baishakh')
+    expect(formatBs({ year: 2083, month: 12, day: 30 })).toBe('30 Chaitra')
   })
 
-  it('can drop the suffix', () => {
-    expect(formatBs({ year: 2083, month: 4, day: 15 }, { suffix: false })).toBe('15 Shrawan 2083')
+  it('keeps compact labels for callers with legacy suffix options', () => {
+    expect(formatBs({ year: 2083, month: 4, day: 15 }, { suffix: false })).toBe('15 Shrawan')
   })
 
   it('degrades to a blank month rather than printing the word "undefined"', () => {

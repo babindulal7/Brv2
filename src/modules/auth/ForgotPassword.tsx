@@ -78,7 +78,7 @@ export default function ForgotPassword() {
             Back to sign in
           </Link>
 
-          <Unavailable reason="SMS reset is not built: no gateway is wired and the shared-device identity rule is undecided (PLAN.md §4). The email link above does the same job.">
+          <Unavailable reason={/* SMS reset is not built: no gateway is wired and the shared-device identity rule is undecided (PLAN.md §4). The email link above does the same job. */ "Use the email link above to reset your password."}>
             <Button
               type="button"
               variant="secondary"

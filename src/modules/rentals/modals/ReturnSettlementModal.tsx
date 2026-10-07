@@ -364,8 +364,7 @@ export function ReturnSettlementModal({
               {formatMoney(depositHeld)}
             </div>
             <div style={{ fontSize: 'var(--t-meta, 11px)', color: 'var(--text2)', marginTop: 2 }}>
-              Liability (Law 5)
-            </div>
+              {/* Liability (Law 5) */}Liability </div>
           </div>
 
           {/* Total Deductions / Penalties */}

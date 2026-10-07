@@ -662,8 +662,7 @@ function AddExpenseSheet({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text2)' }}>
             <Icon name="info" size={14} />
-            Drawn in the wireframe, not stored by the schema
-          </div>
+            {/* Drawn in the wireframe, not stored by the schema */}Not tracked yet </div>
           {NO_COLUMN_FIELDS.map((f) => (
             <div key={f.label} style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
               <strong style={{ color: 'var(--text2)' }}>{f.label}</strong> — {f.why}

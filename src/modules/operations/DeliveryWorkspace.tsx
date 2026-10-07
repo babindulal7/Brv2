@@ -1,3 +1,4 @@
+import { DateField } from '../../components/ui/DateField'
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
@@ -1014,21 +1015,7 @@ export function DeliveryWorkspace() {
                       <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: '6px' }}>
                         Date
                       </label>
-                      <input
-                        type="date"
-                        value={newDate}
-                        onChange={(e) => setNewDate(e.target.value)}
-                        style={{
-                          width: '100%',
-                          minHeight: '44px',
-                          padding: '8px 10px',
-                          borderRadius: 'var(--r-btn)',
-                          background: 'var(--card)',
-                          border: '1px solid var(--border)',
-                          color: 'var(--text)',
-                          fontSize: '13px',
-                        }}
-                      />
+                      <DateField ariaLabel="Delivery date" value={newDate} onChange={setNewDate} style={{ minHeight: 44 }} />
                     </div>
                     <div>
                       <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: '6px' }}>

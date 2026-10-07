@@ -203,7 +203,7 @@ describe('Depreciation — no default life, and no invented IRD rate', () => {
   it('states that the Settings default does not exist rather than offering one', async () => {
     await mount(<DepreciationCalculator />)
     const reasons = [...container.querySelectorAll('[aria-disabled]')].map((n) => n.getAttribute('aria-label') ?? '')
-    expect(reasons.some((r) => r.includes('TODO(decision)'))).toBe(true)
+    expect(reasons.some((r) => r.includes('No defaults have been set'))).toBe(true)
     expect(container.textContent).toContain('No default from Settings')
     /* The life field starts empty. A prefilled 5 would read as the accountant's
        answer, not as a placeholder. */

@@ -207,7 +207,7 @@ export default function ExpenseReports() {
   const [vendor, setVendor] = useState<string>('All')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
-  const [perPage, setPerPage] = useState<number>(10)
+  const [perPage, setPerPage] = useState<number>(25)
 
   /*
    * The shared toolbar's half of the filter set — `ListFilters`-shaped, so when

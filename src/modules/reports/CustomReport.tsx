@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { useMemo, useState } from 'react'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
 import type { Kpi } from '../../components/ui/Page'
@@ -135,8 +136,8 @@ export default function CustomReport() {
         clientName: b.client,
         projectName: b.project,
         stage: b.status,
-        startDate: b.pickup.ad.toLocaleDateString(),
-        endDate: b.ret.ad.toLocaleDateString(),
+        startDate: formatAd(b.pickup.ad),
+        endDate: formatAd(b.ret.ad),
         total: b.amount ? formatMoney(b.amount) : '—',
         paid: b.amount && b.due !== undefined ? formatMoney(rupees(Math.max(0, (b.amount as number) - (b.due as number)))) : '—',
         rawTotal: (b.amount as number) || 0,
@@ -262,7 +263,7 @@ export default function CustomReport() {
 
     return [
       [`Custom ${domain.toUpperCase()} Report Extract`],
-      [`Generated for Babin Rentals OS · ${new Date().toLocaleDateString()}`],
+      [`Generated for Babin Rentals OS · ${formatAd(new Date())}`],
       [],
       headers,
       ...dataRows,

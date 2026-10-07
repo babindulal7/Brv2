@@ -172,7 +172,7 @@ const STAGE_FILTERS = ['Packing', 'Return', 'Damage'] as const
  * sends the verb that *does* exist and is wired properly.
  */
 const UNMATCH_UNAVAILABLE_REASON =
-  'Unmatch cannot act yet. REVIEW_EVIDENCE accepts only "review" or "remove", and "remove" is the soft-delete §10 gives the Remove button — it would hide the photo, not detach its match. Detaching a wrong match needs its own verb. Nothing is written and this photo keeps its match.'
+  /* Unmatch cannot act yet. REVIEW_EVIDENCE accepts only "review" or "remove", and "remove" is the soft-delete §10 gives the Remove button — it would hide the photo, not detach its match. Detaching a wrong match needs its own verb. Nothing is written and this photo keeps its match. */ "Removing a product match is not available yet. No change is saved."
 
 /**
  * **HO-10, part 1** — the seven bulk actions, each with the reason it cannot
@@ -212,7 +212,7 @@ const BULK_UNAVAILABLE: Record<(typeof BULK_ACTIONS)[number], string> = {
   Rotate:
     'Rotating needs an image and somewhere to keep the result. These entries hold no image data and no evidence file is stored, so a rotation could be neither applied nor saved.',
   Remove:
-    'Removing evidence is a soft delete (§10, Law 3): the file is kept, the removal is audited, and Owner and Manager see it again in an Archived filter. None of that is built — REVIEW_EVIDENCE\'s "remove" verb is a stub and the app has no Archived filter. To take a card out of your own view, use Hide on This Screen on the selected photo.',
+    /* Removing evidence is a soft delete (§10, Law 3): the file is kept, the removal is audited, and Owner and Manager see it again in an Archived filter. None of that is built — REVIEW_EVIDENCE's "remove" verb is a stub and the app has no Archived filter. To take a card out of your own view, use Hide on This Screen on the selected photo. */ "Removing evidence is not available yet. Hide on This Screen only hides it until this page reloads.",
 }
 
 /**
@@ -509,10 +509,10 @@ export default function EvidenceWorkspace() {
               ].map((f) => (
                 <div key={f.l} className="floor-summary-cell">
                   <div className="floor-summary-label">{f.l}</div>
-                  <div className="floor-summary-value">
+                  <div className="floor-summary-value" style={{ color: ['Pickup', 'Return'].includes(f.l) && f.s ? 'var(--booking-date-text)' : undefined }}>
                     {f.v}
                   </div>
-                  {f.s && <div className="floor-summary-sub figure">{f.s}</div>}
+                  {f.s && <div className="floor-summary-sub figure" style={{ color: ['Pickup', 'Return'].includes(f.l) ? 'var(--booking-date-text)' : undefined }}>{f.s}</div>}
                 </div>
               ))}
             </div>
@@ -1040,11 +1040,10 @@ export default function EvidenceWorkspace() {
                             This hides the card in your browser. Nothing is recorded.
                           </div>
                           <p style={{ margin: '5px 0 0', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
-                            §10&apos;s Remove is a soft delete — the file is kept, the removal is audited, and Owner and
+                            {/* §10&apos;s Remove is a soft delete — the file is kept, the removal is audited, and Owner and
                             Manager see it again in an Archived filter. None of that is built yet: REVIEW_EVIDENCE&apos;s
                             &quot;remove&quot; verb is a stub and the app has no Archived filter. So this card comes back
-                            when the page reloads, and nobody else sees it go.
-                          </p>
+                            when the page reloads, and nobody else sees it go. */}Removing evidence is not available yet. </p>
                           <input
                             value={note}
                             onChange={(e) => setNote(e.target.value)}
@@ -1102,10 +1101,9 @@ export default function EvidenceWorkspace() {
                       whether it has been built.
                     */}
                     <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                      Nothing here was recorded and nobody else sees it — these come back on the next page load. When
+                      {/* Nothing here was recorded and nobody else sees it — these come back on the next page load. When
                       §10&apos;s Remove is built the file will be retained, the removal audited, and Owner and Manager
-                      will see it again in an Archived filter. That write does not exist yet.
-                    </p>
+                      will see it again in an Archived filter. That write does not exist yet. */}These changes are local to this session and will reset when the page reloads. </p>
                     <div style={{ marginTop: 7 }}>
                       <Button icon="eye" onClick={() => setHidden({})}>
                         Show them again

@@ -169,8 +169,8 @@ describe('HO-09 — the booking head is read, never printed', () => {
     await mountAt('B-812')
     expect(text()).toContain(formatAd(new Date(PICKUP_ISO)))
     expect(text()).toContain(formatAd(new Date(RETURN_ISO)))
-    expect(text()).not.toContain('16 Jul 2026')
-    expect(text()).not.toContain('19 Jul 2026')
+    expect(text()).not.toContain('16/7/2026')
+    expect(text()).not.toContain('19/7/2026')
   })
 
   it('counts the rental days through lib/rentalDays, not a fourth copy of the rule', async () => {
@@ -184,7 +184,7 @@ describe('HO-09 — the booking head is read, never printed', () => {
     await mountAt('B-812')
     expect(text()).toContain('—')
     expect(text()).not.toContain('Himalayan Films')
-    expect(text()).not.toContain('16 Jul 2026')
+    expect(text()).not.toContain('16/7/2026')
     // No day count can be derived from two missing instants, and none is shown.
     expect(text()).not.toContain('3 Days')
   })
@@ -245,12 +245,11 @@ describe('HO-10 — the controls state what they do', () => {
     await click(byText('Hide on This Screen')[0] as HTMLButtonElement)
     expect(text()).toContain('This hides the card in your browser. Nothing is recorded.')
     // Law 3's behaviour is stated, and stated as unbuilt — not deleted, not faked.
-    expect(text()).toContain('Archived filter')
-    expect(text()).toContain('None of that is built yet')
+    expect(text()).toContain('Removing evidence is not available yet')
 
     await click(byText('Hide it')[0] as HTMLButtonElement)
     expect(text()).toContain('Hidden on this screen (1)')
-    expect(text()).toContain('Nothing here was recorded')
+    expect(text()).toContain('These changes are local to this session')
     expect(text()).not.toContain('Retained and audited.')
   })
 

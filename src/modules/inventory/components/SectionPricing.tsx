@@ -43,7 +43,7 @@ export function SectionPricing() {
               id="sec-pricing"
               n={sectionNumber('sec-pricing')}
               title="Pricing & Rental"
-              note="Base rates only. Membership, student, bundle and custom discounts and the late fee are owned elsewhere (§10.3)."
+              note={/* Base rates only. Membership, student, bundle and custom discounts and the late fee are owned elsewhere (§10.3). */ "Base rates only. Membership, student, bundle and custom discounts and the late fee are owned elsewhere ."}
             >
               <div style={fieldRow}>
                 <Field label="Daily rate (NPR)" error={errors.dailyRate} hint={dailyPaisa ? formatMoney(dailyPaisa) : undefined}>

@@ -103,7 +103,7 @@ export const SETTING_SPECS: Record<SettingKey, SettingSpec> = {
   },
   businessDescription: { default: 'Film & Production Equipment Rental', kind: 'text' },
   vatNumber: {
-    default: '601928473',
+    default: '623587106',
     kind: 'text',
     /* Nepali PAN/VAT is nine digits. Refusing the shape here is the difference
        between a wrong number on one invoice and a wrong number on all of them. */
@@ -469,6 +469,9 @@ export function readSettings(): SettingsRecord {
     /* Guarded — this sweep runs on the load path and WebKit can throw. */
     const raw = readLocal(PREFIX + key)
     if (raw === null) continue
+    // 7 Oct owner audit: correct the former built-in company PAN only.
+    // Preserve every other explicit organisation override.
+    if (key === 'vatNumber' && raw === '601928473') continue
     const spec = SETTING_SPECS[key]
     const parsed: SettingValue = spec.kind === 'number' ? Number(raw) : raw
     /*

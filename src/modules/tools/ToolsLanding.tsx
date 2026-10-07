@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { PageHeader, FooterNote, cardStyle } from '../../components/ui/Page'
@@ -14,7 +14,6 @@ import PricingCalculator from './PricingCalculator'
 import CineTools from '../settings/Tools'
 import LateFeeCalculator from './LateFeeCalculator'
 import QrGenerator from './QrGeneratorModal'
-import BundleQuickBuilder from './BundleQuickBuilder'
 import CouponsManager from './CouponsManager'
 
 /**
@@ -71,14 +70,14 @@ const GROUPS: ToolGroup[] = [
     cards: [
       {
         label: 'Late Fee',
-        hint: 'Overtime returns past 6:00 AM cutoff + 25% surcharge',
+        hint: '30 minutes free · under 2 hours: half day · 2 hours or more: full day',
         icon: 'timer',
         tab: 'latefee',
         to: '/tools/latefee',
       },
       {
         label: 'Coupons & Promos',
-        hint: 'Active promo codes, 25% cap rule & sandbox simulator',
+        hint: 'Manage promo codes and preview valid discounts',
         icon: 'receipt',
         tab: 'coupons',
         to: '/tools/coupons',
@@ -91,17 +90,10 @@ const GROUPS: ToolGroup[] = [
     cards: [
       {
         label: 'QR & Barcode Generator',
-        hint: 'Serialized equipment asset tags and printable barcode labels',
+        hint: 'Equipment asset tags and printable barcode labels',
         icon: 'barcode',
         tab: 'qr',
         to: '/tools/qr',
-      },
-      {
-        label: 'Bundle Quick-Builder',
-        hint: 'Create kit packages with combined day-rates & discounts',
-        icon: 'box',
-        tab: 'bundle',
-        to: '/tools/bundle',
       },
     ],
   },
@@ -167,9 +159,12 @@ export default function ToolsLanding() {
       : []),
     { key: 'coupons' as const, label: 'Coupons & Promos', icon: 'receipt' as const },
     { key: 'qr' as const, label: 'QR & Barcodes', icon: 'barcode' as const },
-    { key: 'bundle' as const, label: 'Bundle Builder', icon: 'box' as const },
     { key: 'cinematography', label: 'Cinematography Suite', icon: 'camera' },
   ]
+
+  // 7 Oct audit: the legacy sandbox contains invented gear/rates and does not save.
+  // Keep its URL as a redirect to the real bundle registry; one supported builder.
+  if (activeTab === 'bundle') return <Navigate to="/inventory?tab=bundles" replace />
 
   return (
     <PageShell width="full">
@@ -329,7 +324,6 @@ export default function ToolsLanding() {
       {activeTab === 'latefee' && <LateFeeCalculator />}
       {activeTab === 'coupons' && <CouponsManager />}
       {activeTab === 'qr' && <QrGenerator />}
-      {activeTab === 'bundle' && <BundleQuickBuilder />}
       {activeTab === 'cinematography' && <CineTools embedded />}
 
       <FooterNote extra={['All calculators run locally within Tools without navigating away']} />

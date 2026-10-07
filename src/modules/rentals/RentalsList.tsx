@@ -14,6 +14,7 @@ import { SavedViewsMenu, type SavedListView } from '../../components/ui/SavedVie
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { FilterBar } from '../../components/ui/FilterBar'
 import { Pagination } from '../../components/ui/Pagination'
+import { BsAdDate } from '../../components/ui/BsAdDate'
 import { Badge } from '../../components/ui/Badge'
 import { STATUS, BRAND } from '../../lib/status'
 import type { IconName } from '../../components/ui/Icon'
@@ -60,6 +61,8 @@ import {
 import { useList, type ListQueryResult } from '../../lib/queries/useList'
 import { useFilters } from '../../lib/queries/useFilters'
 import type { ListFilters } from '../../lib/queries/listQuery'
+import { RENTAL_VIEWS, listRentalViewCounts } from '../../lib/queries/rentalViews'
+import { formatBookingNo } from '../../lib/format'
 import { PROJECT_TYPES, displayProjectType } from '../../lib/projectTypes'
 import { LoadingSkeleton } from '../../components/ui/StateViews'
 import { listActiveDrafts, type RentalDraftRecord } from '../../actions/rentals/saveDraft'
@@ -185,11 +188,11 @@ function calculateDraftTotal(data: RentalDraftRecord['data']): Paisa {
 function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
   const data = d.data
   const bookingNoDisplay = data.bookingNo ? `Draft #${data.bookingNo}` : `Draft ${d.id.slice(0, 8)}`
-  const clientName = data.clientName || data.selectedClientId || 'Draft Client'
-  const pickupDate = data.pickup || ''
-  const pickupTime = data.pickupTime || '09:00'
-  const returnDate = data.returnDate || ''
-  const returnTime = data.returnTime || '18:00'
+  const clientName = data.clientName || 'Client not selected'
+  const pickupDate = data.pickup ? formatAd(new Date(data.pickup)) : ''
+  const pickupTime = data.pickupTime || ''
+  const returnDate = data.returnDate ? formatAd(new Date(data.returnDate)) : ''
+  const returnTime = data.returnTime || ''
   const hasSubRental = Boolean(data.lines?.some((l) => l.lineType === 'Sub-rental'))
 
   return {
@@ -197,7 +200,7 @@ function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
     bookingNo: bookingNoDisplay,
     clientId: data.clientDbId ?? data.selectedClientId ?? '',
     client: clientName,
-    monogram: (clientName.trim()[0] || 'D').toUpperCase(),
+    monogram: clientName.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'D',
     avatarTone: 'neutral',
     project: data.project || 'Untitled Draft',
     /* Drafts carry the type as `kind` (+`kindOther`); same display rule. */
@@ -210,13 +213,14 @@ function draftToRentalListRow(d: RentalDraftRecord): RentalListRow {
     status: 'Draft' as unknown as BookingStatus,
     statusKey: 'neutral',
     flags: [],
+    ...(data.pickup && data.pickup < getBusinessToday().toISOString().slice(0, 10) ? { statusNote: 'Pickup date passed' } : {}),
     isCancelled: false,
     isClosed: false,
     isOverdue: false,
     progress: 0,
     progressTone: 'neutral',
-    pickup: { date: pickupDate, time: pickupTime },
-    ret: { date: returnDate, time: returnTime },
+    pickup: { date: pickupDate, time: pickupTime, ...(data.pickup ? { ad: data.pickup } : {}) },
+    ret: { date: returnDate, time: returnTime, ...(data.returnDate ? { ad: data.returnDate } : {}) },
     deliveryType: data.deliveryType === 'Babin Delivery' ? 'Babin Delivery' : 'Client Pickup',
     quoteExpires: null,
     deposit: null,
@@ -324,7 +328,7 @@ function Track({ step, tone }: { step: number; tone: BrandKey }) {
  * `clients.id` (`avatarToneFor`), so one client wears one tone on every screen.
  */
 function Avatar({ row }: { row: RentalListRow }) {
-  const c = STATUS[row.avatarTone]
+  const c = STATUS.neutral
   return (
     <span
       aria-hidden
@@ -345,7 +349,7 @@ function Avatar({ row }: { row: RentalListRow }) {
       }}
     >
       {/* One token — 12px is the §4.3.6 floor and two lines overflow the circle. */}
-      <span>{row.monogram}</span>
+      <span>{row.client.trim().split(/\s+/).slice(0, 2).map(part => part[0] ?? '').join('').toUpperCase()}</span>
     </span>
   )
 }
@@ -1010,7 +1014,7 @@ export default function RentalsList() {
       dateColumn: 'pickup_at',
       /* Sort round-trips so a shared/bookmarked type-sorted view keeps its
          order; the screen still defaults to pickup_at (see listFilters). */
-      sortColumns: ['pickup_at', 'project_type'],
+      sortColumns: ['pickup_at', 'project_type', 'clients(name)', 'stage'],
       /* `sub` is §11.1's chip. An extra rather than a chip group for the same
       reason `quick` is one: there is no `sub_rental` column to put in an
       `in ()`, because the fact is line-level and the booking-level answer is
@@ -1251,6 +1255,7 @@ export default function RentalsList() {
      on. `useFilters` counts the quick-filter extra alongside them, because it
      narrows the list exactly as the others do. */
   const isFiltered = f.activeCount > 0
+  const viewCounts = useList(listRentalViewCounts, { ...f.filters, ...query.filters, chips: { ...f.filters.chips, ...query.filters.chips } })
 
   const clearFilters = f.clearAll
 
@@ -1274,7 +1279,7 @@ export default function RentalsList() {
         ...(filters.chips?.stage ? { chips: { ...filters.chips, stage: dbStages } } : {}),
       }
 
-      const rawDrafts = shouldFetchDrafts ? await listActiveDrafts().catch(() => []) : []
+      const rawDrafts = shouldFetchDrafts ? await listActiveDrafts() : []
 
       let filteredDrafts = rawDrafts
 
@@ -1408,7 +1413,9 @@ export default function RentalsList() {
      operator's sort (default pickup_at, set by the toolbar control) rides
      along — `rentalsQuery` does not carry it, so it is merged here. */
   const listFilters: ListFilters = {
+    ...f.filters,
     ...query.filters,
+    chips: { ...f.filters.chips, ...query.filters.chips, ...(stageChips.includes('Draft') ? { stage: [...(query.filters.chips?.stage ?? []), 'Draft'] } : {}) },
     ...(f.filters.sort ? { sort: f.filters.sort } : {}),
     page: { index: page - 1, size: perPage },
   }
@@ -1458,10 +1465,12 @@ export default function RentalsList() {
   /* `useList` memoises `refetch`; naming it keeps refresh stable while the
      table remains the only default data surface on this list. */
   const { refetch: refetchList } = list
+  const { refetch: refreshViewCounts } = viewCounts
   const refreshAll = useCallback(() => {
     refetchList()
+    refreshViewCounts()
     void refreshSubRentals()
-  }, [refetchList, refreshSubRentals])
+  }, [refetchList, refreshSubRentals, refreshViewCounts])
 
   useDomainEvent(EVENT_TYPES.RENTAL_CREATED, refreshAll)
   useDomainEvent(EVENT_TYPES.RENTAL_CONFIRMED, refreshAll)
@@ -1590,7 +1599,7 @@ export default function RentalsList() {
       `"${r.pickup?.date || ''}"`,
       `"${r.ret?.date || ''}"`,
       r.itemCount,
-      ...(money ? [r.totalAmount != null ? `"${r.totalAmount}"` : (r.deposit != null ? `"${r.deposit}"` : '""')] : []),
+      ...(money ? [r.totalAmount != null ? `"${r.totalAmount}"` : '""'] : []),
     ])
     const csv = [csvHeaders.join(','), ...csvLines.map((l) => l.join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -1696,23 +1705,6 @@ export default function RentalsList() {
         description="Manage bookings, pickups, returns, and the next action."
         actions={
           <PageActions
-            primary={
-              canWriteDesk ? (
-                <Button
-                  variant="primary"
-                  icon="plus"
-                  onClick={() => {
-                    setRawParams((prev) => {
-                      const next = new URLSearchParams(prev)
-                      next.set('action', 'new')
-                      return next
-                    })
-                  }}
-                >
-                  New Rental
-                </Button>
-              ) : undefined
-            }
             secondary={[
               canOperate && (
                 <Button
@@ -1796,15 +1788,10 @@ export default function RentalsList() {
                 Sort
                 <select
                   aria-label="Sort rentals"
-                  value={
-                    f.filters.sort?.column === 'project_type'
-                      ? (f.filters.sort.ascending === false ? 'project_type:desc' : 'project_type:asc')
-                      : 'pickup_at:asc'
-                  }
+                  value={`${f.filters.sort?.column ?? 'pickup_at'}:${f.filters.sort?.ascending === false ? 'desc' : 'asc'}`}
                   onChange={(e) => {
                     const [column, dir] = e.target.value.split(':')
-                    if (column === 'project_type') f.setSort('project_type', dir !== 'desc')
-                    else f.setSort('pickup_at', true)
+                    if (column) f.setSort(column, dir !== 'desc')
                   }}
                   style={{
                     minHeight: 36,
@@ -1819,7 +1806,7 @@ export default function RentalsList() {
                     cursor: 'pointer',
                   }}
                 >
-                  <option value="pickup_at:asc">Pickup date</option>
+                  <option value="pickup_at:asc">Pickup date</option><option value="clients(name):asc">Client</option><option value="stage:asc">Status</option>
                   <option value="project_type:asc">Project Type A → Z</option>
                   <option value="project_type:desc">Project Type Z → A</option>
                 </select>
@@ -1838,19 +1825,13 @@ export default function RentalsList() {
           )
         }
       >
-        {[
-          { id: 'All', label: 'All', icon: 'checklist' as IconName, stages: [] as BookingStatus[] },
-          { id: 'Upcoming', label: 'Upcoming', icon: 'calendar' as IconName, stages: ['Quote', 'Booked', 'Packed'] as BookingStatus[] },
-          { id: 'Out', label: 'Out', icon: 'truck' as IconName, stages: ['On Rent'] as BookingStatus[] },
-          { id: 'Returns', label: 'Returns', icon: 'return_arrow' as IconName, stages: ['Returned'] as BookingStatus[] },
-          { id: 'Closed', label: 'Closed', icon: 'lock' as IconName, stages: ['Closed'] as BookingStatus[] },
-        ].map((viewItem) => {
+        {RENTAL_VIEWS.map((viewItem) => {
           const isAll = viewItem.id === 'All'
           const isActive = isAll
-            ? statusFilter.size === 0 && chip === 'All'
+            ? stageChips.length === 0 && chip === 'All'
             : viewItem.id === 'Upcoming'
               ? statusFilter.size === 3 && statusFilter.has('Quote') && statusFilter.has('Booked') && statusFilter.has('Packed')
-              : viewItem.stages.length === 1 && viewItem.stages[0] !== undefined && statusFilter.size === 1 && statusFilter.has(viewItem.stages[0])
+              : viewItem.stages.length === 1 && viewItem.stages[0] !== undefined && stageChips.length === 1 && stageChips.includes(viewItem.stages[0])
 
           return (
             <button
@@ -1863,11 +1844,12 @@ export default function RentalsList() {
                 } else if (isActive) {
                   f.setChipGroup('stage', [])
                 } else {
-                  f.setChipGroup('stage', viewItem.stages)
+                  f.setChipGroup('stage', [...viewItem.stages])
                   if (chip !== 'All') pickChip('All')
                 }
               }}
               aria-pressed={isActive}
+              aria-label={viewItem.label}
               style={stageChipStyle(isActive)}
             >
               <TouchTarget axis="y" />
@@ -1876,7 +1858,10 @@ export default function RentalsList() {
                 size={13}
                 style={{ color: isActive ? 'var(--nav-active-accent)' : 'var(--text2)' }}
               />
-              {viewItem.label}
+              <span data-view-label>{viewItem.label}</span>
+              <span className="figure" style={{ color: 'var(--muted)' }} aria-label={`${viewItem.label} count`}>
+                {viewCounts.loading || viewCounts.error ? '—' : viewCounts.rows.find((row) => row.id === viewItem.id)?.count ?? '—'}
+              </span>
             </button>
           )
         })}
@@ -2052,20 +2037,6 @@ export default function RentalsList() {
                       }
                     >
                       <span style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(r.id)}
-                          onChange={() => toggleSelectRow(r.id)}
-                          aria-label={`Select booking ${r.bookingNo}`}
-                          style={{
-                            width: 18,
-                            height: 18,
-                            marginTop: 9,
-                            accentColor: 'var(--primary)',
-                            cursor: 'pointer',
-                            flexShrink: 0,
-                          }}
-                        />
                         <Avatar row={r} />
                         <span style={{ minWidth: 0, flex: 1 }}>
                           <ClientIntelFromId clientId={r.clientId} name={r.client} context="rental-list" gateContext={gctx} actionContext={user ? { userId: user.id, role: user.role } : null}>
@@ -2085,7 +2056,7 @@ export default function RentalsList() {
                         {show('Total Amount') && (
                           <span style={{ textAlign: 'right', flexShrink: 0 }}>
                             <span className="figure" style={{ display: 'block', fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-                              {typeof r.totalAmount === 'number' ? formatMoney(r.totalAmount) : (typeof r.deposit === 'number' ? formatMoney(r.deposit) : '—')}
+                              {typeof r.totalAmount === 'number' ? formatMoney(r.totalAmount) : '—'}
                             </span>
                             <span style={{ display: 'block', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
                               Total Amount
@@ -2112,7 +2083,7 @@ export default function RentalsList() {
                             className="identifier"
                             style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--link)', textDecoration: 'none' }}
                           >
-                            {r.bookingNo}
+                            {(r.status as string) === 'Draft' ? r.bookingNo : formatBookingNo(r.bookingNo)}
                           </Link>
                         </IntelCard>
                         {/* §8 step 2 — the stage block belongs to <Badge>, not
@@ -2142,13 +2113,13 @@ export default function RentalsList() {
 
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                         <Icon name="calendar" size={12} style={{ color: 'var(--muted)' }} />
-                        Pickup <span className="figure">{r.pickup.date}</span> {r.pickup.time}
+                        Pickup <span className="figure" style={{ color: 'var(--booking-date-text)' }}>{r.pickup.date} {r.pickup.time}</span>
                       </span>
 
                       {r.ret.date && (
                         <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
                           <Icon name="return_arrow" size={12} style={{ color: 'var(--muted)' }} />
-                          Return <span className="figure">{r.ret.date}</span> {r.ret.time}
+                          Return <span className="figure" style={{ color: 'var(--booking-date-text)' }}>{r.ret.date} {r.ret.time}</span>
                         </span>
                       )}
 
@@ -2213,10 +2184,16 @@ export default function RentalsList() {
                     aria-label="Rentals"
                     style={{
                       width: '100%',
+                      tableLayout: viewport === 'desktop' ? 'fixed' : 'auto',
                       borderCollapse: 'collapse',
-                      minWidth: viewport === 'tablet' ? 720 : 1040,
+                      minWidth: viewport === 'tablet' ? 720 : 0,
                     }}
                   >
+                    {viewport === 'desktop' && <colgroup>
+                      <col style={{ width: 44 }} />
+                      {headers.map((h) => <col key={h} style={{ width: `${83 * (RENTAL_COLUMN_SHARES[h] ?? 0.1)}%` }} />)}
+                      <col style={{ width: 146 }} />
+                    </colgroup>}
                     <thead>
                       <tr style={{ background: 'var(--th-bg)' }}>
                         <th style={{ ...th, width: 44, paddingLeft: 12 }}>
@@ -2302,7 +2279,7 @@ export default function RentalsList() {
                                   textDecoration: 'none',
                                 }}
                               >
-                                {r.bookingNo}
+                                {(r.status as string) === 'Draft' ? r.bookingNo : formatBookingNo(r.bookingNo)}
                               </Link>
                               {(r.isOverdue || r.isCancelled || r.isExternal === true) && (
                                 <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -2351,7 +2328,7 @@ export default function RentalsList() {
                                     renders as an explicit non-value — never
                                     as a kit name, which is what this cell
                                     used to invent. */}
-                                <span
+                                {r.project && r.project !== '—' && <span
                                   style={{
                                     display: 'block',
                                     fontSize: 'var(--t-meta)',
@@ -2359,12 +2336,12 @@ export default function RentalsList() {
                                     marginTop: 1,
                                   }}
                                 >
-                                  {r.project ?? '—'}
-                                </span>
+                                  {r.project}
+                                </span>}
                                 {/* `pickup_location` is free text and
                                     nullable. The crew label that used to sit
                                     beside it had no column at all. */}
-                                <span
+                                {r.pickupLocation && <span
                                   style={{
                                     display: 'block',
                                     fontSize: 'var(--t-meta)',
@@ -2372,8 +2349,8 @@ export default function RentalsList() {
                                     marginTop: 1,
                                   }}
                                 >
-                                  {r.pickupLocation ?? '—'}
-                                </span>
+                                  {r.pickupLocation}
+                                </span>}
                               </span>
                             </span>
                           </td>
@@ -2392,7 +2369,7 @@ export default function RentalsList() {
                                 whiteSpace: 'nowrap',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
-                                minWidth: 150,
+                                minWidth: 0,
                                 maxWidth: 220,
                               }}
                             >
@@ -2449,7 +2426,7 @@ export default function RentalsList() {
                                       aria-label={`Overdue return: ${m.date}`}
                                     >
                                       <Icon name="timer" size={12} style={{ color: 'var(--chip-amber-fg)' }} />
-                                      <span className="figure">{m.date}</span>
+                                      <BsAdDate date={m.ad} tone="booking" />
                                     </span>
                                   ) : (
                                     <span
@@ -2464,10 +2441,10 @@ export default function RentalsList() {
                                       <Icon name="calendar" size={12} style={{ color: 'var(--muted)' }} />
                                       {/* §3 / Law 7 — AD rendering belongs to
                                           lib/bs.ts, in Kathmandu. */}
-                                      <span className="figure">{m.date}</span>
+                                      <BsAdDate date={m.ad} tone="booking" />
                                     </span>
                                   )}
-                                  <span
+                                  {m.time && <span
                                     style={{
                                       display: 'flex',
                                       alignItems: 'center',
@@ -2478,12 +2455,12 @@ export default function RentalsList() {
                                     }}
                                   >
                                     <Icon name="timer" size={12} style={{ color: 'var(--muted)' }} />
-                                    <span className="figure">{m.time}</span>
-                                  </span>
+                                    <span className="figure" style={{ color: 'var(--booking-date-text)' }}>{m.time}</span>
+                                  </span>}
                                   {/* The named handler this cell used to show
                                       ("Ramesh") had no column and no join.
                                       The location does. */}
-                                  <span
+                                  {place && <span
                                     style={{
                                       display: 'flex',
                                       alignItems: 'center',
@@ -2494,13 +2471,13 @@ export default function RentalsList() {
                                     }}
                                   >
                                     <Icon name="home" size={12} style={{ color: 'var(--muted)' }} />
-                                    {place ?? '—'}
-                                  </span>
+                                    {place}
+                                  </span>}
                                 </td>
                               )
                             })}
 
-                          <td style={{ ...td, minWidth: 116 }}>
+                          <td style={td}>
                             {/* The table's copy of the same block — see the card
                                 row above. Two hand-rolled chips in one file is
                                 how they came to differ by 2px and a radius. */}
@@ -2537,7 +2514,7 @@ export default function RentalsList() {
                                   color: 'var(--text)',
                                 }}
                               >
-                                {typeof r.totalAmount === 'number' ? formatMoney(r.totalAmount) : (typeof r.deposit === 'number' ? formatMoney(r.deposit) : '—')}
+                                {typeof r.totalAmount === 'number' ? formatMoney(r.totalAmount) : '—'}
                               </span>
                             </td>
                           )}
@@ -2607,7 +2584,7 @@ export default function RentalsList() {
               <section aria-labelledby="rental-quick-view-finance">
                 <h3 id="rental-quick-view-finance" style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>Total Amount</h3>
                 <p className="figure" style={{ margin: 'var(--space-3) 0 0', color: 'var(--text)', fontWeight: 700 }}>
-                  {typeof inspectingRental.totalAmount === 'number' ? formatMoney(inspectingRental.totalAmount) : (typeof inspectingRental.deposit === 'number' ? formatMoney(inspectingRental.deposit) : '—')}
+                  {typeof inspectingRental.totalAmount === 'number' ? formatMoney(inspectingRental.totalAmount) : '—'}
                 </p>
               </section>
             )}
@@ -2692,7 +2669,7 @@ export default function RentalsList() {
              had already moved on — the footnote contradicted the list it
              annotated, and the footnote is the part an operator trusts. */
           `Quick filters are relative to ${formatAd(getBusinessToday())}`,
-          'Date chips narrow by pickup date — a return-date range needs a second dateRange the shared filter shape does not carry',
+          'Date filters use pickup dates.',
           SUB_RENTAL_NOTE,
           ...(money ? [RENTAL_DEPOSIT_NOTE] : []),
         ]}
@@ -2700,13 +2677,21 @@ export default function RentalsList() {
     </PageShell>
   )
 }
+// RULINGS-2026-10-07: reserve action space so Amount remains visible with
+// expanded navigation; the client/type/date cells can wrap within their share.
+const RENTAL_COLUMN_SHARES: Record<string, number> = {
+  'Booking ID': 0.08, 'Created Date': 0.08, 'Client / Project': 0.15,
+  'Project Type': 0.09, Items: 0.06, Pickup: 0.12, Return: 0.12,
+  Status: 0.10, 'Total Amount': 0.10,
+}
+
 const th = {
   textAlign: 'left' as const,
-  padding: '9px 12px',
+  padding: '9px 8px',
   fontSize: 'var(--t-meta)',
   fontWeight: 600,
   color: 'var(--text2)',
-  whiteSpace: 'nowrap' as const,
+  whiteSpace: 'normal' as const,
   borderBottom: '1px solid var(--border)',
 }
 
@@ -2737,11 +2722,11 @@ const th = {
  */
 const td = {
   height: 'var(--row-min-h)',
-  padding: '11px 12px',
+  padding: '11px 8px',
   fontSize: 'var(--t-meta)',
   color: 'var(--text)',
   verticalAlign: 'top' as const,
-  whiteSpace: 'nowrap' as const,
+  whiteSpace: 'normal' as const,
 }
 
 /**
@@ -2757,8 +2742,8 @@ const td = {
  */
 const stickyTh = {
   ...th,
-  width: 170,
-  minWidth: 170,
+  width: 146,
+  minWidth: 146,
   textAlign: 'right' as const,
   position: 'sticky' as const,
   right: 0,
@@ -2769,8 +2754,8 @@ const stickyTh = {
 
 const stickyTd = {
   ...td,
-  width: 170,
-  minWidth: 170,
+  width: 146,
+  minWidth: 146,
   textAlign: 'right' as const,
   position: 'sticky' as const,
   right: 0,

@@ -524,7 +524,7 @@ function ChildRowView({
       {/* §7.1's row menu has no screen behind it yet, so it states that rather than
           rendering a control that swallows the click. */}
       <td style={{ ...td, width: 30, color: 'var(--muted)' }}>
-        <Unavailable reason="Row actions are not built — no row action in §7.1 has a screen yet, and §4.1 rules out the status edit outright.">
+        <Unavailable reason={/* Row actions are not built — no row action in §7.1 has a screen yet, and §4.1 rules out the status edit outright. */ "Open the equipment record to see available actions."}>
           <Icon name="more_vert" size={14} />
         </Unavailable>
       </td>
@@ -550,6 +550,8 @@ function ParentRowView({
   actionContext,
   density,
   columns,
+  showUnitColumns,
+  showReplacement,
   checked,
   onToggle,
   onInspect,
@@ -561,6 +563,8 @@ function ParentRowView({
   actionContext: { userId: string; role: SystemRole } | null
   density: Density
   columns: number
+  showUnitColumns: boolean
+  showReplacement: boolean
   checked: boolean
   onToggle: () => void
   onInspect: (row: InventoryListRow) => void
@@ -654,7 +658,6 @@ function ParentRowView({
                   {row.name}
                 </Link>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <CategoryChip category={category} />
                   <Link
                     to={`/inventory/${encodeURIComponent(row.assetCode)}`}
                     onClick={(e) => e.stopPropagation()}
@@ -662,25 +665,7 @@ function ParentRowView({
                   >
                     {row.assetCode}
                   </Link>
-                  {!serialised && (
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        height: 17,
-                        padding: '0 6px',
-                        borderRadius: 4,
-                        background: 'var(--card2)',
-                        border: '1px solid var(--border)',
-                        color: 'var(--text2)',
-                        fontSize: 'var(--t-th)',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {row.trackingMode}
-                    </span>
-                  )}
+
                 </span>
               </span>
             </span>
@@ -690,23 +675,17 @@ function ParentRowView({
         <td className="figure" style={td}>
           {stockLabel(row)}
         </td>
+        {showUnitColumns && <>
         {/* §3.1 — the parent never carries a single status badge. */}
         <td style={{ ...td, minWidth: 170 }}>
           <StatusBreakdown breakdown={breakdown} />
         </td>
-        {/*
-          Location has no parent-level column. It lives on `product_units` as
-          rack / shelf / bin (0004:205-207) and is shown per unit below, so the
-          model row states an explicit non-value rather than the mock's "Mixed",
-          which was a claim about units nobody had loaded.
-        */}
-        <td style={{ ...td, color: 'var(--muted)' }} title="Location is a per-unit field — expand the row to see each unit's rack · shelf · bin.">
-          —
-        </td>
+        {/* Location is shown on actual unit rows only. */}
         <td style={td}>
           <ConditionBadge condition={conditionOf(row)} />
         </td>
-        {money && (
+        </>}
+        {money && showReplacement && (
           <td className="figure" style={{ ...td, fontWeight: 600, textAlign: 'right' }}>
             {row.replacementValue === null ? <span style={{ color: 'var(--muted)' }}>—</span> : formatMoney(row.replacementValue)}
           </td>
@@ -793,7 +772,6 @@ function ParentCardView({
   actionContext,
   money,
   checked,
-  onToggle,
 }: {
   row: InventoryListRow
   glance: ReturnType<typeof inventoryGlance>
@@ -814,13 +792,6 @@ function ParentCardView({
       className={['inventory-model-card', checked ? 'is-selected' : ''].filter(Boolean).join(' ')}
     >
       <span style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-        <input
-          type="checkbox"
-          aria-label={`Select ${row.name}`}
-          checked={checked}
-          onChange={onToggle}
-          style={{ accentColor: 'var(--nav-active-accent)', marginTop: 'var(--sp-xs)', flexShrink: 0, width: 18, height: 18 }}
-        />
         <Thumb category={category} />
         <IntelCard glance={glance} detail={detail} detailTitle={row.name} detailSubtitle={category} entityType="equipment" entityId={row.id} context="inventory" gateContext={gctx} actionContext={actionContext}>
           <span style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', minWidth: 0 }}>
@@ -839,30 +810,12 @@ function ParentCardView({
               >
                 {row.assetCode}
               </Link>
-              {!serialised && (
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    height: 17,
-                    padding: '0 6px',
-                    borderRadius: 4,
-                    background: 'var(--card2)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--text2)',
-                    fontSize: 'var(--t-th)',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {row.trackingMode}
-                </span>
-              )}
+
             </span>
           </span>
         </IntelCard>
         <span style={{ marginLeft: 'auto', flexShrink: 0, color: 'var(--muted)' }}>
-          <Unavailable reason="Row actions are not built — no row action in §7.1 has a screen yet, and §4.1 rules out the status edit outright.">
+          <Unavailable reason={/* Row actions are not built — no row action in §7.1 has a screen yet, and §4.1 rules out the status edit outright. */ "Open the equipment record to see available actions."}>
             <Icon name="more_vert" size={16} />
           </Unavailable>
         </span>
@@ -1512,6 +1465,24 @@ export default function Inventory() {
   const maintenanceKpi = useList<InventoryListRow>(countFetcher, INVENTORY_KPI_FILTERS.maintenance, { isFilteredOverride: false })
   const missingKpi = useList<InventoryListRow>(countFetcher, INVENTORY_KPI_FILTERS.missing, { isFilteredOverride: false })
 
+  // Count the three visible chips against the whole filtered registry, never this page.
+  const countChips = useCallback(async (filters: ListFilters) => {
+    const rows = await Promise.all(PRIMARY_EQUIPMENT_CHIPS.map(async (item) => {
+      const predicate = inventoryQuery(item.kind === 'status' ? item.status : 'All', facets, sort)
+      const id = chipSlug(item)
+      if (predicate.impossible) return { id, count: 0 }
+      try {
+        const result = await listInventory({ ...predicate.filters, ...(filters.search ? { search: filters.search } : {}), headOnly: true })
+        return { id, count: result.total }
+      } catch {
+        return { id, count: null }
+      }
+    }))
+    return { rows, total: rows.length }
+  }, [PRIMARY_EQUIPMENT_CHIPS, facets, sort])
+  const chipCounts = useList(countChips, { ...(searchTerm.trim() ? { search: searchTerm.trim() } : {}), ...(query.filters.chips ? { chips: query.filters.chips } : {}) })
+  const { refetch: refetchChips } = chipCounts
+
   /* `useList` memoises `refetch`; naming them keeps the callback keyed on
      the functions rather than on the whole list objects, which are fresh
      literals every render (react-hooks/exhaustive-deps, TODO_SWEEP A13). */
@@ -1524,13 +1495,14 @@ export default function Inventory() {
   const { refetch: refetchMissing } = missingKpi
   const refreshAll = useCallback(() => {
     refetchList()
+    refetchChips()
     refetchModels()
     refetchInStock()
     refetchOnRent()
     refetchReserved()
     refetchMaintenance()
     refetchMissing()
-  }, [refetchList, refetchModels, refetchInStock, refetchOnRent, refetchReserved, refetchMaintenance, refetchMissing])
+  }, [refetchList, refetchChips, refetchModels, refetchInStock, refetchOnRent, refetchReserved, refetchMaintenance, refetchMissing])
 
   /*
    * ⛔ Six hand-typed figures became six counted ones — and every label and note
@@ -1597,7 +1569,9 @@ export default function Inventory() {
     })
 
   /** Checkbox, chevron, Equipment, Category, Stock, Status, Location, Condition, [money], Actions. */
-  const tableColumns = money ? 10 : 9
+  const showUnitColumns = list.rows.some(row => breakdownOf(row).length > 0 || conditionOf(row) !== null)
+  const showReplacement = money && list.rows.some(row => row.replacementValue !== null)
+  const tableColumns = 6 + (showUnitColumns ? 2 : 0) + (showReplacement ? 1 : 0)
   /** Units on THIS PAGE. Never presented as a fleet total — see the KPI note. */
   const countedTitle = total === null ? 'Equipment' : `${grouped(total)} ${total === 1 ? 'Model' : 'Models'} found`
 
@@ -1702,6 +1676,7 @@ export default function Inventory() {
       <div style={{ overflowX: 'auto', paddingBottom: 2, maxWidth: '100%' }}>
         <SegmentedControl
           ariaLabel="Inventory sections"
+          size={phone ? 'sm' : 'md'}
           options={[
             ...TABS.map((t) => ({ id: t, label: t })),
             ...(isNew ? [{ id: 'new', label: 'Add Equipment' }] : []),
@@ -1755,8 +1730,8 @@ export default function Inventory() {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ order: 0, flex: '1 1 280px', maxWidth: 360, minWidth: 200 }}>
+          <div className="inventory-list-toolbar" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ order: 0, flex: '1 1 180px', maxWidth: 360, minWidth: 0 }}>
               <SearchInput
                 value={searchTerm}
                 onChange={setSearchTerm}
@@ -1790,7 +1765,7 @@ export default function Inventory() {
               }}
             >
               <Icon name="chart" size={14} />
-              <span>{showStats ? 'Hide Stats' : 'Stats'}</span>
+              {!phone && <span>{showStats ? 'Hide Stats' : 'Stats'}</span>}
             </button>
 
             {filtersOn && <button
@@ -1819,8 +1794,6 @@ export default function Inventory() {
               <Icon name="refresh" size={13} />
               {phone ? '' : 'Clear Filters'}
             </button>}
-          </div>
-
           <ListControlRow
             sort={<label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
               Sort
@@ -1833,7 +1806,7 @@ export default function Inventory() {
                 {SORTS.filter((s) => !SORT_UNAVAILABLE[s]).map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </label>}
-            view={<>
+            view={!phone ? <>
               <button
                 type="button"
                 onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
@@ -1851,8 +1824,9 @@ export default function Inventory() {
                 value={view}
                 onChange={(v) => setView(v as 'table' | 'grid')}
               />
-            </>}
+            </> : undefined}
           />
+          </div>
 
           {/*
             §7.1 desktop: a filter rail on the left, the table to its right.
@@ -1898,6 +1872,7 @@ export default function Inventory() {
                     {c.kind === 'status' && <Icon name={INV_STYLE[c.status].icon} size={12} />}
                     {c.kind === 'condition' && <Icon name="eye" size={12} />}
                     {c.label}
+                    <span className="figure" style={{ color: 'var(--muted)' }}>{chipCounts.loading || chipCounts.error ? '—' : chipCounts.rows.find(row => row.id === chipSlug(c))?.count ?? '—'}</span>
                   </button>
                 )
               })}
@@ -2121,7 +2096,7 @@ export default function Inventory() {
                               {sort === 'Category A–Z' && <Icon name="arrow_up" size={11} />}
                             </button>
                           </th>
-                          {['Stock', 'Status', 'Location', 'Condition'].map((h) => (
+                          {['Stock', ...(showUnitColumns ? ['Status', 'Condition'] : [])].map((h) => (
                             <th key={h} style={th}>
                               {h}
                             </th>
@@ -2131,7 +2106,7 @@ export default function Inventory() {
                               the SKU's own figure; the mock's parent value was a
                               sum of its children and the schema states no such
                               rule. */}
-                          {money && <th style={{ ...th, textAlign: 'right' }}>Replacement / unit (NPR)</th>}
+                          {showReplacement && <th style={{ ...th, textAlign: 'right' }}>Replacement / unit (NPR)</th>}
                           <th style={{ ...th, width: 30 }}>Actions</th>
                         </tr>
                       </thead>
@@ -2145,6 +2120,8 @@ export default function Inventory() {
                             actionContext={user ? { userId: user.id, role: user.role } : null}
                             density={density}
                             columns={tableColumns}
+                            showUnitColumns={showUnitColumns}
+                            showReplacement={showReplacement}
                             checked={selected.has(p.id)}
                             onToggle={() => toggleRow(p.id)}
                             onInspect={setInspectingEquipment}

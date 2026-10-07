@@ -368,7 +368,7 @@ export function BranchesPane({
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState<'All' | BranchStatus>('All')
   const [sort, setSort] = useState<SortState | null>(null)
-  const [perPage, setPerPage] = useState(10)
+  const [perPage, setPerPage] = useState(25)
   const [page, setPage] = useState(1)
   const [focused, setFocused] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string[]>(() => BRANCHES.map((b) => b.id))
@@ -542,8 +542,8 @@ export function BranchesPane({
       {view === 'warehouses' ? (
         <>
           <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.55 }}>
-            Warehouse Management moved out of Inventory into this tab (`07_INVENTORY.md` line 4, §11.3). This is the same
-            screen, mounted here unchanged —{' '}
+            {/* Warehouse Management moved out of Inventory into this tab (`07_INVENTORY.md` line 4, §11.3). This is the same
+            screen, mounted here unchanged — */}Manage warehouses here. {' '}
             <Link to="/inventory/warehouses" style={{ color: 'var(--link)', fontWeight: 600 }}>
               /inventory/warehouses
             </Link>{' '}
@@ -958,7 +958,7 @@ export function BranchesPane({
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 'var(--sp-md)', paddingTop: 'var(--sp-sm)', borderTop: '1px solid var(--border)' }}>
               <OpenDecision text={STORAGE_VOCABULARY_TODO} />
-              <OpenDecision text="TODO(decision) — Rulings §9.12: is “Bhaktapur Heavy Grip & Rigging” a fourth BRANCH or a fourth WAREHOUSE of an existing one? It joins to Head Office here because that is the only assignment under which the branch records’ own declared counts (2 / 1 / 1) reconcile. If it is really a fourth branch, every group total on this tab moves with it." />
+              <OpenDecision text={/* TODO(decision) — Rulings §9.12: is “Bhaktapur Heavy Grip & Rigging” a fourth BRANCH or a fourth WAREHOUSE of an existing one? It joins to Head Office here because that is the only assignment under which the branch records’ own declared counts (2 / 1 / 1) reconcile. If it is really a fourth branch, every group total on this tab moves with it. */ "Branch assignment has not been confirmed."} />
             </div>
           </Card>
 

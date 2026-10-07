@@ -4,7 +4,6 @@ import { Button, Input } from '../../components/ui'
 import Icon from '../../components/ui/Icon'
 import { AuthCard } from './AuthCard'
 import { PasswordInput } from './PasswordInput'
-import { Unavailable } from '../../components/ui/Unavailable'
 import { ErrorBanner } from '../../components/ui/StateViews'
 import { useAuth } from '../../lib/auth'
 import { IS_MOCK } from '../../lib/supabase'
@@ -147,6 +146,13 @@ export default function Login() {
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? 'login-error' : undefined}
           />
+        {/* Law 12 — inline persistent error, never a toast */}
+        {error && (
+          <div id="login-error">
+            <ErrorBanner title="Could not sign in" message={error} />
+          </div>
+        )}
+
         </div>
 
         {/* Remember email checkbox */}
@@ -168,13 +174,6 @@ export default function Login() {
               Too many sign-in attempts. Please wait{' '}
               <span className="auth-lockout-timer">{lockoutSeconds}s</span> before retrying.
             </span>
-          </div>
-        )}
-
-        {/* Law 12 — inline persistent error, never a toast */}
-        {error && (
-          <div id="login-error">
-            <ErrorBanner title="Could not sign in" message={error} />
           </div>
         )}
 
@@ -246,17 +245,6 @@ export default function Login() {
 function LoginFooter() {
   return (
     <>
-      <Unavailable reason="A PIN re-opens a session that is already signed in — it cannot sign you in, because nothing in Postgres can issue a Supabase session and verifying a PIN in the browser would leave you with no JWT and every screen empty (migration 0066). Set a PIN in Settings ▸ System ▸ Security; it appears on the lock screen, not here. Signing in WITH a PIN needs a server-side verifier and the phone pairing 0001 names — not built.">
-        <Button
-          type="button"
-          variant="secondary"
-          disabled
-          style={{ width: '100%', minHeight: 44 }}
-        >
-          Sign in with PIN
-        </Button>
-      </Unavailable>
-
       <Link
         to="/forgot-password"
         className="auth-footer-link"

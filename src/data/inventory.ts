@@ -275,8 +275,9 @@ export const CONDITION_INK: Record<Condition, string> = {
  * tab is what it lists. Matches `data/nav.ts`'s `SPEC_TABS['/inventory']`,
  * which `data/nav.test.ts:236` pins.
  */
-export const TABS = ['Equipment', 'Bundles', 'Sub-Rentals', 'Stock Check', 'Maintenance'] as const
-export type InventoryTab = (typeof TABS)[number]
+// RULING 2026-10-07: four visible tabs; legacy Sub-Rentals URLs still resolve.
+export const TABS = ['Equipment', 'Bundles', 'Stock Check', 'Maintenance'] as const
+export type InventoryTab = (typeof TABS)[number] | 'Sub-Rentals'
 
 /**
  * The tab in the URL.
@@ -863,7 +864,7 @@ export const FILTER_RAIL: RailRow[] = [
     label: 'Brand',
     icon: 'flag',
     reason:
-      'products.brand is a real column (0004:90) — what is missing is the list of brands to tick. That is a distinct-value query, and lib/queries/inventory.ts filters the catalogue rather than enumerating it.',
+      /* products.brand is a real column (0004:90) — what is missing is the list of brands to tick. That is a distinct-value query, and lib/queries/inventory.ts filters the catalogue rather than enumerating it. */ "products.brand is a real column (0004:90) — what is missing is the list of brands to tick. That is a distinct-value query, and shared tools filters the catalogue rather than enumerating it.",
   },
   { kind: 'live', key: 'Status', label: 'Status', icon: 'activity', options: INV_ORDER },
   {
@@ -892,7 +893,7 @@ export const FILTER_RAIL: RailRow[] = [
     label: 'Booking',
     icon: 'calendar',
     reason:
-      'Reaching a booking from a unit is three hops — product_units → booking_line_units → booking_lines → bookings (0002:229, FK 0004:258) — and the middle one must go through the money-masked booking_lines_v. That is a second query, not a column on this list.',
+      /* Reaching a booking from a unit is three hops — product_units → booking_line_units → booking_lines → bookings (0002:229, FK 0004:258) — and the middle one must go through the money-masked booking_lines_v. That is a second query, not a column on this list. */ /* Reaching a booking from a unit is three hops — product_units → booking_line_units → booking_lines → bookings (0002:229, FK 0004:258) — and the middle one must go through the money-masked booking_lines_v. That is a second query, not a column on this list. */ "Related rentals are not available yet.",
   },
   {
     kind: 'blocked',
@@ -913,7 +914,7 @@ export const FILTER_RAIL: RailRow[] = [
     label: 'Purchase Value',
     icon: 'dollar',
     reason:
-      'products_v.purchase_price is a real, money-masked column (0048:616-619). Like Purchase Date it needs a range control this rail does not have — and the query module deliberately never names purchase_price in a select.',
+      /* products_v.purchase_price is a real, money-masked column (0048:616-619). Like Purchase Date it needs a range control this rail does not have — and the query module deliberately never names purchase_price in a select. */ "products_v.purchase_price is a real, money-masked column (0048:616-619). Like Purchase Date it needs a range control this rail does not have — and the recorded details deliberately never names purchase_price in a select.",
     money: true,
   },
   { kind: 'live', key: 'Condition', label: 'Condition', icon: 'eye', options: CONDITIONS },

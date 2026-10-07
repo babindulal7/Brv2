@@ -357,8 +357,8 @@ export async function previewInvoiceForBooking(
       kind: 'refused',
       bookingNo: ref,
       reason:
-        `${booking.booking_no} was cancelled on ${booking.cancelled_at}. Whether a cancellation carries a fee is ` +
-        'an open ruling (PLAN.md §4.16), so no invoice can be raised for it.',
+        // Cancellation fees remain an open ruling (PLAN.md §4.16).
+        `${booking.booking_no} was cancelled. A cancellation fee has not been defined, so no invoice can be raised for it.`,
     }
   }
 

@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { Link } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { Badge } from '../../components/ui/Badge'
@@ -11,6 +12,8 @@ const MAX_DAYS = 45
 
 function rowTime(date: string, time: string): number | null {
   if (!date) return null
+  const compact = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(date)
+  if (compact) date = `${compact[3]}-${compact[2]?.padStart(2, '0')}-${compact[1]?.padStart(2, '0')}`
   const normalizedTime = time?.trim() ? (time.length === 5 ? `${time}:00` : time) : '00:00:00'
   const isoStr = `${date}T${normalizedTime}`
   const value = Date.parse(isoStr)
@@ -50,7 +53,7 @@ export function buildTimelineWindow(rows: readonly RentalListRow[], now = Date.n
 }
 
 function dateLabel(value: number, options: Intl.DateTimeFormatOptions) {
-  return new Intl.DateTimeFormat('en-NP', options).format(new Date(value))
+  return options.day ? formatAd(new Date(value)) : new Intl.DateTimeFormat('en-NP', { ...options, timeZone: 'Asia/Kathmandu' }).format(new Date(value))
 }
 
 function PhoneTimeline({ rows }: { rows: readonly RentalListRow[] }) {

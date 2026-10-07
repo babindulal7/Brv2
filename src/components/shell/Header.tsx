@@ -6,7 +6,6 @@ import { useViewport } from '../../lib/device'
 import { openCommandPalette } from './CommandPalette'
 import HandoverSheet from '../../modules/auth/HandoverSheet'
 import { useSync } from '../../lib/syncContext'
-import { QuickCreateMenu } from './QuickCreateMenu'
 import { useOptionalWorkspace } from '../../lib/workspaceContext'
 import { InfoTooltip } from '../ui/InfoTooltip'
 import InternalNotesDrawer from '../../modules/notes/InternalNotesDrawer'
@@ -75,6 +74,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
   const navigate = useNavigate()
   const vp = useViewport()
   const isPhone = vp === 'phone'
+  const isDispatch = crumbs.some((crumb) => crumb.label === 'Today' || crumb.label === 'Dashboard')
   const [profileOpen, setProfileOpen] = useState(false)
   const [showHandover, setShowHandover] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
@@ -238,7 +238,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
       {/* On desktop and tablet, center search input + clock + sync status */}
       {!isPhone && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 0, width: '100%', justifySelf: 'center', gap: 'var(--sp-sm)' }}>
-          <button
+          {!isDispatch && <button
             type="button"
             onClick={() => openCommandPalette()}
             aria-label="Search bookings, clients, equipment and pages"
@@ -298,7 +298,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
                 Ctrl+K / ⌘K
               </kbd>
             )}
-          </button>
+          </button>}
 
           {/* Outbox sync badge slot is always mounted so its appearance can
               never push the search box or the right chrome sideways. When the
@@ -425,9 +425,7 @@ export default function Header({ crumbs, actions }: HeaderProps) {
           <Icon name="message" size={17} />
         </button>
 
-        <QuickCreateMenu role={user?.role} compact={vp !== 'desktop'} />
-
-        {isPhone && (
+        {isPhone && !isDispatch && (
           <button
             type="button"
             onClick={() => openCommandPalette()}

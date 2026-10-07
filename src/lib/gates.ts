@@ -433,7 +433,7 @@ export const GATE_REGISTRY: Record<string, GateDefinition> = {
       ne: 'बदर गरिएको इनभ्वाइस अपरिवर्तनीय छ',
     },
     message: {
-      en: 'A voided invoice cannot be edited, unvoided, or deleted (Law 3 & Law 4).',
+      en: /* A voided invoice cannot be edited, unvoided, or deleted (Law 3 & Law 4). */ "A voided invoice cannot be edited, unvoided, or deleted .",
       ne: 'बदर गरिएको इनभ्वाइस सम्पादन गर्न, पुनः सक्रिय गर्न वा मेटाउन सकिँदैन।',
     },
     howToResolve: {
@@ -507,7 +507,7 @@ export const GATE_REGISTRY: Record<string, GateDefinition> = {
       ne: 'एकाइ स्थिति सिधा सम्पादन निषेध गरिएको छ',
     },
     message: {
-      en: 'Unit status is strictly owned and derived by the database engine (Law 1).',
+      en: /* Unit status is strictly owned and derived by the database engine (Law 1). */ "Unit status is strictly owned and derived by the database engine .",
       ne: 'एकाइ स्थिति डेटाबेस इन्जिनद्वारा मात्र गणना र व्यवस्थापन गरिन्छ।',
     },
     howToResolve: {
@@ -544,7 +544,7 @@ export const GATE_REGISTRY: Record<string, GateDefinition> = {
       ne: 'प्रयोगकर्ता मेटाउन निषेध गरिएको छ',
     },
     message: {
-      en: 'Staff records cannot be deleted. Use is_active = false to deactivate staff (Law 3).',
+      en: /* Staff records cannot be deleted. Use is_active = false to deactivate staff (Law 3). */ "Staff records cannot be deleted. Use is_active = false to deactivate staff .",
       ne: 'कर्मचारी रेकर्ड मेटाउन सकिँदैन। कर्मचारी निष्कृय गर्न is_active = false प्रयोग गर्नुहोस्।',
     },
     howToResolve: {
@@ -581,7 +581,7 @@ export const GATE_REGISTRY: Record<string, GateDefinition> = {
       ne: 'सिधा मूल्य प्रविष्टि रोकियो',
     },
     message: {
-      en: 'Direct booking line inserts with pricing by money-blind roles are rejected (Law 6).',
+      en: /* Direct booking line inserts with pricing by money-blind roles are rejected (Law 6). */ "Direct booking line inserts with pricing by money-blind roles are rejected .",
       ne: 'पैसा नहेर्ने भूमिकाहरूबाट मूल्यसहित सिधा बुकिङ लाइन प्रविष्टि अस्वीकार गरिन्छ।',
     },
     howToResolve: {
@@ -599,7 +599,7 @@ export const GATE_REGISTRY: Record<string, GateDefinition> = {
       ne: 'पैसा नहेर्ने भूमिकाको लागि छुट निषेध गरिएको छ',
     },
     message: {
-      en: 'Money-blind staff roles cannot view or write discount structures (Law 6).',
+      en: /* Money-blind staff roles cannot view or write discount structures (Law 6). */ "Money-blind staff roles cannot view or write discount structures .",
       ne: 'पैसा नहेर्ने कर्मचारी भूमिकाहरूले छुट संरचना हेर्न वा लेख्न सक्दैनन्।',
     },
     howToResolve: {

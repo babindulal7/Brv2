@@ -50,7 +50,7 @@ describe('movement board task clarity', () => {
   })
   it('shows the pickup date for multi-day filters and allows 1-click packing', async () => {
     await mount({ status: 'Booked' }, 'outgoing')
-    expect(host.querySelector('.movement-card__time')?.textContent).toContain('22 Sept')
+    expect(host.querySelector('.movement-card__time')?.textContent).toContain('22/9/2026')
     const action = host.querySelector<HTMLButtonElement>('.movement-card__cta-btn')!
     expect(action.textContent).toBe('Start Packing')
     expect(action.getAttribute('aria-label')).toContain('Start Packing')

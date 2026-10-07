@@ -184,22 +184,14 @@ export async function listCases(filters?: CaseFilters): Promise<ListQueryResult<
 
     const { data, error } = await query
 
-    if (error) {
-      return {
-        rows: [],
-        total: 0,
-      }
-    }
+    if (error) throw error
 
     const mapped = ((data ?? []) as unknown as CaseRowDb[]).map(mapDbRowToCase)
     return {
       rows: mapped,
       total: mapped.length,
     }
-  } catch {
-    return {
-      rows: [],
-      total: 0,
-    }
+  } catch (error) {
+    throw error instanceof Error ? error : new Error('Cases could not be loaded.')
   }
 }

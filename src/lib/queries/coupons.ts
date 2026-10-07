@@ -2,11 +2,12 @@
  * Canonical Coupons & Promotions Engine — Babin Rentals OS
  *
  * Ported from standalone (script_1.js:2310-2360, 2410-2440).
- * Implements discount validation, stacking limits (25% cap rule),
+ * Implements arithmetic discount validation (0–100%),
  * code redemption tracking, and lifecycle status.
  */
 
 import { getBusinessToday } from '../bs'
+import { IS_MOCK } from '../supabase'
 import { formatMoney, rupees } from '../money'
 
 export interface Coupon {
@@ -162,14 +163,18 @@ export function listCoupons(): Coupon[] {
     if (typeof localStorage !== 'undefined') {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (!raw) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(COUPON_SEED))
-        return [...COUPON_SEED]
+        return IS_MOCK ? [...COUPON_SEED] : []
       }
-      return JSON.parse(raw) as Coupon[]
+      const saved = JSON.parse(raw) as Coupon[]
+      // Live reads omit unchanged demo entries left by earlier releases; storage is preserved.
+      return IS_MOCK ? saved : saved.filter((coupon) => !COUPON_SEED.some((seed) =>
+        Object.keys(seed).length === Object.keys(coupon).length &&
+        Object.entries(seed).every(([key, value]) => JSON.stringify(value) === JSON.stringify(coupon[key as keyof Coupon])),
+      ))
     }
-    return [...COUPON_SEED]
+    return IS_MOCK ? [...COUPON_SEED] : []
   } catch {
-    return [...COUPON_SEED]
+    return IS_MOCK ? [...COUPON_SEED] : []
   }
 }
 
@@ -251,8 +256,8 @@ export function validateCoupon(rawCode: string, ctx: CouponValidationContext): C
     rawAmount = coupon.capNpr
   }
 
-  const maxAllowable = Math.round(ctx.preTotal * 0.25)
-  const finalAmount = Math.min(rawAmount, maxAllowable)
+  // Discount cap removed 20 Aug, confirmed 31 Aug. A voucher may retain its own NPR ceiling.
+  const finalAmount = Math.min(rawAmount, ctx.preTotal)
 
   return {
     ok: true,

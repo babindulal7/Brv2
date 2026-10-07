@@ -1351,8 +1351,9 @@ export function buildCorpus(): SeedCorpus {
    * That is a data change, not an engine change, and needs a ruling because it
    * moves a reference booking every money assertion in the suite is keyed to.
    */
-  if (reference.bsPickup !== '32 Ashadh 2083 BS') {
-    fail(`B-715 pickup must render as 32 Ashadh 2083 BS (16 Jul 2026 under the corrected BS table), bs.ts renders ${reference.bsPickup ?? 'null'}`)
+  const referenceBs = toBs(reference.spec.pickupAt)
+  if (referenceBs?.year !== 2083 || referenceBs.month !== 3 || referenceBs.day !== 32) {
+    fail('B-715 pickup must convert to 32 Ashadh 2083 (16 Jul 2026 under the corrected BS table)')
   }
 
   return {

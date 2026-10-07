@@ -116,7 +116,8 @@ describe('LineItemTree Component (Cinema Flight Case & Kit Hierarchy)', () => {
 
     const bodyText = document.body.textContent || ''
     // Flight Case tag
-    expect(bodyText).toContain('PEL-1510-REDKOM-01')
+    expect(bodyText).toContain('No case tag recorded')
+    expect(bodyText).not.toContain('PEL-1510-REDKOM-01')
     expect(bodyText).toContain('RED Komodo 6K Cinema Package')
     // Child accessory inside flight case
     expect(bodyText).toContain('Canon RF 24-70mm f/2.8L')
@@ -124,7 +125,7 @@ describe('LineItemTree Component (Cinema Flight Case & Kit Hierarchy)', () => {
   })
 
 
-  it('renders optical and sensor QC status badges', () => {
+  it('does not invent QC results or stock availability from equipment names', () => {
     act(() => {
       root.render(
         <MemoryRouter>
@@ -134,8 +135,9 @@ describe('LineItemTree Component (Cinema Flight Case & Kit Hierarchy)', () => {
     })
 
     const bodyText = document.body.textContent || ''
-    expect(bodyText).toContain('Sensor Clean ✓')
-    expect(bodyText).toContain('Optics QC Pass')
+    expect(bodyText).not.toContain('Sensor Clean ✓')
+    expect(bodyText).not.toContain('Optics QC Pass')
+    expect(bodyText).not.toMatch(/Stock \d|\d+ left/)
   })
 
   it('filters line items via search input', () => {

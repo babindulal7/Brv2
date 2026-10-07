@@ -218,9 +218,8 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
         <ScreenHeader embedded={embedded} icon="card" title="Daily Closing" description={dateLabel} />
         <Card title="Not your screen">
           <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.5 }}>
-            A closing is entirely money — takings, receivables, deposits held. Law 6 keeps those off this role
-            everywhere, and a closing with the money removed would be a blank page rather than a smaller one.
-          </p>
+            {/* A closing is entirely money — takings, receivables, deposits held. Law 6 keeps those off this role
+            everywhere, and a closing with the money removed would be a blank page rather than a smaller one. */}Your role cannot view daily closings. </p>
         </Card>
       </div>
     )
@@ -286,7 +285,7 @@ export default function DailyClosing({ embedded = false }: { embedded?: boolean 
 
             <Card title="Standing position">
               {row('Outstanding', formatMoney(figures.receivablesTotal), 'every live invoice still owed, not only today')}
-              {row('Deposits held', formatMoney(figures.depositsHeld), 'a liability — never revenue (Law 5)')}
+              {row('Deposits held', formatMoney(figures.depositsHeld), /* a liability — never revenue (Law 5) */ "a liability — never revenue")}
             </Card>
 
             <Card title="Count the drawer">

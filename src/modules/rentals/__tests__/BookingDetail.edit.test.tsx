@@ -280,7 +280,7 @@ describe('Law 1 — the money on screen is the invoice’s, not the screen’s',
     expect(text()).toContain('Deposit Required')
     expect(text()).toContain('50,000')
     // Received/pending have no sanctioned read yet — stated, not zeroed.
-    expect(text()).toContain('security_deposits')
+    expect(text()).toContain('Deposit movements are not available yet.')
   })
 
   it('renders "—" for a payment with no bank account — never an inferred Cash', async () => {
@@ -289,7 +289,7 @@ describe('Law 1 — the money on screen is the invoice’s, not the screen’s',
     expect(methodCells.length).toBeGreaterThan(0)
     // The row itself is the live payments read, not the seed's history.
     expect(text()).toContain('Advance Payment')
-    expect(text()).toContain('10 Jul 2026')
+    expect(text()).toContain('10/7/2026')
   })
 
   it('keeps Law 4 in words where a correction would be attempted', async () => {
@@ -312,14 +312,14 @@ describe('Law 16 — no fake affordances over missing reads', () => {
   it('shows an empty queried crew list and the remaining transport gap', async () => {
     await mount('B-715')
     expect(text()).toContain('No crew assigned to this booking yet.')
-    expect(text()).toContain('booking_transport')
+    expect(text()).toContain('Delivery details are not available yet.')
     // The seed's invented crew never render.
     expect(text()).not.toContain('Bikash Thapa')
   })
 
   it('states the documents gap instead of five tiles that belong to no booking', async () => {
     await mount('B-715')
-    expect(text()).toContain('document_registry')
+    expect(text()).toContain('No documents available for this rental yet.')
     expect(text()).not.toContain('Rental Agreement')
   })
 

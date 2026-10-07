@@ -84,12 +84,12 @@ describe('the depreciation default that may not be invented', () => {
   })
 
   it('states why the Settings default is unavailable rather than supplying one', () => {
-    expect(DEPRECIATION_DEFAULTS_UNAVAILABLE_REASON).toContain('TODO(decision)')
-    expect(DEPRECIATION_DEFAULTS_UNAVAILABLE_REASON).toContain('Settings')
+    expect(DEPRECIATION_DEFAULTS_UNAVAILABLE_REASON).toContain('No defaults have been set')
+    expect(DEPRECIATION_DEFAULTS_UNAVAILABLE_REASON).toContain('accountant')
   })
 
   it('states why the IRD pool view is blocked rather than supplying a rate', () => {
-    expect(IRD_POOL_BLOCKED_REASON).toContain('TODO(decision)')
+    expect(IRD_POOL_BLOCKED_REASON).toContain('have not been supplied by your accountant')
     /* If a percentage ever appears in this sentence, somebody has answered the
        question the sentence exists to ask. */
     expect(IRD_POOL_BLOCKED_REASON).not.toMatch(/\d+(\.\d+)?\s*%/)

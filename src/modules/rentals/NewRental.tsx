@@ -120,28 +120,9 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   const canBookingMoney = canViewMoneyField(gctx, 'booking')
   const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
   const canClientBalance = canViewMoneyField(gctx, 'client-balance')
-  /**
-   * Desktop can work in any section; phones use focused workflow groups.
-   *
-   * Desktop and tablet open Client · Dates · Equipment · Pricing and leave
-   * Crew and Delivery collapsed, which is exactly what 01_NEW_RENTAL §1.1
-   * draws ("＋ Crew (collapsed)", "＋ Delivery (collapsed → Client Pickup
-   * Rs 0)"). Phone is an accordion with **one open at a time**, per the same
-   * spec's phone block; Client is the first section in the guided workflow.
-   */
-  /*
-   * Read from `viewport`, not `window.innerWidth`.
-   *
-   * This used to call `window.innerWidth < BREAKPOINT.phone` twice — once in
-   * the lazy initializer and once inside `toggle` — which is an imperative
-   * read of a value `lib/device` already publishes reactively off
-   * `matchMedia` change events. It gave the right answer only at mount:
-   * narrowing a desktop window past 768 left four sections open where §1.1's
-   * phone block wants one, and the first paint before layout settles could
-   * pick the wrong band and never correct it. The effect below is what makes
-   * a band change actually reach the accordion.
-   */
-  const [open, setOpen] = useState<boolean[]>([true, true, true, false, false, false])
+  // Sections remain mounted and independently collapsible at every width.
+  // RULINGS-2026-10-07: essentials and pricing open, optional logistics collapsed.
+  const [open, setOpen] = useState<boolean[]>([true, true, true, false, false, true])
   const toggle = (i: number) =>
     setOpen((p) => p.map((v, j) => (j === i ? !v : v)))
 
@@ -335,6 +316,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   const [depositAuthorizedBy, setDepositAuthorizedBy] = useState('')
 
   const [confirmedSuccess, setConfirmedSuccess] = useState<{ bookingId: string; bookingNo: string } | null>(null)
+  const [validationAttempted, setValidationAttempted] = useState(false)
 
   /**
    * NR-19, second half — the booking's length reaches the lines it already has.
@@ -441,7 +423,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         conflictLines,
         availabilitySource,
         client,
-        govId,
+        govId: client?.pan ?? '',
         kind,
         discountPct,
         crew,
@@ -460,7 +442,6 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
       conflictLines,
       availabilitySource,
       client,
-      govId,
       kind,
       discountPct,
       crew,
@@ -726,6 +707,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
       canBookingMoney={canBookingMoney}
       pricing={pricing}
       blockingNotices={blockingNotices}
+      validationAttempted={validationAttempted}
       runNoticeAction={runNoticeAction}
     />
   )
@@ -794,30 +776,20 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         <div
           role="region"
           aria-label="Unsaved booking found on this device"
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 'var(--sp-sm)',
-            padding: '10px 12px',
-            marginBottom: 'var(--sp-md)',
-            borderRadius: 'var(--r-card)',
-            border: '1px solid var(--border)',
-            background: 'var(--surface)',
-            fontSize: 'var(--t-meta)',
-            color: 'var(--text)',
-          }}
+          className="new-rental-draft-notice"
         >
-          <span style={{ flex: '1 1 240px' }}>
+          <span>
             An unsaved booking from {formatAd(new Date(localDraftOffer.savedAt))} was kept on this device
             {localDraftOffer.data.clientName ? ` for ${localDraftOffer.data.clientName}` : ''}.
           </span>
-          <Button variant="primary" size="sm" onClick={restoreLocalDraft}>
-            Restore it
-          </Button>
-          <Button variant="secondary" size="sm" onClick={discardLocalDraft}>
-            Discard
-          </Button>
+          <div className="new-rental-draft-notice__actions">
+            <Button variant="primary" size="sm" onClick={restoreLocalDraft}>
+              Restore it
+            </Button>
+            <Button variant="secondary" size="sm" onClick={discardLocalDraft}>
+              Discard
+            </Button>
+          </div>
         </div>
       )}
       {productDepositError && canBookingMoney && (
@@ -996,6 +968,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
           />
         </div>
 
+        <div className="new-rental-stage new-rental-stage--logistics">
           <CrewAndTransportSection
             crew={crew}
             transport={transportDetails}
@@ -1015,6 +988,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
             onToggleDelivery={() => toggle(4)}
             crewTitle={SECTIONS[3]}
           />
+        </div>
 
 
         <div className="new-rental-stage new-rental-stage--pricing">
@@ -1090,21 +1064,10 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
           </div>
         </div>
 
-        {/*
-          Desktop: main plus a sticky rail, in 01_NEW_RENTAL §1.1's order —
-          SUMMARY, then the blocking notices, then `[ Confirm Booking ]`.
-
-          The cards the wireframe does not draw (Quick Actions, Review,
-          Documents, warnings, Activity Timeline) follow *below* Confirm rather
-          than being deleted: Rulings §1 keeps them, and putting them after the
-          button is the only arrangement that leaves the three drawn blocks
-          adjacent and in order.
-
-          The negative-margin/padding pair keeps the rail's collapse handle
-          (which sits at left:-12) inside the sticky box instead of clipped.
-        */}
+        {/* Desktop summary scrolls above the action footer. Below 1280 it
+            reflows after pricing, with all notices still reachable. */}
         {isDesktop && (
-          <div style={{ position: 'sticky', top: 12, alignSelf: 'start', maxHeight: 'calc(100dvh - 24px)', overflowY: 'auto', paddingLeft: 14, marginLeft: -14 }}>
+          <div className="new-rental-summary-rail">
             <Rail width={300}>
               {bookingSummaryCard}
             </Rail>
@@ -1122,9 +1085,8 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         busy={saveState === 'saving'}
         dirty={editBookingId ? quoteDirty : true}
         statusText={editBookingId ? undefined : draftHasUnsavedChanges ? 'Unsaved changes' : draftId ? 'Draft saved' : 'New booking'}
-        disabled={!editBookingId && confirmBlocked}
         label={editBookingId ? 'Save changes' : 'Confirm Booking'}
-        onSave={() => { if (editBookingId) void saveQuote(); else void confirmBooking() }}
+        onSave={() => { if (editBookingId) void saveQuote(); else { setValidationAttempted(true); if (!confirmBlocked) void confirmBooking() } }}
         onCancel={() => {
           if (editBookingId) {
             if (!quoteDirty) doExit()

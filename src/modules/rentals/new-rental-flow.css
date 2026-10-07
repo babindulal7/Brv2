@@ -2,9 +2,27 @@
   --new-rental-line: color-mix(in srgb, var(--border) 72%, var(--surface));
 }
 
+/* User accepted the next spacing/label pass, 7 Oct: one page gap between
+   recovery and setup, without stacked margins or smaller touch targets. */
+.new-rental-draft-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 6px 12px;
+  border-radius: var(--r-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: var(--t-meta);
+  color: var(--text);
+}
+
+.new-rental-draft-notice > span { flex: 1 1 240px; min-width: 0; }
+.new-rental-draft-notice__actions { display: flex; align-items: center; gap: 8px; }
+
 .new-rental-shell .page-header {
   align-items: center !important;
-  padding-bottom: 16px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--new-rental-line);
 }
 
@@ -18,19 +36,90 @@
 }
 
 .new-rental-workspace {
-  margin-top: 18px;
+  margin-top: 0;
   scroll-margin-top: 18px;
 }
 
 .new-rental-canvas {
+  container: rental-canvas / inline-size;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
 
 .new-rental-stage {
-  display: contents;
+  min-width: 0;
+}
+
+/* 7 Oct reorganization: one reading order, balanced essentials, then equipment,
+   optional logistics and open pricing. Use available form width, including nav. */
+.new-rental-stage--setup,
+.new-rental-stage--logistics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@container rental-canvas (min-width: 800px) {
+  .new-rental-stage--setup {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  }
+}
+
+@container rental-canvas (min-width: 640px) {
+  .new-rental-stage--logistics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.new-rental-canvas #section-1 {
+  container: rental-period / inline-size;
+}
+
+.new-rental-period-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+@container rental-period (min-width: 440px) {
+  .new-rental-period-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.new-rental-date-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.new-rental-date-shortcuts > [role='group'] {
+  gap: 6px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  font-size: 12px;
+}
+
+.new-rental-date-shortcuts button {
+  min-height: 44px !important;
+  padding-inline: 8px !important;
+}
+
+.new-rental-summary-rail {
+  position: sticky;
+  top: 12px;
+  align-self: start;
+  max-height: calc(100dvh - 280px);
+  overflow-y: auto;
+  padding-left: 14px;
+  margin-left: -14px;
+  scrollbar-width: thin;
 }
 
 .new-rental-canvas #section-0,
@@ -81,7 +170,7 @@
 }
 
 .new-rental-preset-disclosure {
-  margin: 0 0 12px;
+  margin: 10px 0 0;
 }
 
 .new-rental-preset-disclosure > summary {
@@ -109,7 +198,7 @@
 }
 
 .new-rental-empty-products {
-  min-height: 168px;
+  min-height: 96px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -196,9 +285,9 @@
   color: var(--text);
 }
 
-@media (max-width: 1179px) {
+@media (max-width: 1279px) {
   .new-rental-workspace {
-    margin-top: 14px;
+    margin-top: 0;
   }
   .new-rental-inline-summary {
     max-width: 100%;
@@ -206,8 +295,15 @@
 }
 
 @media (max-width: 767px) {
+  /* Keep catalogue names readable before status/rate chips on narrow phones. */
+  .new-rental-shell .catalogue-result-heading { flex-wrap: wrap; }
+  .new-rental-shell .catalogue-result-name { flex: 1 1 calc(100% - 32px); min-width: 0; }
   .new-rental-canvas {
     grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .new-rental-stage--setup,
+  .new-rental-stage--logistics {
     gap: 12px;
   }
   .new-rental-canvas #section-0,
@@ -284,8 +380,36 @@
   /* The action footer belongs to the viewport, not the padded scroll content.
      A transform animation would establish a containing block for fixed items. */
   .new-rental-shell { animation: none; }
-  .new-rental-shell::after { content: ''; display: block; height: 20px; flex-shrink: 0; }
+  .new-rental-shell::after { content: ''; display: block; height: 150px; flex-shrink: 0; }
   .new-rental-shell .new-rental-step-footer { flex-direction: column; align-items: stretch !important; }
   .new-rental-shell .new-rental-step-footer > div { flex-wrap: wrap; }
   .new-rental-shell #rail-booking-summary { scroll-margin-bottom: 120px; }
+  .new-rental-shell .record-actions {
+    position: fixed;
+    left: var(--page-padding);
+    right: var(--page-padding);
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px));
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+  }
+  .new-rental-shell .record-actions > button,
+  .new-rental-shell .record-actions > [role='status'] {
+    min-width: 0;
+    justify-content: center;
+  }
+  .new-rental-shell .record-actions > [role='status'] {
+    text-align: center;
+  }
+  .new-rental-shell .record-actions > button:last-child {
+    grid-column: 2 / -1;
+    min-height: 56px;
+  }
+  .new-rental-shell .record-actions > button:nth-last-child(2):not([aria-label]) {
+    grid-column: 1;
+  }
+  .new-rental-shell .record-actions:has(> button:nth-last-child(2)[aria-label]) > button:last-child {
+    grid-column: 1 / -1;
+  }
 }

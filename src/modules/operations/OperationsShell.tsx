@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '../../components/ui/Page'
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog'
@@ -382,13 +383,13 @@ export default function OperationsShell({
             {floor.pickupAtAd && (
               <div>
                 <span style={{ color: 'var(--muted)', marginRight: 4 }}>Pickup:</span>
-                <span style={{ color: 'var(--text)' }}>{floor.pickupAtAd.slice(0, 10)}</span>
+                <span style={{ color: 'var(--booking-date-text)' }}>{formatAd(new Date(floor.pickupAtAd))}</span>
               </div>
             )}
             {floor.returnAtAd && (
               <div>
                 <span style={{ color: 'var(--muted)', marginRight: 4 }}>Return:</span>
-                <span style={{ color: 'var(--text)' }}>{floor.returnAtAd.slice(0, 10)}</span>
+                <span style={{ color: 'var(--booking-date-text)' }}>{formatAd(new Date(floor.returnAtAd))}</span>
               </div>
             )}
             {floor.deliveryType && (

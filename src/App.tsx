@@ -67,7 +67,6 @@ const BundleDetail      = lazy(() => import('./modules/inventory/BundleDetail'))
 const AssetDetail       = lazy(() => import('./modules/inventory/AssetDetail'))
 const PurchaseRequests  = lazy(() => import('./modules/inventory/PurchaseRequests'))
 const Calendar          = lazy(() => import('./modules/calendar/Calendar'))
-const Documents         = lazy(() => import('./modules/documents/Documents'))
 const OperationsQueues  = lazy(() => import('./modules/operations/OperationsQueues'))
 const Finance           = lazy(() => import('./modules/finance/Finance'))
 const DailyClosing      = lazy(() => import('./modules/finance/DailyClosing'))
@@ -92,6 +91,8 @@ function RentalsNewRedirect() {
 }
 
 export default function App() {
+  const location = useLocation()
+  const queryRentalCreation = () => new URLSearchParams(location.search).get('action') === 'new'
   const { user } = useAuth()
   const [showOnboarding, setShowOnboarding] = useState(false)
 
@@ -125,7 +126,7 @@ export default function App() {
         */}
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/" element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
+        <Route path="/" element={<Navigate to={user ? "/today" : "/login"} replace />} />
 
         {/*
           v2.0 §5.1 removed Reports from the sidebar — it is a Finance tab
@@ -166,11 +167,7 @@ export default function App() {
 
         <Route
           path="/dashboard"
-          element={
-            <Shell crumbs={[{ label: 'Today' }]} search="Search booking no, client, equipment…">
-              <Today />
-            </Shell>
-          }
+          element={<Navigate to="/today" replace />}
         />
 
         <Route
@@ -185,7 +182,7 @@ export default function App() {
         <Route
           path="/rentals"
           element={
-            <Shell crumbs={[{ label: 'Rentals List' }]} search="Search booking, client, equipment, invoice…">
+            <Shell crumbs={[{ label: queryRentalCreation() ? 'New Rental' : 'Rentals' }]} search="Search booking, client, equipment, invoice…">
               <RentalsList />
             </Shell>
           }
@@ -400,25 +397,18 @@ export default function App() {
         <Route
           path="/calendar"
           element={
-            <Shell crumbs={[{ label: 'Calendar & Dispatch' }]} search="Search events, bookings, equipment…">
+            <Shell crumbs={[{ label: 'Calendar' }]} search="Search events, bookings, equipment…">
               <Calendar />
             </Shell>
           }
         />
 
-        <Route
-          path="/documents"
-          element={
-            <Shell crumbs={[{ label: 'Documents & Registry' }]} search="Search contracts, invoices, gate passes…">
-              <Documents />
-            </Shell>
-          }
-        />
+        <Route path="/documents" element={<Navigate to="/finance?tab=documents" replace />} />
 
         <Route
           path="/operations"
           element={
-            <Shell crumbs={[{ label: 'Operations Queues' }]} search="Search job, booking, client, kit…">
+            <Shell crumbs={[{ label: 'Operation' }]} search="Search job, booking, client, kit…">
               <OperationsQueues />
             </Shell>
           }
@@ -514,7 +504,7 @@ export default function App() {
         <Route path="/finance/invoices" element={<Navigate to="/finance?tab=invoices" replace />} />
         <Route path="/finance/payments" element={<Navigate to="/finance?tab=payments" replace />} />
         <Route path="/finance/expenses" element={<Navigate to="/finance?tab=expenses" replace />} />
-        <Route path="/finance/documents" element={<Navigate to="/documents" replace />} />
+        <Route path="/finance/documents" element={<Navigate to="/finance?tab=documents" replace />} />
         <Route path="/finance/reports" element={<Navigate to="/finance?tab=reports" replace />} />
 
         <Route
@@ -1078,8 +1068,7 @@ function BookingShell({
   // Non-last crumbs link; the current page (the booking itself, or its
   // workspace step) keeps no `to` — Header renders the last one inert.
   const crumbs: Crumb[] = [
-    { label: 'Rentals List', to: '/rentals' },
-    { label: 'Bookings', to: '/rentals' },
+    { label: 'Rentals', to: '/rentals' },
     { label: bookingNo ?? 'Booking' },
     ...(tail ? [{ label: tail }] : []),
   ]
@@ -1115,7 +1104,7 @@ function Shell({
   if (authLoading) {
     return (
       <div style={{ minHeight: '100dvh', display: 'grid', placeItems: 'center', background: 'var(--app)', color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>
-        Restoring session…
+        <div role="status" style={{ width: 240, textAlign: 'center' }}><div style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 700, color: 'var(--text)' }}>Babin Rentals</div><p>Restoring session…</p><div aria-hidden style={{ height: 4, borderRadius: 4, background: 'var(--card2)', overflow: 'hidden' }}><div style={{ height: '100%', width: '100%', background: 'var(--accent)', animation: 'skeletonShimmer 1.8s ease-in-out infinite' }} /></div></div>
       </div>
     )
   }

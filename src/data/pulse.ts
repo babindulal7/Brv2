@@ -99,7 +99,7 @@ function share(amount: Paisa, ratio: number): Paisa {
 
 /** "26 Jul" — the axis/label form. Full dates always go through `lib/bs.ts`. */
 export function shortAd(d: Date): string {
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kathmandu' })
+  return formatAd(d)
 }
 
 /**

@@ -123,8 +123,7 @@ export function SectionRelationships() {
                     </div>
                   ))}
                   <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>
-                    Detaching removes only the relationship — the child stays an independent asset (§6.1).
-                  </span>
+                    {/* Detaching removes only the relationship — the child stays an independent asset (§6.1). */}Detaching removes only the relationship — the child stays an independent asset . </span>
                 </div>
               )}
 

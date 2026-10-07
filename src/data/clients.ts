@@ -138,6 +138,7 @@ export interface ClientRecord {
   depositHeldPaisa: Paisa
   creditLimitPaisa: Paisa
   creditUsedPaisa: Paisa
+  lastRentalAtAd?: string | null
   lastRentalAd: string // '18 Jul 2026'
   lastRentalBs: string // '2083/04/03'
   address: string

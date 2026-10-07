@@ -14,7 +14,8 @@ interface AppPageToolbarProps {
 /**
  * Standardized global page toolbar. Sits above tables and grids.
  */
-export function AppPageToolbar({ bulkActions, filterChips, rightSlot, pagination }: AppPageToolbarProps) {
+export function AppPageToolbar({ bulkActions, filterChips, rightSlot }: AppPageToolbarProps) {
+  if (!bulkActions && !filterChips && !rightSlot) return null
   return (
     <div className="app-page-toolbar" role="group" aria-label="List controls">
       <div className="app-page-toolbar__start">
@@ -24,7 +25,6 @@ export function AppPageToolbar({ bulkActions, filterChips, rightSlot, pagination
 
       <div className="app-page-toolbar__end">
         {rightSlot}
-        {pagination}
       </div>
     </div>
   )

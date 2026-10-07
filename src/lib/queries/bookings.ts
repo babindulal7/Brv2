@@ -418,6 +418,11 @@ function missingProjectTypeColumn(error: BookingQueryError | null): boolean {
   if (!error) return false
   const msg = (error.message || '').toLowerCase()
   const code = error.code
+  // RULINGS-2026-10-07: 0062/0093 grant SELECT by column; 0144 adds
+  // project_type without extending that grant. PostgREST reports the table,
+  // not the denied column. Retry the already-granted projection once; a real
+  // table denial still fails, and explicit project-type filters are preserved.
+  if (code === '42501' && msg === 'permission denied for table bookings') return true
   if (code === '42703' || code === 'PGRST204') {
     if (msg.includes('project_type')) return true
   }
@@ -541,7 +546,7 @@ export async function listBookings(opts: BookingListOptions = {}): Promise<ListQ
       ;({ count, error } = await countBookings(true))
     }
     if (error) throw new Error(`listBookings count failed: ${error.message}`)
-    return { rows: [], total: count ?? 0 }
+    return { rows: [], total: count }
   }
 
   /*

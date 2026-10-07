@@ -127,7 +127,7 @@ const BLUE_PRIMARY = { background: 'var(--btn-primary-bg)', color: 'var(--btn-pr
  * recorded with no witness rather than with a placeholder.
  */
 const WITNESS_UNAVAILABLE =
-  'No witness identity is captured on this screen, so a witness signature cannot be attested here. §9.2 makes the witness optional — this session is recorded with no witness rather than with a placeholder.'
+  /* No witness identity is captured on this screen, so a witness signature cannot be attested here. §9.2 makes the witness optional — this session is recorded with no witness rather than with a placeholder. */ "Witness signatures are not captured here. The session is recorded without a witness signature."
 
 /**
  * The driver signature, on the same witness precedent: no driver identity is
@@ -791,7 +791,7 @@ export default function HandoverWorkspace({
   /** HO-04 — who may press "Mark Cleared" on gates 3 / 4: money-sighted roles only (Law 6). */
   const moneyGateClearer = user !== null && canViewMoney(user.role)
   const MONEY_GATE_UNAVAILABLE =
-    'Payment and deposit are cleared by Accounts or a Manager — Warehouse cannot clear a money gate (Law 6)'
+    /* Payment and deposit are cleared by Accounts or a Manager — Warehouse cannot clear a money gate (Law 6) */ "Payment and deposit must be cleared by Accounts or a Manager."
 
   /**
    * §0 #2, §12 — one label, computed from whether anything remains after this
@@ -1441,10 +1441,10 @@ export default function HandoverWorkspace({
               ].map((f) => (
                 <div key={f.l} className="floor-summary-cell">
                   <div className="floor-summary-label">{f.l}</div>
-                  <div className={`floor-summary-value ${f.big ? 'is-primary' : ''}`}>
+                  <div className={`floor-summary-value ${f.big ? 'is-primary' : ''}`} style={{ color: ['Pickup', 'Return', 'Expected Return', 'Due back'].includes(f.l) && f.s ? 'var(--booking-date-text)' : undefined }}>
                     {f.v}
                   </div>
-                  {f.s && <div className="floor-summary-sub">{f.s}</div>}
+                  {f.s && <div className="floor-summary-sub" style={{ color: ['Pickup', 'Return', 'Expected Return', 'Due back'].includes(f.l) ? 'var(--booking-date-text)' : undefined }}>{f.s}</div>}
                 </div>
               ))}
             </div>
@@ -1877,11 +1877,10 @@ export default function HandoverWorkspace({
                         Not available in this build. {OVERRIDE_UNAVAILABLE}
                       </p>
                       <p style={{ margin: '0 0 6px', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                        §11.4 reserves this for Owner / Manager; Warehouse cannot override. Who may override a
+                        {/* §11.4 reserves this for Owner / Manager; Warehouse cannot override. Who may override a
                         session gate is not yet ruled, and no action records the approver — so no session-gate
                         override is recorded here, rather than one recorded against nobody. Handing over with
-                        money outstanding is a different decision and is recorded: it is below.
-                      </p>
+                        money outstanding is a different decision and is recorded: it is below. */}A session override is not available yet. </p>
                       <div style={{ marginTop: 6 }}>
                         <Unavailable reason={OVERRIDE_UNAVAILABLE}>
                           <button
@@ -1947,8 +1946,8 @@ export default function HandoverWorkspace({
                       Handing Over With Money Outstanding
                     </div>
                     <p style={{ margin: '4px 0 6px', fontSize: 'var(--t-meta)', color: 'var(--text2)', lineHeight: 1.45 }}>
-                      This screen is shown no amounts (Law 6), so it cannot tell you whether this booking owes
-                      anything. Gates 3 and 4 above are <strong>your certification</strong> that payment and
+                      {/* This screen is shown no amounts (Law 6), so it cannot tell you whether this booking owes
+                      anything. Gates 3 and 4 above are */}Your role cannot view rental balances. <strong>your certification</strong> that payment and
                       deposit are cleared — not a reading of the ledger. A reason written here is recorded with
                       the completion, but it does <strong>not</strong> open those gates and cannot release a
                       booking whose money is unresolved: this build has no way to hand over against outstanding
@@ -1964,9 +1963,7 @@ export default function HandoverWorkspace({
                       style={{ width: '100%', minHeight: 44, padding: 7, borderRadius: 'var(--r-input)', border: '1px solid var(--input-border)', background: 'var(--input-bg)', color: 'var(--text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', resize: 'vertical' }}
                     />
                     <p id="r06-destination" style={{ margin: '6px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                      Sent with {primaryLabel} onto{' '}
-                      <span className="identifier">booking_stage_transitions.reason</span>. It does not open any
-                      of the six gates above — those are cleared, never overridden.
+                      Saved with the rental history when you choose {primaryLabel}. This reason does not clear the checks above.
                     </p>
                   </div>
 
@@ -1991,9 +1988,8 @@ export default function HandoverWorkspace({
                       <RowAction label="Take Photo" onClick={() => setPhotoCount((n) => n + 1)} />
                     </div>
                     <p style={{ margin: '7px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.45 }}>
-                      Ruled mandatory (§4.31): one photo per booking, not per case. This count is local to this
-                      session — no photo is uploaded from here yet.
-                    </p>
+                      {/* Ruled mandatory (§4.31): one photo per booking, not per case. This count is local to this
+                      session — no photo is uploaded from here yet. */}One photo is required per booking. Use the Evidence workspace to capture and save it. </p>
                   </div>
 
                   {/* §9.2 Signatures — captured at session close, never before.

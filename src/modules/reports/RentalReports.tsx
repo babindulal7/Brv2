@@ -1,3 +1,4 @@
+import { formatAd } from '../../lib/bs'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHeader, KpiStrip, cardStyle } from '../../components/ui/Page'
@@ -95,7 +96,7 @@ export default function RentalReports() {
         value: money ? formatMoney(m.totalRevenue) : '—',
         icon: 'dollar',
         accent: 'success',
-        note: money ? `Avg ${formatMoney(m.averageBookingValue)} / booking` : 'Restricted (Law 6)',
+        note: money ? `Avg ${formatMoney(m.averageBookingValue)} / booking` : /* Restricted (Law 6) */ "Restricted",
       },
       {
         label: 'Rental Days',
@@ -172,7 +173,7 @@ export default function RentalReports() {
         value: money ? formatMoney(cancelData.totalLostRevenue) : '—',
         icon: 'dollar',
         accent: 'danger',
-        note: money ? 'Unrealized quote & booking total' : 'Restricted (Law 6)',
+        note: money ? 'Unrealized quote & booking total' : /* Restricted (Law 6) */ "Restricted",
       },
       {
         label: 'Average Notice',
@@ -674,7 +675,7 @@ export default function RentalReports() {
                       </td>
                       <td style={td}>{cb.clientName}</td>
                       <td style={td}>{cb.project}</td>
-                      <td style={td}>{new Date(cb.scheduledPickup).toLocaleDateString('en-GB')}</td>
+                      <td style={td}>{formatAd(new Date(cb.scheduledPickup))}</td>
                       {money && (
                         <td style={{ ...td, textAlign: 'right', fontWeight: 600, color: 'var(--status-danger-text)' }}>
                           {formatMoney(cb.lostRevenue)}
