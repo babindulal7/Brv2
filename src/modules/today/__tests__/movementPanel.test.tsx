@@ -82,3 +82,38 @@ describe('movement board task clarity', () => {
     expect(onLoadMore).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('meaningful rows (ruled 8 Oct 2026)', () => {
+  const tags = () => [...host.querySelectorAll('.movement-card__tag')].map((t) => t.textContent?.trim())
+  const when = () => host.querySelector('.movement-card__when')?.textContent
+
+  it('says whether a pickup is packed, and how it leaves', async () => {
+    await mount({ status: 'Booked', deliveryType: 'Babin Delivery' }, 'outgoing')
+    expect(tags()).toEqual(['Not packed yet', 'Delivery'])
+    await act(async () => root.unmount()); host.remove()
+    await mount({ status: 'Packed', deliveryType: 'Client Pickup' }, 'outgoing')
+    expect(tags()).toEqual(['Packed', 'Client pickup'])
+  })
+
+  it('anchors the row on its time, with the day when it is not today', async () => {
+    await mount({ at: 600, atDayAd: '2026-09-22' }, 'outgoing')
+    expect(when()).toBe('10:00AM · Tue 22 Sep')
+  })
+
+  it('names the day a return is due and never calls tomorrow today', async () => {
+    await mount({ atDayAd: '2026-09-22' })
+    expect(tags()).toEqual(['Due back Tue 22 Sep'])
+    expect(host.textContent).not.toContain('today')
+    await act(async () => root.unmount()); host.remove()
+    await mount({ atDayAd: '2026-09-21' })
+    expect(tags()).toEqual(['Due back today'])
+  })
+
+  it('leads an overdue return with how late it is, and adds no due tag', async () => {
+    await mount({ flags: ['Overdue'], statusNote: '79 days late' })
+    expect(when()).toBe('79dlate')
+    expect(host.querySelector('.movement-card__when--late')).not.toBeNull()
+    expect(tags()).toEqual([])
+    expect(host.textContent).toContain('Overdue · 79 days late')
+  })
+})

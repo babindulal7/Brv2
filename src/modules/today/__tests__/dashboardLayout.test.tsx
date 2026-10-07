@@ -67,6 +67,23 @@ describe('focused pickup and return dashboard', () => {
     expect(container.textContent).not.toContain('Cash due')
   })
 
+  it('keeps the dispatch date control small: one picker door, day name over BS · AD (8 Oct 2026)', async () => {
+    await mount()
+    const control = container.querySelector('.dashboard-master-date-control')!
+    expect(control.textContent).not.toContain('Sync dispatch day')
+    expect(control.querySelector('button[aria-label="Dispatch calendar"]')).toBeNull()
+    expect(control.querySelectorAll('[aria-haspopup="dialog"]')).toHaveLength(1)
+    expect(control.querySelector('.dashboard-master-date-control__primary')?.textContent).toBe('Today')
+    expect(control.querySelector('.dashboard-master-date-control__secondary')?.textContent).toMatch(/^\d+ \S+ · \d+ [A-Z][a-z]{2}$/)
+  })
+
+  it('carries no count tiles above the lists (ruled 8 Oct 2026)', async () => {
+    await mount()
+    expect(container.querySelector('.kpi-tile')).toBeNull()
+    expect(container.textContent).not.toContain('On rent now')
+    expect(container.textContent).not.toContain('Packing due tomorrow')
+  })
+
   it('gives both panels one accessible calendar control', async () => {
     await mount()
     expect(buttons().filter((b) => b.getAttribute('aria-label')?.includes('choose dispatch date filter'))).toHaveLength(1)

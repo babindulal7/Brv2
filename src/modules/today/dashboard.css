@@ -2358,44 +2358,6 @@
   color: var(--primary-text);
 }
 
-.dashboard-overview {
-  grid-column: 1 / -1;
-  min-width: 0;
-}
-
-.dashboard-overview .kpi-tile {
-  position: relative;
-  overflow: hidden;
-}
-
-.dashboard-overview .kpi-tile::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: var(--border2);
-}
-
-.dashboard-overview .kpi-tile:first-child::before { background: var(--primary-text); }
-.dashboard-overview .kpi-tile:last-child::before { background: var(--warn-text); }
-.dashboard-overview[data-overdue='true'] .kpi-tile:nth-child(2)::before { background: var(--danger-text); }
-
-/* A transparent overlay tints existing shared cards without overriding their
-   inline styles. Labels, icons and numbers remain above it and use theme tokens. */
-.dashboard-overview .kpi-tile::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--primary);
-  opacity: 0.055;
-  pointer-events: none;
-}
-
-.dashboard-overview .kpi-tile:nth-child(2)::after { opacity: 0; }
-.dashboard-overview .kpi-tile:last-child::after { background: var(--warn); }
-.dashboard-overview[data-overdue='true'] .kpi-tile:nth-child(2)::after { background: var(--danger); opacity: 0.065; }
-.dashboard-overview .kpi-tile > * { position: relative; z-index: 1; }
-
 .rental-dashboard .dashboard-master-date-control {
   border-color: color-mix(in srgb, var(--primary) 28%, var(--border));
 }
@@ -2811,6 +2773,29 @@
   }
 }
 
+/* Phone: work first (ruled 8 Oct 2026, RULINGS-2026-10-08.md). The page title
+   already says Today and the Pickups/Returns switch already names the open list
+   with its count, so the workbar intro and the panel heading only pushed the
+   first card below the fold. The heading stays for screen readers: it names the
+   section and is where "View Returns" moves focus. */
+@media (max-width: 767px) {
+  .dashboard-workbar__intro {
+    display: none;
+  }
+
+  .movement-panel__header {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
 @media (max-width: 767px) {
   .dashboard-shift-handover__toggle {
     flex-wrap: wrap;
@@ -2854,10 +2839,6 @@
   .dashboard-workbar {
     grid-template-columns: minmax(0, 1fr);
     gap: 0.9rem;
-  }
-
-  .dashboard-overview .kpi-tile:last-child {
-    grid-column: 1 / -1;
   }
 
   .dashboard-workbar .dashboard-counter-bar {
@@ -2913,4 +2894,302 @@
   .rental-dashboard__panels .movement-card__status-action {
     flex-wrap: wrap;
   }
+}
+
+/* ─── Modern layer (ruled 8 Oct 2026, RULINGS-2026-10-08.md) ───────────────
+   One surface per queue instead of cards inside cards: panels lose the 3px
+   accent bar and tinted header, rows sit on hairline dividers, labels drop the
+   all-caps micro style, avatars become rounded squares and actions get press
+   feedback. Category colour survives as a dot and the count chip beside the
+   text title, so it is never colour alone. Tokens only — both themes follow.
+   Last in the file so it is the layer that wins; earlier rules are unchanged. */
+.rental-dashboard .rental-dashboard__panels .movement-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--r-card, 14px);
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+
+.rental-dashboard .rental-dashboard__panels .movement-panel__header {
+  min-height: 0;
+  padding: 1rem 1.25rem;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+}
+
+.rental-dashboard .rental-dashboard__panels .movement-panel__heading h2 {
+  align-items: center;
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.rental-dashboard .rental-dashboard__panels .movement-panel__heading h2 > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text);
+}
+
+.rental-dashboard .rental-dashboard__panels .movement-panel__heading h2 > span:first-child::before {
+  content: '';
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--movement-accent);
+}
+
+.rental-dashboard .rental-dashboard__panels .movement-panel__heading h2 .figure {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.55rem;
+  border-radius: var(--r-badge, 999px);
+  background: color-mix(in srgb, var(--movement-tint) 12%, var(--card));
+  color: var(--movement-accent);
+  font-size: var(--t-meta);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.rental-dashboard .rental-dashboard__panels .movement-panel__heading p {
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: var(--t-th);
+}
+
+.rental-dashboard .movement-cards-list {
+  gap: 0;
+  padding: 0;
+}
+
+.rental-dashboard .movement-card {
+  gap: 0.55rem 1rem;
+  padding: 1rem 1.25rem;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  animation: today-row-in 260ms var(--ease) both;
+  animation-delay: calc(var(--row-i, 0) * 28ms);
+}
+
+.rental-dashboard .movement-card:last-child {
+  border-bottom: 0;
+}
+
+.rental-dashboard .movement-card:hover {
+  filter: none;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--movement-tint) 5%, var(--card));
+}
+
+.rental-dashboard .movement-card--overdue {
+  border-color: var(--border);
+  border-left: 0;
+  box-shadow: inset 3px 0 0 var(--danger-text);
+  background: color-mix(in srgb, var(--danger) 3%, var(--card));
+}
+
+.rental-dashboard .movement-card--overdue:hover {
+  background: color-mix(in srgb, var(--danger) 6%, var(--card));
+}
+
+.rental-dashboard .movement-card__client {
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.rental-dashboard .movement-card__record-label,
+.rental-dashboard .movement-card__schedule > span {
+  font-size: var(--t-caption, 11px);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+
+.rental-dashboard .movement-card__number {
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--r-btn, 8px);
+  background: color-mix(in srgb, var(--text) 7%, var(--card));
+  color: var(--text);
+}
+
+.rental-dashboard .movement-card__booking-link:hover .movement-card__number {
+  color: var(--primary-text);
+}
+
+.rental-dashboard .movement-card__status-action {
+  padding-top: 0.15rem;
+  border-top: 0;
+}
+
+.rental-dashboard .movement-card__cta-btn {
+  border-radius: var(--r-btn, 8px);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.rental-dashboard .movement-card__cta-btn svg {
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.rental-dashboard .movement-card__cta-btn:hover svg {
+  transform: translateX(2px);
+}
+
+.rental-dashboard .movement-card__cta-btn:active {
+  transform: scale(0.98);
+}
+
+/* Meaningful rows (8 Oct 2026): the time column replaces the initials as the
+   row's anchor — WHEN it moves, in the booking-date orange, or how late it is
+   in the danger ink. Tags name readiness and delivery mode with icon + words. */
+.rental-dashboard .movement-card {
+  grid-template-columns: 4.75rem minmax(0, 1.25fr) minmax(0, 0.75fr);
+  grid-template-areas:
+    "when client booking"
+    "when pickup return"
+    "when status status";
+}
+
+.rental-dashboard .movement-card__avatar {
+  display: none;
+}
+
+.rental-dashboard .movement-card__when {
+  grid-area: when;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.15rem;
+  padding-top: 0.1rem;
+  padding-right: 0.85rem;
+  border-right: 1px solid var(--border);
+}
+
+.rental-dashboard .movement-card__when strong {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--booking-date-text);
+}
+
+.rental-dashboard .movement-card__when span {
+  font-size: var(--t-caption, 11px);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.rental-dashboard .movement-card__when--late strong {
+  color: var(--danger-text);
+}
+
+.rental-dashboard .movement-card__badge-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rental-dashboard .movement-card__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--tag-edge, var(--border));
+  border-radius: var(--r-btn, 8px);
+  background: var(--tag-bg, var(--inset));
+  color: var(--tag-ink, var(--text2));
+  font-size: var(--t-th);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.rental-dashboard .movement-card__tag--todo {
+  --tag-bg: color-mix(in srgb, var(--warn) 12%, var(--card));
+  --tag-edge: color-mix(in srgb, var(--warn) 35%, transparent);
+  --tag-ink: var(--warn-text);
+}
+
+.rental-dashboard .movement-card__tag--ready {
+  --tag-bg: color-mix(in srgb, var(--success) 12%, var(--card));
+  --tag-edge: color-mix(in srgb, var(--success) 35%, transparent);
+  --tag-ink: var(--success-text);
+}
+
+.rental-dashboard .movement-card__tag--due {
+  --tag-bg: color-mix(in srgb, var(--primary) 10%, var(--card));
+  --tag-edge: color-mix(in srgb, var(--primary) 30%, transparent);
+  --tag-ink: var(--primary-text);
+}
+
+/* Dispatch date control, smaller (8 Oct 2026): no "Sync dispatch day:" label,
+   one picker door (the date), "Today" only when away from today. The date
+   reads as a day name over BS · AD so the eye lands on "Today"/"Tomorrow". */
+.rental-dashboard .dashboard-master-date-control {
+  gap: 0.1rem;
+  padding: 2px;
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
+}
+
+.rental-dashboard .dashboard-master-date-control__date-btn {
+  gap: 0.55rem;
+  padding: 0.2rem 0.75rem;
+  text-align: left;
+  font-weight: 500;
+}
+
+.rental-dashboard .dashboard-master-date-control__cal {
+  flex-shrink: 0;
+  color: var(--primary-text);
+}
+
+.rental-dashboard .dashboard-master-date-control__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.rental-dashboard .dashboard-master-date-control__primary {
+  font-size: var(--t-meta);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.rental-dashboard .dashboard-master-date-control__date-btn.is-today .dashboard-master-date-control__primary {
+  color: var(--primary-text);
+}
+
+.rental-dashboard .dashboard-master-date-control__secondary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--t-caption, 11px);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.rental-dashboard .dashboard-day-pager__btn--today {
+  padding-inline: 0.75rem;
+  font-size: var(--t-meta);
+  font-weight: 600;
+  color: var(--primary-text);
+}
+
+@keyframes today-row-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rental-dashboard .movement-card { animation: none; }
+  .rental-dashboard .movement-card__cta-btn:hover svg,
+  .rental-dashboard .movement-card__cta-btn:active { transform: none; }
 }

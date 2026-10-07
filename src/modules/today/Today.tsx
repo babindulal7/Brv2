@@ -2,14 +2,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from 'react-dom'
 import Icon from '../../components/ui/Icon'
 import { CalendarPopover } from '../../components/ui/DateField'
-import { PageHeader, PageActions, KpiStrip } from '../../components/ui/Page'
+import { PageHeader, PageActions } from '../../components/ui/Page'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { useDomainEvent } from '../../events/useDomainEvent'
 import { EVENT_TYPES } from '../../events/eventBus'
 import { toBs, formatAd, formatBs } from '../../lib/bs'
 import { businessDayAd, businessNowAd, overDays, pickupsQuery, toMovementRow, type MovementRow } from '../../lib/queries/today'
-import { listBookings, operationQueue, todaysOutgoing, overdue, type BookingListRow } from '../../lib/queries/bookings'
+import { listBookings, operationQueue, todaysOutgoing } from '../../lib/queries/bookings'
 import type { ListFilters } from '../../lib/queries/listQuery'
 import { useList, type ListQueryResult, type ListResult } from '../../lib/queries/useList'
 import { useViewport } from '../../lib/device'
@@ -33,33 +33,6 @@ const QUICK_PERIODS: readonly QuickPeriod[] = ['Today', 'Tomorrow', 'Next 7 Days
 const STORAGE_DISPATCH = 'dashboard.dispatchDateFilter'
 const STORAGE_PICKUPS = 'dashboard.pickupDateFilter'
 const STORAGE_RETURNS = 'dashboard.returnDateFilter'
-
-const fetchOverviewCount = (filters: ListFilters) => listBookings({ ...filters, headOnly: true })
-
-/** Live counts remain useful even when the selected dispatch day is quiet. */
-function OperationalOverview() {
-  const tomorrow = shiftDay(businessDayAd(), 1)
-  const onRent = useList<BookingListRow>(fetchOverviewCount, { chips: { stage: ['On Rent'] }, presence: { cancelled_at: false, closed_at: false } })
-  const late = useList<BookingListRow>(fetchOverviewCount, overdue(businessNowAd()))
-  const pack = useList<BookingListRow>(fetchOverviewCount, operationQueue('packing', tomorrow, tomorrow))
-  const { refetch: refreshOnRent } = onRent
-  const { refetch: refreshLate } = late
-  const { refetch: refreshPack } = pack
-  const refresh = useCallback(() => { refreshOnRent(); refreshLate(); refreshPack() }, [refreshOnRent, refreshLate, refreshPack])
-  useDomainEvent(EVENT_TYPES.RENTAL_PACKED, refresh)
-  useDomainEvent(EVENT_TYPES.RENTAL_HANDED_OVER, refresh)
-  useDomainEvent(EVENT_TYPES.RENTAL_RETURNED, refresh)
-  useDomainEvent(EVENT_TYPES.RENTAL_CONFIRMED, refresh)
-  useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refresh)
-  const count = (result: ListResult<BookingListRow>) => result.loading || result.error || result.total === null ? '—' : String(result.total)
-  return <div className="dashboard-overview" data-overdue={!late.loading && !late.error && (late.total ?? 0) > 0}>
-    <KpiStrip columns={3} items={[
-      { label: 'On rent now', value: count(onRent), icon: 'box', accent: 'primary', note: onRent.error ? 'Could not load' : 'Current rentals' },
-      { label: 'Overdue', value: count(late), icon: 'timer', accent: 'danger', note: late.error ? 'Could not load' : 'Returns past due' },
-      { label: 'Packing due tomorrow', value: count(pack), icon: 'package', accent: 'warn', note: pack.error ? 'Could not load' : 'Upcoming pickups' },
-    ]} />
-  </div>
-}
 
 function shiftDay(day: string, amount: number): string {
   const date = new Date(`${day}T00:00:00.000Z`)
@@ -136,33 +109,39 @@ function filterLabel(filter: DateFilter, lang: 'en' | 'ne' = 'en'): string {
   return `${compactDate(filter.from)} – ${compactDate(filter.to)}`
 }
 
-function formatMasterDispatchDate(filter: DateFilter, today: string, lang: 'en' | 'ne' = 'en'): string {
+const AD_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
+
+/**
+ * The date control's two visible lines (8 Oct 2026, RULINGS-2026-10-08.md):
+ * a short name for the day ("Today", "Tomorrow", "Yesterday", or the weekday)
+ * over the BS and AD dates, with years only when the day is in another year.
+ * The button's accessible name is built from the same two parts (WCAG 2.5.3).
+ */
+function masterDispatchParts(filter: DateFilter, today: string, lang: 'en' | 'ne' = 'en'): { primary: string; secondary: string } {
   if (filter.kind === 'quick' && filter.period === 'Next 7 Days') {
-    return QUICK_PERIOD_LABELS[lang]['Next 7 Days']
+    const range = rangeFor(filter, today)
+    return { primary: QUICK_PERIOD_LABELS[lang]['Next 7 Days'], secondary: `${compactDate(range.from)} – ${compactDate(range.to)}` }
+  }
+  if (filter.kind === 'custom' && filter.from !== filter.to) {
+    return { primary: lang === 'ne' ? 'मिति दायरा' : 'Date range', secondary: filterLabel(filter, lang) }
   }
   const day = filter.kind === 'custom' ? filter.from : rangeFor(filter, today).from
-  if (filter.kind === 'custom' && filter.from !== filter.to) {
-    return filterLabel(filter, lang)
-  }
   const dateObj = new Date(`${day}T00:00:00.000Z`)
-  const adPart = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kathmandu' }).format(dateObj)
-
   const bs = toBs(dateObj)
-  const bsPart = bs ? `${formatBs(bs)} ${bs.year}` : ''
-  const dual = bsPart ? `${bsPart} / ${adPart}` : `${adPart} AD`
-
-  const isToday = day === today
-  const isTomorrow = day === shiftDay(today, 1)
-
-  if (isToday) {
-    const todayPrefix = lang === 'ne' ? 'आज' : 'Today'
-    return `${todayPrefix} · ${dual}`
+  // Years only when the day is in another year than today — nearby days need none.
+  const otherYear = day.slice(0, 4) !== today.slice(0, 4)
+  const adPart = `${dateObj.getUTCDate()} ${AD_MONTHS[dateObj.getUTCMonth()]}${otherYear ? ` ${dateObj.getUTCFullYear()}` : ''}`
+  const bsPart = bs ? `${formatBs(bs)}${otherYear ? ` ${bs.year}` : ''}` : ''
+  const secondary = bsPart ? `${bsPart} · ${adPart}` : adPart
+  const named: Record<string, [string, string]> = {
+    [today]: ['Today', 'आज'],
+    [shiftDay(today, 1)]: ['Tomorrow', 'भोलि'],
+    [shiftDay(today, -1)]: ['Yesterday', 'हिजो'],
   }
-  if (isTomorrow) {
-    const tomorrowPrefix = lang === 'ne' ? 'भोलि' : 'Tomorrow'
-    return `${tomorrowPrefix} · ${dual}`
-  }
-  return dual
+  const primary = named[day]
+    ? named[day][lang === 'ne' ? 1 : 0]
+    : new Intl.DateTimeFormat(lang === 'ne' ? 'ne-NP' : 'en-GB', { weekday: 'long', timeZone: 'UTC' }).format(dateObj)
+  return { primary, secondary }
 }
 
 /**
@@ -344,7 +323,6 @@ function MasterDispatchDateControl({
   today: string
   onStepDay: (delta: number) => void
 }) {
-  const isPhone = useViewport() === 'phone'
   const lang = useCurrentLanguage()
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
@@ -376,7 +354,7 @@ function MasterDispatchDateControl({
     }
   }, [open])
 
-  const masterLabel = formatMasterDispatchDate(filter, today, lang)
+  const parts = masterDispatchParts(filter, today, lang)
   const isToday = filter.kind === 'quick' && filter.period === 'Today'
 
   return (
@@ -384,16 +362,13 @@ function MasterDispatchDateControl({
       className="dashboard-master-date-control"
       ref={root}
       role="group"
-      aria-label="Master dispatch date"
+      aria-label="Dispatch date"
       onBlur={(event) => {
         const next = event.relatedTarget as Node | null
         if (next && (event.currentTarget.contains(next) || dialog.current?.contains(next))) return
         if (event.relatedTarget) setOpen(false)
       }}
     >
-      <span className="dashboard-header-controls__label" style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', fontWeight: 500, marginRight: 4 }}>
-        Sync dispatch day:
-      </span>
       <button
         type="button"
         className="dashboard-master-date-control__btn"
@@ -403,25 +378,24 @@ function MasterDispatchDateControl({
       >
         <Icon name="chevron_left" size={16} />
       </button>
-      {(!isPhone || !isToday) && <button
-        type="button"
-        className={`dashboard-master-date-control__btn dashboard-day-pager__btn--today ${isToday ? 'is-today' : ''}`}
-        aria-label="Today"
-        onClick={() => onChange({ kind: 'quick', period: 'Today' })}
-      >
-        Today
-      </button>}
+      {/* One door to the picker: the date itself (the separate calendar icon opened the same dialog). */}
       <button
         ref={trigger}
         type="button"
         className={`dashboard-master-date-control__date-btn ${isToday ? 'is-today' : ''}`}
-        aria-label={`${masterLabel} — choose dispatch date filter`}
+        aria-label={`${parts.primary} · ${parts.secondary} — choose dispatch date filter`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? 'dispatch-date-dialog' : undefined}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="dashboard-master-date-control__label">{isPhone ? masterLabel.split(' / ').map((part, index) => <span key={part} style={{ display: 'block', fontSize: index === 0 ? 'var(--t-meta)' : 'var(--t-th)', color: index === 0 ? 'var(--text)' : 'var(--muted)' }}>{part.replace(/^(Today|आज) · /, '')}</span>) : masterLabel}</span>
+        <Icon name="calendar" size={16} className="dashboard-master-date-control__cal" />
+        <span className="dashboard-master-date-control__text">
+          <span className="dashboard-master-date-control__primary">{parts.primary}</span>
+          {/* Keeps the button's text equal to its spoken name (WCAG 2.5.3) though the lines stack. */}
+          <span className="sr-only"> · </span>
+          <span className="dashboard-master-date-control__secondary">{parts.secondary}</span>
+        </span>
       </button>
       <button
         type="button"
@@ -432,18 +406,17 @@ function MasterDispatchDateControl({
       >
         <Icon name="chevron_right" size={16} />
       </button>
-      <button
-        type="button"
-        className="dashboard-master-date-control__calendar-btn"
-        aria-label="Dispatch calendar"
-        title="Open calendar"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-controls={open ? 'dispatch-date-dialog' : undefined}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <Icon name="calendar" size={18} />
-      </button>
+      {/* Only offered when there is somewhere to come back from. */}
+      {!isToday && (
+        <button
+          type="button"
+          className="dashboard-master-date-control__btn dashboard-day-pager__btn--today"
+          aria-label="Today"
+          onClick={() => onChange({ kind: 'quick', period: 'Today' })}
+        >
+          Today
+        </button>
+      )}
       {open && (
         <CalendarPortal triggerRef={trigger} dialogRef={dialog} id="dispatch-date-dialog" label="Dispatch date filter">
           <DashboardCalendarContent
@@ -653,9 +626,15 @@ export default function Today() {
       }
     >
       <div className="dashboard-workbar">
+        {/* The day in one line (ruled 8 Oct 2026, RULINGS-2026-10-08.md) — the
+            same counts the Pickups/Returns badges show, said as a sentence. */}
         <div className="dashboard-workbar__intro">
-          <span>Daily dispatch</span>
-          <p>Movement board</p>
+          <span>{masterDispatchParts(pickupDateFilter, dayAd).primary}</span>
+          <p>
+            {pickupCount === undefined || returnCount === undefined
+              ? 'Movement board'
+              : `${pickupCount} going out · ${returnCount} coming back`}
+          </p>
         </div>
         {/* Universal Express Counter Bar (Quick Search / Barcode Scanner) */}
         <div className="dashboard-counter-bar" role="search" aria-label="Express Counter Lookup">
@@ -686,8 +665,6 @@ export default function Today() {
             )}
           </div>
         </div>
-
-        <OperationalOverview />
 
         {/* Condensed Overdue Alert (⚠ N overdue returns [View Returns]) */}
         {overdueCount > 0 && (

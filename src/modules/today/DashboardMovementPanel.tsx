@@ -49,6 +49,47 @@ export function dashboardAction(row: MovementRow, side: 'outgoing' | 'incoming')
   return { label: 'Start Packing', job: 'Pack' }
 }
 
+/*
+ * Meaningful rows (ruled 8 Oct 2026, RULINGS-2026-10-08.md). Each visual names a
+ * fact staff act on, derived only from fields the row already carries:
+ *   · the time column is WHEN it moves — or how late it is, for an overdue return;
+ *   · the readiness tag reads the stage (Booked = not packed yet, Packed = packed);
+ *   · the mode tag reads `delivery_type`.
+ * Every tag pairs an icon with words, so none of it is colour alone.
+ */
+type TagTone = 'todo' | 'ready' | 'due' | 'mode'
+interface RowTag { tone: TagTone; icon: IconName; label: string }
+
+const MODE_TAG: Record<string, { icon: IconName; label: string }> = {
+  'Babin Delivery': { icon: 'truck', label: 'Delivery' },
+  'Client Pickup': { icon: 'user', label: 'Client pickup' },
+  Courier: { icon: 'package', label: 'Courier' },
+  'Third Party': { icon: 'person', label: 'Third party' },
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
+
+/** "Tue 22 Sep" for a Kathmandu calendar day `YYYY-MM-DD`. Fixed names: ICU builds disagree on "Sep"/"Sept". */
+function shortDay(dayAd: string): string {
+  const d = new Date(`${dayAd}T00:00:00Z`)
+  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`
+}
+
+function rowTags(row: MovementRow, side: 'outgoing' | 'incoming', isTodayRow: boolean, isOverdue: boolean, isPartial: boolean): RowTag[] {
+  const tags: RowTag[] = []
+  if (side === 'outgoing') {
+    tags.push(row.status === 'Packed'
+      ? { tone: 'ready', icon: 'check', label: 'Packed' }
+      : { tone: 'todo', icon: 'package', label: 'Not packed yet' })
+    const mode = row.deliveryType ? MODE_TAG[row.deliveryType] : undefined
+    if (mode) tags.push({ tone: 'mode', ...mode })
+  } else if (!isOverdue && !isPartial) {
+    tags.push({ tone: 'due', icon: 'return_arrow', label: isTodayRow ? 'Due back today' : `Due back ${shortDay(row.atDayAd)}` })
+  }
+  return tags
+}
+
 export default function DashboardMovementPanel({
   side,
   title,
@@ -171,7 +212,7 @@ export default function DashboardMovementPanel({
                 <span>Return</span>
                 <span>Status / next step</span>
               </div>
-              {rows.map((row) => {
+              {rows.map((row, rowIndex) => {
                 const action = dashboardAction(row, side)
                 const isOverdue = has(row, 'Overdue')
                 const isReady = row.status === 'Packed'
@@ -180,6 +221,11 @@ export default function DashboardMovementPanel({
                   (row.status ?? '').toLowerCase().includes('partial') ||
                   (row.statusNote ?? '').toLowerCase().includes('partial') ||
                   (row.statusNote ?? '').toLowerCase().includes('still with client')
+
+                const isTodayRow = row.atDayAd === today
+                const [clock, meridiem] = timeOf(row).split(' ')
+                const lateDays = isOverdue ? (row.statusNote?.match(/\d+/)?.[0] ?? null) : null
+                const tags = rowTags(row, side, isTodayRow, isOverdue, isPartial)
 
                 const displayTime = side === 'outgoing'
                   ? `${row.atDayAd !== today ? `${formatAd(new Date(`${row.atDayAd}T00:00:00Z`))} · ` : ''}${timeOf(row)}`
@@ -198,7 +244,14 @@ export default function DashboardMovementPanel({
                       isOverdue ? 'movement-card--overdue' : ''
                     }`}
                     aria-label={`${row.bookingNo}, ${row.client}, ${displayTime}`}
+                    style={{ '--row-i': Math.min(rowIndex, 12) } as React.CSSProperties}
                   >
+                    {/* Visual anchor only — the article's label and the dates below carry the same facts for assistive tech. */}
+                    <div className={`movement-card__when${isOverdue ? ' movement-card__when--late' : ''}`} aria-hidden="true">
+                      {isOverdue
+                        ? <><strong>{lateDays ? `${lateDays}d` : 'Late'}</strong><span>{lateDays ? 'late' : 'overdue'}</span></>
+                        : <><strong>{clock}</strong><span>{meridiem}{isTodayRow ? '' : ` · ${shortDay(row.atDayAd)}`}</span></>}
+                    </div>
                     <ClientIntelFromId clientId={row.clientId} name={row.client} context="dashboard" gateContext={intelGate} actionContext={user ? { userId: user.id, role: user.role } : null}>
                     <Link className="movement-card__client-link" to={`/clients/${row.clientId}`}>
                       <span className="movement-card__avatar" aria-hidden="true">
@@ -241,21 +294,26 @@ export default function DashboardMovementPanel({
                     </div>
 
                     <div className="movement-card__status-action">
-                      {side === 'incoming' && (isOverdue || isPartial) && (
-                        <div className="movement-card__badge-wrap">
-                          {isOverdue ? (
-                            <span className="movement-card__status movement-card__status--overdue">
-                              <Icon name="alert_triangle" size={14} />
-                              {row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'}
-                            </span>
-                          ) : (
-                            <span className="movement-card__status movement-card__status--partial">
-                              <Icon name="alert_triangle" size={14} />
-                              Partial return
-                            </span>
-                          )}
-                        </div>
-                      )}
+                      <div className="movement-card__badge-wrap">
+                        {side === 'incoming' && isOverdue && (
+                          <span className="movement-card__status movement-card__status--overdue">
+                            <Icon name="alert_triangle" size={14} />
+                            {row.statusNote ? `Overdue · ${row.statusNote}` : 'Overdue'}
+                          </span>
+                        )}
+                        {side === 'incoming' && !isOverdue && isPartial && (
+                          <span className="movement-card__status movement-card__status--partial">
+                            <Icon name="alert_triangle" size={14} />
+                            Partial return
+                          </span>
+                        )}
+                        {tags.map((tag) => (
+                          <span key={tag.label} className={`movement-card__tag movement-card__tag--${tag.tone}`}>
+                            <Icon name={tag.icon} size={14} />
+                            {tag.label}
+                          </span>
+                        ))}
+                      </div>
                       <button
                         type="button"
                         className={`movement-card__cta-btn ${(side === 'incoming' || isReady) ? 'is-dominant' : 'is-prep'}`}

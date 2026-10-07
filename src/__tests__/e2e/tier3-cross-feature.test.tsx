@@ -229,15 +229,13 @@ describe('Tier 3: Cross-Feature Combinations & Invariants', () => {
 
       // Master dispatch synchronization control bar is rendered
       expect(container.textContent).toContain('Today')
-      expect(container.textContent).toContain('Sync dispatch day:')
-
       const prevDayBtn = container.querySelector('button[aria-label="Previous day"]') as HTMLButtonElement
       const nextDayBtn = container.querySelector('button[aria-label="Next day"]') as HTMLButtonElement
-      const todayBtn = container.querySelector('button[aria-label="Today"]') as HTMLButtonElement
 
       expect(prevDayBtn).not.toBeNull()
       expect(nextDayBtn).not.toBeNull()
-      expect(todayBtn).not.toBeNull()
+      // "Today" is only offered once there is somewhere to come back from.
+      expect(container.querySelector('button[aria-label="Today"]')).toBeNull()
 
       // Both Movement Panels are present in the layout
       expect(container.textContent).toContain('Pickups')
@@ -257,7 +255,9 @@ describe('Tier 3: Cross-Feature Combinations & Invariants', () => {
       expect(container.textContent).toContain('Pickups')
       expect(container.textContent).toContain('Returns')
 
-      // Return to Today using the master Today button
+      // Return to Today using the master Today button, which now exists
+      const todayBtn = container.querySelector('button[aria-label="Today"]') as HTMLButtonElement
+      expect(todayBtn).not.toBeNull()
       await act(async () => {
         todayBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       })
@@ -267,8 +267,9 @@ describe('Tier 3: Cross-Feature Combinations & Invariants', () => {
         })
       }
 
-      // Panels remain synchronized back to today
+      // Panels remain synchronized back to today, and the button goes away again
       expect(container.textContent).toContain('Today')
+      expect(container.querySelector('button[aria-label="Today"]')).toBeNull()
     })
   })
 
