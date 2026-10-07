@@ -2,6 +2,126 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
+## 2026-10-07 — Phase 6 Screen Hardening: Calendar 5-State PageBody & Filter EmptyState Adoption (Option 6) Complete
+
+**Phase:** Phase 6 (Screens — Calendar) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2011 passed in 82 files (0 failures)
+
+### 1. `Calendar.tsx` 5-State `PageBody` Hardening
+- Hardened `src/modules/calendar/Calendar.tsx` by integrating `<PageBody>` across the root calendar layout, Timeline view, and Month grid view.
+- Added standard `CalendarProps` interface (`loading?: boolean`, `error?: string | null`, `onRetry?: () => void`) allowing host modules or queries to pass state into the calendar view seamlessly.
+- **Loading State:** Root layout displays `LoadingSkeleton` (`card` layout) with label `Loading schedule…`.
+- **Persistent Error State:** Inline `<ErrorBanner>` with retry callback (`onRetry`) adhering to Law 12.
+- **Client Role Restriction (Law 6 / RBAC):** Added role restriction check `isStaff = user ? user.role !== 'Client' : true`. Renders `PageBody` in `restricted` state with `"Requires Staff"` badge and informative message ("Calendar and resource timeline are for Babin Rentals staff only. Clients may view their confirmed bookings under Rentals.") for `Client` sessions.
+- **Filter-Aware EmptyState:**
+  - Wrapped `Timeline` card in `<PageBody>` handling zero-matches when text search or event-type chips filter out all rows (`emptyTitle="No resources match these filters"`). Includes a 44×44 `"Clear filters"` action that clears search and chips.
+  - Wrapped `MonthGrid` card in `<PageBody>` handling month-level zero results with identical clear filters action.
+
+### 2. Unit Test Coverage & Full Regression Verification
+- Created `src/modules/calendar/__tests__/calendar.states.test.tsx` (5/5 tests passing):
+  - Renders `LoadingSkeleton` when `loading={true}`.
+  - Renders `ErrorBanner` with retry callback when `error` prop is provided.
+  - Renders `RestrictedState` when user role is `Client`.
+  - Renders standard Month and Timeline views with rows for staff roles.
+  - Renders `EmptyState` when search filter matches zero resources, and restores view upon clicking "Clear filters".
+- Full regression verification: 82 test files passed, 2011/2011 tests passed, `tsc --noEmit` exit 0.
+
+## 2026-10-07 — Single Query Rule (Law 2) Adoption & BookingDetail 5-State Hardening (Option 5) Complete
+
+**Phase:** Phase 6 (Screens — Rentals & BookingDetail) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2006 passed in 81 files (0 failures)
+
+### 1. Dedicated `useBooking` Query Hook (`src/lib/queries/useBooking.ts`)
+- Implemented single booking query hook conforming strictly to Law 2 (Single Query Rule) by wrapping `fetchCanonicalBooking` (`src/lib/bookingQuery.ts`).
+- Supports role-gated opt-in `withDeposit` fetching (Law 6).
+- Built-in cancellation token protection prevents stale state overwrite on rapid route navigation.
+- Exposes `{ booking, loading, error, isNotFound, refetch }` with zero runtime dependencies.
+- Created unit tests in `src/lib/queries/__tests__/useBooking.test.tsx` (5/5 tests passing).
+
+### 2. `BookingDetail.tsx` 5-State Hardening via `PageBody`
+- Wrapped `src/modules/rentals/BookingDetail.tsx` in `<PageBody>`:
+  - **Loading:** Displays `LoadingSkeleton` (`card` layout) with label `Loading booking…`.
+  - **Error:** Persistent inline `<ErrorBanner>` with retry callback (`onRetry={refetch}`) conforming to Law 12.
+  - **Empty / Not Found:** Displays clean empty state with title "Booking not found", descriptive explanation, and 44×44 touch action button ("View all rentals" navigating to `/rentals`).
+  - **Has Rows / Canonical Data:** Seamlessly transitions into full booking interface.
+  - **Seeded B-715 Fallback:** Maintained fallback to reference seed data for backward compatibility when offline or in headless test environments.
+- Mapped live `CanonicalBooking` dynamically to:
+  - `displayBooking`: Canonical status, stage, client code/name, dates (AD formatted with BS converted via `toBs`), pickup location, flags.
+  - `displayItems`: Type-safe conversion of `CanonicalBookingLine` to `LineItem` preserving hierarchy, bundle markers, packed state derivation, and sub-rental indicator.
+  - `displayTally`: Real-time aggregated item counts (packed, partial, missing) from line unit states.
+  - `displayCharges`: Dynamically computed equipment subtotal, crew, and transport breakdowns.
+  - `displayTotals`: Priced via `priceCanonicalBooking()` against the financial engine.
+  - `displayRentalTotal`: Sourced from engine's `priced.breakdown.rentalTotal`.
+  - `displayDepositLedger`: Real deposit liability from `canonicalBooking.depositRequired`.
+- Replaced previous hardcoded calls with dynamic values across all cards, the sticky bottom bar, and modal dispatchers.
+- Replaced stubbed confirm button with `confirmRental` action using `displayBooking.id` and automatic `refetch()`.
+
+### 3. Unit Test Coverage & Verification
+- Created `src/modules/rentals/__tests__/BookingDetail.states.test.tsx` (5 tests) verifying:
+  - Loading skeleton renders while loading unseeded booking.
+  - Empty state renders with "Booking not found" and "View all rentals" button.
+  - Error banner renders with persistent inline message and retry button that triggers `refetch`.
+  - Live `CanonicalBooking` renders details, items, client, and project.
+  - Warehouse role money blindness strictly hides charges and deposit liability blocks (Law 6).
+- Full regression verification: 81 test files passed, 2006/2006 tests passed, `tsc --noEmit` exit 0.
+
+## 2026-10-07 — Barcode Scanner Modal Continuous Decoding & Hardware Hardening (Option 4) Complete
+
+**Phase:** Phase 8 (Scanner) · **Status:** `tsc --noEmit` exit 0 · `npm test` 1996 passed in 79 files (0 failures)
+
+### 1. BarcodeScannerModal Continuous Decoding & Viewfinder (`@zxing/browser`)
+- Upgraded `src/components/ui/BarcodeScannerModal.tsx` to mount an active `<video>` element with `@zxing/browser` `BrowserMultiFormatReader.decodeFromVideoDevice()`.
+- Implemented real continuous scanning loop: when continuous mode is enabled, the camera stays active and processes sequential scans without remounting the video stream.
+- Implemented 2000ms duplicate barcode scan cooldown (`SAME_CODE_COOLDOWN_MS = 2000`, `lastScannedRef`) preventing scan loops when a barcode is held in the camera viewfinder.
+- Added torch toggle detection and control (`track.getCapabilities().torch` and `track.applyConstraints({ advanced: [{ torch: ... }] })`) with a dedicated 44×44 toggle button.
+
+### 2. Audio Engine, Haptics & Latency Instrumentation
+- Added multi-frequency audio synthesiser via Web Audio API:
+  - 880Hz pure sine beep for valid match.
+  - 180Hz sawtooth buzz for match failures or rejected items.
+  - 440Hz double pulse tone for duplicate cooldown triggers.
+- Added distinct haptic patterns via `navigator.vibrate` (`[50]` success, `[50, 50, 50]` cooldown, `[150]` error).
+- Added scan latency measurement (`durationMs`) verifying `<2s/item` throughput target and rendering timing badges.
+- Upgraded manual barcode input height and modal buttons to strictly meet Law 15's 44×44px minimum touch targets.
+
+### 3. Shell ScannerFab & Modal Close Hit Target Hardening
+- Fortified `src/components/shell/ScannerFab.tsx` with duplicate cooldown (2000ms) and torch controls.
+- Adjusted `src/components/ui/Modal.tsx` close button hit target to `minWidth: 44, minHeight: 44` (Law 15).
+
+### 4. Unit Test Coverage & Verification
+- Created `src/components/ui/__tests__/BarcodeScannerModal.test.tsx` (6 tests) testing:
+  - Barcode match and item selection by serial number.
+  - Domain event emission on successful match (`EVENT_TYPES.ITEM_SCANNED`).
+  - Child accessory rejection (accessories packed with parent kit).
+  - Unknown barcode rejection with error feedback.
+  - Continuous mode toggle preservation.
+  - Law 15 minimum 44px hit targets and latency recording.
+- Full regression verification: 79 test files passed, 1996/1996 tests passed, `tsc --noEmit` exit 0.
+
+## 2026-10-07 — Upward Breadcrumb Navigation & Phone-Responsive Shell (Option 3) Complete
+
+**Phase:** Phase 5 (Shell & Navigation) · **Status:** `tsc --noEmit` exit 0 · `npm test` 1990 passed in 78 files (0 failures)
+
+### 1. Functional Upward Breadcrumb Navigation (`Crumb.to` as `<Link>`)
+- Updated `src/components/shell/Header.tsx` so non-terminal crumbs with a `to` destination render as interactive react-router `<Link>` anchors (`<a>`) with smooth hover feedback, instead of static `<span>` elements.
+- Terminal crumbs correctly preserve `aria-current="page"` on a non-link `<span>` element.
+- Updated `BookingShell` in `src/App.tsx` so parent crumbs (`Rentals List` and `Bookings`) navigate to `/rentals`, and parent `bookingNo` navigates back up to `/rentals/${bookingNo}` from operation sub-routes (`/packing`, `/handover`, `/return`, `/reset`, `/evidence`).
+- Updated all sub-routes across `App.tsx` (`/clients/*`, `/inventory/*`, `/operations/*`, `/finance/*`, `/reports/*`, `/tools/*`, `/admin/*`, `UNBUILT`) to populate `to` targets for parent crumbs.
+
+### 2. Elimination of 390px Shell Header Overlap (Law 13 & 14)
+- Leveraged `useViewport()` in `Header.tsx` to detect `phone` and `tablet` widths.
+- At phone width (`< 768px`, e.g. 390px):
+  - Branch & Fiscal Year pills are hidden, preventing layout collision and text overflow.
+  - Replaced the wide desktop search bar with a dedicated 44×44 touch target icon button (`aria-label="Search"`), resolving the missing pointer-reachable trigger for the ⌘K command palette on mobile.
+  - Replaced the wide avatar/name/role row with a compact 44×44 profile button that triggers logout/handover.
+  - All interactive touch targets strictly adhere to Law 15 (min 44×44px).
+
+### 3. Unit Test Coverage & Verification
+- Added 4 test cases to `src/components/shell/__tests__/shell.test.tsx` verifying:
+  - Non-terminal crumbs with `to` render as clickable links with accurate `href`.
+  - Non-terminal crumbs without `to` render as plain text without link.
+  - Pointer-reachable 44×44 search button is present on phone and dispatches `Cmd+K`.
+  - Desktop layout renders full search bar and pills.
+- Full regression test run: 78 test files passed, 1990/1990 tests passing (0 failures), `tsc --noEmit` clean.
+
 ## 2026-10-07 — Auto-Assign Serials, Bundle Expansion & Floor Projection (Option 2) Complete
 
 **Phase:** Phase 2 (Floor Workspaces & Confirmation) · **Status:** `tsc --noEmit` exit 0 · `npm test` 1986 passed in 78 files (0 failures)

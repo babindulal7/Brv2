@@ -4,6 +4,7 @@ import Icon from '../../components/ui/Icon'
 import { useViewport } from '../../lib/device'
 import { formatMoney } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
+import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { CASES, CASE_TYPES, isOpenStatus, outstandingOf } from '../../data/cases'
 import type { Case, CaseType } from '../../data/cases'
 
@@ -43,6 +44,7 @@ function Bar({ label, value, max, tone = 'var(--cat-1)' }: { label: string; valu
 }
 
 export default function CasesReports() {
+  const money = useCanViewMoney()
   /* KpiStrip's clamp, applied to this screen's hand-rolled key-figure grid:
      six cards side by side is unreadable below 1180. */
   const bandCols = useBandColumns()
@@ -71,12 +73,12 @@ export default function CasesReports() {
 
   const kpis: Array<[string, string, string, string]> = [
     ['Total Cases', String(figures.total), 'In the case register', 'var(--cat-1)'],
-    ['Resolved / Closed', String(figures.settled), 'Settled, allocation complete', 'var(--good)'],
-    ['Open', String(figures.open), 'Open, under review, awaiting decision or in progress', 'var(--warn)'],
+    ['Resolved / Closed', String(figures.settled), 'Settled, allocation complete', 'var(--success-text)'],
+    ['Open', String(figures.open), 'Open, under review, awaiting decision or in progress', 'var(--warning-text)'],
     // Rulings §8 — no target resolution date exists on `Case`, so "overdue"
     // cannot be selected for. Saying so beats a plausible 6.
     ['Overdue', NOT_TRACKED, 'No target resolution date is recorded on a case', 'var(--muted)'],
-    ['Total Assessed', formatMoney(figures.assessed), 'Sum of assessed value across all cases', 'var(--danger-text)'],
+    ...(money ? [['Total Assessed', formatMoney(figures.assessed), 'Sum of assessed value across all cases', 'var(--danger-text)'] as [string, string, string, string]] : []),
     ['Avg Resolution Time', NOT_TRACKED, 'Needs a case history spanning the selected period', 'var(--muted)'],
   ]
 
@@ -85,7 +87,7 @@ export default function CasesReports() {
     {/* Law 15 — these were 30px tall; they are real `aria-pressed` toggles. */}
     <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{['This Month', 'Last Month', 'This Quarter', 'This Year', 'Custom Range'].map((x) => <button key={x} onClick={() => setPeriod(x)} aria-pressed={period === x} style={{ minHeight: 44, padding: '0 11px', borderRadius: 'var(--r-sm)', border: `1px solid ${period === x ? 'var(--nav-active-accent)' : 'var(--border)'}`, background: period === x ? 'var(--nav-active-bg)' : 'var(--card)', color: period === x ? 'var(--nav-active-accent)' : 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 'var(--t-meta)' }}>{x}</button>)}</div>
     <div style={{ display: 'flex', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>{['Case Type', 'Severity', 'Status', 'Owner', 'Client Type', 'Date Range'].map((x) => <Button key={x} icon="chevron_down">{x}</Button>)}<Button icon="queues">Clear Filters</Button></div>
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(6)}, minmax(0,1fr))`, gap: 10 }}>{kpis.map(([label, value, note, tone]) => <Card key={label}><div style={{ color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>{label}</div><div className={value === NOT_TRACKED ? undefined : 'figure'} style={{ color: tone, fontSize: value === NOT_TRACKED ? 'var(--t-ui)' : 'var(--t-h2)', fontWeight: 700, marginTop: 6 }}>{value}</div><div style={{ color: 'var(--muted)', fontSize: 'var(--t-meta)', marginTop: 3 }}>{note}</div></Card>)}</div>
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${bandCols(kpis.length)}, minmax(0,1fr))`, gap: 10 }}>{kpis.map(([label, value, note, tone]) => <Card key={label}><div style={{ color: 'var(--text2)', fontSize: 'var(--t-meta)' }}>{label}</div><div className={value === NOT_TRACKED ? undefined : 'figure'} style={{ color: tone, fontSize: value === NOT_TRACKED ? 'var(--t-ui)' : 'var(--t-h2)', fontWeight: 700, marginTop: 6 }}>{value}</div><div style={{ color: 'var(--muted)', fontSize: 'var(--t-meta)', marginTop: 3 }}>{note}</div></Card>)}</div>
     <div style={{ display: 'grid', gridTemplateColumns: railGridColumns, gap: 'var(--sp-md)', alignItems: 'start' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0 }}>
         <div style={{ display: 'grid', gridTemplateColumns: viewport === 'desktop' ? '1.35fr 1fr' : '1fr', gap: 'var(--sp-md)' }}>
@@ -113,7 +115,10 @@ export default function CasesReports() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: viewport === 'tablet' ? 700 : 950 }}>
                 <thead>
                   <tr style={{ background: 'var(--th-bg)' }}>
-                    {['Case ID', 'Type', 'Title', 'Counterparty', 'Status', 'Assessed', 'Outstanding'].map((h) => (
+                    {(money
+                      ? ['Case ID', 'Type', 'Title', 'Counterparty', 'Status', 'Assessed', 'Outstanding']
+                      : ['Case ID', 'Type', 'Title', 'Counterparty', 'Status']
+                    ).map((h) => (
                       <th key={h} style={{ textAlign: 'left', padding: '9px 10px', color: 'var(--text2)', fontSize: 'var(--t-th)', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -132,8 +137,12 @@ export default function CasesReports() {
                         <td style={{ padding: '11px 10px', fontSize: 'var(--t-meta)' }}>{c.title}</td>
                         <td style={{ padding: '11px 10px', fontSize: 'var(--t-meta)' }}>{c.counterpartyName}</td>
                         <td style={{ padding: '11px 10px', fontSize: 'var(--t-meta)', fontWeight: 600 }}>{c.status}</td>
-                        <td className="figure" style={{ padding: '11px 10px', fontSize: 'var(--t-meta)' }}>{formatMoney(c.assessedPaisa)}</td>
-                        <td className="figure" style={{ padding: '11px 10px', fontSize: 'var(--t-meta)', color: outstanding > 0 ? 'var(--danger-text)' : 'var(--text)' }}>{formatMoney(outstanding)}</td>
+                        {money && (
+                          <>
+                            <td className="figure" style={{ padding: '11px 10px', fontSize: 'var(--t-meta)' }}>{formatMoney(c.assessedPaisa)}</td>
+                            <td className="figure" style={{ padding: '11px 10px', fontSize: 'var(--t-meta)', color: outstanding > 0 ? 'var(--danger-text)' : 'var(--text)' }}>{formatMoney(outstanding)}</td>
+                          </>
+                        )}
                       </tr>
                     )
                   })}
@@ -154,10 +163,12 @@ export default function CasesReports() {
                     </div>
                     <div style={{ fontSize: 'var(--t-meta)' }}>{c.title}</div>
                     <div style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{c.counterpartyName}</div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 'var(--t-meta)' }}>
-                      <span className="figure">{formatMoney(c.assessedPaisa)} assessed</span>
-                      <span className="figure" style={{ color: outstanding > 0 ? 'var(--danger-text)' : 'var(--text2)' }}>{formatMoney(outstanding)} outstanding</span>
-                    </div>
+                    {money && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 'var(--t-meta)' }}>
+                        <span className="figure">{formatMoney(c.assessedPaisa)} assessed</span>
+                        <span className="figure" style={{ color: outstanding > 0 ? 'var(--danger-text)' : 'var(--text2)' }}>{formatMoney(outstanding)} outstanding</span>
+                      </div>
+                    )}
                   </article>
                 )
               })}
@@ -173,7 +184,7 @@ export default function CasesReports() {
               { label: 'Resolved / Closed', value: String(figures.settled) },
               { label: 'Open', value: String(figures.open) },
               { label: 'Overdue', value: NOT_TRACKED },
-              { label: 'Total Assessed', value: formatMoney(figures.assessed), tone: 'danger' },
+              ...(money ? [{ label: 'Total Assessed', value: formatMoney(figures.assessed), tone: 'danger' as const }] : []),
             ]}
           />
         </Card>

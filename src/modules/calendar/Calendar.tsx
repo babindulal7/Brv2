@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
 import { Input, Select, EmptyState } from '../../components/ui'
+import { PageBody } from '../../components/ui/PageBody'
 import { Card, PageHeader, Button, FooterNote, cardStyle, Rail } from '../../components/ui/Page'
 import { BRAND } from '../../lib/status'
 import { TODAY, toBs, formatBs, formatAd, eachDay, isWeekend, BS_MONTHS } from '../../lib/bs'
@@ -1332,11 +1333,39 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow;
 
 /* ── screen ────────────────────────────────────────────────────────────── */
 
-export default function Calendar() {
+export interface CalendarProps {
+  loading?: boolean | undefined
+  error?: string | null | undefined
+  onRetry?: (() => void) | undefined
+}
+
+export default function Calendar({
+  loading: propLoading,
+  error: propError,
+  onRetry: propOnRetry,
+}: CalendarProps = {}) {
   const navigate = useNavigate()
   const { user } = useAuth()
   const role: SystemRole = user ? user.role : 'Client'
+  const isStaff = user ? user.role !== 'Client' : true
   const money = canViewMoney(role)
+
+  const [internalLoading, setInternalLoading] = useState(false)
+  const [internalError, setInternalError] = useState<string | null>(null)
+
+  const loading = propLoading ?? internalLoading
+  const error = propError !== undefined ? propError : internalError
+  const handleRetry = useCallback(() => {
+    if (propOnRetry) {
+      propOnRetry()
+      return
+    }
+    setInternalError(null)
+    setInternalLoading(true)
+    setTimeout(() => {
+      setInternalLoading(false)
+    }, 200)
+  }, [propOnRetry])
 
   /* Law 13/14 — width decides, and it is measured once here. No component
      below this line asks what kind of device it is running on. */
@@ -1954,16 +1983,37 @@ export default function Calendar() {
         </span>
         <span style={{ marginLeft: 'auto' }}>{view === 'Timeline' ? zoomControl : <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{view} view · fixed window</span>}</span>
       </div>
-      <Timeline
-        rows={rows}
-        days={days}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        sort={sort}
-        onToggleSort={() => setSort((s) => SORT_NEXT[s])}
-        labelHeading={rowType === 'All' ? 'Resource' : rowType}
-        itemCount={rows.length}
-      />
+      <PageBody
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        hasRows={rows.length > 0}
+        empty={rows.length === 0}
+        emptyIsFiltered={filterActive}
+        onClearFilters={clearAll}
+        emptyTitle={filterActive ? 'No resources match these filters' : 'No resources scheduled'}
+        emptyMessage={
+          filterActive
+            ? 'Clear the search or event type filters to see all resources.'
+            : 'No equipment or crew rows are scheduled for this date range.'
+        }
+        emptyActionLabel="Clear filters"
+        onEmptyAction={clearAll}
+        noun="resources"
+        skeleton="table"
+        skeletonRows={6}
+      >
+        <Timeline
+          rows={rows}
+          days={days}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          sort={sort}
+          onToggleSort={() => setSort((s) => SORT_NEXT[s])}
+          labelHeading={rowType === 'All' ? 'Resource' : rowType}
+          itemCount={rows.length}
+        />
+      </PageBody>
       {markerLegend}
     </Card>
   )
@@ -1974,7 +2024,28 @@ export default function Calendar() {
         <span className="figure" style={{ fontSize: 'var(--t-meta)', fontWeight: 700 }}>{bsRangeLabel(monthDays)}</span>
         <span className="figure" style={{ marginLeft: 'auto', fontSize: 'var(--t-th)', color: 'var(--muted)' }}>{adRangeLabel(monthDays)}</span>
       </div>
-      <MonthGrid anchor={start} jobsOn={jobsOn} viewport={viewport} selectedDay={day} onPickDay={pickDay} />
+      <PageBody
+        loading={loading}
+        error={error}
+        onRetry={handleRetry}
+        hasRows={rows.length > 0}
+        empty={rows.length === 0}
+        emptyIsFiltered={filterActive}
+        onClearFilters={clearAll}
+        emptyTitle={filterActive ? 'No events match these filters' : 'No events scheduled this month'}
+        emptyMessage={
+          filterActive
+            ? 'Clear the search or event type filters to see all booked events.'
+            : 'No bookings or events are scheduled in this BS month.'
+        }
+        emptyActionLabel="Clear filters"
+        onEmptyAction={clearAll}
+        noun="calendar events"
+        skeleton="table"
+        skeletonRows={6}
+      >
+        <MonthGrid anchor={start} jobsOn={jobsOn} viewport={viewport} selectedDay={day} onPickDay={pickDay} />
+      </PageBody>
       {!desktop && (
         <p style={{ margin: 0, padding: '0 var(--sp-md) var(--sp-sm)', fontSize: 'var(--t-th)', color: 'var(--muted)', lineHeight: 1.5 }}>
           Chips truncate to a dot below 1180, and the crew, maintenance and transport layers are desktop-only
@@ -2085,6 +2156,20 @@ export default function Calendar() {
       {dayJobList}
     </DaySheet>
   )
+
+  /* ── restricted state for non-staff ────────────────────────────────── */
+  if (!isStaff) {
+    return (
+      <PageBody
+        restricted={true}
+        restrictedReason="The operational resource calendar is for staff only. To view your bookings, please visit Rentals."
+        restrictedRequiredRole="Staff"
+        noun="calendar"
+      >
+        <div />
+      </PageBody>
+    )
+  }
 
   /* ── full view overlay ──────────────────────────────────────────────── */
 
@@ -2226,7 +2311,15 @@ export default function Calendar() {
   /* ── default view ───────────────────────────────────────────────────── */
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
+    <PageBody
+      loading={loading}
+      error={error}
+      onRetry={handleRetry}
+      hasRows={ROWS.length > 0}
+      noun="calendar"
+      skeleton="card"
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <PageHeader
         icon="calendar"
         title="Calendar"
@@ -2373,7 +2466,8 @@ export default function Calendar() {
       <FooterNote extra={['Bookings are cancelled, never deleted']} />
 
       {dayOverlay}
-    </div>
+      </div>
+    </PageBody>
   )
 }
 

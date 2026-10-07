@@ -127,15 +127,15 @@ const tabStyle = {
  */
 const TAB_FAMILIES: Array<{ label: string; to: string | null; money: boolean }> = [
   { label: 'Dashboard', to: '/reports/pulse', money: false },
-  { label: 'Revenue', to: null, money: true },
+  { label: 'Revenue', to: '/reports/expenses', money: true },
   { label: 'Rentals', to: null, money: false },
   { label: 'Inventory', to: '/reports/inventory', money: false },
   { label: 'Clients', to: '/reports/clients', money: true },
-  { label: 'Operations', to: null, money: false },
+  { label: 'Operations', to: '/reports/working-capital', money: true },
   { label: 'Finance', to: '/reports/cash-flow', money: true },
-  { label: 'Maintenance', to: null, money: false },
-  { label: 'Cases', to: null, money: false },
-  { label: 'Staff', to: null, money: false },
+  { label: 'Maintenance', to: '/reports/equipment-performance', money: false },
+  { label: 'Cases', to: '/reports/cases', money: false },
+  { label: 'Staff', to: '/reports/staff', money: false },
   { label: 'Custom', to: null, money: false },
 ]
 

@@ -1384,6 +1384,12 @@ export default function Inventory() {
   const equipmentActions =
     tab === 'Equipment' ? (
       <>
+        <Button icon="box" onClick={() => navigate('/inventory/warehouses')}>
+          {phone ? '' : 'Warehouses'}
+        </Button>
+        <Button icon="checklist" onClick={() => navigate('/inventory/purchase-requests')}>
+          {phone ? '' : 'Purchase Requests'}
+        </Button>
         <Button icon="refresh" onClick={refreshAll}>
           {phone ? '' : 'Refresh'}
         </Button>

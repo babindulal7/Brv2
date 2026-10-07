@@ -13,6 +13,10 @@ npm-debug.log*
 .vscode/*
 !.vscode/extensions.json
 .idea
+.cursor/
+.opencode/
+.qwen/
+.windsurfrules
 
 # Supabase local stack
 supabase/.temp

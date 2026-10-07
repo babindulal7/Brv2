@@ -58,11 +58,14 @@ export default function ScannerFab() {
   const [continuous, setContinuous] = useState(true)
   const [feedback, setFeedback] = useState<Feedback>(null)
   const [cameraError, setCameraError] = useState<string | null>(null)
+  const [hasTorch, setHasTorch] = useState(false)
+  const [torchOn, setTorchOn] = useState(false)
   
   const panel = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const codeReader = useRef<BrowserMultiFormatReader | null>(null)
+  const lastScannedRef = useRef<{ code: string; time: number } | null>(null)
 
   // 1. Keyboard Wedge Shortcut & Esc/Outside Click
   useEffect(() => {
@@ -91,10 +94,34 @@ export default function ScannerFab() {
     }
   }, [open])
 
+  const toggleTorch = async () => {
+    const stream = videoRef.current?.srcObject as MediaStream | null
+    const track = stream?.getVideoTracks()[0]
+    if (!track) return
+    try {
+      const nextTorch = !torchOn
+      await (track as any).applyConstraints({
+        advanced: [{ torch: nextTorch }],
+      })
+      setTorchOn(nextTorch)
+    } catch (e) {
+      console.warn('Torch toggle failed', e)
+    }
+  }
+
   // 2. Camera Mount/Unmount (ZXing Web Fallback)
   useEffect(() => {
     if (!open) {
-      (codeReader.current as any)?.reset()
+      if (torchOn) {
+        const stream = videoRef.current?.srcObject as MediaStream | null
+        const track = stream?.getVideoTracks()[0]
+        if (track) {
+          try { (track as any).applyConstraints({ advanced: [{ torch: false }] }) } catch {}
+        }
+      }
+      setTorchOn(false)
+      setHasTorch(false)
+      ;(codeReader.current as any)?.reset()
       codeReader.current = null
       setCameraError(null)
       return
@@ -109,20 +136,41 @@ export default function ScannerFab() {
 
     if (videoRef.current) {
       // Decode from default video device
-      codeReader.current.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
-        if (result && isMounted) {
-          handleScan(result.getText())
-        }
-      }).catch(e => {
-        if (isMounted) {
-          console.warn('Scanner init failed', e)
-          setCameraError('Camera unavailable or permission denied. Use manual code entry below.')
-        }
-      })
+      codeReader.current
+        .decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+          if (result && isMounted) {
+            handleScan(result.getText())
+          }
+        })
+        .then(() => {
+          if (isMounted && videoRef.current?.srcObject) {
+            const stream = videoRef.current.srcObject as MediaStream
+            const track = stream.getVideoTracks()[0]
+            if (track && typeof (track as any).getCapabilities === 'function') {
+              const caps = (track as any).getCapabilities()
+              if (caps?.torch) setHasTorch(true)
+            }
+          }
+        })
+        .catch((e) => {
+          if (isMounted) {
+            console.warn('Scanner init failed', e)
+            setCameraError('Camera unavailable or permission denied. Use manual code entry below.')
+          }
+        })
     }
 
     return () => {
       isMounted = false
+      if (torchOn) {
+        const stream = videoRef.current?.srcObject as MediaStream | null
+        const track = stream?.getVideoTracks()[0]
+        if (track) {
+          try { (track as any).applyConstraints({ advanced: [{ torch: false }] }) } catch {}
+        }
+      }
+      setTorchOn(false)
+      setHasTorch(false)
       ;(codeReader.current as any)?.reset()
     }
   }, [open, continuous]) // re-mounts on open
@@ -186,6 +234,16 @@ export default function ScannerFab() {
   const handleScan = (code: string) => {
     const c = code.trim().toUpperCase()
     if (!c) return
+
+    const now = Date.now()
+    if (
+      lastScannedRef.current &&
+      lastScannedRef.current.code === c &&
+      now - lastScannedRef.current.time < 2000
+    ) {
+      return
+    }
+    lastScannedRef.current = { code: c, time: now }
     
     // Simulate real responses (since Engine isn't fully wired)
     if (c.includes('ERR')) fire('wrong-job', `${c} belongs to another job`)
@@ -310,7 +368,33 @@ export default function ScannerFab() {
                 <span>{cameraError}</span>
               </div>
             ) : (
-              <div style={{ position: 'absolute', inset: '15%', border: '1.5px dashed rgba(255,255,255,0.4)', borderRadius: 'var(--r-input)', pointerEvents: 'none' }} />
+              <>
+                <div style={{ position: 'absolute', inset: '15%', border: '1.5px dashed rgba(255,255,255,0.4)', borderRadius: 'var(--r-input)', pointerEvents: 'none' }} />
+                {hasTorch && (
+                  <button
+                    type="button"
+                    onClick={toggleTorch}
+                    aria-label={torchOn ? 'Turn off torch' : 'Turn on torch'}
+                    style={{
+                      position: 'absolute',
+                      top: 6,
+                      right: 6,
+                      minWidth: 44,
+                      minHeight: 44,
+                      borderRadius: 'var(--r-btn)',
+                      border: torchOn ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.4)',
+                      background: torchOn ? '#f59e0b' : 'rgba(0,0,0,0.6)',
+                      color: torchOn ? '#000' : '#fff',
+                      cursor: 'pointer',
+                      display: 'grid',
+                      placeItems: 'center',
+                    }}
+                    title={torchOn ? 'Torch On' : 'Torch Off'}
+                  >
+                    <Icon name="sun" size={17} />
+                  </button>
+                )}
+              </>
             )}
           </div>
 

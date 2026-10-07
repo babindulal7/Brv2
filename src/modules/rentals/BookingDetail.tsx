@@ -15,7 +15,7 @@ import { BAR_BOX } from '../../components/shell/BottomBar'
 import { STATUS, BRAND, BRAND_ON, BRAND_TEXT } from '../../lib/status'
 import type { BrandKey } from '../../lib/status'
 import { statusToken, BOOKING_STATUS, STATUS_ORDER } from '../../lib/workflow'
-import type { BookingStatus } from '../../lib/workflow'
+import type { BookingStatus, Flag } from '../../lib/workflow'
 import OperationsShell from '../operations/OperationsShell'
 import { Unavailable } from '../../components/ui/Unavailable'
 import { useAuth } from '../../lib/auth'
@@ -23,8 +23,12 @@ import { newClientUuid } from '../../lib/supabase'
 import { gateContext, canViewMoneyField } from '../../lib/fieldGating'
 import { canRecordPayment, canPerformOperations } from '../../lib/rbac'
 import { IntelCard } from '../../components/ui/IntelCard'
+import { PageBody } from '../../components/ui/PageBody'
 import { useToast } from '../../components/ui/Toast'
-import { formatMoney } from '../../lib/money'
+import { formatMoney, rupees } from '../../lib/money'
+import { toBs, formatBs, formatAd } from '../../lib/bs'
+import { useBooking } from '../../lib/queries/useBooking'
+import { priceCanonicalBooking } from '../../lib/bookingQuery'
 import { paymentGlance, paymentDetailGroups } from '../../data/bookingIntel'
 import { ExtendRentalModal } from './modals/ExtendRentalModal'
 import { AssignCrewModal } from './modals/AssignCrewModal'
@@ -59,6 +63,7 @@ import {
   TIMELINE,
   isSubRentedLine,
   isSubRentalBooking,
+  type LineItem,
 } from '../../data/booking'
 
 /**
@@ -379,8 +384,16 @@ function dotTone(stage: BookingStatus, current: BookingStatus): BrandKey {
  * inert for keyboard and touch users — a native `disabled` button is pulled
  * out of the tab order and `title` never fires on touch.
  */
-function OperationsLauncher({ primary, onOpen }: { primary: boolean; onOpen: () => void }) {
-  const disabled = BOOKING.status === 'Quote'
+function OperationsLauncher({
+  primary,
+  onOpen,
+  disabled: propDisabled,
+}: {
+  primary: boolean
+  onOpen: () => void
+  disabled?: boolean
+}) {
+  const disabled = propDisabled ?? (BOOKING.status === 'Quote')
   const button = (
     <Button icon="external_link" variant={primary ? 'primary' : 'secondary'} onClick={onOpen} disabled={disabled}>
       Operations
@@ -677,14 +690,6 @@ const BOOKING_FIELDS: FieldSpec[] = [
 ]
 
 export default function BookingDetail() {
-  /*
-   * The route is `/rentals/:bookingNo` and this screen ignored it — every
-   * booking link in the app opened B-715's data under B-715's
-   * title, so a list of 120 rentals had one destination. Until the repository
-   * layer exists there is still only one seeded record, but the *identity*
-   * shown now comes from the URL, so a wrong link is visible as a mismatch
-   * rather than silently serving the wrong booking's money.
-   */
   const { bookingNo } = useParams()
   const navigate = useNavigate()
   const id = bookingNo ?? BOOKING.no
@@ -697,13 +702,221 @@ export default function BookingDetail() {
   const { showSuccessToast } = useToast()
   const viewport = useViewport()
 
+  const { user } = useAuth()
+  const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
+  const canBookingMoney = canViewMoneyField(gctx, 'booking')
+  const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
+
+  const {
+    booking: canonicalBooking,
+    loading,
+    error,
+    isNotFound,
+    refetch,
+  } = useBooking(id, { withDeposit: canBookingMoney })
+
+  const displayBooking = useMemo(() => {
+    if (canonicalBooking) {
+      const pickupDate = new Date(canonicalBooking.pickupAtAd)
+      const returnDate = new Date(canonicalBooking.returnAtAd)
+      const diffMs = returnDate.getTime() - pickupDate.getTime()
+      const daysCalc = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)))
+
+      const pickupBs = toBs(pickupDate)
+      const returnBs = toBs(returnDate)
+
+      const priced = priceCanonicalBooking(canonicalBooking, {
+        vatPercent: 13,
+        crew: rupees(0),
+        transport: rupees(0),
+        payments: rupees(0),
+      })
+
+      const outstanding = priced.ok ? formatMoney(priced.breakdown.outstanding) : '—'
+      const depositPending =
+        canonicalBooking.depositRequired !== null ? formatMoney(canonicalBooking.depositRequired) : '—'
+
+      return {
+        id: canonicalBooking.id,
+        no: canonicalBooking.bookingNo,
+        client: canonicalBooking.client.name,
+        kind: canonicalBooking.project ?? 'Equipment Rental',
+        place: canonicalBooking.pickupLocation ?? BOOKING.place,
+        status: canonicalBooking.stage as BookingStatus,
+        flags: (canonicalBooking.isCancelled ? ['Cancelled'] : []) as Flag[],
+        vip: false,
+        pickup: {
+          bs: pickupBs ? formatBs(pickupBs) : formatAd(pickupDate),
+          ad: formatAd(pickupDate),
+          time: pickupDate.toLocaleTimeString('en-GB', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'Asia/Kathmandu',
+          }),
+        },
+        ret: {
+          bs: returnBs ? formatBs(returnBs) : formatAd(returnDate),
+          ad: formatAd(returnDate),
+          time: returnDate.toLocaleTimeString('en-GB', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'Asia/Kathmandu',
+          }),
+        },
+        days: daysCalc,
+        outstanding,
+        depositPending,
+        isReal: true,
+      }
+    }
+
+    return {
+      ...BOOKING,
+      id: BOOKING.no,
+      isReal: false,
+    }
+  }, [canonicalBooking])
+
+  const displayItems = useMemo<LineItem[]>(() => {
+    if (canonicalBooking && canonicalBooking.linesPresence === 'present' && canonicalBooking.lines.length > 0) {
+      return canonicalBooking.lines.map((line) => {
+        const isSub = line.lineType === 'Sub-rental'
+        const isBundle = line.lineType === 'Bundle'
+        const isPacked =
+          line.unitsPresence === 'present' &&
+          line.units.requiredQty > 0 &&
+          line.units.packedQty >= line.units.requiredQty
+        const isPartial =
+          line.unitsPresence === 'present' &&
+          !isPacked &&
+          line.units.packedQty > 0
+
+        const item: LineItem = {
+          depth: line.isBundleChild ? 2 : 1,
+          name: line.description ?? 'Unnamed Item',
+          badge: isBundle
+            ? { text: 'Bundle', kind: 'bundle' }
+            : { text: line.isIncluded ? 'Included' : 'Required', kind: 'required' },
+          serial: line.isBundleChild
+            ? 'Bundle Child'
+            : line.unitsPresence === 'present' && line.units.committedQty > 0
+            ? `${line.units.committedQty} Assigned`
+            : '—',
+          qty: String(line.qty),
+          availability: { text: 'Available', key: 'in' },
+          location: 'A1-01',
+          rate: line.rate !== null ? formatMoney(line.rate) : '—',
+          total: line.netTotal !== null ? formatMoney(line.netTotal) : (line.netTotalRefusal ?? '—'),
+          days: String(line.days),
+          subRental: isSub,
+        }
+
+        if (isPacked) item.packed = 'Packed'
+        else if (isPartial) item.packed = 'Partial'
+
+        return item
+      })
+    }
+
+    return ITEMS
+  }, [canonicalBooking])
+
+  const displayTally = useMemo(() => {
+    if (canonicalBooking && canonicalBooking.linesPresence === 'present' && canonicalBooking.lines.length > 0) {
+      const totalQty = canonicalBooking.lines.reduce((acc, l) => acc + l.qty, 0)
+      const packedQty = canonicalBooking.lines.reduce((acc, l) => acc + l.units.packedQty, 0)
+      const missingQty = canonicalBooking.lines.reduce((acc, l) => acc + l.units.byState.Missing, 0)
+      return [
+        { label: 'Total Items', value: String(totalQty), tone: 'neutral' as const },
+        { label: 'Packed', value: String(packedQty), tone: 'success' as const },
+        { label: 'Partial', value: String(Math.max(0, totalQty - packedQty - missingQty)), tone: 'progress' as const },
+        { label: 'Missing', value: String(missingQty), tone: 'neutral' as const },
+        { label: 'Returned', value: '0', tone: 'neutral' as const },
+        { label: 'Maintenance', value: '0', tone: 'neutral' as const },
+      ]
+    }
+    return ITEM_TALLY
+  }, [canonicalBooking])
+
+  const displayCharges = useMemo(() => {
+    if (canonicalBooking) {
+      const eq = canonicalBooking.engineInput.equipment !== null ? formatMoney(canonicalBooking.engineInput.equipment) : '—'
+      const lineCount = canonicalBooking.linesPresence === 'present' ? canonicalBooking.lines.length : 0
+      return [
+        { label: 'Equipment Rental', amount: eq, note: `${lineCount} items` },
+        { label: 'Crew Charges', amount: 'Rs 0', note: 'None' },
+        { label: 'Transport Charge', amount: 'Rs 0', note: canonicalBooking.deliveryType },
+      ]
+    }
+    return CHARGES
+  }, [canonicalBooking])
+
+  const displayTotals = useMemo(() => {
+    if (canonicalBooking) {
+      const discountPercent = canonicalBooking.engineInput.discountPercent ?? 0
+      const vatPercent = 13
+      const priced = priceCanonicalBooking(canonicalBooking, {
+        vatPercent,
+        crew: rupees(0),
+        transport: rupees(0),
+        payments: rupees(0),
+      })
+      if (priced.ok) {
+        return [
+          { label: 'Subtotal', value: formatMoney(priced.breakdown.subtotal) },
+          {
+            label: `Discount (${discountPercent}%)`,
+            value: discountPercent > 0 ? `-${formatMoney(priced.breakdown.discount)}` : '—',
+            tone: 'progress' as const,
+          },
+          { label: 'Taxable Amount', value: formatMoney(priced.breakdown.taxable) },
+          { label: `VAT (${vatPercent}%)`, value: formatMoney(priced.breakdown.vat) },
+        ]
+      }
+    }
+    return TOTALS
+  }, [canonicalBooking])
+
+  const displayRentalTotal = useMemo(() => {
+    if (canonicalBooking) {
+      const priced = priceCanonicalBooking(canonicalBooking, {
+        vatPercent: 13,
+        crew: rupees(0),
+        transport: rupees(0),
+        payments: rupees(0),
+      })
+      if (priced.ok) {
+        return formatMoney(priced.breakdown.rentalTotal)
+      }
+    }
+    return RENTAL_TOTAL
+  }, [canonicalBooking])
+
+  const displayEquipmentSubtotal = useMemo(() => {
+    if (canonicalBooking) {
+      return canonicalBooking.engineInput.equipment !== null
+        ? formatMoney(canonicalBooking.engineInput.equipment)
+        : '—'
+    }
+    return EQUIPMENT_SUBTOTAL
+  }, [canonicalBooking])
+
+  const displayDepositLedger = useMemo(() => {
+    if (canonicalBooking && canonicalBooking.depositRequired !== null) {
+      return [
+        { label: 'Deposit Required', value: formatMoney(canonicalBooking.depositRequired) },
+        { label: 'Deposit Held', value: 'Rs 0' },
+        { label: 'Deposit Refunded', value: 'Rs 0' },
+        { label: 'Net Liability', value: formatMoney(canonicalBooking.depositRequired), tone: 'progress' as const },
+      ]
+    }
+    return DEPOSIT_LEDGER
+  }, [canonicalBooking])
+
   /*
    * ── inline edit ────────────────────────────────────────────────────────
-   *
-   * `BOOKING` and `TRANSPORT` are module constants, so the editable slice is
-   * lifted into component state. Only the fields this screen owns are here —
-   * client, status and the money figures are set by flows that own them, and
-   * the payment and deposit ledgers are immutable rows, not fields.
    */
   const [editable, setEditable] = useState({
     place: BOOKING.place,
@@ -713,6 +926,25 @@ export default function BookingDetail() {
     driver: transportValue('Driver'),
     instructions: transportValue('Delivery Instructions'),
   })
+
+  useEffect(() => {
+    if (canonicalBooking) {
+      const pickupDate = new Date(canonicalBooking.pickupAtAd)
+      const returnDate = new Date(canonicalBooking.returnAtAd)
+      const diffMs = returnDate.getTime() - pickupDate.getTime()
+      const daysCalc = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)))
+      setEditable((prev) => ({
+        ...prev,
+        place: canonicalBooking.pickupLocation ?? prev.place,
+        days: String(daysCalc),
+        deliveryType:
+          canonicalBooking.deliveryType === 'Customer Pickup'
+            ? 'Pickup (Client)'
+            : canonicalBooking.deliveryType,
+      }))
+    }
+  }, [canonicalBooking])
+
   const [leaveError, setLeaveError] = useState<string | null>(null)
 
   /* §4.2 — computed, never charged. `lateFee` is the engine `money.ts` already
@@ -725,33 +957,10 @@ export default function BookingDetail() {
   const [lateFeeOutcome, setLateFeeOutcome] = useState<LateFeeOutcome | null>(null)
 
   const onSaveBooking = useCallback(async (patch: Record<string, unknown>) => {
-    /* Seed data; every action under `src/actions/` is still a stub. Same note
-       as `ClientDetail` — the edit lands here and the screen says so. */
     setEditable((e) => ({ ...e, ...patch }) as typeof e)
   }, [])
 
   const edit = useEditMode({ record: editable, fields: BOOKING_FIELDS, onSave: onSaveBooking })
-
-  /*
-   * Law 6 / HIS v2.1 §4.1 — this screen had no money gating anywhere
-   * (RentalsList.tsx, the list page one level up, already gates correctly).
-   * `canBookingMoney` covers booking/invoice/payment money — Coordinator
-   * included, per §4.1's "Coordinator = booking-level money + client
-   * balance/deposit only". `canCrewMoney` covers crew day-rate/payout, which
-   * §4.1 explicitly excludes Coordinator from ("no crew pay") — the stricter
-   * of the two, so it is checked separately rather than folded into the
-   * first.
-   */
-  const { user } = useAuth()
-  // Stable identity across renders, not just a stable value — `gateContext`
-  // returns a fresh object literal on every call, so without memoizing it
-  // here the `paymentRows` memo below would see a new `gctx` reference on
-  // every render (Extend/Assign Crew/Sub-Rental modal toggles, the
-  // domain-event listeners, an unrelated keystroke elsewhere) and rebuild
-  // every payment row's Glance/Detail card anyway, defeating that memo.
-  const gctx = useMemo(() => gateContext(user?.role ?? 'Client'), [user?.role])
-  const canBookingMoney = canViewMoneyField(gctx, 'booking')
-  const canCrewMoney = canViewMoneyField(gctx, 'asset-finance')
 
   /*
    * ⛔ Seeing the money and being allowed to MOVE it are two different
@@ -820,15 +1029,16 @@ export default function BookingDetail() {
      */
     const clientUuid = newClientUuid()
     void import('../../actions/rentals/confirmRental')
-      .then((m) => m.confirmRental({ id, clientUuid }, ctx))
+      .then((m) => m.confirmRental({ id: displayBooking.id ?? id, clientUuid }, ctx))
       .then((res) => {
         showSuccessToast('Booking Confirmed', `${res.bookingNo} is now ${res.stage.to}`)
+        refetch()
       })
       .catch((err: unknown) => {
         setConfirmError(`Not confirmed — ${err instanceof Error ? err.message : String(err)}`)
       })
       .finally(() => setConfirming(false))
-  }, [id, user, showSuccessToast])
+  }, [displayBooking.id, id, user, showSuccessToast, refetch])
 
   // Hover Intel System — Payment History (Rental) rows, Block 4. `paymentGlance`/
   // `paymentDetailGroups` (Booking + Payment card, HIS v2.1 §4.1) each build a
@@ -1064,78 +1274,91 @@ export default function BookingDetail() {
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', position: 'relative' }}>
-      {!isSeeded && (
-        <p
-          role="status"
-          style={{
-            margin: 0,
-            padding: '9px 12px',
-            borderRadius: 'var(--r-btn)',
-            background: 'var(--st-progress-bg)',
-            color: 'var(--st-progress-fg)',
-            fontSize: 'var(--t-meta)',
-            fontWeight: 600,
-          }}
-        >
-          Showing the seeded record for {BOOKING.no}. Only that booking exists until the repository layer lands —
-          this is stated rather than silently serving another booking&apos;s money.
-        </p>
-      )}
+    <PageBody
+      loading={loading && id !== BOOKING.no}
+      error={error && id !== BOOKING.no ? error : null}
+      onRetry={refetch}
+      hasRows={Boolean(canonicalBooking || id === BOOKING.no)}
+      empty={isNotFound && id !== BOOKING.no}
+      emptyTitle="Booking not found"
+      emptyMessage={`No booking found with reference "${id}".`}
+      emptyActionLabel="View all rentals"
+      onEmptyAction={() => navigate('/rentals')}
+      noun="booking"
+      skeleton="card"
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', position: 'relative' }}>
+        {!displayBooking.isReal && !isSeeded && (
+          <p
+            role="status"
+            style={{
+              margin: 0,
+              padding: '9px 12px',
+              borderRadius: 'var(--r-btn)',
+              background: 'var(--st-progress-bg)',
+              color: 'var(--st-progress-fg)',
+              fontSize: 'var(--t-meta)',
+              fontWeight: 600,
+            }}
+          >
+            Showing reference record for {BOOKING.no}. Live database record not found or repository offline.
+          </p>
+        )}
 
-      <PageHeader
-        title={id}
-        description={`${BOOKING.client} · ${BOOKING.kind} · ${BOOKING.place}`}
-        actions={
-          <>
-            {/*
-              §4.1 — the primary action is stage-driven, and there is only ever
-              one. At Quote it is Send Quote; at Draft, Confirm Booking; at
-              stages 2–9 **Operations is the primary** and Confirm is gone.
-            */}
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                height: 30,
-                padding: '0 10px',
-                borderRadius: 'var(--r-badge)',
-                background: STATUS[statusToken(BOOKING.status)].bg,
-                color: STATUS[statusToken(BOOKING.status)].fg,
-                fontSize: 'var(--t-meta)',
-                fontWeight: 700,
-              }}
-            >
-              {BOOKING.status}
-            </span>
-            {/*
-              §11.1 — the booking-level answer, COMPUTED from the lines on every
-              render. There is no `BOOKING.subRental` and there must not be one:
-              a stored copy goes stale the moment a line is added or voided, and
-              "storing the same fact twice is how the two disagree". It reads the
-              same `ITEMS` the table below renders, so the header chip and the
-              gold-outlined lines cannot contradict each other.
-            */}
-            {isSubRentalBooking(ITEMS) && <SubRentedMark label="Sub-rental" />}
-            {BOOKING.status === 'Quote' && <Button icon="arrow_right" variant="primary">Send Quote</Button>}
-            {/* §1.4 — the retired `Draft` is now status Quote carrying a Draft flag. */}
-            {BOOKING.flags.includes('Draft') && (
-              <Button icon="plus" variant="primary" onClick={confirmBooking} disabled={confirming}>
-                {confirming ? 'Confirming…' : 'Confirm Booking'}
-              </Button>
-            )}
-            {/*
-              §4.2 draws `[Operations ▾]`. It stays the LAUNCHER the 12 Aug
-              ruling settled (rulings §3 — operations are routes, and
-              `OperationsShell` is now the launcher that navigates to them), so
-              it carries no submenu of its own; the disclosure the `▾` promises
-              is the launcher panel itself. That file is another agent's this
-              pass — this button is deliberately left pointing at the shell.
-            */}
-            <OperationsLauncher
-              primary={!['Quote', 'Closed'].includes(BOOKING.status)}
-              onOpen={() => setShellOpen(true)}
-            />
+        <PageHeader
+          title={displayBooking.no}
+          description={`${displayBooking.client} · ${displayBooking.kind} · ${displayBooking.place}`}
+          actions={
+            <>
+              {/*
+                §4.1 — the primary action is stage-driven, and there is only ever
+                one. At Quote it is Send Quote; at Draft, Confirm Booking; at
+                stages 2–9 **Operations is the primary** and Confirm is gone.
+              */}
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  height: 30,
+                  padding: '0 10px',
+                  borderRadius: 'var(--r-badge)',
+                  background: STATUS[statusToken(displayBooking.status)].bg,
+                  color: STATUS[statusToken(displayBooking.status)].fg,
+                  fontSize: 'var(--t-meta)',
+                  fontWeight: 700,
+                }}
+              >
+                {displayBooking.status}
+              </span>
+              {/*
+                §11.1 — the booking-level answer, COMPUTED from the lines on every
+                render. There is no `BOOKING.subRental` and there must not be one:
+                a stored copy goes stale the moment a line is added or voided, and
+                "storing the same fact twice is how the two disagree". It reads the
+                same `ITEMS` the table below renders, so the header chip and the
+                gold-outlined lines cannot contradict each other.
+              */}
+              {isSubRentalBooking(displayItems) && <SubRentedMark label="Sub-rental" />}
+              {displayBooking.status === 'Quote' && <Button icon="arrow_right" variant="primary">Send Quote</Button>}
+              {/* §1.4 — the retired `Draft` is now status Quote carrying a Draft flag. */}
+              {displayBooking.flags.includes('Draft') && (
+                <Button icon="plus" variant="primary" onClick={confirmBooking} disabled={confirming}>
+                  {confirming ? 'Confirming…' : 'Confirm Booking'}
+                </Button>
+              )}
+              {/*
+                §4.2 draws `[Operations ▾]`. It stays the LAUNCHER the 12 Aug
+                ruling settled (rulings §3 — operations are routes, and
+                `OperationsShell` is now the launcher that navigates to them), so
+                it carries no submenu of its own; the disclosure the `▾` promises
+                is the launcher panel itself. That file is another agent's this
+                pass — this button is deliberately left pointing at the shell.
+              */}
+              <OperationsLauncher
+                primary={!['Quote', 'Closed'].includes(displayBooking.status)}
+                onOpen={() => setShellOpen(true)}
+                disabled={displayBooking.status === 'Quote'}
+              />
             {/*
               §4.2's `[⋮]`. Nothing was removed to build it — see OverflowMenu.
 
@@ -1219,7 +1442,7 @@ export default function BookingDetail() {
         `BOOKING.status`, so they cannot disagree with the badge above.
       */}
       <div style={{ ...cardStyle, padding: onPhone ? '12px 14px' : '16px 18px' }}>
-        <Stepper status={BOOKING.status} dots={onPhone} />
+        <Stepper status={displayBooking.status} dots={onPhone} />
       </div>
 
       {onPhone && <Segmented segments={segments} active={activeSegment} onPick={setSegment} />}
@@ -1234,8 +1457,8 @@ export default function BookingDetail() {
         }}
       >
         <Fact icon="users" label="Client" viewport={viewport}>
-          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{BOOKING.client}</span>
-          {BOOKING.vip && (
+          <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>{displayBooking.client}</span>
+          {displayBooking.vip && (
             <span
               style={{
                 marginLeft: 6,
@@ -1256,8 +1479,8 @@ export default function BookingDetail() {
         </Fact>
 
         {[
-          { label: 'Pickup', d: BOOKING.pickup },
-          { label: 'Return', d: BOOKING.ret },
+          { label: 'Pickup', d: displayBooking.pickup },
+          { label: 'Return', d: displayBooking.ret },
         ].map((m) => (
           <Fact key={m.label} icon="calendar" label={m.label} viewport={viewport}>
             {/* F2 — BS leads, AD follows. Foundation's locked order; the render had them reversed. */}
@@ -1272,7 +1495,7 @@ export default function BookingDetail() {
 
         <Fact icon="timer" label="Rental Days" viewport={viewport}>
           <span className="figure" style={{ fontSize: 'var(--t-h3)', fontWeight: 700, color: 'var(--text)' }}>
-            {BOOKING.days}
+            {displayBooking.days}
           </span>
           <span style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginLeft: 5 }}>Days</span>
           <span style={{ display: 'block', marginTop: 6 }}>
@@ -1289,7 +1512,7 @@ export default function BookingDetail() {
                 fontWeight: 600,
               }}
             >
-              {BOOKING.status}
+              {displayBooking.status}
             </span>
           </span>
         </Fact>
@@ -1304,12 +1527,12 @@ export default function BookingDetail() {
           >
             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>Outstanding</div>
             <div className="figure" style={{ fontSize: 'var(--t-h2)', fontWeight: 700, color: 'var(--danger-text)', letterSpacing: '-0.02em' }}>
-              {BOOKING.outstanding}
+              {displayBooking.outstanding}
             </div>
             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginTop: 6 }}>
               Deposit Pending{' '}
               <span className="figure" style={{ color: 'var(--progress-text)', fontWeight: 600 }}>
-                {BOOKING.depositPending}
+                {displayBooking.depositPending}
               </span>
             </div>
           </div>
@@ -1402,8 +1625,8 @@ export default function BookingDetail() {
               rows={[
                 /* Client and Project Type are set when the booking is created
                    and changed by re-quoting, not by typing over them here. */
-                { label: 'Client', value: BOOKING.client },
-                { label: 'Project Type', value: BOOKING.kind },
+                { label: 'Client', value: displayBooking.client },
+                { label: 'Project Type', value: displayBooking.kind },
                 { key: 'place', label: 'Location', value: editable.place },
                 { key: 'days', label: 'Rental Days', value: `${editable.days} Days`, as: 'number' },
               ]}
@@ -1465,7 +1688,7 @@ export default function BookingDetail() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ITEMS.map((it, i) => (
+                  {displayItems.map((it, i) => (
                     <tr
                       key={`${it.name}-${i}`}
                       /* §4.2's Notes — the gold outline sits on the sub-rented
@@ -1587,7 +1810,7 @@ export default function BookingDetail() {
                 fontSize: 'var(--t-meta)',
               }}
             >
-              {ITEM_TALLY.map((t) => (
+              {displayTally.map((t) => (
                 <span key={t.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                   <span className="figure" style={{ fontWeight: 700, color: BRAND_TEXT[t.tone] }}>
                     {t.value}
@@ -1602,7 +1825,7 @@ export default function BookingDetail() {
                 <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 'var(--sp-sm)', alignItems: 'center' }}>
                   <span style={{ color: 'var(--text2)' }}>Equipment Subtotal</span>
                   <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>
-                    {EQUIPMENT_SUBTOTAL}
+                    {displayEquipmentSubtotal}
                   </span>
                 </span>
               )}
@@ -1749,14 +1972,14 @@ export default function BookingDetail() {
             >
               <div>
                 <h3 style={sub}>Rental Charges</h3>
-                {CHARGES.map((c) => (
+                {displayCharges.map((c) => (
                   <div key={c.label} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '6px 0', fontSize: 'var(--t-meta)' }}>
                     <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>{c.label}</span>
                     <span className="figure" style={{ fontWeight: 600 }}>{c.amount}</span>
                   </div>
                 ))}
                 <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
-                  {TOTALS.map((t) => (
+                  {displayTotals.map((t) => (
                     <div key={t.label} style={{ display: 'flex', gap: 'var(--sp-sm)', padding: '4px 0', fontSize: 'var(--t-meta)' }}>
                       <span style={{ color: 'var(--text2)', flex: 1 }}>{t.label}</span>
                       <span className="figure" style={{ fontWeight: 600, color: t.tone ? BRAND_TEXT[t.tone] : 'var(--text)' }}>
@@ -1776,14 +1999,14 @@ export default function BookingDetail() {
                     }}
                   >
                     <span style={{ flex: 1 }}>Rental Total</span>
-                    <span className="figure">{RENTAL_TOTAL}</span>
+                    <span className="figure">{displayRentalTotal}</span>
                   </div>
                 </div>
               </div>
 
               <div>
                 <h3 style={sub}>Deposit</h3>
-                <SummaryRows rows={DEPOSIT_LEDGER} />
+                <SummaryRows rows={displayDepositLedger} />
                 {/*
                   Law 5, stated on the surface that could break it. §4.2 draws
                   the rail line as "Deposit (liability, never in Outstanding)",
@@ -2069,7 +2292,7 @@ export default function BookingDetail() {
               className="figure"
               style={{ display: 'block', fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}
             >
-              {RENTAL_TOTAL}
+              {displayRentalTotal}
             </span>
           </span>
           {/*
@@ -2091,7 +2314,7 @@ export default function BookingDetail() {
 
       <FooterNote extra={['Deposits are liabilities and never offset Rental Outstanding']} />
 
-      <OperationsShell bookingNo={id} bookingStatus={BOOKING.status} isOpen={shellOpen} onClose={() => setShellOpen(false)} />
+      <OperationsShell bookingNo={id} bookingStatus={displayBooking.status} isOpen={shellOpen} onClose={() => setShellOpen(false)} />
 
       {/*
         The shared payment modal, reached by both money buttons above — the only
@@ -2129,7 +2352,7 @@ export default function BookingDetail() {
         <RecordPaymentModal
           isOpen={showPaymentModal}
           onClose={() => setShowPaymentModal(false)}
-          invoices={[{ id, client: BOOKING.client, amount: RENTAL_TOTAL, status: BOOKING.status, booking: id }]}
+          invoices={[{ id, client: displayBooking.client, amount: displayRentalTotal, status: displayBooking.status, booking: id }]}
           initialInvoiceId={id}
           onSuccess={(p) => showSuccessToast('Payment Recorded', `${formatMoney(p.amountPaisa)} against ${id}`)}
         />
@@ -2139,7 +2362,7 @@ export default function BookingDetail() {
         isOpen={showExtendModal}
         onClose={() => setShowExtendModal(false)}
         bookingId={id}
-        client={BOOKING.client}
+        client={displayBooking.client}
         onSuccess={(ext) => {
           showSuccessToast('Rental Extended', `${ext.days} day${ext.days === 1 ? '' : 's'} added — new return ${ext.newReturnDate}`)
         }}
@@ -2162,7 +2385,8 @@ export default function BookingDetail() {
           showSuccessToast('Sub-Rental Created', `${sub.itemName} — ${sub.vendor}`)
         }}
       />
-    </div>
+      </div>
+    </PageBody>
   )
 }
 

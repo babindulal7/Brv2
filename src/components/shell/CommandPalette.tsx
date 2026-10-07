@@ -98,6 +98,22 @@ export const CommandPalette: React.FC = () => {
       onSelect: () => navigate('/inventory'),
     },
     {
+      id: 'nav-warehouses',
+      title: 'Warehouses',
+      subtitle: 'Depots, zones, bin locations, and stock distribution',
+      category: 'Navigation',
+      icon: <IconPackage className="w-4 h-4" />,
+      onSelect: () => navigate('/inventory/warehouses'),
+    },
+    {
+      id: 'nav-purchase-requests',
+      title: 'Purchase Requests',
+      subtitle: 'Procurement requests, approvals, and supplier orders',
+      category: 'Navigation',
+      icon: <IconReceipt className="w-4 h-4" />,
+      onSelect: () => navigate('/inventory/purchase-requests'),
+    },
+    {
       id: 'nav-clients',
       title: 'Clients & CRM',
       subtitle: 'Client directory, credit limits, and document registry',

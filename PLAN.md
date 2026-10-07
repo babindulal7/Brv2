@@ -350,22 +350,20 @@ reading — it needs the actual desaturation check.
       → Sidebar, header and the collapsible/persisted rail all exist. **Gap: there is no status
       bar** — and building one needs a product decision on its contents (connection/sync state?
       branch? fiscal year?).
-- [~] Breadcrumbs, **no Back buttons**
-      → The no-Back-buttons half holds. **Gap: `Crumb.to` is never rendered as a `<Link>`**, so
-      the breadcrumb is decoration, not the upward-navigation mechanism the law intends it to be.
-- [~] ⌘K palette · scanner FAB at every width
-      → Both exist and the FAB is present at every width. **Gap: at phone width the palette has
-      no pointer-reachable trigger** — the header search button is lost to the layout, leaving
-      only the keyboard shortcut, which a phone does not have.
+- [x] Breadcrumbs, **no Back buttons**
+      → Both hold. `Crumb.to` is rendered as an interactive `<Link>` (closed 7 Oct 2026),
+      providing functional upward navigation across the shell and operational workspaces.
+- [x] ⌘K palette · scanner FAB at every width
+      → Both exist and the FAB is present at every width. Phone width provides a
+      pointer-reachable 44×44 search trigger button that dispatches ⌘K (closed 7 Oct 2026).
 - [~] Responsive: 390 / 834 / 1180 / 1920
-      → `useViewport()` and the 768/1180 breakpoints are real and correct (Law 14). **Gap: ~59
-      screens never call it** — they are fluid rather than deliberately responsive — and **the
-      shell header overlaps itself at 390**, which alone blocks this item.
+      → `useViewport()` and the 768/1180 breakpoints are real and correct (Law 14). The
+      shell header 390px overlap is eliminated (closed 7 Oct 2026). Remaining gap: screens
+      that are fluid rather than deliberately responsive.
 
 **Gate:** identical layout at identical widths; no platform branch anywhere.
-**Gate verdict — ❌ FAILS on the first half, ✅ passes on the second.** No platform branch exists
-in any layout component (Law 13 holds). But the 390 header overlap means layout is not correct
-at one of the four named widths.
+**Gate verdict — ✅ passes.** No platform branch exists in any layout component (Law 13 holds),
+and the 390 shell header overlap is resolved without layout drift.
 
 ---
 
@@ -387,8 +385,8 @@ groups exist and are routed. **Not one of them draws its five states.** Audited 
   Booking, Inventory, Clients (8 screens), Calendar, Finance, and all four operational
   workspaces. Restricted is content-omission rather than a drawn state; Offline is inherited
   from the shell rather than drawn per module.
-- `Calendar` draws **none** of the five.
-- `BookingDetail` uses **6 `alert()` calls** where Law 12 requires inline persistent errors.
+- `Calendar` hardened: wrapped in `PageBody` with all 5 states (Loading with skeleton, Error with persistent banner & retry, Filter-aware Empty with Clear filters action, Has Rows, Restricted for non-staff Client role) across Month & Timeline views (closed 7 Oct 2026).
+- `BookingDetail` hardened: wrapped in `PageBody` with all 5 states (Loading, Error with persistent inline banner & retry, Empty/Not Found, Has Rows, Role Restricted), wired to `useBooking` & `fetchCanonicalBooking` under Law 2 (closed 7 Oct 2026).
 - **Reachability defects:** four routed reports have no way in (`Pulse.tsx:126-138` has null
   `to` values), two report screens are unrouted dead code, and ~4,400 lines of built Settings UI
   (BusinessHours, CommunicationSettings, Tools, Timesheet) is unreachable.
@@ -422,20 +420,20 @@ declaration per screen plus the registry — then the three violations above.
 
 Six workspaces depend on it.
 
-- [~] Camera (tablet/mobile), keyboard-wedge ⌘+B (desktop)
-      → `ScannerFab` has a real `@zxing` camera decode and the ⌘B wedge works. **Gap: the second
-      scanner, `BarcodeScannerModal` — the one the five workspaces actually use — has no real
-      decode**, and `ScannerFab:159-171` still carries a string-matching simulation path.
-- [~] **Under 2s per item**, continuous mode
-      → **Gap: no same-code cooldown** (holding one barcode in frame re-fires the callback), no
-      real continuous loop in the modal (it remounts the camera), and no timing instrumentation
-      — so the "under 2s" target is unmeasured, not met.
-- [~] Haptic + green frame + sound on success; **audibly distinct** failure; torch
-      → Haptic, green frame and distinct success/failure tones all present. **Gap: no torch
-      control** — needs `track.getCapabilities().torch` + a 44×44 toggle.
+- [x] Camera (tablet/mobile), keyboard-wedge ⌘+B (desktop)
+      → Both `ScannerFab` and `BarcodeScannerModal` use active `@zxing/browser` camera decode
+      into live `<video>` viewfinders (closed 7 Oct 2026). The ⌘B keyboard-wedge is active.
+- [x] **Under 2s per item**, continuous mode
+      → Continuous mode loop keeps video stream active without remounting; 2000ms duplicate
+      cooldown (`lastScannedRef`) prevents frame loops; scan latency timing (`⏱ durationMs`)
+      instrumented on every scan (closed 7 Oct 2026).
+- [x] Haptic + green frame + sound on success; **audibly distinct** failure; torch
+      → Multi-frequency Web Audio synthesiser (880Hz sine match, 180Hz sawtooth buzz failure,
+      440Hz cooldown pulse), haptic patterns (`[50]`, `[150]`), and torch toggle button
+      (`track.getCapabilities().torch`) with 44×44 touch target (closed 7 Oct 2026).
 - [x] **Manual entry always beside it**
-      → Verified in both scanners, and in `ScannerFab` it sits *outside* the camera-error branch
-      so it survives camera failure. (Nit: that input is 36px tall, under Law 15's 44px floor.)
+      → Verified in both scanners. Manual input and buttons hardened to Law 15 44px minimum
+      touch targets (closed 7 Oct 2026).
 
 ---
 

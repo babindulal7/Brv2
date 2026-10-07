@@ -12,6 +12,18 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev:mock", "--", "--port", "3100", "--strictPort"],
       "port": 3100
+    },
+    {
+      "name": "babin-rentals-codex",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Users/use/.codex-temp/babin-rentals-current", "run", "dev", "--", "--port", "3200", "--strictPort"],
+      "port": 3200
+    },
+    {
+      "name": "babin-rentals-codex-mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "C:/Users/use/.codex-temp/babin-rentals-current", "run", "dev:mock", "--", "--port", "3300", "--strictPort"],
+      "port": 3300
     }
   ]
 }

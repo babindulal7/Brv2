@@ -33,6 +33,7 @@ vi.mock('../../../lib/collapse', () => ({ useCollapsed: () => [collapsedPref, ()
 
 const { default: Sidebar } = await import('../Sidebar')
 const { default: BottomBar } = await import('../BottomBar')
+const { default: Header } = await import('../Header')
 
 let container: HTMLDivElement
 let root: Root
@@ -202,3 +203,81 @@ describe('BottomBar — five fixed slots', () => {
     expect(bar?.style.alignContent).toBe('start')
   })
 })
+
+describe('Header — Law 13, breadcrumb navigation & responsive triggers', () => {
+  it('renders non-terminal crumbs with .to as interactive Link anchors', async () => {
+    await mount(
+      <Header
+        crumbs={[
+          { label: 'Rentals List', to: '/rentals' },
+          { label: 'B-715', to: '/rentals/B-715' },
+          { label: 'Packing' },
+        ]}
+      />
+    )
+    const links = container.querySelectorAll('nav[aria-label="Breadcrumb"] a')
+    expect(links).toHaveLength(2)
+    expect(links[0]?.getAttribute('href')).toBe('/rentals')
+    expect(links[0]?.textContent).toBe('Rentals List')
+    expect(links[1]?.getAttribute('href')).toBe('/rentals/B-715')
+    expect(links[1]?.textContent).toBe('B-715')
+
+    const currentPage = container.querySelector('nav[aria-label="Breadcrumb"] [aria-current="page"]')
+    expect(currentPage).not.toBeNull()
+    expect(currentPage?.textContent).toBe('Packing')
+    expect(currentPage?.tagName.toLowerCase()).toBe('span')
+  })
+
+  it('renders non-terminal crumbs without .to as non-link text', async () => {
+    await mount(
+      <Header
+        crumbs={[
+          { label: 'Inventory' },
+          { label: 'Stock' },
+        ]}
+      />
+    )
+    const links = container.querySelectorAll('nav[aria-label="Breadcrumb"] a')
+    expect(links).toHaveLength(0)
+    const spans = container.querySelectorAll('nav[aria-label="Breadcrumb"] span')
+    expect(spans.length).toBeGreaterThanOrEqual(2)
+    expect(container.querySelector('[aria-current="page"]')?.textContent).toBe('Stock')
+  })
+
+  it('provides pointer-reachable Cmd+K search trigger at phone width', async () => {
+    viewport = 'phone'
+    await mount(<Header crumbs={[{ label: 'Today' }]} />)
+
+    // Pills are hidden on phone to prevent 390px overlap
+    expect(container.textContent).not.toContain('Kathmandu HQ')
+    expect(container.textContent).not.toContain('FY 2083/84')
+
+    // Search button exists as an accessible 44x44 icon button
+    const searchBtn = container.querySelector('button[aria-label="Search"]') as HTMLButtonElement | null
+    expect(searchBtn).not.toBeNull()
+    expect(searchBtn?.style.minHeight).toBe('44px')
+    expect(searchBtn?.style.minWidth).toBe('44px')
+
+    let cmdKDispatched = false
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        cmdKDispatched = true
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    await act(async () => {
+      searchBtn?.click()
+    })
+    window.removeEventListener('keydown', onKeyDown)
+    expect(cmdKDispatched).toBe(true)
+  })
+
+  it('renders full search bar and branch pills at desktop width', async () => {
+    viewport = 'desktop'
+    await mount(<Header crumbs={[{ label: 'Rentals' }]} />)
+    expect(container.textContent).toContain('Kathmandu HQ')
+    expect(container.textContent).toContain('FY 2083/84')
+    expect(container.textContent).toContain('⌘K')
+  })
+})
+
