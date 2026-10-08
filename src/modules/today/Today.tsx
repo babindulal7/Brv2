@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import Icon from '../../components/ui/Icon'
 import { CalendarPopover } from '../../components/ui/DateField'
 import { PageHeader, PageActions } from '../../components/ui/Page'
+import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
 import { PageShell } from '../../components/ui/PageShell'
 import { SegmentedControl } from '../../components/ui/SegmentedControl'
 import { useDomainEvent } from '../../events/useDomainEvent'
@@ -610,12 +611,26 @@ export default function Today() {
               key="today-actions"
               className="dashboard-date-actions"
               extra={
-                <MasterDispatchDateControl
-                  filter={pickupDateFilter}
-                  onChange={syncBothPanels}
-                  today={dayAd}
-                  onStepDay={stepDay}
-                />
+                <>
+                  {/* PLAN.md Phase 9 — the age of the OLDER of the two panels,
+                      so the badge never claims fresher data than is on screen
+                      (from main's Phase 9 work). */}
+                  <DataAgeBadge
+                    loadedAt={
+                      pickups.lastFetchedAt && returns.lastFetchedAt
+                        ? new Date(Math.min(pickups.lastFetchedAt.getTime(), returns.lastFetchedAt.getTime()))
+                        : null
+                    }
+                    onRefresh={refetchMovement}
+                    loading={pickups.loading || returns.loading}
+                  />
+                  <MasterDispatchDateControl
+                    filter={pickupDateFilter}
+                    onChange={syncBothPanels}
+                    today={dayAd}
+                    onStepDay={stepDay}
+                  />
+                </>
               }
             />
           }

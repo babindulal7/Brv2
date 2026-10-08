@@ -34,7 +34,7 @@ async function mount(overrides: Partial<MovementRow> = {}, side: 'incoming' | 'o
     filterControl={null} onClearFilters={() => {}}
     {...(paging.onLoadMore ? { onLoadMore: paging.onLoadMore } : {})}
     {...(paging.hasMore !== undefined ? { hasMore: paging.hasMore } : {})}
-    list={{ rows: [{ ...row, ...overrides }], total: paging.total ?? 1, loading: false, error: null, isEmpty: false, isFiltered: true, refetch: () => {} }}
+    list={{ rows: [{ ...row, ...overrides }], total: paging.total ?? 1, loading: false, error: null, isEmpty: false, isFiltered: true, refetch: () => {}, lastFetchedAt: null }}
   /></MemoryRouter>))
 }
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi.clearAllMocks() })

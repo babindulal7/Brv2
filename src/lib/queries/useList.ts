@@ -51,6 +51,13 @@ export interface ListResult<T> {
   /** Total matching rows when the query asked for a count; null when it did not. */
   total: number | null
   refetch: () => void
+  /**
+   * When `rows` last came back from a SUCCESSFUL read; null until the first.
+   * A failed refresh leaves it alone — the rows on screen are that old. Read
+   * by `DataAgeBadge` (PLAN.md Phase 9, "network-first reads with an age
+   * badge"). From main's Phase 9 work, ported 8 Oct 2026.
+   */
+  lastFetchedAt: Date | null
 }
 
 export interface ListQueryResult<T> {
@@ -156,6 +163,7 @@ export function useList<T>(
   const [total, setTotal] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null)
   const [nonce, setNonce] = useState(0)
 
   const mounted = useRef(true)
@@ -186,6 +194,7 @@ export function useList<T>(
         if (cancelled || !mounted.current) return
         setRows(res.rows)
         setTotal(res.total ?? null)
+        setLastFetchedAt(new Date())
       })
       .catch((err: unknown) => {
         if (cancelled || !mounted.current) return
@@ -265,5 +274,6 @@ export function useList<T>(
     isFiltered,
     total,
     refetch,
+    lastFetchedAt,
   }
 }

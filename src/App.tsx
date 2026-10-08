@@ -26,6 +26,7 @@ import { installRoutePreload } from './lib/routePreload'
 import { OperationsWorkspaceProvider } from './modules/operations/OperationsWorkspaceContext'
 import { WorkspaceProvider, useWorkspace } from './lib/workspaceContext'
 import { SchemaGuardBanner } from './components/shell/SchemaGuardBanner'
+import { ConflictNotificationBanner } from './components/ui/ConflictNotificationBanner'
 
 /* ── lazy-loaded route pages (code-splitting) ─────────────────────────── */
 const Today             = lazy(() => import('./modules/today/Today'))
@@ -1159,6 +1160,7 @@ function Shell({
       <a className="skip-to-content" href="#main-content">Skip to content</a>
       <MockBanner />
       <OfflineBanner />
+      <ConflictNotificationBanner />
       <SchemaGuardBanner />
 
       <div className="app-shell-layout" style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>

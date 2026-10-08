@@ -39,6 +39,7 @@ import type { ListFilters } from '../../lib/queries/listQuery'
 import { DateField } from '../../components/ui/DateField'
 import { AppPageToolbar } from '../../components/ui/AppPageToolbar'
 import { Pagination } from '../../components/ui/Pagination'
+import { useNetwork } from '../../lib/network'
 import './finance.css'
 
 type ExpenseStatusDb = Database['public']['Enums']['expense_status']
@@ -476,6 +477,7 @@ function AddExpenseSheet({
      is frozen at import, so on a machine left open overnight every new expense
      was dated yesterday by default — silently, on a field most operators will
      not re-read, and into the ledger that feeds the VAT period. */
+  const isOnline = useNetwork()
   const [dateAd, setDateAd] = useState(() => businessDayAd())
   const [categoryId, setCategoryId] = useState('')
   const [branchId, setBranchId] = useState('')
@@ -513,6 +515,14 @@ function AddExpenseSheet({
      */
     if (!Number.isFinite(amount) || amount <= 0) {
       return setError('Enter the amount in rupees — it must be greater than 0 (expenses_amount_positive).')
+    }
+    /* PLAN.md Phase 9 — money is refused offline, with the reason (from main's
+       Phase 9 work). Without this the number allocation fails with a bare
+       network error. */
+    if (!isOnline) {
+      return setError(
+        'This device is offline. An expense is not queued for later: its number and the books need the server. Record it when you are back online.',
+      )
     }
 
     setSaving(status)
@@ -983,7 +993,9 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
                   ? 'Clear the status chip or the category to see everything again.'
                   : 'Nothing has been recorded. Add Expense enters one against a branch and a category.'
               }
-              {...(isFiltered ? { onClearFilters: clearFilters } : {})}
+              {...(isFiltered
+                ? { onClearFilters: clearFilters }
+                : { emptyActionLabel: 'Add Expense', onEmptyAction: () => setSheetOpen(true) })}
               {...restriction}
             >
               {tabular ? (

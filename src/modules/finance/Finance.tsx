@@ -1578,6 +1578,11 @@ export default function Finance() {
                        known — omit the pair and let PageBody's filtered
                        defaults ("No invoices match these filters") speak. */
                     {...(railIsFiltered ? {} : { emptyTitle: EMPTY_TITLE[chip], emptyMessage: EMPTY_MESSAGE[chip] })}
+                    /* From main's Phase 9 work: with nothing invoiced at all,
+                       offer the one next step, to the roles R-05 lets issue. */
+                    {...(!list.isFiltered && canIssueInvoice
+                      ? { emptyActionLabel: 'Create Invoice', onEmptyAction: () => setShowCreateInvoice(true) }
+                      : {})}
                     {...restriction}
                   >
                     {tabular ? (

@@ -609,12 +609,6 @@ export default function OperationsQueues() {
   useDomainEvent(EVENT_TYPES.RENTAL_CLOSED, refreshAll)
   useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refreshAll)
 
-  const [lastLoadedAt, setLastLoadedAt] = useState<number>(() => Date.now())
-  useEffect(() => {
-    if (!list.loading) {
-      setLastLoadedAt(Date.now())
-    }
-  }, [list.loading])
 
   /* Resolved once per render, and passed in, so the row mapping stays pure. */
   const now = Date.now()
@@ -721,7 +715,10 @@ export default function OperationsQueues() {
                   Sub-Rentals
                 </Button>,
               ]}
-              extra={<DataAgeBadge loadedAt={lastLoadedAt} onRefresh={refreshAll} loading={list.loading} />}
+              /* `lastFetchedAt` moves only on a successful read. The local
+                 stamp this replaced moved whenever loading ended, so a failed
+                 refresh read "Just now" over rows that were not refreshed. */
+              extra={<DataAgeBadge loadedAt={list.lastFetchedAt} onRefresh={refreshAll} loading={list.loading} />}
             />
           }
         />

@@ -224,6 +224,7 @@ describe('Tier 2: Boundaries, Corner Cases & Guardrails', () => {
             isEmpty: false,
             isFiltered: false,
             refetch: () => {},
+            lastFetchedAt: null,
           }}
         />,
       )

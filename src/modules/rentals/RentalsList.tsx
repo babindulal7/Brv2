@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import { FooterNote, PageHeader, PageActions } from '../../components/ui/Page'
+import { DataAgeBadge } from '../../components/ui/DataAgeBadge'
 import { Button } from '../../components/ui/Button'
 import { PageBody } from '../../components/ui/PageBody'
 import { PageShell } from '../../components/ui/PageShell'
@@ -1751,6 +1752,9 @@ export default function RentalsList() {
                 onClick: refreshAll,
               },
             ]}
+            /* PLAN.md Phase 9 — how old the list on screen is (from main's
+               Phase 9 work). The time of the last SUCCESSFUL read. */
+            extra={<DataAgeBadge loadedAt={list.lastFetchedAt} onRefresh={refreshAll} loading={list.loading} />}
           />
         }
       />

@@ -763,6 +763,9 @@ export default function Payments({ embedded = false }: { embedded?: boolean }) {
             empty={list.isEmpty}
             emptyIsFiltered={list.isFiltered}
             onClearFilters={clearFilters}
+            /* From main's Phase 9 work: an empty ledger offers its one next
+               step, to the roles that may record a payment. */
+            {...(!isFiltered && canTakePayment ? { emptyActionLabel: 'Record Payment', onEmptyAction: openRecord } : {})}
             noun="payments"
             skeleton="table"
             skeletonRows={5}
