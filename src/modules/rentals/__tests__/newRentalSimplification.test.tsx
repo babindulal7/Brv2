@@ -82,8 +82,13 @@ describe('NewRental simplification (Part A - D)', () => {
       expect(actions.textContent).toContain('Confirm Booking')
       expect([...container.querySelectorAll('button')].filter((button) => /^save (as )?draft$/i.test(button.textContent?.trim() ?? ''))).toHaveLength(1)
       expect([...container.querySelectorAll('button')].filter((button) => /^confirm booking$/i.test(button.textContent?.trim() ?? ''))).toHaveLength(1)
-      await act(async () => (clientSection.querySelector('[aria-label="Collapse Client"]') as HTMLButtonElement).click())
-      await act(async () => (clientSection.querySelector('[aria-label="Expand Client"]') as HTMLButtonElement).click())
+      expect(clientSection.querySelector('[aria-label="Collapse Client"]')).toBeNull()
+      const crewSection = container.querySelector('#section-3')!
+      await act(async () => (crewSection.querySelector('[aria-label="Expand Crew"]') as HTMLButtonElement).click())
+      const crewInput = crewSection.querySelector('input')
+      await act(async () => (crewSection.querySelector('[aria-label="Collapse Crew"]') as HTMLButtonElement).click())
+      await act(async () => (crewSection.querySelector('[aria-label="Expand Crew"]') as HTMLButtonElement).click())
+      expect(crewSection.querySelector('input')).toBe(crewInput)
       expect(container.querySelector('#section-0 input')).toBe(clientInput)
       const scroll = vi.fn()
       const oldScroll = Element.prototype.scrollIntoView

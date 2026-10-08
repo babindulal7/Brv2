@@ -179,6 +179,7 @@ export function Section({
   summary,
   badge,
   children,
+  collapsible = true,
 }: {
   /** Scroll target for the rail's Review card — see `jumpToSection`. */
   id?: string
@@ -190,39 +191,34 @@ export function Section({
   summary?: string
   badge?: React.ReactNode
   children: React.ReactNode
+  collapsible?: boolean
 }) {
+  // RULING 2026-10-08: essential fields stay visible; optional sections keep
+  // their mounted content and one visible, keyboard-accessible disclosure.
+  const expanded = !collapsible || open
   return (
-    <section id={id} className={`new-rental-section-card ${open ? 'is-active' : ''}`} style={{ ...cardStyle, minWidth: 0, padding: 0 }}>
+    <section id={id} className={`new-rental-section-card ${expanded ? 'is-active' : ''}`} style={{ ...cardStyle, minWidth: 0, padding: 0 }}>
       <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={open}
-        aria-label={`Toggle ${title} section`}
-        onClick={onToggle}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            onToggle()
-          }
-        }}
+        className="new-rental-section-heading"
+        onClick={collapsible ? onToggle : undefined}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 10,
           padding: '12px 16px',
-          borderBottom: open ? '1px solid var(--border)' : 'none',
+          borderBottom: expanded ? '1px solid var(--border)' : 'none',
           background: 'var(--surface)',
-          cursor: 'pointer',
+          cursor: collapsible ? 'pointer' : undefined,
           userSelect: 'none',
           minHeight: 48,
           transition: 'background var(--dur-fast) var(--ease)',
         }}
       >
-        <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+        <h2 style={{ margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
           {title}
         </h2>
         {badge}
-        {!open && summary && (
+        {!expanded && summary && (
           <span
             style={{
               fontSize: 'var(--t-meta)',
@@ -241,7 +237,7 @@ export function Section({
             {summary}
           </span>
         )}
-        {open && action && (
+        {expanded && action && (
           <span
             onClick={(e) => e.stopPropagation()}
             style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
@@ -249,20 +245,21 @@ export function Section({
             {action}
           </span>
         )}
-        <button
+        {collapsible && <button
           type="button"
           onClick={(e) => {
             e.stopPropagation()
             onToggle()
           }}
           aria-expanded={open}
+          aria-controls={id ? `${id}-body` : undefined}
           aria-label={`${open ? 'Collapse' : 'Expand'} ${title}`}
-          style={srOnly}
+          style={{ marginLeft: 'auto', flexShrink: 0, width: 44, height: 44, display: 'grid', placeItems: 'center', padding: 0, border: 0, borderRadius: 'var(--r-btn)', color: 'var(--text2)', background: 'transparent', cursor: 'pointer' }}
         >
-          {open ? 'Collapse' : 'Expand'} {title}
-        </button>
+          <Icon name={open ? 'chevron_up' : 'chevron_down'} size={18} />
+        </button>}
       </div>
-      <div hidden={!open} style={{ padding: 'var(--sp-md) var(--sp-lg)' }}>{children}</div>
+      <div id={id ? `${id}-body` : undefined} hidden={!expanded} style={{ padding: 'var(--sp-md) var(--sp-lg)' }}>{children}</div>
     </section>
   )
 }

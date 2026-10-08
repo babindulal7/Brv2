@@ -21,6 +21,7 @@ import type { GateContext } from '../../../lib/fieldGating'
 import type { AuthUser } from '../../../lib/auth'
 import { supabase, newClientUuid } from '../../../lib/supabase'
 import { rupees, type Paisa } from '../../../lib/money'
+import './booking-equipment-section.css'
 
 const inlineInfoStyle = {
   margin: 0,
@@ -86,7 +87,6 @@ export function BookingEquipmentSection({
   user,
   navigate,
   pricing,
-  isPhone = false,
 }: BookingEquipmentSectionProps) {
   const [collapsedBundles, setCollapsedBundles] = useState<Record<string, boolean>>({})
 
@@ -203,6 +203,7 @@ export function BookingEquipmentSection({
     [liveEquipment, lines, addDrafts, days],
   )
 
+  // RULING 2026-10-08: catalogue, selected items, then optional charges follow the rental workflow.
   return (
     <Section
       id="section-2"
@@ -228,9 +229,10 @@ export function BookingEquipmentSection({
       }
       open={open}
       onToggle={onToggle}
+      collapsible={false}
       summary={`${lines.length} lines · ${conflictSummary.conflicts.length} conflicts`}
     >
-      <div style={{ marginBottom: 10 }}>
+      <div className="new-rental-equipment-picker" role="group" aria-label="Find equipment and bundles">
         {!liveEquipment && (
           <p style={{ margin: '0 0 var(--sp-sm)', fontSize: 'var(--t-meta)', color: 'var(--warn-text)', lineHeight: 1.5 }}>
             This panel is still listing <strong>sample equipment</strong> — the live catalogue has not loaded, so
@@ -263,94 +265,6 @@ export function BookingEquipmentSection({
           onScan={addScannedEquipment}
         />
       </div>
-
-      {canBookingMoney && (
-        <div style={{ margin: '0 0 12px', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-            <div>
-              <strong style={{ fontSize: 'var(--t-ui)' }}>Services, sub-rentals &amp; custom charges</strong>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button
-                icon="box"
-                variant="secondary"
-                onClick={() => {
-                  setCustomLineType('Sub-rental')
-                  setCustomLineOpen(true)
-                }}
-              >
-                + Add sub-rental
-              </Button>
-              <Button icon="plus" variant="secondary" onClick={() => setCustomLineOpen((prev) => !prev)}>
-                {customLineOpen ? 'Close line form' : 'Add custom line'}
-              </Button>
-            </div>
-          </div>
-
-          {customLineOpen && (
-            <div style={{ marginTop: 10, padding: 12, borderRadius: 'var(--r-card)', background: 'var(--card2)', border: '1px solid var(--border)' }}>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: isPhone
-                    ? '1fr'
-                    : customLineType === 'Sub-rental'
-                      ? 'minmax(0,1.2fr) minmax(130px,1fr) minmax(150px,1.2fr) minmax(70px,0.4fr) minmax(110px,0.7fr)'
-                      : 'minmax(0,1.6fr) minmax(150px,0.7fr) minmax(100px,0.45fr) minmax(130px,0.6fr)',
-                  gap: 9,
-                  alignItems: 'end',
-                }}
-              >
-                <Field label="Line type">
-                  <Select value={customLineType} onChange={(e) => setCustomLineType(e.target.value as typeof customLineType)} style={inputStyle}>
-                    <option value="Service">Service</option>
-                    <option value="Manual item">Manual charge</option>
-                    <option value="Sub-rental">Sub-rental (Partner gear)</option>
-                  </Select>
-                </Field>
-                {customLineType === 'Sub-rental' && (
-                  <Field label="Partner / Supplier">
-                    <Input value={customLineVendor} onChange={(e) => setCustomLineVendor(e.target.value)} placeholder="e.g. GearHouse KTM" style={inputStyle} />
-                  </Field>
-                )}
-                <Field label={customLineType === 'Sub-rental' ? 'Equipment name' : 'Description'}>
-                  <Input
-                    value={customLineName}
-                    onChange={(e) => setCustomLineName(e.target.value)}
-                    placeholder={customLineType === 'Sub-rental' ? 'e.g. Master Prime 50mm' : 'e.g. Operator overtime'}
-                    style={inputStyle}
-                  />
-                </Field>
-                <Field label="Qty">
-                  <Input type="number" min={1} value={customLineQty} onChange={(e) => setCustomLineQty(Math.max(1, Number(e.target.value) || 1))} style={inputStyle} />
-                </Field>
-                <Field label="Rate / day (Rs)">
-                  <Input type="number" min={0} value={customLineRate} onChange={(e) => setCustomLineRate(e.target.value)} placeholder="0" style={inputStyle} />
-                </Field>
-              </div>
-              {customLineError && (
-                <p role="alert" style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)' }}>
-                  {customLineError}
-                </p>
-              )}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setCustomLineOpen(false)
-                    setCustomLineError(null)
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button icon="plus" onClick={addCustomLine}>
-                  {customLineType === 'Sub-rental' ? 'Add sub-rental' : 'Add line'}
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {lines.length > 0 && (() => {
         const conflicted = conflictSummary.conflicts.length > 0
@@ -431,22 +345,117 @@ export function BookingEquipmentSection({
         </div>
       )}
 
-      <RentalLineItemsTree
-        lines={lines}
-        setLines={setLines}
-        collapsedBundles={collapsedBundles}
-        setCollapsedBundles={setCollapsedBundles}
-        canBookingMoney={canBookingMoney}
-        conflictSummary={conflictSummary}
-        liveEquipment={liveEquipment}
-        gateContext={gateContext}
-        user={user}
-        navigate={navigate}
-        totalUnits={totalUnits}
-        bundleCount={bundleCount}
-        days={days}
-        pricing={pricing}
-      />
+      <div className="new-rental-equipment-selection">
+        {lines.length > 0 && <h3 className="new-rental-equipment-label">Selected items</h3>}
+        <RentalLineItemsTree
+          lines={lines}
+          setLines={setLines}
+          collapsedBundles={collapsedBundles}
+          setCollapsedBundles={setCollapsedBundles}
+          canBookingMoney={canBookingMoney}
+          conflictSummary={conflictSummary}
+          liveEquipment={liveEquipment}
+          gateContext={gateContext}
+          user={user}
+          navigate={navigate}
+          totalUnits={totalUnits}
+          bundleCount={bundleCount}
+          days={days}
+          pricing={pricing}
+        />
+      </div>
+
+      {canBookingMoney && (
+        <div className="new-rental-equipment-extras">
+          <div className="new-rental-equipment-extras-bar">
+            <h3 className="new-rental-equipment-label">Services &amp; other charges</h3>
+            <div className="new-rental-equipment-extras-actions">
+              <Button
+                icon="box"
+                variant="outline"
+                size="sm"
+                aria-controls="new-rental-custom-line"
+                aria-expanded={customLineOpen && customLineType === 'Sub-rental'}
+                onClick={() => {
+                  setCustomLineType('Sub-rental')
+                  setCustomLineOpen(true)
+                }}
+              >
+                Add sub-rental
+              </Button>
+              <Button
+                icon={customLineOpen ? 'close' : 'plus'}
+                variant="outline"
+                size="sm"
+                aria-controls="new-rental-custom-line"
+                aria-expanded={customLineOpen}
+                onClick={() => setCustomLineOpen((prev) => !prev)}
+              >
+                {customLineOpen ? 'Close line form' : 'Add custom line'}
+              </Button>
+            </div>
+          </div>
+
+          {customLineOpen && (
+            <div id="new-rental-custom-line" className="new-rental-equipment-line-form">
+              <div className="new-rental-equipment-line-fields">
+                <div className="new-rental-equipment-line-description">
+                  <Field label={customLineType === 'Sub-rental' ? 'Equipment name' : 'Description'}>
+                    <Input
+                      autoFocus
+                      value={customLineName}
+                      onChange={(e) => setCustomLineName(e.target.value)}
+                      placeholder={customLineType === 'Sub-rental' ? 'e.g. Master Prime 50mm' : 'e.g. Operator overtime'}
+                      style={inputStyle}
+                    />
+                  </Field>
+                </div>
+                <div className={`new-rental-equipment-line-details ${customLineType === 'Sub-rental' ? 'has-supplier' : ''}`}>
+                  <Field label="Line type">
+                    <Select value={customLineType} onChange={(e) => setCustomLineType(e.target.value as typeof customLineType)} style={inputStyle}>
+                      <option value="Service">Service</option>
+                      <option value="Manual item">Manual charge</option>
+                      <option value="Sub-rental">Sub-rental (Partner equipment)</option>
+                    </Select>
+                  </Field>
+                  {customLineType === 'Sub-rental' && (
+                    <Field label="Partner / Supplier">
+                      <Input value={customLineVendor} onChange={(e) => setCustomLineVendor(e.target.value)} placeholder="e.g. GearHouse KTM" style={inputStyle} />
+                    </Field>
+                  )}
+                </div>
+                <div className="new-rental-equipment-line-amounts">
+                  <Field label="Quantity">
+                    <Input type="number" min={1} value={customLineQty} onChange={(e) => setCustomLineQty(Math.max(1, Number(e.target.value) || 1))} style={inputStyle} />
+                  </Field>
+                  <Field label="Rate / day (Rs)">
+                    <Input type="number" min={0} value={customLineRate} onChange={(e) => setCustomLineRate(e.target.value)} placeholder="0" style={inputStyle} />
+                  </Field>
+                </div>
+              </div>
+              {customLineError && (
+                <p role="alert" style={{ margin: '8px 0 0', fontSize: 'var(--t-meta)', color: 'var(--st-danger-fg)' }}>
+                  {customLineError}
+                </p>
+              )}
+              <div className="new-rental-equipment-line-actions">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setCustomLineOpen(false)
+                    setCustomLineError(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button icon="plus" onClick={addCustomLine}>
+                  {customLineType === 'Sub-rental' ? 'Add sub-rental' : 'Add line'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </Section>
   )
 }

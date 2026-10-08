@@ -86,6 +86,7 @@ export function BookingClientSection({
   return (
     <Section
       id="section-0"
+      collapsible={false}
       title={title}
       badge={
         client ? (
@@ -111,7 +112,6 @@ export function BookingClientSection({
       summary={client ? `${client.name} · ${days} ${dayWord}` : 'No client selected'}
     >
       {/* User accepted required-field clarity, 7 Oct: match confirmation gates. */}
-      <p style={{ margin: '0 0 8px', color: 'var(--muted)', fontSize: 'var(--t-meta)' }}>* Required to confirm</p>
       <Field label="Client *" labelId="new-rental-client-label">
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
           <div
@@ -150,21 +150,20 @@ export function BookingClientSection({
                 ? {}
                 : { error: 'Select a client before confirming this booking.' })}
               trailing={
-                client && health ? (
-                  <ClientHealthEye
-                    verdict={health}
-                    clientName={client.name}
-                    open={quickViewOpen}
-                    controls="new-rental-client-quick-view"
-                    onClick={() => setQuickViewOpen((o) => !o)}
-                  />
-                ) : (
+                !client ? (
                   <AddClientButton onClick={openAddClient} />
-                )
+                ) : undefined
               }
             />
-            {client?.dbId && (
-              <div style={{ marginTop: 8 }}>
+            {client && <div className="new-rental-client-insights">
+              {health && <ClientHealthEye
+                verdict={health}
+                clientName={client.name}
+                open={quickViewOpen}
+                controls="new-rental-client-quick-view"
+                onClick={() => setQuickViewOpen((o) => !o)}
+              />}
+            {client.dbId && (
                 <IntelCard
                   glance={clientGlance(client, gctx)}
                   detail={clientDetailGroups(client, gctx)}
@@ -175,10 +174,10 @@ export function BookingClientSection({
                   gateContext={gctx}
                   actionContext={user ? { userId: user.id, role: user.role } : null}
                 >
-                  <span className="identifier" style={{ color: 'var(--link)', fontWeight: 600 }}>{client.name}</span>
+                  <span className="identifier" style={{ color: 'var(--link)', fontWeight: 600 }}>Client details</span>
                 </IntelCard>
-              </div>
             )}
+            </div>}
           </div>
         </div>
 

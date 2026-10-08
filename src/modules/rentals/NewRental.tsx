@@ -15,7 +15,7 @@ import { useNetwork } from '../../lib/network'
 import { formatAd } from '../../lib/bs'
 import { isProjectType } from '../../lib/projectTypes'
 import { fetchLastProjectType } from '../../lib/queries/bookings'
-import { rupees } from '../../lib/money'
+import { formatMoney, rupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import type { RentalDraftData } from '../../actions/rentals/saveDraft'
 import type { InvStatus } from '../../lib/queries/inventory'
@@ -580,7 +580,6 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
   const {
     saveState,
     setSaveState,
-    draftPersisted,
     draftId,
     draftBookingNo,
     draftLoading,
@@ -716,6 +715,8 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
     confirmBooking,
     confirmBlocked,
     saveState,
+    onValidationAttempt: () => setValidationAttempted(true),
+    firstBlockingAction: blockingNotices[0]?.action,
   })
 
   const bundleCount = useMemo(() => new Set(lines.map((l) => l.bundleCode).filter(Boolean)).size, [lines])
@@ -806,6 +807,15 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         />
       }
     >
+      {/* RULING 2026-10-08: direct section access on one continuous form. */}
+      <nav className="new-rental-jumpbar" aria-label="Rental sections">
+        <button type="button" onClick={() => jumpToSection('section-0')}><Icon name="user" size={17} />Client &amp; dates</button>
+        <button type="button" onClick={() => jumpToSection('section-2')}><Icon name="box" size={17} />Equipment</button>
+        <button type="button" onClick={() => { setOpen((prev) => prev.map((v, i) => i === 3 || i === 4 || v)); jumpToSection('section-3') }}><Icon name="truck" size={17} />Crew &amp; delivery</button>
+        {canBookingMoney && <button type="button" onClick={() => jumpToSection('section-5')}><Icon name="receipt" size={17} />Pricing</button>}
+        <button type="button" onClick={() => jumpToSection('rail-booking-summary')}><Icon name="check" size={17} />Review</button>
+        <span>* Required to confirm</span>
+      </nav>
       {localDraftOffer && !editBookingId && (
         <div
           role="region"
@@ -888,17 +898,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
         </div>
       )}
 
-      <div
-        className="new-rental-workspace"
-        ref={workflowRef}
-        style={{
-          display: 'grid',
-          gridTemplateColumns: isDesktop ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)',
-          gap: 'var(--sp-md)',
-          alignItems: 'start',
-        }}
-      >
-        <div className="new-rental-canvas" style={{ minWidth: 0 }}>
+      <div className="new-rental-canvas new-rental-setup-canvas">
           <div className="new-rental-stage new-rental-stage--setup">
             <BookingClientSection
               open={open[0] ?? true}
@@ -965,7 +965,19 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
 
 
         </div>
+      </div>
 
+      <div
+        className="new-rental-workspace"
+        ref={workflowRef}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: isDesktop ? 'minmax(0,1fr) 320px' : 'minmax(0,1fr)',
+          gap: 'var(--sp-md)',
+          alignItems: 'start',
+        }}
+      >
+        <div className="new-rental-canvas" style={{ minWidth: 0 }}>
         <div className="new-rental-stage new-rental-stage--equipment">
           <BookingEquipmentSection
             open={open[2] ?? true}
@@ -1071,31 +1083,6 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
 
         </div>
 
-          {/* Keep save feedback brief; the inline error above carries failure details. */}
-          <div role="status" aria-live="polite" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '0 2px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-            {saveState === 'saving' ? (
-              <>
-                <Icon name="refresh" size={13} style={{ color: 'var(--text2)' }} />
-                Saving…
-              </>
-            ) : saveState === 'error' ? (
-              /* "All changes saved" is a success claim, and it was being made
-                 one tick after a save that rejected. The detail lives in the
-                 inline error line above; this only stops the claim. */
-              <>
-                <Icon name="error" size={13} style={{ color: 'var(--danger-text)' }} />
-                <span style={{ color: 'var(--danger-text)', fontWeight: 600 }}>Not saved</span>
-              </>
-            ) : (
-              <>
-                <Icon name={online ? 'info' : 'plug'} size={13} style={{ color: 'var(--text2)' }} />
-                <span style={{ fontWeight: 600, color: 'var(--text2)' }}>
-                  {draftPersisted ? 'Unsaved changes' : 'Not saved'}
-                  {!online && ' · Offline'}
-                </span>
-              </>
-            )}
-          </div>
         </div>
 
         {/* Desktop summary scrolls above the action footer. Below 1280 it
@@ -1118,9 +1105,16 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
       <RecordActions
         busy={saveState === 'saving'}
         dirty={editBookingId ? quoteDirty : true}
-        statusText={editBookingId ? undefined : draftHasUnsavedChanges ? 'Unsaved changes' : draftId ? 'Draft saved' : 'New booking'}
+        statusText={saveState === 'error' ? 'Not saved' : editBookingId ? undefined : draftHasUnsavedChanges ? 'Unsaved changes' : draftId ? 'Draft saved' : 'New booking'}
         label={editBookingId ? 'Save changes' : 'Confirm Booking'}
-        onSave={() => { if (editBookingId) void saveQuote(); else { setValidationAttempted(true); if (!confirmBlocked) void confirmBooking() } }}
+        onSave={() => {
+          if (editBookingId) { void saveQuote(); return }
+          setValidationAttempted(true)
+          if (!confirmBlocked) { void confirmBooking(); return }
+          const firstAction = blockingNotices[0]?.action
+          if (firstAction) runNoticeAction(firstAction)
+          else jumpToSection('rail-booking-summary')
+        }}
         onCancel={() => {
           if (editBookingId) {
             if (!quoteDirty) doExit()
@@ -1128,6 +1122,7 @@ export default function NewRental({ embedded = false, onDone, editBookingId }: N
           } else handleExit()
         }}
         extra={<>
+          {canBookingMoney && <div className="new-rental-footer-total"><span>Rental total</span><strong>{formatMoney(pricing.rentalTotalPaisa)}</strong></div>}
           {isPhone && <Button variant="ghost" aria-label="Review rental summary" onClick={() => document.getElementById('rail-booking-summary')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Summary</Button>}
           {!editBookingId && <Button variant="outline" onClick={() => void saveDraft()} disabled={saveState === 'saving'}>Save draft</Button>}
         </>}

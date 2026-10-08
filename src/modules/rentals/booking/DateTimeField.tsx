@@ -34,22 +34,12 @@ import { toBs, formatBs } from '../../../lib/bs'
 
 export { parseDateInput, parseTimeInput }
 
-/*
- * ⚠ KNOWN, pre-existing: the calendar and timer buttons are 26px wide and share
- * an edge, so two 44px-wide targets cannot both fit inside 52px of space.
- * RESOLVED 25 Aug 2026 by taking only the axis that is free — both use
- * `<TouchTarget axis="y" />`, giving a full 44px vertical target at the
- * control's own 26px width, with no overlap and neither button able to steal
- * the other's glyph. Closing the width gap needs a layout change (widen the
- * field, or collapse the two pickers into one), which is a design decision
- * about this field rather than something a hit-area pass should force.
- * 26×44 with no mis-fire beats 44×44 with one.
- */
+// RULING 2026-10-08: the wider setup row gives each date/time picker a full 44px target.
 const iconBtnStyle = {
   position: 'relative' as const,
   flexShrink: 0,
-  width: 26,
-  height: 26,
+  width: 44,
+  height: 44,
   display: 'grid',
   placeItems: 'center',
   borderRadius: 'var(--r-xs)',
@@ -183,7 +173,7 @@ export function DateTimeField({ label, required = false, dateValue, timeValue, o
       >
         {bs ? formatBs(bs) : 'BS not available for this date'}
       </div>
-      <div className="focus-host" style={{ display: 'flex', alignItems: 'center', gap: 4, border: '1px solid var(--input-border)', borderRadius: 'var(--r-input)', background: 'var(--input-bg)', padding: '0 4px 0 9px', minHeight: 40 }}>
+      <div className="focus-host" style={{ display: 'flex', alignItems: 'center', gap: 0, border: '1px solid var(--input-border)', borderRadius: 'var(--r-input)', background: 'var(--input-bg)', padding: '0 0 0 10px', minHeight: 46 }}>
         <input
           value={dateText}
           onChange={(e) => setDateText(e.target.value)}
@@ -199,7 +189,7 @@ export function DateTimeField({ label, required = false, dateValue, timeValue, o
           }}
           aria-label={`${label} date`}
           aria-required={required || undefined}
-          style={{ flex: '1 1 auto', minWidth: 0, border: 'none', background: 'transparent', color: 'var(--booking-date-text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
+          style={{ flex: '1 1 auto', minWidth: 0, minHeight: 44, border: 'none', background: 'transparent', color: 'var(--booking-date-text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', outline: 'none' }}
         />
         <button
           type="button"
@@ -225,7 +215,7 @@ export function DateTimeField({ label, required = false, dateValue, timeValue, o
           }}
           aria-label={`${label} time`}
           aria-required={required || undefined}
-          style={{ width: 46, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'transparent', color: 'var(--booking-date-text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', textAlign: 'center', paddingLeft: 7 }}
+          style={{ width: 48, minHeight: 44, flexShrink: 0, border: 'none', borderLeft: '1px solid var(--border)', background: 'transparent', color: 'var(--booking-date-text)', fontSize: 'var(--t-meta)', fontFamily: 'inherit', textAlign: 'center', paddingLeft: 4 }}
         />
         <button
           type="button"

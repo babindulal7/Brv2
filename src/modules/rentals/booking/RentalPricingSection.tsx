@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import Icon from '../../../components/ui/Icon'
 import { Button, Input } from '../../../components/ui'
 import { Field, MoneyRow, Section, inputStyle } from './BookingFormWidgets'
@@ -10,14 +11,13 @@ import {
   DISCOUNT_STACKING_CAP_PERCENT,
   type PromoCodeDefinition,
 } from '../../../lib/pricingPipeline'
+import './rental-pricing.css'
 
 const sub = {
-  margin: '0 0 8px',
-  fontSize: 'var(--t-th)',
+  margin: '0 0 12px',
+  fontSize: 'var(--t-ui)',
   fontWeight: 700,
-  color: 'var(--text2)',
-  letterSpacing: '0.04em',
-  textTransform: 'uppercase',
+  color: 'var(--text)',
 } as const
 
 const moneyBlock = {
@@ -66,7 +66,6 @@ export interface RentalPricingSectionProps {
 export function RentalPricingSection({
   open,
   onToggle,
-  isDesktop,
   pricing,
   canCrewMoney,
   vatOn,
@@ -98,6 +97,13 @@ export function RentalPricingSection({
   setDepositAuthorizedBy,
   title = 'Pricing & Terms',
 }: RentalPricingSectionProps) {
+  const hasDiscountOptions = womenDopEligible || Boolean(promoCodeApplied) || Boolean(promoCodeInput) || Boolean(promoNotice)
+  const [discountOptionsOpen, setDiscountOptionsOpen] = useState(hasDiscountOptions)
+
+  useEffect(() => {
+    if (hasDiscountOptions) setDiscountOptionsOpen(true)
+  }, [hasDiscountOptions])
+
   return (
     <Section
       id="section-5"
@@ -124,36 +130,16 @@ export function RentalPricingSection({
       }
       open={open}
       onToggle={onToggle}
+      collapsible={false}
       summary={`${formatMoney(pricing.rentalTotalPaisa)} total`}
     >
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: isDesktop ? 'repeat(2, minmax(0,1fr))' : '1fr',
-          alignItems: 'start',
-          gap: 'var(--sp-md)',
-        }}
-      >
+      {/* RULING 2026-10-08: common pricing controls first; optional adjustments disclose their active state. */}
+      <div className="new-rental-pricing-layout">
         {/* User ruling, 7 Oct: Discounts & Taxes precede Rental Charges. */}
-        <div style={moneyBlock}>
+        <div className="new-rental-pricing-adjustments" style={moneyBlock}>
           <h3 style={sub}>Discounts & Taxes</h3>
           <div style={{ marginTop: 8 }}>
-            {/* User accepted label clarity, 7 Oct: optional adjustments have no star. */}
-            <Field label="Manual Discount %">
-              <Input
-                type="number"
-                min={0}
-                max={DISCOUNT_STACKING_CAP_PERCENT}
-                value={discountPct}
-                onChange={(e) =>
-                  setDiscountPct(
-                    Math.min(DISCOUNT_STACKING_CAP_PERCENT, Math.max(0, Number(e.target.value) || 0)),
-                  )
-                }
-                style={inputStyle}
-              />
-            </Field>
-            <div style={{ marginTop: 8 }}>
+            <div className="new-rental-pricing-presets">
               <DiscountChips
                 percent={discountPct}
                 onPercent={setDiscountPct}
@@ -166,9 +152,27 @@ export function RentalPricingSection({
                 }}
               />
             </div>
+            {/* User accepted label clarity, 7 Oct: optional adjustments have no star. */}
+            <div className="new-rental-pricing-custom-discount">
+              <Field label="Manual Discount %">
+                <Input
+                  type="number"
+                  min={0}
+                  max={DISCOUNT_STACKING_CAP_PERCENT}
+                  value={discountPct}
+                  onChange={(e) =>
+                    setDiscountPct(
+                      Math.min(DISCOUNT_STACKING_CAP_PERCENT, Math.max(0, Number(e.target.value) || 0)),
+                    )
+                  }
+                  style={inputStyle}
+                />
+              </Field>
+              <p className="new-rental-pricing-help">Choose a preset above or enter a percentage.</p>
+            </div>
 
             {discountPct > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+              <div className="new-rental-pricing-discount-details">
                 <Field label="Discount Reason *">
                   <Input
                     value={manualDiscountReason}
@@ -188,114 +192,111 @@ export function RentalPricingSection({
               </div>
             )}
 
-            {/* Women DoP / Director toggle */}
-            <label
-              htmlFor="women-dop-eligible"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                marginTop: 12,
-                cursor: 'pointer',
-                fontSize: 'var(--t-meta)',
-              }}
+            <div className="new-rental-pricing-vat">
+              <VatToggle ratePercent={vatRatePercent} on={vatOn} onChange={setVatOn} />
+            </div>
+
+            <details
+              className="new-rental-pricing-options"
+              open={discountOptionsOpen}
+              onToggle={(event) => setDiscountOptionsOpen(event.currentTarget.open)}
             >
-              <input
-                id="women-dop-eligible"
-                type="checkbox"
-                aria-label="Women DoP / Director (+5% discount)"
-                checked={womenDopEligible}
-                onChange={(e) => setWomenDopEligible(e.target.checked)}
-                style={{ cursor: 'pointer', width: 16, height: 16 }}
-              />
-              <span>
-                <strong>Women DoP / Director (+5% discount)</strong>
-                <span style={{ display: 'block', color: 'var(--muted)', fontSize: '11px' }}>
-                  Encouraging women cinematographers & filmmakers in Nepal.
+              <summary>
+                <span>More discount options</span>
+                <span className="new-rental-pricing-option-state">
+                  {[womenDopEligible ? 'Women DoP +5%' : '', promoCodeApplied?.code ?? ''].filter(Boolean).join(' · ') || 'Promo & eligibility'}
                 </span>
-              </span>
-            </label>
-
-            {/* Student bundle indicator */}
-            {isStudentBundle && (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: '6px 10px',
-                  borderRadius: 'var(--r-btn)',
-                  background: 'var(--st-info-bg, #eff6ff)',
-                  color: 'var(--st-info-fg, #1e40af)',
-                  fontSize: '12px',
-                }}
-              >
-                <Icon name="info" size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
-                Student/College bundle detected — subsidized flat rate lines are protected from stacking discounts.
-              </div>
-            )}
-
-            {/* Promo code */}
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-              <Field label="Promo code (optional)">
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <Input
-                    value={promoCodeInput}
-                    onChange={(e) => {
-                      setPromoCodeInput(e.target.value.toUpperCase())
-                      setPromoNotice(null)
-                    }}
-                    placeholder="Promo code"
-                    style={{ ...inputStyle, textTransform: 'uppercase' }}
+                <Icon name="chevron_down" size={16} />
+              </summary>
+              <div className="new-rental-pricing-options-body">
+                {/* Women DoP / Director toggle */}
+                <label
+                  htmlFor="women-dop-eligible"
+                  className="new-rental-pricing-checkbox"
+                >
+                  <input
+                    id="women-dop-eligible"
+                    type="checkbox"
+                    aria-label="Women DoP / Director (+5% discount)"
+                    checked={womenDopEligible}
+                    onChange={(e) => setWomenDopEligible(e.target.checked)}
+                    style={{ cursor: 'pointer', width: 16, height: 16 }}
                   />
-                  <Button
-                    variant="secondary"
-                    type="button"
-                    onClick={async () => {
-                      const code = promoCodeInput.trim().toUpperCase()
-                      if (!code) {
-                        setPromoNotice({ tone: 'danger', text: 'Enter a promo code.' })
-                        return
-                      }
-                      /* RULING 2026-10-07: a code is a `coupons` row, never an in-code constant. */
-                      const today = (pickupAt ?? new Date()).toISOString().slice(0, 10)
-                      const found = await lookupCouponByCode(code, today)
-                      if (!found.ok) {
-                        setPromoNotice({ tone: 'danger', text: found.reason })
-                        return
-                      }
-                      const promo = found.promo
-                      if (promo.minSpendPaisa && pricing.grossSubtotalPaisa < promo.minSpendPaisa) {
-                        setPromoNotice({
-                          tone: 'danger',
-                          text: `Promo "${code}" requires minimum rental spend of ${formatMoney(promo.minSpendPaisa)}.`,
-                        })
-                        return
-                      }
-                      setPromoCodeApplied(promo)
-                      setPromoNotice({
-                        tone: 'success',
-                        text: `Promo "${code}" applied: ${promo.discountPercent}% off${promo.description ? ` (${promo.description})` : ''}.`,
-                      })
-                    }}
-                  >
-                    Apply
-                  </Button>
-                  {promoCodeApplied && (
-                    <Button
-                      variant="ghost"
-                      type="button"
-                      onClick={() => {
-                        setPromoCodeApplied(null)
-                        setPromoCodeInput('')
-                        setPromoNotice(null)
-                      }}
-                    >
-                      Clear
-                    </Button>
-                  )}
+                  <span>
+                    <strong>Women DoP / Director (+5% discount)</strong>
+                  </span>
+                </label>
+
+                {/* Promo code */}
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                  <Field label="Promo code (optional)" labelId="new-rental-promo-label">
+                    <div className="new-rental-pricing-promo">
+                      <Input
+                        aria-labelledby="new-rental-promo-label"
+                        value={promoCodeInput}
+                        onChange={(e) => {
+                          setPromoCodeInput(e.target.value.toUpperCase())
+                          setPromoNotice(null)
+                        }}
+                        placeholder="Promo code"
+                        style={{ ...inputStyle, textTransform: 'uppercase' }}
+                      />
+                      <Button
+                        variant="secondary"
+                        type="button"
+                        aria-label="Apply promo code"
+                        onClick={async () => {
+                          const code = promoCodeInput.trim().toUpperCase()
+                          if (!code) {
+                            setPromoNotice({ tone: 'danger', text: 'Enter a promo code.' })
+                            return
+                          }
+                          /* RULING 2026-10-07: a code is a `coupons` row, never an in-code constant. */
+                          const today = (pickupAt ?? new Date()).toISOString().slice(0, 10)
+                          const found = await lookupCouponByCode(code, today)
+                          if (!found.ok) {
+                            setPromoNotice({ tone: 'danger', text: found.reason })
+                            return
+                          }
+                          const promo = found.promo
+                          if (promo.minSpendPaisa && pricing.grossSubtotalPaisa < promo.minSpendPaisa) {
+                            setPromoNotice({
+                              tone: 'danger',
+                              text: `Promo "${code}" requires minimum rental spend of ${formatMoney(promo.minSpendPaisa)}.`,
+                            })
+                            return
+                          }
+                          setPromoCodeApplied(promo)
+                          setPromoNotice({
+                            tone: 'success',
+                            text: `Promo "${code}" applied: ${promo.discountPercent}% off${promo.description ? ` (${promo.description})` : ''}.`,
+                          })
+                        }}
+                      >
+                        Apply
+                      </Button>
+                      {promoCodeApplied && (
+                        <Button
+                          variant="ghost"
+                          type="button"
+                          aria-label="Clear promo code"
+                          onClick={() => {
+                            setPromoCodeApplied(null)
+                            setPromoCodeInput('')
+                            setPromoNotice(null)
+                          }}
+                        >
+                          Clear
+                        </Button>
+                      )}
+                    </div>
+                  </Field>
                 </div>
-              </Field>
-              {promoNotice && (
+              </div>
+            </details>
+            {promoNotice && (
                 <div
+                  role={promoNotice.tone === 'danger' ? 'alert' : 'status'}
                   style={{
                     marginTop: 6,
                     fontSize: '12px',
@@ -305,8 +306,15 @@ export function RentalPricingSection({
                 >
                   {promoNotice.text}
                 </div>
-              )}
-            </div>
+            )}
+
+            {/* Active pricing rules remain visible even when optional controls are closed. */}
+            {isStudentBundle && (
+              <p className="new-rental-pricing-notice new-rental-pricing-notice--info">
+                <Icon name="info" size={16} />
+                Student/College flat-rate bundle lines do not receive stacking discounts.
+              </p>
+            )}
 
             {/* Stacking cap indicator */}
             {pricing.discounts.capped && (
@@ -352,14 +360,10 @@ export function RentalPricingSection({
               </div>
             )}
           </div>
-
-          <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
-            <VatToggle ratePercent={vatRatePercent} on={vatOn} onChange={setVatOn} />
-          </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
-          <div style={moneyBlock}>
+        <div className="new-rental-pricing-totals">
+          <div className="new-rental-pricing-charges" style={moneyBlock}>
             <h3 style={sub}>Rental Charges</h3>
             {[
               { l: 'Equipment Rental', v: formatMoney(pricing.equipmentSubtotalPaisa) },
@@ -394,7 +398,7 @@ export function RentalPricingSection({
                 {...(vatOn ? {} : { tone: 'var(--muted)' })}
               />
             </div>
-            <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+            <div className="new-rental-pricing-total">
               <MoneyRow label="RENTAL TOTAL" value={formatMoney(pricing.rentalTotalPaisa)} big />
             </div>
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
@@ -404,7 +408,7 @@ export function RentalPricingSection({
                 tone="var(--text2)"
               />
               <p style={{ margin: '2px 0 8px', fontSize: '11px', color: 'var(--muted)' }}>
-                Held as a separate liability guarantee. Not taxable, not rental revenue.
+                Held as a separate liability guarantee. Excluded from rental charges and VAT.
               </p>
               <MoneyRow
                 label={`Advance Required (${pricing.advanceRequiredPaisa === pricing.rentalTotalPaisa && pricing.rentalTotalPaisa <= 500000 ? '100%' : pricing.rentalTotalPaisa <= 1000000 ? 'Rs 5,000' : '50%'})`}
@@ -412,9 +416,12 @@ export function RentalPricingSection({
                 tone="var(--st-primary-fg)"
                 strong
               />
-              <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)' }}>
-                Tier policy: ≤ Rs 5,000 (100%) · ≤ Rs 10,000 (Rs 5,000) · &gt; Rs 10,000 (50%)
-              </p>
+              <details className="new-rental-pricing-policy">
+                <summary>How the advance is calculated</summary>
+                <p className="new-rental-pricing-help">
+                  Rental total ≤ Rs 5,000: 100%. Up to Rs 10,000: Rs 5,000. Above Rs 10,000: 50%.
+                </p>
+              </details>
             </div>
           </div>
 
@@ -430,19 +437,14 @@ export function RentalPricingSection({
 
             <label
               htmlFor="manual-deposit-override"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                marginTop: 10,
-                cursor: 'pointer',
-                fontSize: 'var(--t-meta)',
-              }}
+              className="new-rental-pricing-checkbox new-rental-pricing-override"
             >
               <input
                 id="manual-deposit-override"
                 type="checkbox"
                 aria-label="Manual security deposit override"
+                aria-controls="new-rental-deposit-fields"
+                aria-expanded={manualDepositOverride}
                 checked={manualDepositOverride}
                 onChange={(e) => {
                   setManualDepositOverride(e.target.checked)
@@ -457,10 +459,11 @@ export function RentalPricingSection({
                 style={{ cursor: 'pointer', width: 16, height: 16 }}
               />
               <span>Manual Deposit Override</span>
+              <span className="new-rental-pricing-option-state">{manualDepositOverride ? 'On' : 'Off'}</span>
             </label>
 
             {manualDepositOverride && (
-              <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div id="new-rental-deposit-fields" className="new-rental-pricing-deposit-fields">
                 <Field label="Override Amount (Rs) *">
                   <Input
                     type="number"
@@ -512,16 +515,14 @@ export function RentalPricingSection({
               </div>
             )}
 
-            <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-              <strong>Security Deposit Policy:</strong> Any security deposit required is held as a separate liability
-              guarantee. It is never credited towards rental charges and does not reduce rental outstanding.
-            </p>
-            <p style={{ margin: '10px 0 0', fontSize: 'var(--t-meta)', color: 'var(--muted)', lineHeight: 1.5 }}>
-              <strong>Payment Recording:</strong> New Rental creates the booking reservation. Advance payments and security
-              deposits are officially recorded with receipt numbers directly on the <strong>Booking Detail</strong> page
-              once the booking and invoice are created.
+            <p className="new-rental-pricing-help" style={{ marginTop: 12 }}>
+              Refundable and separate from rent. It never reduces rental outstanding.
             </p>
           </div>
+          <p className="new-rental-pricing-payment-note">
+            <Icon name="info" size={16} />
+            <span>Record advance payments and deposits in Booking Detail after the booking and invoice are created.</span>
+          </p>
         </div>
       </div>
     </Section>

@@ -2,8 +2,8 @@ import Icon from '../../../components/ui/Icon'
 import { Card } from '../../../components/ui/Page'
 import { formatMoney, type Paisa } from '../../../lib/money'
 import { BsAdDate } from '../../../components/ui/BsAdDate'
-import { MoneyRow } from './BookingFormWidgets'
 import type { BlockingNotice } from './newRentalGuards'
+import './booking-summary-card.css'
 
 export interface BookingSummaryCardProps {
   client?: { name: string } | null | undefined
@@ -44,144 +44,119 @@ export function BookingSummaryCard({
   runNoticeAction,
 }: BookingSummaryCardProps) {
   const noticeList = (notices: BlockingNotice[]) => (
-    <ul style={{ listStyle: 'disc', margin: '6px 0 0 16px', padding: 0, display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--t-meta)' }}>
+    <ul className="new-rental-review-notices">
       {notices.map((n) => (
-        <li key={n.text} style={{ lineHeight: 1.35, display: 'flex', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}>
+        <li key={n.text}>
           <span>{n.text}</span>
           {n.action && (
             <button
               type="button"
-              className="press"
+              className="press new-rental-review-notice-action"
               onClick={() => runNoticeAction(n.action!)}
-              style={{
-                display: 'inline-block',
-                minHeight: 44,
-                marginLeft: 0,
-                padding: '1px 8px',
-                borderRadius: 'var(--r-badge)',
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'inherit',
-                fontSize: 'var(--t-th)',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
             >
-              {n.action}
+              <span>{n.action}</span>
+              <Icon name="arrow_right" size={16} />
             </button>
           )}
         </li>
       ))}
     </ul>
   )
+  // RULING 2026-10-08: review follows the form's real blockers and keeps their
+  // existing actions; layout changes must never invent a new confirmation gate.
   return (
-    <Card id="rail-booking-summary" title="Booking Summary">
-      <dl className="new-rental-summary-context">
-        <div>
-          <dt>Client</dt>
-          <dd>{client?.name || 'Select a client'}</dd>
-        </div>
-        <div>
-          <dt>Pickup</dt>
-          <dd>
-            {pickupAt ? <BsAdDate date={pickupAt} tone="booking" /> : 'Choose date'} <span style={{ color: pickupAt ? 'var(--booking-date-text)' : undefined }}>{pickupTime || 'Choose time'}</span>
-          </dd>
-        </div>
-        <div>
-          <dt>Return</dt>
-          <dd>
-            {returnAt ? <BsAdDate date={returnAt} tone="booking" /> : 'Choose date'} <span style={{ color: returnAt ? 'var(--booking-date-text)' : undefined }}>{returnTime || 'Choose time'}</span>
-          </dd>
-        </div>
-        <div>
-          <dt>Equipment</dt>
-          <dd>
-            {totalUnits} {totalUnits === 1 ? 'item' : 'items'} · {days > 0 ? `${days} ${dayWord}` : 'Check dates'}
-          </dd>
-        </div>
-      </dl>
-      {canBookingMoney ? (
-        <>
-          <div className="new-rental-bento-hero-total">
-            <div className="new-rental-bento-hero-total-label">
+    <Card id="rail-booking-summary" title="Booking Summary" bodyStyle={{ padding: 16 }}>
+      <div className="new-rental-review">
+        <dl className="new-rental-review-context">
+          <div className="new-rental-review-client">
+            <dt>Client</dt>
+            <dd>{client?.name || 'Select a client'}</dd>
+          </div>
+          <div className="new-rental-review-items">
+            <dt>Equipment</dt>
+            <dd>
+              {totalUnits} {totalUnits === 1 ? 'item' : 'items'} · {days > 0 ? `${days} ${dayWord}` : 'Check dates'}
+            </dd>
+          </div>
+        </dl>
+        <dl className="new-rental-review-dates">
+          <div>
+            <dt><Icon name="calendar" size={14} /> Pickup</dt>
+            <dd>
+              {pickupAt ? <BsAdDate date={pickupAt} tone="booking" /> : 'Choose date'}
+              <span className="new-rental-review-time" style={{ color: pickupAt ? 'var(--booking-date-text)' : undefined }}>{pickupTime || 'Choose time'}</span>
+            </dd>
+          </div>
+          <div>
+            <dt><Icon name="calendar" size={14} /> Return</dt>
+            <dd>
+              {returnAt ? <BsAdDate date={returnAt} tone="booking" /> : 'Choose date'}
+              <span className="new-rental-review-time" style={{ color: returnAt ? 'var(--booking-date-text)' : undefined }}>{returnTime || 'Choose time'}</span>
+            </dd>
+          </div>
+        </dl>
+        {canBookingMoney ? (
+          <div className="new-rental-review-money">
+            <div className="new-rental-review-total">
               <span>Estimated Rental Total</span>
-              <span style={{ fontSize: 10, color: 'var(--text2)', fontWeight: 600, textTransform: 'none' }}>
-                {days > 0 ? `${days} ${dayWord}` : 'Dates pending'}
-              </span>
+              <strong>
+                {formatMoney(pricing.rentalTotalPaisa)}
+              </strong>
             </div>
-            <div className="new-rental-bento-hero-total-val">
-              {formatMoney(pricing.rentalTotalPaisa)}
-            </div>
-          </div>
 
-          {/* Security Deposit (separate liability guarantee) and Advance Required */}
-          <div
-            style={{
-              marginTop: 10,
-              padding: '8px 10px',
-              borderRadius: 'var(--r-btn)',
-              background: 'var(--card2)',
-              border: '1px solid color-mix(in srgb, var(--border) 70%, transparent)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}
-          >
-            <MoneyRow
-              label="Security Deposit (Refundable)"
-              value={formatMoney(pricing.securityDeposit.requiredPaisa)}
-              tone="var(--text2)"
-            />
-            <MoneyRow
-              label="Advance Required"
-              value={formatMoney(pricing.advanceRequiredPaisa)}
-              tone="var(--text)"
-              strong
-            />
+            {/* Security Deposit (separate liability guarantee) and Advance Required */}
+            <dl className="new-rental-review-payments">
+              <div>
+                <dt>Security Deposit <span>(Refundable)</span></dt>
+                <dd>{formatMoney(pricing.securityDeposit.requiredPaisa)}</dd>
+              </div>
+              <div>
+                <dt>Advance Required</dt>
+                <dd>{formatMoney(pricing.advanceRequiredPaisa)}</dd>
+              </div>
+            </dl>
           </div>
-        </>
-      ) : (
-        <p style={{ margin: '0 0 8px', fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
-          Prices are hidden for your role.
-        </p>
-      )}
+        ) : (
+          <p className="new-rental-review-role-note">
+            Prices are hidden for your role.
+          </p>
+        )}
 
-      {blockingNotices.length > 0 && (
-        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+        {blockingNotices.length > 0 ? (
           <div
             data-testid="booking-attention-status"
-            style={{
-              padding: '10px 12px',
-              borderRadius: 'var(--r-btn)',
-              background: validationAttempted ? 'var(--st-danger-bg)' : 'var(--card2)',
-              border: '1px solid var(--border)',
-              color: validationAttempted ? 'var(--st-danger-fg)' : 'var(--text2)',
-            }}
+            className={`new-rental-review-attention${validationAttempted ? ' new-rental-review-attention--error' : ''}`}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 'var(--t-meta)' }}>
-              <Icon name="error" size={14} style={{ flexShrink: 0 }} />
-              <span>
-                {validationAttempted ? `${blockingNotices.length} ${blockingNotices.length === 1 ? 'thing needs' : 'things need'} attention:` : `${blockingNotices.length} ${blockingNotices.length === 1 ? 'thing' : 'things'} left before confirming`}
-              </span>
+            <div className="new-rental-review-status-heading">
+              <Icon name={validationAttempted ? 'error' : 'checklist'} size={17} />
+              <h3>{validationAttempted ? 'Needs attention' : 'Before confirming'}</h3>
             </div>
+            <p className="new-rental-review-status-copy">
+              {validationAttempted ? `${blockingNotices.length} ${blockingNotices.length === 1 ? 'thing needs' : 'things need'} attention:` : `${blockingNotices.length} ${blockingNotices.length === 1 ? 'thing' : 'things'} left before confirming`}
+            </p>
             {noticeList(blockingNotices)}
           </div>
-        </div>
-      )}
-
-      {advisories.length > 0 && (
-        <div
-          data-testid="booking-advisories"
-          style={{ marginTop: 12, padding: '10px 12px', borderRadius: 'var(--r-btn)', background: 'var(--card2)', border: '1px solid var(--border)', color: 'var(--text2)' }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 'var(--t-meta)' }}>
-            <Icon name="info" size={14} style={{ flexShrink: 0 }} />
-            <span>Worth checking — does not block confirming</span>
+        ) : (
+          <div className="new-rental-review-ready">
+            <Icon name="check" size={17} />
+            <span>Ready to confirm</span>
           </div>
-          {noticeList(advisories)}
-        </div>
-      )}
+        )}
 
+        {advisories.length > 0 && (
+          <div
+            data-testid="booking-advisories"
+            className="new-rental-review-advisories"
+          >
+            <div className="new-rental-review-status-heading">
+              <Icon name="info" size={17} />
+              <h3>Worth checking</h3>
+            </div>
+            <p className="new-rental-review-status-copy">Does not block confirming</p>
+            {noticeList(advisories)}
+          </div>
+        )}
+      </div>
     </Card>
   )
 }

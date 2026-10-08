@@ -48,6 +48,7 @@ export function BookingDatesSection({
   return (
     <Section
       id="section-1"
+      collapsible={false}
       title={title}
       badge={
         days > 0 ? (
