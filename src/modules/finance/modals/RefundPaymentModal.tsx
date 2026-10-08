@@ -5,6 +5,7 @@ import { rupees, toRupees, formatMoney } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { refundPayment } from '../../../actions/payments/refundPayment'
 import { useAuth } from '../../../lib/auth'
+import { useNetwork } from '../../../lib/network'
 
 interface RefundPaymentModalProps {
   isOpen: boolean
@@ -48,6 +49,7 @@ export function RefundPaymentModal({
    * choice the one that happens by accident. It is displayed instead, and it
    * bounds the field. `0` renders as an empty box; the submit guard refuses it.
    */
+  const isOnline = useNetwork()
   const [refundAmount, setRefundAmount] = useState<number>(0)
   const [reason, setReason] = useState('')
   const [method, setMethod] = useState<'Bank Reversal' | 'Cash Return' | 'Wallet Credit'>('Bank Reversal')
@@ -114,6 +116,14 @@ export function RefundPaymentModal({
      */
     if (!user) {
       setError('You are not signed in, so this reversal cannot be attributed to anyone. Sign in and process it again.')
+      return
+    }
+
+    if (!isOnline) {
+      setError(
+        'This device is offline. A payment refund reversal is not queued for later — it is refused because financial ' +
+          'corrections require an active network connection. Process it once you are back online.',
+      )
       return
     }
 

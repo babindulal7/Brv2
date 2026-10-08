@@ -1277,6 +1277,11 @@ export default function Finance({
                     skeletonRows={6}
                     emptyTitle={EMPTY_TITLE[chip]}
                     emptyMessage={EMPTY_MESSAGE[chip]}
+                    {...(list.isFiltered
+                      ? { onClearFilters: () => setChip('All') }
+                      : canIssueInvoice
+                        ? { emptyActionLabel: 'Create Invoice', onEmptyAction: () => setShowCreateInvoice(true) }
+                        : {})}
                     {...restriction}
                   >
                     {tabular ? (

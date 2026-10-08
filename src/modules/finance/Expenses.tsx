@@ -14,6 +14,7 @@ import { toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useTabularLayout } from '../../lib/device'
+import { useNetwork } from '../../lib/network'
 import { newClientUuid } from '../../lib/supabase'
 import { TODAY_DAY_AD } from '../../data/today'
 import {
@@ -418,6 +419,7 @@ function AddExpenseSheet({
   lookupsError: string | null
   createdBy: string | null
 }) {
+  const isOnline = useNetwork()
   const [dateAd, setDateAd] = useState(TODAY_DAY_AD)
   const [categoryId, setCategoryId] = useState('')
   const [branchId, setBranchId] = useState('')
@@ -443,6 +445,11 @@ function AddExpenseSheet({
   }, [isOpen])
 
   const submit = async (status: ExpenseEntryStatus) => {
+    if (!isOnline) {
+      return setError(
+        'This device is offline. An expense entry is not queued offline because document numbering and accounting records require an active network connection. Record it when you are back online.'
+      )
+    }
     if (!categoryId) return setError('Choose a category. Every expense belongs to one — the column is NOT NULL.')
     if (!branchId) return setError('Choose a branch. expenses.branch_id is NOT NULL, so an expense cannot be recorded without one.')
     if (!vendor.trim()) return setError('Enter the vendor. vendor_name is NOT NULL and there is no "unknown vendor" to fall back on.')
@@ -927,7 +934,9 @@ export default function Expenses({
                   ? 'Clear the status chip or the category to see everything again.'
                   : 'Nothing has been recorded. Add Expense enters one against a branch and a category.'
               }
-              {...(isFiltered ? { onClearFilters: clearFilters } : {})}
+              {...(isFiltered
+                ? { onClearFilters: clearFilters }
+                : { emptyActionLabel: 'Add Expense', onEmptyAction: () => setSheetOpen(true) })}
               {...restriction}
             >
               {tabular ? (

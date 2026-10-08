@@ -828,6 +828,7 @@ const UNBUILT: Array<{ to: string; title: string; crumbs: Crumb[] }> = NAV.flatM
 import { useNetwork } from './lib/network'
 import { IS_MOCK } from './lib/supabase'
 import Icon from './components/ui/Icon'
+import { ConflictNotificationBanner } from './components/ui/ConflictNotificationBanner'
 
 function OfflineBanner() {
   const isOnline = useNetwork()
@@ -1016,6 +1017,7 @@ function Shell({
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <MockBanner />
         <OfflineBanner />
+        <ConflictNotificationBanner />
         <HeaderBar crumbs={crumbs} {...(search ? { searchPlaceholder: search } : {})} />
         <main
           data-floor={isFloor ? 'true' : undefined}

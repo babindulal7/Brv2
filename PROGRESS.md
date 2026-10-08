@@ -2,16 +2,54 @@
 
 **Update this at the end of every session.** Plan lives in [`PLAN.md`](PLAN.md).
 
-## 2026-10-08 — Phase 6 Screen Hardening: Finance, Reports & Settings 5-State PageBody & Page-Type Rules Complete (Phase 6 100% Done)
+## 2026-10-08 — Phase 9 (Offline & Sync Architecture) Complete
 
-**Phase:** Phase 6 (Screens — Finance, Reports, Settings) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2,103 passed in 95 files (0 failures) · `npm run build` exit 0
+**Phase:** Phase 9 (Offline & Sync Architecture) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2,117 passed in 98 files (0 failures)
 
-### 1. `Finance` Module Hardening & Automated Test Coverage
-- `Finance.tsx` (`/finance`): Exported `FinanceProps` (`loading?: boolean`, `error?: string | null`, `onRetry?: () => void`, `initialTab?: FinanceTab`). Wrapped outer layout in `<PageBody noun="finance">` with props passthrough, `financeRestriction(money)`, and `skeleton="table"`.
-- `Payments.tsx` (`/finance/payments`): Exported `PaymentsProps`, wired props into `<PageBody noun="payments">`.
-- `Expenses.tsx` (`/finance/expenses`): Exported `ExpensesProps`, wired props into `<PageBody noun="expenses">`.
-- Page-type compliance verified: 3 KPI cards (≤4 cap), 1 Donut chart (≤1 cap).
-- Created `src/modules/finance/__tests__/Finance.states.test.tsx` (5/5 tests passing). Full finance suite: 136/136 tests passing.
+### 1. Offline Mutation Queue & Dexie Hardening (`src/lib/offlineQueue.ts`)
+- Added `QueuedConflict` interface and version 4 `conflicts` Dexie store (`++id, mutationId, clientUuid, table, recordId, status, detectedAt`).
+- Added `canUseOfflineQueue()` guards across all Dexie methods (`enqueueMutation`, `getPendingMutations`, `markMutationSyncing`, `markMutationFailed`, `resolveMutation`, `getDeadLetterMutations`, `getUnresolvedConflicts`) preventing unhandled errors in storage-blocked or headless test environments.
+- Implemented replay conflict detection in `replayMutation`: reads remote state before update; if `remote.updated_at > mutation.timestamp` and payload fields conflict, creates a `QueuedConflict` row, marks the mutation as `failed` with explanation, and prevents silent overwrites.
+- Added `getUnresolvedConflicts()`, `countUnresolvedConflicts()`, and `resolveConflict(conflictId, resolution, resolvedBy)` ('keep_server' vs 'force_local').
+- Wired `dataAccess.ts` (`idempotentInsert`, `safeUpdate`) and floor operations in `floorVerb.ts` to return `{ data, error: null, queued: true }` when offline so callers can distinguish offline queuing from confirmed remote writes (§4.21).
+
+### 2. Operational Read Staleness & `<DataAgeBadge>`
+- Created `src/components/ui/DataAgeBadge.tsx` adhering to Law 11 (icon + label + color) and Law 15 (44×44px refresh touch target), displaying live, cached, and offline states.
+- Enhanced `useList.ts` and `useBooking.ts` to record and expose `lastFetchedAt: Date | null`.
+- Enhanced `PageBody.tsx` to accept `dataTimestamp` and `showAgeBadge`, rendering `<DataAgeBadge>` automatically across `Today.tsx`, `RentalsList.tsx`, and `BookingDetail.tsx`.
+- Automated test coverage: `src/components/ui/__tests__/DataAgeBadge.test.tsx` (6/6 tests passing).
+
+### 3. Conflict UI & Alerting
+- Created `src/components/ui/ConflictResolutionModal.tsx`: side-by-side visual diff showing local offline changes vs current server state with "Keep Server Version" and "Apply Local Offline Changes" buttons (44×44px touch targets, Law 15).
+- Created `src/components/ui/ConflictNotificationBanner.tsx`: periodically checks `countUnresolvedConflicts()` and renders a persistent banner with a 44px "Review Conflicts" button.
+- Mounted `<ConflictNotificationBanner />` in `src/App.tsx` directly under `<OfflineBanner />`.
+- Automated test coverage: `src/components/ui/__tests__/ConflictResolution.test.tsx` (4/4 tests passing).
+
+### 4. Offline Financial Action Gating (Law 12 / Law 6)
+- Gated financial mutation modals (`RefundPaymentModal.tsx`, `Expenses.tsx`, `CreateInvoiceModal.tsx`, `VoidInvoiceModal.tsx`) with `useNetwork()`, rendering persistent inline error banners stating that financial operations and reversals require an active network connection.
+
+### 5. Automated Verification & Scorecard
+- **TypeScript Typecheck:** `tsc --noEmit` exit 0 (0 errors).
+- **Test Suite:** `npm test` exit 0 (98 test files passed, 2,117/2,117 tests passed, 0 failures).
+- Phase 9 checklist items in `PLAN.md` marked complete.
+
+## 2026-10-08 — Phase 6 Screen Hardening: Finance 5-State Actions & Empty State Flow Complete
+
+**Phase:** Phase 6 (Screens — Finance) · **Status:** `tsc --noEmit` exit 0 · `npm test` 2,105 passed in 95 files (0 failures)
+
+### 1. `Finance` Screens (`Invoices`, `Payments`, `Expenses`) 5-State Actions Hardening
+- **`Finance.tsx` Invoices Tab:**
+  - Integrated `onClearFilters: () => setChip('All')` when filtered empty state occurs.
+  - Integrated primary action `emptyActionLabel: 'Create Invoice'` with `onEmptyAction: () => setShowCreateInvoice(true)` when unfiltered empty state occurs for authorized staff (`canIssueInvoice`).
+  - Strengthened `Finance.states.test.tsx` with automated assertions for Invoices tab unfiltered empty state with "Create Invoice" action, and filtered empty state with "Clear filters" action (7/7 tests passing).
+- **`Payments.tsx` Payments Ledger:**
+  - Added filter-aware `emptyTitle` ("No payments match these filters" vs. "No payments yet").
+  - Added primary action `emptyActionLabel: 'Record Payment'` (`onEmptyAction: () => setRecordOpen(true)`) when unfiltered and user has payment permissions (`canTakePayment`).
+  - Added `onClearFilters: clearFilters` when filtered empty state occurs.
+- **`Expenses.tsx` Expenses Ledger:**
+  - Added primary action `emptyActionLabel: 'Add Expense'` (`onEmptyAction: () => setSheetOpen(true)`) when unfiltered.
+  - Verified `onClearFilters: clearFilters` when filtered empty state occurs.
+- Full verification: **10 test files passed, 138/138 tests passed under `src/modules/finance/__tests__/`, project-wide: 95 files / 2,105 tests passing, `tsc --noEmit` clean (exit 0)**.
 
 ### 2. `Reports` Module Hardening & Page-Type Rules
 - `Pulse.tsx` (`/pulse`, `/reports/pulse`): Exported `PulseProps`, wired `<PageBody noun="business pulse">` with staff role gating (`!isStaff(user?.role)` renders `RestrictedState` with `"Requires Staff"`), and loading/error retry passthrough.

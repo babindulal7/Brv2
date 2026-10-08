@@ -39,7 +39,7 @@ export async function idempotentInsert<
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     console.warn(`[DataAccess] Device offline. Queuing insert for ${String(table)}.`)
     await enqueueMutation(String(table), 'insert', finalPayload, finalPayload.client_uuid)
-    return { data: finalPayload, error: null } // Optimistic response
+    return { data: finalPayload, error: null, queued: true } // Optimistic response with queued discriminant
   }
 
   const { data, error } = await (supabase.from(table as string) as any).insert(finalPayload).select().single()
@@ -49,18 +49,19 @@ export async function idempotentInsert<
     if (error.message === 'Failed to fetch' || error.code === '408') {
        console.warn(`[DataAccess] Network failure during insert. Queuing ${String(table)}.`)
        await enqueueMutation(String(table), 'insert', finalPayload, finalPayload.client_uuid)
-       return { data: finalPayload, error: null }
+       return { data: finalPayload, error: null, queued: true }
     }
 
     // Detect duplicate idempotency violation
     if (error.code === '23505' && error.message.includes('client_uuid')) {
       console.warn(`[DataAccess] Idempotent request duplicate detected for table ${String(table)}. Fetching existing record.`)
-      return await (supabase.from(table as string) as any).select().eq('client_uuid', finalPayload.client_uuid).single()
+      const existing = await (supabase.from(table as string) as any).select().eq('client_uuid', finalPayload.client_uuid).single()
+      return { ...existing, queued: false }
     }
     throw new Error(`[DataAccess] Insert failed on ${String(table)}: ${error.message}`)
   }
 
-  return { data, error: null }
+  return { data, error: null, queued: false }
 }
 
 /**
@@ -114,7 +115,7 @@ export async function safeUpdate<
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     console.warn(`[DataAccess] Device offline. Queuing update for ${String(table)} id=${id}.`)
     await enqueueMutation(String(table), 'update', { ...payload, id }, actionUuid)
-    return { data: { ...payload, id }, error: null } // Optimistic response
+    return { data: { ...payload, id }, error: null, queued: true } // Optimistic response with queued discriminant
   }
 
   const { data, error } = await (supabase.from(table as string) as any).update(payload).eq('id', id).select().single()
@@ -123,12 +124,12 @@ export async function safeUpdate<
     if (error.message === 'Failed to fetch' || error.code === '408') {
        console.warn(`[DataAccess] Network failure during update. Queuing ${String(table)}.`)
        await enqueueMutation(String(table), 'update', { ...payload, id }, actionUuid)
-       return { data: { ...payload, id }, error: null }
+       return { data: { ...payload, id }, error: null, queued: true }
     }
     throw new Error(`[DataAccess] Update failed on ${String(table)}: ${error.message}`)
   }
 
-  return { data, error: null }
+  return { data, error: null, queued: false }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

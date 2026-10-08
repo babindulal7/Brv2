@@ -4,6 +4,7 @@ import { Button } from '../../../components/ui/Page'
 import { rupees, formatMoney, price } from '../../../lib/money'
 import type { Paisa } from '../../../lib/money'
 import { getSetting } from '../../../lib/settingsStore'
+import { useNetwork } from '../../../lib/network'
 
 /*
  * ── This modal does not mint an invoice number, and must not ───────────────
@@ -87,6 +88,7 @@ interface CreateInvoiceModalProps {
  * today is zero. See `handleSubmit`.
  */
 export function CreateInvoiceModal({ isOpen, onClose }: CreateInvoiceModalProps) {
+  const isOnline = useNetwork()
   const [client, setClient] = useState('')
   /*
    * ── Nothing on this form starts pre-filled ────────────────────────────────
@@ -224,6 +226,13 @@ export function CreateInvoiceModal({ isOpen, onClose }: CreateInvoiceModalProps)
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
+    if (!isOnline) {
+      setError(
+        'This device is offline. Invoices cannot be issued while offline because official VAT/PAN invoice numbers ' +
+          'and ledger records require an active network connection. Issue it once you are back online.',
+      )
+      return
+    }
     if (!client.trim()) {
       setError('Client name is required.')
       return

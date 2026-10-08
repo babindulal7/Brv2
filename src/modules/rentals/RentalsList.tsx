@@ -1509,6 +1509,7 @@ export default function RentalsList({
               error={isError}
               onRetry={handleRetry}
               hasRows={list.rows.length > 0}
+              dataTimestamp={list.lastFetchedAt}
               empty={list.isEmpty || query.impossible}
               emptyIsFiltered={list.isFiltered}
               onClearFilters={clearFilters}

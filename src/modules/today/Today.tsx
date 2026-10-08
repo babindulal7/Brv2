@@ -773,6 +773,7 @@ export default function Today({
         {...(propError !== undefined ? { error: propError } : {})}
         {...(handleRetry ? { onRetry: handleRetry } : {})}
         hasRows={hasAnyRows}
+        dataTimestamp={pickups.lastFetchedAt ?? returns.lastFetchedAt}
         restricted={!isStaffMember}
         restrictedRequiredRole="Staff"
         restrictedReason="Today's operations dashboard is for Babin Rentals staff only. Clients may view their bookings in the client portal."

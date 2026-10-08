@@ -434,21 +434,26 @@ Six workspaces depend on it.
 
 ## Phase 9 — Offline
 
-- [~] Dexie write queue, `client_uuid` idempotency
-      → The queue, retry, dead-lettering and `client_uuid` idempotency are all real
-      (`offlineQueue.ts`). **Gap: it has no producer** — no screen write path calls
-      `idempotentInsert`/`safeUpdate`, so the queue is unreachable from the UI.
-- [~] Precache shell; stale-while-revalidate reference data; network-first operational reads **with an age badge**
-      → Precache and SWR are configured in the PWA plugin (113 entries, verified in the build).
-      **Gap: no age badge anywhere** — nothing records or displays how stale an operational read is.
-- [ ] Conflict UI naming both sides — never silent
-      → Nothing exists. No conflict *detection* on replay either (no version/`updated_at` check),
-      so a stale offline mutation overwrites silently — the exact failure the item forbids.
+- [x] Dexie write queue, `client_uuid` idempotency
+      → The queue, retry, dead-lettering, v1-v4 schema migrations and `client_uuid` idempotency
+      are complete (`offlineQueue.ts`). Wired into `idempotentInsert` and `safeUpdate` in `dataAccess.ts`
+      and floor operations in `floorVerb.ts`, returning `{ queued: true }` discriminants when offline.
+- [x] Precache shell; stale-while-revalidate reference data; network-first operational reads **with an age badge**
+      → Precache and SWR are configured in the PWA plugin. Dedicated `<DataAgeBadge>` component
+      built adhering to Law 11 (icon + label + colour) and Law 15 (44×44px refresh touch target).
+      Tracks and displays `lastFetchedAt` across operational reads (`useList.ts`, `useBooking.ts`,
+      `<PageBody>`, `Today.tsx`, `RentalsList.tsx`, `BookingDetail.tsx`).
+- [x] Conflict UI naming both sides — never silent
+      → Replay in `offlineQueue.ts` detects conflicting fields against server `updated_at` before writing.
+      Stores conflicting mutations in Dexie `conflicts` store. Persistent `<ConflictNotificationBanner>`
+      mounted in `App.tsx` alerts operators. `<ConflictResolutionModal>` renders side-by-side diffs
+      with 44×44px "Keep Server Version" and "Apply Local Offline Changes" actions.
 - [x] Offline **banner**, never full-screen
       → `App.tsx:756-777`, one strip, returns `null` when online, mounted once.
-- [~] Money and approvals blocked, **with the reason stated**
-      → The RBAC guards exist and state reasons. **Gap: nothing threads offline state into them**,
-      so they never fire *because of* being offline.
+- [x] Money and approvals blocked, **with the reason stated**
+      → Hardened with `useNetwork()` in `RefundPaymentModal.tsx`, `Expenses.tsx`,
+      `CreateInvoiceModal.tsx`, and `VoidInvoiceModal.tsx`, rendering persistent inline error
+      banners stating that financial operations and reversals require an active network connection.
 
 **Gate:** proven on a real phone, in a real warehouse, in airplane mode. Non-negotiable —
 do not start Phase 10 before this passes.

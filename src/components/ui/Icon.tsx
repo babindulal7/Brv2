@@ -110,6 +110,7 @@ const REGISTRY = {
   plug: IconPlug,
   sparkles: IconSparkles,
   activity: IconActivity,
+  progress: IconActivity,
   chevron_up: IconChevronUp,
 
   // kpi tiles

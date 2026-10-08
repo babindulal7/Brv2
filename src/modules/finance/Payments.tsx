@@ -808,15 +808,20 @@ export default function Payments({
             hasRows={rows.length > 0}
             empty={list.isEmpty}
             emptyIsFiltered={list.isFiltered}
-            onClearFilters={clearFilters}
             noun="payments"
             skeleton="table"
             skeletonRows={5}
+            emptyTitle={isFiltered ? 'No payments match these filters' : 'No payments yet'}
             emptyMessage={
               isFiltered
                 ? 'No payment matches this filter. Clear it to see the whole ledger.'
                 : 'No payment has been recorded yet. Recording one is how it gets here — a payment is never edited afterwards.'
             }
+            {...(isFiltered
+              ? { onClearFilters: clearFilters }
+              : canTakePayment
+                ? { emptyActionLabel: 'Record Payment', onEmptyAction: () => setRecordOpen(true) }
+                : {})}
           >
             {/* PHONE <768 — the table becomes card rows. */}
             {!tabular && (

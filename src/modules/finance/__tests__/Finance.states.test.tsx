@@ -30,6 +30,15 @@ vi.mock('../../../lib/moneyVisibility', () => ({
   useCanViewMoney: () => ['Owner', 'Admin', 'Accounts'].includes(userRole),
 }))
 
+vi.mock('../../../lib/queries/finance', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../../lib/queries/finance')>()
+  return {
+    ...real,
+    listInvoices: vi.fn(async () => ({ rows: [], total: 0 })),
+    listPayments: vi.fn(async () => ({ rows: [], total: 0 })),
+  }
+})
+
 window.matchMedia = ((q: string) => ({
   matches: false,
   media: q,
@@ -135,5 +144,39 @@ describe('Finance — 5-State PageBody Hardening & Page-Type Rules', () => {
     // Chart components render SVG elements (e.g. Donut). Donut has circle / path elements.
     const donutSvgs = Array.from(svgs).filter((svg) => svg.querySelector('circle, path[stroke-dasharray]'))
     expect(donutSvgs.length).toBeLessThanOrEqual(1)
+  })
+
+  it('renders Invoices tab unfiltered empty state with "Create Invoice" action', async () => {
+    await mount({ initialTab: 'Invoices' }, 'Owner')
+    expect(container.textContent).toContain('No invoices yet')
+    expect(container.textContent).toContain('Nothing has been invoiced')
+    const createInvoiceBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.includes('Create Invoice'),
+    )
+    expect(createInvoiceBtn).toBeDefined()
+  })
+
+  it('renders Invoices tab filtered empty state with "Clear filters" action', async () => {
+    await mount({ initialTab: 'Invoices' }, 'Owner')
+    // Click a status chip e.g. Sent
+    const sentChipBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.trim() === 'Sent',
+    )
+    if (sentChipBtn) {
+      await act(async () => {
+        sentChipBtn.click()
+      })
+    }
+
+    expect(container.textContent).toContain('Nothing awaiting payment')
+    const clearFiltersBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+      b.textContent?.includes('Clear filters') || b.textContent?.includes('Clear Filters'),
+    )
+    expect(clearFiltersBtn).toBeDefined()
+    await act(async () => {
+      clearFiltersBtn?.click()
+    })
+    // Back to All
+    expect(container.textContent).toContain('No invoices yet')
   })
 })

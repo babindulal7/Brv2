@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Modal } from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui/Page'
+import { useNetwork } from '../../../lib/network'
 
 /*
  * ── This modal voided nothing, and said it had ─────────────────────────────
@@ -63,6 +64,7 @@ export function VoidInvoiceModal({
   invoiceId,
   client,
 }: VoidInvoiceModalProps) {
+  const isOnline = useNetwork()
   const [reason, setReason] = useState('')
   const [confirmed, setConfirmed] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -70,6 +72,13 @@ export function VoidInvoiceModal({
 
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
+    if (!isOnline) {
+      setError(
+        'This device is offline. Invoices cannot be voided while offline because cancellation and credit note records ' +
+          'require an active network connection. Void it once you are back online.',
+      )
+      return
+    }
     if (!reason.trim()) {
       setError('A cancellation reason is required to void an invoice.')
       return

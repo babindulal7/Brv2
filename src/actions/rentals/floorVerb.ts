@@ -178,6 +178,8 @@ export interface FloorVerbResult {
    * empty for Reset, which sets no stage by design (§1.5).
    */
   stageHeldBy: readonly string[]
+  /** Whether the operation was queued offline in Dexie rather than committed directly to Supabase. */
+  queued?: boolean
 }
 
 /* ── Static per-verb facts ──────────────────────────────────────────────── */
@@ -496,6 +498,7 @@ export async function runFloorVerb(
   /* 2 — Reset has no session. It is the queue, per item. */
   if (!isSessionJob(job)) {
     const unitsReset = await completeResetQueue(booking, input.unitIds ?? [], ctx, occurredAt, actionUuid)
+    const isQueued = ctx.isOnline === false || (typeof navigator !== 'undefined' && !navigator.onLine)
     return {
       success: true,
       bookingId: booking.id,
@@ -506,6 +509,7 @@ export async function runFloorVerb(
       unitsReset,
       stage: null,
       stageHeldBy: [],
+      queued: isQueued,
     }
   }
 
@@ -624,6 +628,8 @@ export async function runFloorVerb(
   /* 8 — the stage, through the transition trigger and nothing else. */
   const stage = complete ? await advanceStage(job, booking, ctx, actionUuid, occurredAt) : null
 
+  const isQueued = ctx.isOnline === false || (typeof navigator !== 'undefined' && !navigator.onLine)
+
   return {
     success: true,
     bookingId: booking.id,
@@ -634,6 +640,7 @@ export async function runFloorVerb(
     unitsReset: 0,
     stage,
     stageHeldBy: heldBy,
+    queued: isQueued,
   }
 }
 

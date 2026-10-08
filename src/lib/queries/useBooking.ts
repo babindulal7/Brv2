@@ -12,6 +12,8 @@ export interface UseBookingResult {
   error: string | null
   isNotFound: boolean
   refetch: () => void
+  /** Timestamp when canonical booking was last successfully loaded (Plan §Phase 9). */
+  lastFetchedAt: Date | null
 }
 
 /**
@@ -30,6 +32,7 @@ export function useBooking(
   const [loading, setLoading] = useState<boolean>(Boolean(bookingIdOrNo))
   const [error, setError] = useState<string | null>(null)
   const [isNotFound, setIsNotFound] = useState<boolean>(false)
+  const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null)
   const [nonce, setNonce] = useState(0)
 
   const refetch = useCallback(() => {
@@ -56,6 +59,7 @@ export function useBooking(
         setBooking(res)
         setIsNotFound(res === null)
         setError(null)
+        setLastFetchedAt(new Date())
       })
       .catch((err) => {
         if (!active) return
@@ -80,5 +84,6 @@ export function useBooking(
     error,
     isNotFound,
     refetch,
+    lastFetchedAt,
   }
 }

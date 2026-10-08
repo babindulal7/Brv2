@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { LoadingSkeleton, ErrorBanner, EmptyState, RestrictedState } from './StateViews'
+import { DataAgeBadge } from './DataAgeBadge'
 
 /**
  * Picks between the four non-happy states so a screen does not have to.
@@ -113,6 +114,10 @@ export interface PageBodyProps {
   /** Label for the empty state's one action, e.g. "Add client". Both this and `onEmptyAction` are needed for it to render. */
   emptyActionLabel?: string | undefined
   onEmptyAction?: (() => void) | undefined
+  /** Operational read timestamp (Plan §Phase 9). Renders DataAgeBadge when data is displayed. */
+  dataTimestamp?: Date | string | number | null | undefined
+  /** Whether to show the age badge (defaults to true if dataTimestamp is given). */
+  showAgeBadge?: boolean | undefined
   children: ReactNode
 }
 
@@ -134,6 +139,8 @@ export function PageBody({
   emptyMessage,
   emptyActionLabel,
   onEmptyAction,
+  dataTimestamp,
+  showAgeBadge = true,
   children,
 }: PageBodyProps) {
   // Every optional prop below is spread conditionally rather than passed as a
@@ -172,6 +179,11 @@ export function PageBody({
     return hasRows ? (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         {banner}
+        {dataTimestamp && showAgeBadge && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <DataAgeBadge timestamp={dataTimestamp} onRefresh={onRetry} isStale={true} />
+          </div>
+        )}
         {children}
       </div>
     ) : (
@@ -200,6 +212,17 @@ export function PageBody({
         description={emptyMessage ?? 'Nothing has been added here.'}
         {...(emptyActionLabel && onEmptyAction ? { actionLabel: emptyActionLabel, onAction: onEmptyAction } : {})}
       />
+    )
+  }
+
+  if (dataTimestamp && showAgeBadge) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm, 8px)' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <DataAgeBadge timestamp={dataTimestamp} onRefresh={onRetry} />
+        </div>
+        {children}
+      </div>
     )
   }
 

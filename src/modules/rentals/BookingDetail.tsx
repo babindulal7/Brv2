@@ -713,6 +713,7 @@ export default function BookingDetail() {
     error,
     isNotFound,
     refetch,
+    lastFetchedAt,
   } = useBooking(id, { withDeposit: canBookingMoney })
 
   const displayBooking = useMemo(() => {
@@ -1278,6 +1279,8 @@ export default function BookingDetail() {
       loading={loading && id !== BOOKING.no}
       error={error && id !== BOOKING.no ? error : null}
       onRetry={refetch}
+      dataTimestamp={lastFetchedAt}
+      showAgeBadge={Boolean(canonicalBooking || id === BOOKING.no)}
       hasRows={Boolean(canonicalBooking || id === BOOKING.no)}
       empty={isNotFound && id !== BOOKING.no}
       emptyTitle="Booking not found"
