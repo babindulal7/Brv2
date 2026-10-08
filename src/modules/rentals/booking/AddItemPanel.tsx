@@ -58,6 +58,7 @@ import { AvailabilityChip, BundlePreview, KitCapacityLine } from './BundlePrevie
 import { TOUCH } from './ClientHealthChip'
 import { OverbookingOverrideModal } from './OverbookingOverrideModal'
 import { getAllowOverbooking } from '../../../lib/bookingRules'
+import './add-item-panel.css'
 import {
   DERIVED_CATEGORIES,
   OMITTED_SORTS,
@@ -315,6 +316,8 @@ export function AddItemPanel({
   const inputId = `${reactId}-add-item-input`
   const listboxId = `${reactId}-add-item-listbox`
   const hintId = `${reactId}-add-item-hint`
+  const filtersId = `${reactId}-add-item-filters`
+  const filterSummaryId = `${reactId}-add-item-filter-summary`
 
   /* Starts closed by default so catalogue results do not clutter the page up front.
      Shows on search or when clicking the input / browse button. */
@@ -328,6 +331,7 @@ export function AddItemPanel({
   const [overrideUnit, setOverrideUnit] = useState<EquipmentResult | null>(null)
   const [availability, setAvailability] = useState<AvailabilityLevel | 'any'>('any')
   const [sort, setSort] = useState<SortKey>('recommended')
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
 
   const [showAllResults, setShowAllResults] = useState(false)
   const [scannerOpen, setScannerOpen] = useState(false)
@@ -358,7 +362,8 @@ export function AddItemPanel({
       // Measure the space after recentering the heading, independently of
       // current scroll position. Account for the actual action-bar height.
       const offset = panel.getBoundingClientRect().top - section.getBoundingClientRect().top
-      const available = footer.getBoundingClientRect().top - workspace.getBoundingClientRect().top - offset - 24
+      const clearance = Math.max(12, Number.parseFloat(getComputedStyle(section).scrollMarginTop) || 0)
+      const available = footer.getBoundingClientRect().top - workspace.getBoundingClientRect().top - clearance - offset - 12
       setCatalogueHeight(Math.min(onPhone ? 480 : 560, Math.max(320, available)))
     }
     measure()
@@ -381,8 +386,9 @@ export function AddItemPanel({
     // The shell scrolls its workspace, not window. Keep the section heading
     // above the search rather than scrolling the clipped card itself.
     if (workspace) {
+      const clearance = Math.max(12, Number.parseFloat(getComputedStyle(anchor).scrollMarginTop) || 0)
       workspace.scrollTo({
-        top: Math.max(0, workspace.scrollTop + anchor.getBoundingClientRect().top - workspace.getBoundingClientRect().top - 12),
+        top: Math.max(0, workspace.scrollTop + anchor.getBoundingClientRect().top - workspace.getBoundingClientRect().top - clearance),
         behavior: prefersReducedMotion ? 'auto' : 'smooth',
       })
     } else anchor.scrollIntoView?.({ block: 'start', behavior: prefersReducedMotion ? 'auto' : 'smooth' })
@@ -633,6 +639,8 @@ export function AddItemPanel({
   /* ── Trigger ────────────────────────────────────────────────────────── */
 
   const filtersOn = (category !== null ? 1 : 0) + (availability !== 'any' ? 1 : 0)
+  const currentSortLabel = SORT_OPTIONS.find((option) => option.key === sort)?.label ?? 'Recommended'
+  const currentFilterSummary = `${category ?? 'All categories'} · ${AVAILABILITY_FILTERS.find((option) => option.value === availability)?.label ?? 'Any availability'} · ${currentSortLabel}`
 
   return (
     <div ref={rootRef} style={{ position: 'relative' }}>
@@ -860,6 +868,7 @@ export function AddItemPanel({
       {open && (
         <div
           ref={catalogueRef}
+          className="new-rental-equipment-catalogue"
           role="dialog"
           aria-label="Add item to booking"
           style={{
@@ -934,9 +943,10 @@ export function AddItemPanel({
           )}
 
           {/* ── Tabs & filters ───────────────────────────────────────── */}
-          <div style={{ padding: 10, borderBottom: '1px solid var(--border)', display: 'grid', gap: 9, flexShrink: 0 }}>
+          <div className="new-rental-equipment-catalogue-controls" style={{ padding: 10, borderBottom: '1px solid var(--border)', display: 'grid', gap: 9, flexShrink: 0 }}>
             {/* ── Tabs (§27) ─────────────────────────────────────────── */}
-            <div role="tablist" aria-label="Catalogue type" style={{ display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap' }}>
+            <div className="new-rental-equipment-catalogue-toolbar">
+            <div className="new-rental-equipment-catalogue-tabs" role="tablist" aria-label="Catalogue type">
               {TABS.map((t) => {
                 const on = tab === t.key
                 return (
@@ -970,8 +980,24 @@ export function AddItemPanel({
                   </button>
                 )
               })}
-
-              <span style={{ marginLeft: onPhone ? 0 : 'auto', display: 'flex', gap: 'var(--sp-xs)', flexWrap: 'wrap', width: onPhone ? '100%' : 'auto' }}>
+            </div>
+              {/* RULING 2026-10-08: phone filters disclose in place so catalogue results keep useful space. */}
+              <button
+                type="button"
+                className="new-rental-equipment-catalogue-filter-toggle press"
+                aria-expanded={filtersExpanded}
+                aria-controls={filtersId}
+                aria-describedby={filterSummaryId}
+                onClick={() => setFiltersExpanded((value) => !value)}
+              >
+                <Icon name="filter" size={16} />
+                <span>Filters &amp; sort</span>
+                {filtersOn > 0 && <span className="figure">· {filtersOn}</span>}
+                {sort !== 'recommended' && <span className="new-rental-equipment-catalogue-sort-label">{currentSortLabel}</span>}
+                <Icon name={filtersExpanded ? 'chevron_up' : 'chevron_down'} size={15} style={{ marginLeft: 'auto' }} />
+              </button>
+              <span id={filterSummaryId} className="new-rental-equipment-catalogue-filter-summary">{currentFilterSummary}</span>
+              <div id={filtersId} className={`new-rental-equipment-catalogue-filters ${filtersExpanded ? 'is-open' : ''}`}>
                 {/* ── Category (§28–30) — derived, never typed ───────── */}
                 <select
                   aria-label="Filter by category"
@@ -1021,12 +1047,13 @@ export function AddItemPanel({
                     </option>
                   ))}
                 </select>
-              </span>
+              </div>
             </div>
 
             {/* The window the availability column is answering for (§32). */}
             <p
               id={hintId}
+              className="new-rental-equipment-catalogue-availability"
               style={{
                 margin: 0,
                 display: 'flex',
@@ -1050,7 +1077,8 @@ export function AddItemPanel({
                 </span>
               ) : availabilitySource.state === 'ready' ? (
                 <>
-                  Availability shown for this booking&rsquo;s dates ·{' '}
+                  <span className="new-rental-equipment-catalogue-date-hint">Availability shown for this booking&rsquo;s dates ·{' '}</span>
+                  <span className="new-rental-equipment-catalogue-date-hint-compact">For these dates ·{' '}</span>
                   <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>
                     {days} day{days === 1 ? '' : 's'}
                   </span>
@@ -1279,6 +1307,7 @@ export function AddItemPanel({
 
           {/* ── Keyboard legend ──────────────────────────────────────── */}
           <div
+            className="new-rental-equipment-catalogue-legend"
             style={{
               display: 'flex',
               alignItems: 'center',

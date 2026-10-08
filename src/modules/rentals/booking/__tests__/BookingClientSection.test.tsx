@@ -91,7 +91,7 @@ describe('BookingClientSection', () => {
       expect(host.textContent).toContain('Project')
       expect(host.textContent).toContain('Project Type')
       expect(host.textContent).not.toContain('Government ID / PAN')
-      expect(host.textContent).toContain('New client')
+      expect(host.textContent).not.toContain('New client')
       const history = host.querySelector<HTMLButtonElement>('[aria-label="Client History"]')!
       expect(history.textContent?.trim()).toBe('')
       expect(history.parentElement?.parentElement?.querySelector('input[role="combobox"]')).not.toBeNull()
