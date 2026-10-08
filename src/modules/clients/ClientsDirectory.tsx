@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
+import { Fragment, useId, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import Icon from '../../components/ui/Icon'
 import type { IconName } from '../../components/ui/Icon'
@@ -25,12 +26,12 @@ import { clientGlance, clientDetailGroups } from '../../data/clientIntel'
 import {
   TIER_TONE,
   clientMetrics,
-  clientFilterGroupsFor,
   CLIENT_ROWS_PER_PAGE,
   creditStopFactsOf,
   evaluateCreditStop,
   readOverdueStopDays,
   type ClientRecord,
+  type ClientType,
   type CreditStopVerdict,
 } from '../../data/clients'
 
@@ -56,7 +57,25 @@ import {
  * fetches), so an Active chip would select exactly what `All` already selects
  * and lie about doing something. Reported rather than faked.
  */
-type FilterKey = 'all' | 'onRent' | 'paymentDue' | 'vip' | 'typeOrg' | 'typeInd' | 'typeUnassigned'
+type StatusKey = 'onRent' | 'paymentDue' | 'vip'
+
+/**
+ * The filter rail's two facet families. Within a family the ticks OR (Organisation
+ * or Individual); across families they AND (Organisation that is On Rent). An
+ * empty family filters nothing — no ticks means every type, every status.
+ */
+interface Facets {
+  types: ClientType[]
+  statuses: StatusKey[]
+}
+
+const NO_FACETS: Facets = { types: [], statuses: [] }
+
+const STATUS_MATCH: Record<StatusKey, (c: ClientRecord) => boolean> = {
+  onRent: (c) => c.currentRentalsCount > 0,
+  paymentDue: (c) => c.outstandingPaisa > 0,
+  vip: (c) => Boolean(c.isVip),
+}
 type ViewKey = 'Table' | 'Cards'
 type SortKey = 'name' | 'type' | 'membership' | 'rentals' | 'outstanding' | 'deposit' | 'lastRental'
 type Density = 'comfortable' | 'compact'
@@ -75,7 +94,8 @@ const NO_OVERLAYS: Overlays = { blocked: false, onStop: false }
 
 interface SavedView {
   label: string
-  filter: FilterKey
+  /** The facet ticks the view restores. Absent means "clear both families". */
+  facets?: Partial<Facets>
   sort: { key: SortKey; dir: 'asc' | 'desc' }
   /** The overlay state the view restores. Absent means "clear both". */
   overlays?: Partial<Overlays>
@@ -92,13 +112,113 @@ interface SavedView {
  * bookmark.
  */
 const SAVED_VIEWS: SavedView[] = [
-  { label: 'VIP Clients', filter: 'vip', sort: { key: 'name', dir: 'asc' } },
-  { label: 'Payment Due', filter: 'paymentDue', sort: { key: 'outstanding', dir: 'desc' }, money: true },
-  { label: 'On Rent', filter: 'onRent', sort: { key: 'rentals', dir: 'desc' } },
-  { label: 'Recently Added', filter: 'all', sort: { key: 'lastRental', dir: 'desc' } },
+  { label: 'VIP Clients', facets: { statuses: ['vip'] }, sort: { key: 'name', dir: 'asc' } },
+  { label: 'Payment Due', facets: { statuses: ['paymentDue'] }, sort: { key: 'outstanding', dir: 'desc' }, money: true },
+  { label: 'On Rent', facets: { statuses: ['onRent'] }, sort: { key: 'rentals', dir: 'desc' } },
+  { label: 'Recently Added', sort: { key: 'lastRental', dir: 'desc' } },
   /* Now an OVERLAY over every client, not a status that excludes the rest. */
-  { label: 'Blocked Clients', filter: 'all', sort: { key: 'name', dir: 'asc' }, overlays: { blocked: true } },
+  { label: 'Blocked Clients', sort: { key: 'name', dir: 'asc' }, overlays: { blocked: true } },
 ]
+
+type RailSection = 'type' | 'status' | 'flags' | 'views'
+
+/** One collapsible group of the filter rail. The whole header row is the toggle. */
+function FilterSection({
+  title,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string
+  open: boolean
+  onToggle: () => void
+  children: ReactNode
+}) {
+  const bodyId = useId()
+  return (
+    <div style={{ borderTop: '1px solid var(--border)' }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={bodyId}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          width: '100%',
+          minHeight: 44,
+          padding: '0 14px',
+          border: 'none',
+          background: 'transparent',
+          color: 'var(--text)',
+          fontSize: 'var(--t-ui)',
+          fontWeight: 700,
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ flex: 1 }}>{title}</span>
+        <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} style={{ color: 'var(--muted)' }} />
+      </button>
+      {open && (
+        <div id={bodyId} style={{ display: 'flex', flexDirection: 'column', padding: '0 8px 10px' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** A ticked filter row: box · label · count. Law 15 — the whole row is a 44px target. */
+function CheckRow({
+  label,
+  count,
+  checked,
+  onChange,
+  unavailableNote,
+}: {
+  label: string
+  count: number
+  checked: boolean
+  onChange: () => void
+  /** Present when the condition cannot be evaluated — the row goes inert and says so. */
+  unavailableNote?: string
+}) {
+  const disabled = unavailableNote !== undefined
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        minHeight: 44,
+        padding: '0 6px',
+        borderRadius: 'var(--r-sm)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        color: disabled ? 'var(--muted)' : 'var(--text)',
+        fontSize: 'var(--t-meta)',
+        fontWeight: checked ? 600 : 500,
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={onChange}
+        style={{ width: 18, height: 18, margin: 0, flexShrink: 0, accentColor: 'var(--nav-active-accent)', cursor: 'inherit' }}
+      />
+      <span style={{ flex: 1, minWidth: 0 }}>{label}</span>
+      {disabled ? (
+        <span style={{ fontSize: 'var(--t-th)', fontWeight: 600 }}>{unavailableNote}</span>
+      ) : (
+        <span className="figure" style={{ color: 'var(--muted)' }}>
+          ({count})
+        </span>
+      )}
+    </label>
+  )
+}
 
 const th = {
   textAlign: 'left' as const,
@@ -286,7 +406,14 @@ export function ClientsDirectory({
   /** Tablet keeps the table but not nine columns of it — see the `<table>` below. */
   const narrow = viewport === 'tablet'
 
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('all')
+  const [facets, setFacets] = useState<Facets>(NO_FACETS)
+  /** Open on desktop, where the rail has the room; closed below it, where the panel reflows above the list. */
+  const [openSections, setOpenSections] = useState<Record<RailSection, boolean>>(() => ({
+    type: desktop,
+    status: desktop,
+    flags: desktop,
+    views: desktop,
+  }))
   /** Rulings §11.2.4 — Blocked and On Stop intersect the selection, never replace it. */
   const [overlays, setOverlays] = useState<Overlays>(NO_OVERLAYS)
   /**
@@ -327,7 +454,6 @@ export function ClientsDirectory({
   const td = tdFor(density)
 
   const metrics = useMemo(() => clientMetrics(clients), [clients])
-  const filterGroups = useMemo(() => clientFilterGroupsFor(money), [money])
 
   /**
    * **Rulings §11.2 — On Stop, derived, once.**
@@ -404,12 +530,8 @@ export function ClientsDirectory({
       if (overlays.blocked && !client.isBlocked) return false
       if (overlays.onStop && !stopVerdicts.get(client.id)?.onStop) return false
 
-      if (activeFilter === 'onRent') return client.currentRentalsCount > 0
-      if (activeFilter === 'paymentDue') return client.outstandingPaisa > 0
-      if (activeFilter === 'vip') return Boolean(client.isVip)
-      if (activeFilter === 'typeOrg') return client.clientType === 'Organisation'
-      if (activeFilter === 'typeInd') return client.clientType === 'Individual'
-      if (activeFilter === 'typeUnassigned') return client.clientType === 'Unassigned'
+      if (facets.types.length > 0 && !facets.types.includes(client.clientType)) return false
+      if (facets.statuses.length > 0 && !facets.statuses.some((s) => STATUS_MATCH[s](client))) return false
       return true
     })
 
@@ -440,7 +562,7 @@ export function ClientsDirectory({
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir
       return String(va).localeCompare(String(vb)) * dir
     })
-  }, [clients, searchQuery, activeFilter, overlays, stopVerdicts, sort])
+  }, [clients, searchQuery, facets, overlays, stopVerdicts, sort])
 
   const pageCount = Math.max(1, Math.ceil(filteredClients.length / perPage))
   const current = Math.min(page, pageCount)
@@ -478,11 +600,17 @@ export function ClientsDirectory({
 
   const resetPage = () => setPage(1)
 
-  const applyFilter = (f: FilterKey) => {
-    setActiveFilter(f)
+  const toggleFacet = <K extends keyof Facets>(family: K, value: Facets[K][number]) => {
+    setFacets((prev) => {
+      const list = prev[family] as Array<Facets[K][number]>
+      const next = list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
+      return { ...prev, [family]: next }
+    })
     setActiveSavedView(null)
     resetPage()
   }
+
+  const toggleSection = (s: RailSection) => setOpenSections((prev) => ({ ...prev, [s]: !prev[s] }))
 
   const toggleOverlay = (which: keyof Overlays) => {
     setOverlays((prev) => ({ ...prev, [which]: !prev[which] }))
@@ -491,7 +619,7 @@ export function ClientsDirectory({
   }
 
   const clearAll = () => {
-    setActiveFilter('all')
+    setFacets(NO_FACETS)
     setOverlays(NO_OVERLAYS)
     setSearchQuery('')
     setSort({ key: 'name', dir: 'asc' })
@@ -727,176 +855,46 @@ export function ClientsDirectory({
   ]
 
   /**
-   * The EXCLUSIVE group — pick exactly one. Blocked has left it (Rulings
-   * §11.2.4); these counts are mutually exclusive within each family and every
-   * one of them is a subset of `All`.
+   * The rail's facet rows. Counts are over the whole directory, not over the
+   * current selection — a count says how many clients carry the condition, so
+   * it stays put while you tick.
    */
-  const chips: Array<{ label: string; key: FilterKey; count: number }> = [
-    { label: 'All', key: 'all', count: metrics.total },
-    { label: 'Organisation', key: 'typeOrg', count: metrics.typeOrg },
-    { label: 'Individual', key: 'typeInd', count: metrics.typeInd },
-    { label: 'Unassigned', key: 'typeUnassigned', count: metrics.typeUnassigned },
-    { label: 'On Rent', key: 'onRent', count: metrics.onRent },
-    ...(money ? [{ label: 'Payment Due', key: 'paymentDue' as FilterKey, count: metrics.paymentDue }] : []),
-    { label: 'VIP', key: 'vip', count: metrics.vip },
+  const typeRows: Array<{ label: string; value: ClientType; count: number }> = [
+    { label: 'Organisation', value: 'Organisation', count: metrics.typeOrg },
+    { label: 'Individual', value: 'Individual', count: metrics.typeInd },
+    { label: 'Unassigned', value: 'Unassigned', count: metrics.typeUnassigned },
+  ]
+
+  const statusRows: Array<{ label: string; value: StatusKey; count: number }> = [
+    { label: 'On Rent', value: 'onRent', count: metrics.onRent },
+    /* §8.3 — who owes us money is money: omitted for money-blind roles, not blanked. */
+    ...(money ? [{ label: 'Payment Due', value: 'paymentDue' as StatusKey, count: metrics.paymentDue }] : []),
+    { label: 'VIP', value: 'vip', count: metrics.vip },
   ]
 
   /**
-   * The INTERSECTING overlays. Independent toggles, counted over the whole
-   * directory rather than over the current selection — an overlay describes how
-   * many clients carry that condition, not how many survive the other filters,
-   * and the two chips deliberately overlap each other.
+   * Rulings §11.2.4 — the INTERSECTING overlays. Each narrows whatever else is
+   * ticked, never replaces it, and both can be on at once.
    */
-  const overlayChips: Array<{
-    label: string
-    key: keyof Overlays
-    count: number
-    icon: IconName
-    /** Present when the condition cannot be evaluated at all — the chip goes inert and says why. */
-    unavailable?: string
-  }> = [
-    { label: 'Blocked', key: 'blocked', count: metrics.blocked, icon: 'alert_triangle' },
+  const overlayRows: Array<{ label: string; key: keyof Overlays; count: number; unavailable?: string }> = [
+    { label: 'Blocked', key: 'blocked', count: metrics.blocked },
     {
       label: 'On Stop',
       key: 'onStop',
       count: onStopCount,
-      icon: 'lock',
       ...(stopCheckRan ? {} : { unavailable: stopUnavailableReason }),
     },
   ]
+
+  const activeFilterCount =
+    facets.types.length + facets.statuses.length + (overlays.blocked ? 1 : 0) + (overlays.onStop ? 1 : 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
       <KpiStrip items={kpis} columns={kpis.length} />
 
-      {/* ── quick filters + view switch ───────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
-        {chips.map((c) => {
-          const on = activeFilter === c.key
-          return (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => applyFilter(c.key)}
-              aria-pressed={on}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-                // Law 15 — 44×44 at every width, desktop included. Matches
-                // `Inventory.tsx:1547`, the same control built to the rule.
-                minHeight: 44,
-                padding: '0 11px',
-                borderRadius: 'var(--r-sm)',
-                border: `1px solid ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                background: on ? 'var(--nav-active-bg)' : 'var(--card)',
-                color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 600 : 500,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {c.label}
-              <span
-                className="figure"
-                style={{
-                  minWidth: 18,
-                  height: 18,
-                  borderRadius: 5,
-                  display: 'inline-grid',
-                  placeItems: 'center',
-                  background: 'var(--card2)',
-                  color: 'var(--text)',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 700,
-                  padding: '0 4px',
-                }}
-              >
-                {c.count}
-              </span>
-            </button>
-          )
-        })}
-
-        {/*
-          ── the intersecting overlays ─────────────────────────────────────
-          Rulings §11.2.4. Separated from the exclusive group by a rule and a
-          label so the difference is visible and not merely behavioural: these
-          two narrow whatever is selected on the left, they do not replace it,
-          and unlike the chips above they can both be on at once.
-        */}
-        <span aria-hidden style={{ width: 1, alignSelf: 'stretch', minHeight: 28, background: 'var(--divider)', margin: '0 2px' }} />
-        <span style={{ fontSize: 'var(--t-th)', color: 'var(--muted)', fontWeight: 600 }}>Also show only</span>
-        {overlayChips.map((c) => {
-          const on = overlays[c.key]
-          const chip = (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => toggleOverlay(c.key)}
-              aria-pressed={on}
-              disabled={Boolean(c.unavailable)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-                /* Law 15 — 44×44 at every width, as with the chips above. */
-                minHeight: 44,
-                padding: '0 11px',
-                borderRadius: 'var(--r-sm)',
-                /* Law 11 — the overlay's state is icon + label + colour, never
-                   colour alone: the icon fills when the overlay is on. */
-                border: `1px dashed ${on ? 'var(--nav-active-accent)' : 'var(--border)'}`,
-                background: on ? 'var(--nav-active-bg)' : 'var(--card)',
-                color: c.unavailable ? 'var(--muted)' : on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                fontSize: 'var(--t-meta)',
-                fontWeight: on ? 600 : 500,
-                cursor: c.unavailable ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              <Icon name={c.icon} size={13} fill={on} />
-              {c.label}
-              {c.unavailable ? (
-                <span style={{ fontSize: 'var(--t-th)', fontWeight: 600 }}>check unavailable</span>
-              ) : (
-                <span
-                  className="figure"
-                  style={{
-                    minWidth: 18,
-                    height: 18,
-                    borderRadius: 5,
-                    display: 'inline-grid',
-                    placeItems: 'center',
-                    background: 'var(--card2)',
-                    color: 'var(--text)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: 700,
-                    padding: '0 4px',
-                  }}
-                >
-                  {c.count}
-                </span>
-              )}
-            </button>
-          )
-          /* §11.2.7 — when a limb cannot be evaluated the UI says the check did
-             not run. It is not silently omitted (an operator would read its
-             absence as "nobody is on stop") and it does not filter to an empty
-             list, which would say the same thing more convincingly. */
-          return c.unavailable ? (
-            <Unavailable key={c.key} reason={c.unavailable}>
-              {chip}
-            </Unavailable>
-          ) : (
-            chip
-          )
-        })}
-
-        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)' }}>
+      {/* ── search + view switch — every filter lives in the rail below ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'var(--sp-sm)', flexWrap: 'wrap' }}>
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, position: 'relative' }}>
             <Icon name="search" size={15} style={{ color: 'var(--muted)', position: 'absolute', left: 9 }} />
             <input
@@ -933,13 +931,6 @@ export function ClientsDirectory({
                 {v}
               </Button>
             ))}
-
-          <Unavailable reason="Advanced client filters are not built yet — the chips, search and column sort on this screen are the ones that exist">
-            <Button icon="tool" disabled>
-              More Filters
-            </Button>
-          </Unavailable>
-        </span>
       </div>
 
       {/* ── filter rail + list ────────────────────────────────────────── */}
@@ -952,119 +943,156 @@ export function ClientsDirectory({
         }}
       >
         {/*
-          Rulings §7 — below 1180 this content REFLOWS, it does not hide. The
-          same children go into `SideRail` (which is `CollapsibleAside`, and
-          therefore a 44px handle at tablet/phone) only at desktop; below that
-          they render as a plain column that `order: 2` places beneath the
-          list, so Filters and Saved Views stay reachable on the warehouse
-          tablet and on a phone — where, before this, the whole panel was not
-          rendered at all.
+          Rulings §7 — below 1180 this content REFLOWS, it does not hide. At
+          desktop the panel sits in `SideRail` (`CollapsibleAside`, a 44px
+          handle at tablet/phone); below that it renders as a plain block that
+          `order: -1` lifts above the list, sections closed, so the filters are
+          the first thing on the warehouse tablet and on a phone rather than
+          something found after scrolling past every row.
         */}
-        <div style={desktop ? undefined : { order: 2, display: 'grid', gridTemplateColumns: tabular ? 'repeat(2, minmax(0,1fr))' : '1fr', gap: 'var(--sp-md)', alignItems: 'start' }}>
-        {(() => {
-          const filtersContent = (
-            <>
-          <Card
-            title="Filters"
-            action={
-              <button
-                type="button"
-                onClick={clearAll}
-                style={{
-                  border: 'none',
-                  background: 'transparent',
-                  color: 'var(--link)',
-                  fontSize: 'var(--t-meta)',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                  padding: 0,
-                }}
+        <div style={desktop ? undefined : { order: -1 }}>
+          {(() => {
+            const panel = (
+              <section
+                aria-label="Filters"
+                style={{ ...cardStyle, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}
               >
-                Clear all
-              </button>
-            }
-            bodyStyle={{ padding: 'var(--sp-sm)' }}
-          >
-            {/* Nine dead filter rows (one per `filterGroups` entry) duplicated the
-                header's disabled "More Filters" button for a wall of chrome that
-                did nothing nine times over. Collapsed to the one row that pattern
-                needs — same `Unavailable` reason-on-long-press/hover it always had. */}
-            <Unavailable
-              reason={`Advanced filters (${filterGroups.map((g) => g.label).join(', ')}) are not built yet — use the chips, search or a saved view`}
-            >
-              <span
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  width: '100%',
-                  minHeight: 44,
-                  padding: '0 8px',
-                  borderRadius: 'var(--r-sm)',
-                  color: 'var(--muted)',
-                  fontSize: 'var(--t-meta)',
-                  cursor: 'not-allowed',
-                }}
-              >
-                <Icon name="tool" size={15} style={{ color: 'var(--disabled)', flexShrink: 0 }} />
-                <span style={{ flex: 1, textAlign: 'left' }}>Advanced filters — coming soon</span>
-              </span>
-            </Unavailable>
-          </Card>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-sm)', minHeight: 48, padding: '0 14px' }}>
+                  <h2 style={{ flex: 1, margin: 0, fontSize: 'var(--t-ui)', fontWeight: 700, color: 'var(--text)' }}>
+                    Filters
+                    {activeFilterCount > 0 && (
+                      <span className="figure" style={{ marginLeft: 6, color: 'var(--nav-active-accent)' }}>
+                        · {activeFilterCount}
+                      </span>
+                    )}
+                  </h2>
+                  {(activeFilterCount > 0 || activeSavedView !== null) && (
+                    <button
+                      type="button"
+                      onClick={clearAll}
+                      style={{
+                        minHeight: 44,
+                        border: 'none',
+                        background: 'transparent',
+                        color: 'var(--link)',
+                        fontSize: 'var(--t-meta)',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        padding: 0,
+                      }}
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
 
-          <Card title="Saved Views" bodyStyle={{ padding: 'var(--sp-sm)' }}>
-            {SAVED_VIEWS.filter((v) => money || !v.money).map((v) => {
-              const on = activeSavedView === v.label
-              return (
-                <button
-                  key={v.label}
-                  type="button"
-                  onClick={() => {
-                    setActiveFilter(v.filter)
-                    /* A saved view restores the WHOLE state, overlays included —
-                       otherwise "Blocked Clients" would leave a stale On Stop
-                       overlay on and show a different list each time. */
-                    setOverlays({ ...NO_OVERLAYS, ...v.overlays })
-                    setSort(v.sort)
-                    setActiveSavedView(v.label)
-                    resetPage()
-                  }}
-                  aria-pressed={on}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 9,
-                    width: '100%',
-                    minHeight: 44,
-                    padding: '0 8px',
-                    borderRadius: 'var(--r-sm)',
-                    border: 'none',
-                    background: on ? 'var(--nav-active-bg)' : 'transparent',
-                    color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
-                    fontSize: 'var(--t-meta)',
-                    fontWeight: on ? 600 : 500,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                  }}
-                >
-                  <Icon name="flag" size={14} style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)' }} />
-                  <span style={{ flex: 1, textAlign: 'left' }}>{v.label}</span>
-                </button>
-              )
-            })}
-            <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
-              <Unavailable reason="Saving a view is not built yet — views are not persisted anywhere">
-                <Button icon="plus" disabled>
-                  Save Current View
-                </Button>
-              </Unavailable>
-            </div>
-          </Card>
-            </>
-          )
-          return desktop ? <SideRail width={210} label="Filters">{filtersContent}</SideRail> : filtersContent
-        })()}
+                <FilterSection title="Client type" open={openSections.type} onToggle={() => toggleSection('type')}>
+                  {typeRows.map((r) => (
+                    <CheckRow
+                      key={r.value}
+                      label={r.label}
+                      count={r.count}
+                      checked={facets.types.includes(r.value)}
+                      onChange={() => toggleFacet('types', r.value)}
+                    />
+                  ))}
+                </FilterSection>
+
+                <FilterSection title="Status" open={openSections.status} onToggle={() => toggleSection('status')}>
+                  {statusRows.map((r) => (
+                    <CheckRow
+                      key={r.value}
+                      label={r.label}
+                      count={r.count}
+                      checked={facets.statuses.includes(r.value)}
+                      onChange={() => toggleFacet('statuses', r.value)}
+                    />
+                  ))}
+                </FilterSection>
+
+                <FilterSection title="Flags" open={openSections.flags} onToggle={() => toggleSection('flags')}>
+                  {overlayRows.map((r) => {
+                    const row = (
+                      <CheckRow
+                        label={r.label}
+                        count={r.count}
+                        checked={overlays[r.key]}
+                        onChange={() => toggleOverlay(r.key)}
+                        {...(r.unavailable ? { unavailableNote: 'check unavailable' } : {})}
+                      />
+                    )
+                    /* §11.2.7 — a limb that cannot be evaluated says the check did
+                       not run; it is not silently omitted (read as "nobody is on
+                       stop") and does not filter to an empty list. */
+                    return r.unavailable ? (
+                      <Unavailable key={r.key} reason={r.unavailable}>
+                        {row}
+                      </Unavailable>
+                    ) : (
+                      <Fragment key={r.key}>{row}</Fragment>
+                    )
+                  })}
+                </FilterSection>
+
+                <FilterSection title="Saved views" open={openSections.views} onToggle={() => toggleSection('views')}>
+                  {SAVED_VIEWS.filter((v) => money || !v.money).map((v) => {
+                    const on = activeSavedView === v.label
+                    return (
+                      <button
+                        key={v.label}
+                        type="button"
+                        onClick={() => {
+                          setFacets({ ...NO_FACETS, ...v.facets })
+                          /* A saved view restores the WHOLE state, overlays included —
+                             otherwise "Blocked Clients" would leave a stale On Stop
+                             overlay on and show a different list each time. */
+                          setOverlays({ ...NO_OVERLAYS, ...v.overlays })
+                          setSort(v.sort)
+                          setActiveSavedView(v.label)
+                          resetPage()
+                        }}
+                        aria-pressed={on}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 9,
+                          width: '100%',
+                          minHeight: 44,
+                          padding: '0 8px',
+                          borderRadius: 'var(--r-sm)',
+                          border: 'none',
+                          background: on ? 'var(--nav-active-bg)' : 'transparent',
+                          color: on ? 'var(--nav-active-accent)' : 'var(--text2)',
+                          fontSize: 'var(--t-meta)',
+                          fontWeight: on ? 600 : 500,
+                          cursor: 'pointer',
+                          fontFamily: 'inherit',
+                        }}
+                      >
+                        <Icon name="flag" size={14} style={{ color: on ? 'var(--nav-active-accent)' : 'var(--muted)' }} />
+                        <span style={{ flex: 1, textAlign: 'left' }}>{v.label}</span>
+                      </button>
+                    )
+                  })}
+                  <div style={{ borderTop: '1px solid var(--border)', marginTop: 8, paddingTop: 8 }}>
+                    <Unavailable reason="Saving a view is not built yet — views are not persisted anywhere">
+                      <Button icon="plus" disabled>
+                        Save Current View
+                      </Button>
+                    </Unavailable>
+                  </div>
+                </FilterSection>
+              </section>
+            )
+            return desktop ? (
+              <SideRail width={240} label="Filters">
+                {panel}
+              </SideRail>
+            ) : (
+              panel
+            )
+          })()}
         </div>
 
         <div
