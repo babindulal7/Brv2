@@ -8,10 +8,12 @@ import { rupees } from '../../../../lib/money'
 import type { CrewMember } from '../../../../lib/queries/crew'
 import type { TransportOption } from '../itemCatalogue'
 
-vi.mock('../../../../lib/device', () => ({ useViewport: () => 'desktop' }))
+const viewport = vi.hoisted(() => ({ current: 'desktop' }))
+vi.mock('../../../../lib/device', () => ({ useViewport: () => viewport.current }))
 
 describe('AddItemPanel unified search and recenter', () => {
   beforeEach(() => {
+    viewport.current = 'desktop'
     window.matchMedia = vi.fn().mockImplementation((query) => ({
       matches: false,
       media: query,
@@ -49,6 +51,54 @@ describe('AddItemPanel unified search and recenter', () => {
       ratePaisa: rupees(5000),
     },
   ]
+
+  it('keeps phone filters out of the result area until requested and retains active values when closed', async () => {
+    viewport.current = 'phone'
+    const host = document.createElement('div')
+    document.body.appendChild(host)
+    const root = createRoot(host)
+    const panel = <AddItemPanel inline window={NO_WINDOW} days={1} existingLineIds={[]} onAdd={vi.fn()} />
+
+    try {
+      await act(async () => root.render(panel))
+      await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="Browse catalogue"]')!.click())
+      const toggle = host.querySelector<HTMLButtonElement>('.new-rental-equipment-catalogue-filter-toggle')!
+      const filters = document.getElementById(toggle.getAttribute('aria-controls')!)!
+      expect(toggle.hidden).toBe(false)
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(filters.hidden).toBe(true)
+      expect(host.querySelector('[aria-label="Catalogue results"]')).toBeTruthy()
+
+      await act(async () => toggle.click())
+      expect(filters.hidden).toBe(false)
+      const availability = filters.querySelector<HTMLSelectElement>('[aria-label="Filter by availability"]')!
+      const sort = filters.querySelector<HTMLSelectElement>('[aria-label="Sort results"]')!
+      await act(async () => {
+        availability.value = 'available'
+        availability.dispatchEvent(new Event('change', { bubbles: true }))
+        sort.value = sort.options[1]!.value
+        sort.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      const selectedSort = sort.selectedOptions[0]!.textContent!
+      const filteredResults = host.querySelector('[aria-label="Catalogue results"]')!.textContent
+      await act(async () => toggle.click())
+      expect(filters.hidden).toBe(true)
+      expect(availability.value).toBe('available')
+      expect(host.querySelector('.new-rental-equipment-catalogue-filter-summary')!.textContent).toContain('Available only')
+      expect(host.querySelector('.new-rental-equipment-catalogue-filter-summary')!.textContent).toContain(selectedSort)
+      expect(host.querySelector('[aria-label="Catalogue results"]')!.textContent).toBe(filteredResults)
+
+      // Growing to desktop restores the controls without resetting their values.
+      viewport.current = 'desktop'
+      await act(async () => root.render(<AddItemPanel inline window={NO_WINDOW} days={1} existingLineIds={[]} onAdd={vi.fn()} />))
+      expect(toggle.hidden).toBe(true)
+      expect(filters.hidden).toBe(false)
+      expect(availability.value).toBe('available')
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+    }
+  })
 
   it('expands inside a clipped section and scrolls the workspace to its heading', async () => {
     const scrollToMock = vi.fn()

@@ -60,8 +60,11 @@ export function useNewRentalNavigation({
           block: 'start',
         })
         // Focus the actual field, never the invisible native Select bridge.
-        const candidates = section?.querySelectorAll<HTMLElement>(focusSelector ?? 'input:not([disabled]), textarea:not([disabled]), button[role="combobox"]:not([disabled]), button:not([disabled])')
-        const field = Array.from(candidates ?? []).find((el) => !el.closest('[hidden]') && el.getAttribute('aria-hidden') !== 'true' && el.tabIndex >= 0)
+        const fieldSelectors = focusSelector
+          ? [focusSelector]
+          : ['input:not([disabled]), textarea:not([disabled]), button[role="combobox"]:not([disabled])', 'button:not([disabled])']
+        const field = fieldSelectors.flatMap((selector) => Array.from(section?.querySelectorAll<HTMLElement>(selector) ?? []))
+          .find((el) => !el.closest('[hidden]') && el.getAttribute('aria-hidden') !== 'true' && el.tabIndex >= 0)
         field?.focus({ preventScroll: true })
       })
     },

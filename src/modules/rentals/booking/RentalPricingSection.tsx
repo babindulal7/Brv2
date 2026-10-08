@@ -456,7 +456,6 @@ export function RentalPricingSection({
                     setManualDepositAmount(String(toRupees(pricing.securityDeposit.recommendedPaisa)))
                   }
                 }}
-                style={{ cursor: 'pointer', width: 16, height: 16 }}
               />
               <span>Manual Deposit Override</span>
               <span className="new-rental-pricing-option-state">{manualDepositOverride ? 'On' : 'Off'}</span>

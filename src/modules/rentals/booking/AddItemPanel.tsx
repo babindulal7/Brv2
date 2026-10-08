@@ -985,6 +985,7 @@ export function AddItemPanel({
               <button
                 type="button"
                 className="new-rental-equipment-catalogue-filter-toggle press"
+                hidden={!onPhone}
                 aria-expanded={filtersExpanded}
                 aria-controls={filtersId}
                 aria-describedby={filterSummaryId}
@@ -996,8 +997,8 @@ export function AddItemPanel({
                 {sort !== 'recommended' && <span className="new-rental-equipment-catalogue-sort-label">{currentSortLabel}</span>}
                 <Icon name={filtersExpanded ? 'chevron_up' : 'chevron_down'} size={15} style={{ marginLeft: 'auto' }} />
               </button>
-              <span id={filterSummaryId} className="new-rental-equipment-catalogue-filter-summary">{currentFilterSummary}</span>
-              <div id={filtersId} className={`new-rental-equipment-catalogue-filters ${filtersExpanded ? 'is-open' : ''}`}>
+              <span id={filterSummaryId} hidden={!onPhone} className="new-rental-equipment-catalogue-filter-summary">{currentFilterSummary}</span>
+              <div id={filtersId} hidden={onPhone && !filtersExpanded} className="new-rental-equipment-catalogue-filters">
                 {/* ── Category (§28–30) — derived, never typed ───────── */}
                 <select
                   aria-label="Filter by category"
@@ -1123,7 +1124,7 @@ export function AddItemPanel({
           </div>
 
           {/* ── Results ──────────────────────────────────────────────── */}
-          <div ref={resultsRef} style={{ maxHeight: 400, minHeight: 0, overflowY: 'auto', flex: '1 1 auto', overscrollBehavior: 'contain' }}>
+          <div ref={resultsRef} className="new-rental-equipment-catalogue-results" style={{ maxHeight: 400, minHeight: 0, overflowY: 'auto', flex: '1 1 auto', overscrollBehavior: 'contain' }}>
             {tab === 'sub-rentals' &&
               (inputStyle ? (
                 <SubRentalQuickAdd
