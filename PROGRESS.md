@@ -1,5 +1,54 @@
 # Progress Log
 
+## 2026-10-08 — The May page briefs checked against the trunk; five decisions filed (PLAN §4.61)
+
+**Did**
+- Checked the 34 page briefs in `D:\proects\md` (May 2026, UI only) against `step1-foundation`
+  at `c21c1c4`. Almost all of it is built. Filed the five gaps that need a ruling as
+  **PLAN §4.61 (a)–(e)**: duplicate / re-book a rental, VAT-inclusive pricing, delivery
+  reschedule, a late/night charge at booking time, and a Depreciation Reserve card.
+- Recorded, without filing, the brief items that break a law: Edit Payment (Law 4), Delete
+  expense (Law 3), "Customer" (Law 17), deposit inside Grand Total (Law 5), and discount
+  reason (Law 10).
+- Docs only. No code changed in this entry. The return countdown and the Fonepay option in
+  the same worktree belong to the parallel "MD project features" session.
+
+**Found**
+- **The Delivery workspace is not on the database.** `/operations/delivery` reads and writes
+  `localStorage` (`babin_rentals_deliveries_v1`, `lib/queries/delivery.ts:139`). It is seeded
+  from the hard-coded `INITIAL_DELIVERIES` (`DEL-2601`, "Himalayan Films Pvt. Ltd.", "Suman
+  Rai"…), so Assign Rider, Start Delivery and Mark Delivered never reach Supabase. Filed
+  under §4.61(c), because where a delivery lives is the first question there.
+
+**Verified**
+- Every file and line cited in §4.61 was read at the cited place in this tree, not recalled:
+  `data/calendar.ts:1163-1164` (Duplicate and Move/Drag disabled), `src/archive/RentalMoreActionsMenu.tsx`
+  (clone item; no live importer), `money.ts:price()` (VAT added on top),
+  `booking/RentalFinancialRail.tsx:401` (on/off toggle), `lib/queries/delivery.ts:139-188`
+  (localStorage read/write and seed), `DeliveryWorkspace.tsx:18-127` (uses only those),
+  `data/addEquipment.ts:247` (asset-lives TODO).
+- `npm run check:lifecycle` 30/30 green (PGlite). No app behaviour changed, so nothing was
+  driven in the browser.
+### Completion
+| Dimension | Counts | Now | Δ |
+|---|---|---|---|
+| Backend | actions implemented / total | 52 / 52 (100%) | +0 |
+| Real data | DB-only · mixed · seed · none / 53 | 51 · 0 · 0 · 2 |  |
+| DB enforcement | gates in Postgres / 9 | 9 / 9 (100%) | +0 |
+| Permissions | capabilities mapped / declared | 42 / 42 (100%) | +0 |
+| Lifecycle | steps green / total | 30 / 30 (100%) | +0 |
+| Overall | mean of five | ≈ 99% | +0 |
+Migrations 160 files · check:pglite 160/160 applied, 0 failed (recorded 2026-10-07T21:50:54.010Z). Suite: 4114/4114 passed (recorded 2026-10-07T21:28:13.867Z).
+Gates read from .lifecycle-result.json, written 2026-10-07T22:59:03.461Z.
+Counted by `npm run completion`, not typed.
+
+### Remaining
+- §4.61 (a)–(e) wait on Babin's answers. Nothing in them is half-built.
+- The **Real data** row cannot see the Delivery problem. `scripts/completion.mjs` treats any
+  import from `src/lib/queries/` as the database, and `lib/queries/delivery.ts` lives there
+  while reading `localStorage`. That row overstates by at least one screen until the counter
+  checks what a query module actually calls.
+
 ## 2026-10-08 — Header filter toggle, no overdue banner, real row buttons, stage icons, clickable Operations rows
 
 **Did**
