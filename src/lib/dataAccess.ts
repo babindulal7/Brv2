@@ -167,7 +167,7 @@ export async function idempotentInsert<
     }
     console.warn(`[DataAccess] Device offline. Queuing insert for ${String(table)}.`)
     await enqueueMutation(String(table), 'insert', finalPayload, finalPayload.client_uuid)
-    return { data: finalPayload, error: null } // Optimistic response
+    return { data: finalPayload, error: null, queued: true as const } // Queued, not written — `queued` says so (Phase 9)
   }
 
   const defaultCols = NON_MONEY_RETURNING_COLUMNS[String(table)]
@@ -195,7 +195,7 @@ export async function idempotentInsert<
        }
        console.warn(`[DataAccess] Network failure during insert. Queuing ${String(table)}.`)
        await enqueueMutation(String(table), 'insert', finalPayload, finalPayload.client_uuid)
-       return { data: finalPayload, error: null }
+       return { data: finalPayload, error: null, queued: true as const }
     }
 
     // Detect duplicate idempotency violation
@@ -297,7 +297,7 @@ export async function safeUpdate<
     }
     console.warn(`[DataAccess] Device offline. Queuing update for ${String(table)} id=${id}.`)
     await enqueueMutation(String(table), 'update', { ...payload, id }, `${actionUuid}:${id}`)
-    return { data: { ...payload, id }, error: null } // Optimistic response
+    return { data: { ...payload, id }, error: null, queued: true as const } // Queued, not written — `queued` says so (Phase 9)
   }
 
   const update = supabase.from(table as string).update(payload).eq('id', id)
@@ -313,7 +313,7 @@ export async function safeUpdate<
          )
        }
        await enqueueMutation(String(table), 'update', { ...payload, id }, `${actionUuid}:${id}`)
-       return { data: { ...payload, id }, error: null }
+       return { data: { ...payload, id }, error: null, queued: true as const }
     }
 
     if (error.code === '42703' && returningColumns?.includes('project_type')) {
