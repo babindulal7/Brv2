@@ -224,4 +224,28 @@ describe('RecordPaymentModal — the amount default', () => {
     })
     expect(recordPaymentSpy).toHaveBeenCalled()
   })
+
+  /*
+   * Fonepay is the merchant QR most Kathmandu clients pay by, and the method
+   * list did not offer it — a Fonepay receipt had to be logged as eSewa or
+   * "Bank Transfer", both false. The label is what reaches `payments.notes`
+   * as `Method: Fonepay` (see recordPayment.ts METHOD); no account is implied.
+   */
+  it('offers Fonepay and sends it as the method label, with no account attached', async () => {
+    recordPaymentSpy.mockClear()
+    const c = await mount(() => {})
+    const methodPicker = c.querySelector('#rpm-method') as HTMLSelectElement
+    expect(Array.from(methodPicker.options).map((o) => o.value)).toContain('Fonepay')
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+    await act(async () => {
+      setter.call(methodPicker, 'Fonepay')
+      methodPicker.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await typeAmount(amountInput(c), '2000')
+    await act(async () => { submitButton(c).click() })
+    expect(recordPaymentSpy).toHaveBeenCalledTimes(1)
+    const [input] = recordPaymentSpy.mock.calls[0] as [Record<string, unknown>, unknown]
+    expect(input.paymentMethod).toBe('Fonepay')
+    expect(input.bankAccountId).toBeUndefined()
+  })
 })

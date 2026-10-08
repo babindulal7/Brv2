@@ -104,7 +104,7 @@ export const DRAFT_NO_NUMBER = 'Draft (no number)'
  */
 const SUBTITLE = 'Register an incoming payment against an invoice — a Draft included.'
 
-type PaymentMethod = 'Bank Transfer' | 'Cash' | 'eSewa' | 'Khalti' | 'Card' | 'Cheque'
+type PaymentMethod = 'Bank Transfer' | 'Cash' | 'Fonepay' | 'eSewa' | 'Khalti' | 'Card' | 'Cheque'
 
 export function RecordPaymentModal({
   isOpen,
@@ -642,6 +642,7 @@ export function RecordPaymentModal({
             >
               <option value="Bank Transfer">Bank Transfer</option>
               <option value="Cash">Cash</option>
+              <option value="Fonepay">Fonepay</option>
               <option value="eSewa">eSewa</option>
               <option value="Khalti">Khalti</option>
               <option value="Card">Card</option>
