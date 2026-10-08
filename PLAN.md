@@ -390,20 +390,22 @@ reading — it needs the actual desaturation check.
       → Sidebar, header and the collapsible/persisted rail all exist. **Gap: there is no status
       bar** — and building one needs a product decision on its contents (connection/sync state?
       branch? fiscal year?).
-- [x] Breadcrumbs, **no Back buttons**
-      → Both hold. `Crumb.to` is rendered as an interactive `<Link>` (closed 7 Oct 2026),
-      providing functional upward navigation across the shell and operational workspaces.
-- [x] ⌘K palette · scanner FAB at every width
-      → Both exist and the FAB is present at every width. Phone width provides a
-      pointer-reachable 44×44 search trigger button that dispatches ⌘K (closed 7 Oct 2026).
+- [~] Breadcrumbs, **no Back buttons**
+      → The no-Back-buttons half holds. **Gap: `Crumb.to` is never rendered as a `<Link>`**, so
+      the breadcrumb is decoration, not the upward-navigation mechanism the law intends it to be.
+- [~] ⌘K palette · scanner FAB at every width
+      → Both exist and the FAB is present at every width. **Gap: at phone width the palette has
+      no pointer-reachable trigger** — the header search button is lost to the layout, leaving
+      only the keyboard shortcut, which a phone does not have.
 - [~] Responsive: 390 / 834 / 1180 / 1920
       → `useViewport()` and the 768/1180 breakpoints are real and correct (Law 14) *(31 Aug 2026: the desktop breakpoint is now 1280 — Law 14 amended, §4.38a; the code reads it from `lib/breakpoints.ts`)*. **Gap: ~59
       screens never call it** — they are fluid rather than deliberately responsive — and **the
       shell header overlaps itself at 390**, which alone blocks this item.
 
 **Gate:** identical layout at identical widths; no platform branch anywhere.
-**Gate verdict — ✅ passes.** No platform branch exists in any layout component (Law 13 holds),
-and the 390 shell header overlap is resolved without layout drift.
+**Gate verdict — ❌ FAILS on the first half, ✅ passes on the second.** No platform branch exists
+in any layout component (Law 13 holds). But the 390 header overlap means layout is not correct
+at one of the four named widths.
 
 ---
 
@@ -534,45 +536,40 @@ declaration per screen plus the registry — then the three violations above.
 
 Six workspaces depend on it.
 
-- [x] Camera (tablet/mobile), keyboard-wedge ⌘+B (desktop)
-      → Both `ScannerFab` and `BarcodeScannerModal` use active `@zxing/browser` camera decode
-      into live `<video>` viewfinders (closed 7 Oct 2026). The ⌘B keyboard-wedge is active.
-- [x] **Under 2s per item**, continuous mode
-      → Continuous mode loop keeps video stream active without remounting; 2000ms duplicate
-      cooldown (`lastScannedRef`) prevents frame loops; scan latency timing (`⏱ durationMs`)
-      instrumented on every scan (closed 7 Oct 2026).
-- [x] Haptic + green frame + sound on success; **audibly distinct** failure; torch
-      → Multi-frequency Web Audio synthesiser (880Hz sine match, 180Hz sawtooth buzz failure,
-      440Hz cooldown pulse), haptic patterns (`[50]`, `[150]`), and torch toggle button
-      (`track.getCapabilities().torch`) with 44×44 touch target (closed 7 Oct 2026).
+- [~] Camera (tablet/mobile), keyboard-wedge ⌘+B (desktop)
+      → `ScannerFab` has a real `@zxing` camera decode and the ⌘B wedge works. **Gap: the second
+      scanner, `BarcodeScannerModal` — the one the five workspaces actually use — has no real
+      decode**, and `ScannerFab:159-171` still carries a string-matching simulation path.
+- [~] **Under 2s per item**, continuous mode
+      → **Gap: no same-code cooldown** (holding one barcode in frame re-fires the callback), no
+      real continuous loop in the modal (it remounts the camera), and no timing instrumentation
+      — so the "under 2s" target is unmeasured, not met.
+- [~] Haptic + green frame + sound on success; **audibly distinct** failure; torch
+      → Haptic, green frame and distinct success/failure tones all present. **Gap: no torch
+      control** — needs `track.getCapabilities().torch` + a 44×44 toggle.
 - [x] **Manual entry always beside it**
-      → Verified in both scanners. Manual input and buttons hardened to Law 15 44px minimum
-      touch targets (closed 7 Oct 2026).
+      → Verified in both scanners, and in `ScannerFab` it sits *outside* the camera-error branch
+      so it survives camera failure. (Nit: that input is 36px tall, under Law 15's 44px floor.)
 
 ---
 
 ## Phase 9 — Offline
 
-- [x] Dexie write queue, `client_uuid` idempotency
-      → The queue, retry, dead-lettering, v1-v4 schema migrations and `client_uuid` idempotency
-      are complete (`offlineQueue.ts`). Wired into `idempotentInsert` and `safeUpdate` in `dataAccess.ts`
-      and floor operations in `floorVerb.ts`, returning `{ queued: true }` discriminants when offline.
-- [x] Precache shell; stale-while-revalidate reference data; network-first operational reads **with an age badge**
-      → Precache and SWR are configured in the PWA plugin. Dedicated `<DataAgeBadge>` component
-      built adhering to Law 11 (icon + label + colour) and Law 15 (44×44px refresh touch target).
-      Tracks and displays `lastFetchedAt` across operational reads (`useList.ts`, `useBooking.ts`,
-      `<PageBody>`, `Today.tsx`, `RentalsList.tsx`, `BookingDetail.tsx`).
-- [x] Conflict UI naming both sides — never silent
-      → Replay in `offlineQueue.ts` detects conflicting fields against server `updated_at` before writing.
-      Stores conflicting mutations in Dexie `conflicts` store. Persistent `<ConflictNotificationBanner>`
-      mounted in `App.tsx` alerts operators. `<ConflictResolutionModal>` renders side-by-side diffs
-      with 44×44px "Keep Server Version" and "Apply Local Offline Changes" actions.
+- [~] Dexie write queue, `client_uuid` idempotency
+      → The queue, retry, dead-lettering and `client_uuid` idempotency are all real
+      (`offlineQueue.ts`). **Gap: it has no producer** — no screen write path calls
+      `idempotentInsert`/`safeUpdate`, so the queue is unreachable from the UI.
+- [~] Precache shell; stale-while-revalidate reference data; network-first operational reads **with an age badge**
+      → Precache and SWR are configured in the PWA plugin (113 entries, verified in the build).
+      **Gap: no age badge anywhere** — nothing records or displays how stale an operational read is.
+- [ ] Conflict UI naming both sides — never silent
+      → Nothing exists. No conflict *detection* on replay either (no version/`updated_at` check),
+      so a stale offline mutation overwrites silently — the exact failure the item forbids.
 - [x] Offline **banner**, never full-screen
       → `App.tsx:756-777`, one strip, returns `null` when online, mounted once.
-- [x] Money and approvals blocked, **with the reason stated**
-      → Hardened with `useNetwork()` in `RefundPaymentModal.tsx`, `Expenses.tsx`,
-      `CreateInvoiceModal.tsx`, and `VoidInvoiceModal.tsx`, rendering persistent inline error
-      banners stating that financial operations and reversals require an active network connection.
+- [~] Money and approvals blocked, **with the reason stated**
+      → The RBAC guards exist and state reasons. **Gap: nothing threads offline state into them**,
+      so they never fire *because of* being offline.
 
 **Gate:** proven on a real phone, in a real warehouse, in airplane mode. Non-negotiable —
 do not start Phase 10 before this passes.

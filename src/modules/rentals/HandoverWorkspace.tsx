@@ -813,44 +813,6 @@ export default function HandoverWorkspace({
         : `Records ${pickedRows.length + missingRows.length} resolved item${pickedRows.length + missingRows.length === 1 ? '' : 's'} — the rest stay for a later session`
   const gateSummary = canComplete ? null : (firstBlockedGate?.blocking ?? null)
 
-  /* ── 5-State handling ─────────────────────────────────────────────── */
-  if (!isStaffMember) {
-    return (
-      <PageBody
-        restricted={true}
-        restrictedReason="Floor handover workspace is for Babin Rentals staff only."
-        restrictedRequiredRole="Staff"
-        noun="handover"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
-  if (propError) {
-    return (
-      <PageBody
-        error={propError}
-        {...(propOnRetry ? { onRetry: propOnRetry } : {})}
-        noun="handover session"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
-  if (propLoading) {
-    return (
-      <PageBody
-        loading={true}
-        skeleton="card"
-        noun="handover session"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
   /*
    * ⭐ 12 Aug 2026 — `applyOverride` stays REFUSED. TODO(decision): no rule
    * says who may override a session gate (`canPerformOperations` grants

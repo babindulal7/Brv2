@@ -569,7 +569,6 @@
   --good: var(--success-text);
   --bad: var(--danger-text);
   --info: var(--primary-text);
-  --warn: var(--warning-text);
 
   /*
     ---- alias registry, 22 Aug audit ----

@@ -40,16 +40,6 @@ const lines = vi.hoisted(() => ({
   shouldFail: false,
 }))
 
-/**
- * The sub-rented lines the mocked `booking_lines_v` returns.
- *
- * §11.1's chip and row marker both read `subRentalBookingIds()`, which is the
- * one query this screen makes outside `listBookings`. Driving it from here is
- * what lets a test say "this booking has a sub-rented line" and then assert the
- * gold outline — the whole point of a derived flag is that it follows the lines.
- */
-const lines = vi.hoisted(() => ({ rows: [] as { booking_id: string; line_type: string }[] }))
-
 /* `data/rentals.ts` reaches `queries/bookings.ts` for its named filter sets,
    and that module holds the supabase client. Replaced wholesale, exactly as the
    sibling suite does — nothing here touches a database.

@@ -1344,14 +1344,7 @@ export default function Finance() {
         stack two restricted states on one screen.
       */}
       {(tab === 'Dashboard' || tab === 'Invoices') && (
-      <PageBody
-        noun="finance records"
-        loading={propLoading}
-        error={propError}
-        onRetry={propOnRetry ?? refreshAll}
-        skeleton="table"
-        {...restriction}
-      >
+      <PageBody noun="finance records" {...restriction}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
           {tab === 'Dashboard' && <KpiStrip items={kpis} columns={kpis.length} />}
 

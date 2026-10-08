@@ -43,6 +43,7 @@ import {
   SLOW_MOVING,
   DEAD_STOCK,
   RETURNS,
+  RETURNS_TOTAL,
   PRODUCTS,
   SUMMARY,
   TOP_SELLING,
@@ -85,58 +86,71 @@ const link = { fontSize: 'var(--t-meta)', fontWeight: 600, color: 'var(--link)',
  * shared toolbar exists to stop.
  */
 
-function SalesTrendSummary() {
+function TrendChart() {
+  const w = 100
+  const h = 100
+  const max = Math.max(...SALES_TREND.series.flatMap((s) => s.points))
+  const n = SALES_TREND.series[0]?.points.length ?? 0
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 6, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>
-        <span>Metric</span>
-        <span>Month Total</span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--t-meta)', padding: '4px 0' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(2) }} />
-          Revenue
-        </span>
-        <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>Rs 8,46,500</span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--t-meta)', padding: '4px 0' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(3) }} />
-          Gross Profit
-        </span>
-        <span className="figure" style={{ fontWeight: 700, color: 'var(--success-text)' }}>Rs 3,12,800</span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--t-meta)', padding: '4px 0' }}>
-        <span style={{ color: 'var(--text2)' }}>Avg Margin</span>
-        <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>36.9%</span>
-      </div>
-    </div>
-  )
-}
-
-function ProfitTrendTable() {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 8, paddingBottom: 5, borderBottom: '1px solid var(--border)', fontSize: 'var(--t-meta)', color: 'var(--muted)', fontWeight: 600 }}>
-        <span>Period</span>
-        <span style={{ textAlign: 'right' }}>Revenue</span>
-        <span style={{ textAlign: 'right' }}>Profit</span>
-      </div>
-      {PROFIT_TREND.groups.map((g) => (
-        <div key={g.label} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto auto', gap: 8, fontSize: 'var(--t-meta)', padding: '3px 0' }}>
-          <span style={{ color: 'var(--text2)' }}>{g.label}</span>
-          <span className="figure" style={{ textAlign: 'right', color: 'var(--text)' }}>{`Rs ${((g.values[0] ?? 0) * 10000).toLocaleString('en-IN')}`}</span>
-          <span className="figure" style={{ textAlign: 'right', color: 'var(--success-text)', fontWeight: 600 }}>{`Rs ${((g.values[2] ?? 0) * 10000).toLocaleString('en-IN')}`}</span>
+    <div>
+      <div style={{ display: 'flex', gap: 7 }}>
+        <div
+          aria-hidden
+          style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: 150, fontSize: 'var(--t-meta)', color: 'var(--muted)', textAlign: 'right', flexShrink: 0 }}
+        >
+          {SALES_TREND.yTicks.map((t) => (
+            <span key={t} className="figure">
+              {t}
+            </span>
+          ))}
         </div>
-      ))}
+        <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label="Product sales trend" style={{ width: '100%', height: 150 }}>
+          {SALES_TREND.yTicks.map((_, i) => (
+            <line
+              key={i}
+              x1={0}
+              x2={w}
+              y1={(i / (SALES_TREND.yTicks.length - 1)) * h}
+              y2={(i / (SALES_TREND.yTicks.length - 1)) * h}
+              stroke="var(--chart-grid)"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+          {SALES_TREND.series.map((s, si) => (
+            <g key={s.name}>
+              <polyline
+                points={s.points.map((p, i) => `${(i / (n - 1)) * w},${h - (p / max) * h}`).join(' ')}
+                fill="none"
+                stroke={catColor(si === 0 ? 2 : 3)}
+                strokeWidth={2}
+                vectorEffect="non-scaling-stroke"
+                strokeLinejoin="round"
+              />
+              {s.points.map((p, i) => (
+                <circle key={i} cx={(i / (n - 1)) * w} cy={h - (p / max) * h} r={1.8} fill={catColor(si === 0 ? 2 : 3)} vectorEffect="non-scaling-stroke" />
+              ))}
+            </g>
+          ))}
+        </svg>
+      </div>
+      <div aria-hidden style={{ display: 'flex', justifyContent: 'space-between', paddingLeft: 30, marginTop: 5, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>
+        {SALES_TREND.labels.map((l) => (
+          <span key={l} className="figure">
+            {l}
+          </span>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 'var(--sp-md)', justifyContent: 'center', marginTop: 8 }}>
+        {SALES_TREND.series.map((s, i) => (
+          <span key={s.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 'var(--t-meta)', color: 'var(--text2)' }}>
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 'var(--r-badge)', background: catColor(i === 0 ? 2 : 3) }} />
+            {s.name}
+          </span>
+        ))}
+      </div>
     </div>
   )
-}
-
-export interface ProductReportsProps {
-  loading?: boolean
-  error?: string | null
-  onRetry?: () => void
 }
 
 /** Ranked list with an inline bar — single hue, rank is not a category. */
@@ -193,11 +207,7 @@ function productsCsv(money: boolean): ReportCsvRow[] {
  * what the figure already says, so a red/amber distinction never has to be seen
  * to read the row.
  */
-export default function ProductReports({
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: ProductReportsProps = {}) {
+export default function ProductReports() {
   const navigate = useNavigate()
   const money = useCanViewMoney()
   const viewport = useViewport()
@@ -472,7 +482,6 @@ export default function ProductReports({
           </div>
         </ReflowRail>
       </div>
-      </PageBody>
 
       <FooterNote />
     </div>

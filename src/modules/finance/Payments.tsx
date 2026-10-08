@@ -442,19 +442,7 @@ const DEPOSIT_LINES = ['Held', 'Applied', 'Refunded'] as const
  * The standalone route `/finance/payments` still renders `embedded={false}` and
  * keeps the full header, because a deep link arrives with no tab strip above it.
  */
-export interface PaymentsProps {
-  embedded?: boolean
-  loading?: boolean
-  error?: string | null
-  onRetry?: () => void
-}
-
-export default function Payments({
-  embedded = false,
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: PaymentsProps = {}) {
+export default function Payments({ embedded = false }: { embedded?: boolean }) {
   const [params, setParams] = useSearchParams()
   /* Law 13/14 — one width reading, at v4.1 §7.7's 768 / 1280. */
   const viewport = useViewport()
@@ -768,9 +756,9 @@ export default function Payments({
           */}
           <PageBody
             {...financeRestriction(money)}
-            loading={propLoading !== undefined ? propLoading : list.loading}
-            error={propError !== undefined ? propError : list.error}
-            onRetry={propOnRetry ?? refreshAll}
+            loading={list.loading}
+            error={list.error}
+            onRetry={refreshAll}
             hasRows={rows.length > 0}
             empty={list.isEmpty}
             emptyIsFiltered={list.isFiltered}
@@ -781,17 +769,11 @@ export default function Payments({
             noun="payments"
             skeleton="table"
             skeletonRows={5}
-            emptyTitle={isFiltered ? 'No payments match these filters' : 'No payments yet'}
             emptyMessage={
               isFiltered
                 ? 'Clear filters to see the full ledger.'
                 : 'No payments have been recorded yet.'
             }
-            {...(isFiltered
-              ? { onClearFilters: clearFilters }
-              : canTakePayment
-                ? { emptyActionLabel: 'Record Payment', onEmptyAction: () => setRecordOpen(true) }
-                : {})}
           >
             {/* PHONE <768 — the table becomes card rows. */}
             {!tabular && (

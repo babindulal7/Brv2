@@ -488,57 +488,6 @@ export const PAYMENT_DUE_UNAVAILABLE =
  *    approval; see the report.
  * ═══════════════════════════════════════════════════════════════════════ */
 
-/* ═══════════════════════════════════════════════════════════════════════
- * THE SUB-RENTAL CHIP — rulings §11.1, ruled 13 Aug 2026
- *
- * ⛔ This block used to be `SUB_RENTAL_UNAVAILABLE`, a sentence explaining why
- * the chip shipped `disabled`. §11.1 closed the question it was waiting on:
- *
- *   > A line is sub-rented. A booking counts as sub-rental **if any of its
- *   > lines is**. `LineItem` gains the field. `RentalRow` does **not**: the
- *   > booking-level answer is computed from its lines, never written.
- *
- * So the rule now lives in exactly one place — `data/booking.ts`'s
- * {@link isSubRentalBooking} over {@link SUB_RENTAL_LINE_TYPES} — and this
- * module's job is to answer it for a **list** rather than for one booking.
- *
- * ## Why it is a set of ids and not a filter on `bookings`
- *
- * There is no sub-rental column on `bookings` and there must not be one (that
- * is the ruling). The fact lives on `booking_lines.line_type`
- * (`0001_enums.sql:301`, `0002_bookings.sql:129`). Selecting bookings by it in
- * ONE round trip needs `booking_lines!inner(...)` plus a `referencedTable`
- * -scoped filter — `listBookings`' select string does not carry `!inner` and
- * `applyListFilters` builds unscoped clauses only.
- *
- * So the question is asked of `booking_lines_v` directly, and its answer — a
- * set of `bookings.id` — is handed to `listBookings` as an ordinary
- * `chips: { id: [...] }` group, which `applyListFilters` turns into
- * `id in (…)`. That keeps the narrowing **server-side**, which is the property
- * that matters: `withCount` still counts the matching set, and the pager still
- * walks pages the predicate saw. A client-side narrow of the fetched page —
- * the thing the old comment correctly refused — would leave "Showing 1 to 8 of
- * 214" over three rows.
- *
- * ## Two honest limits, stated rather than hidden
- *
- * 1. **It is two round trips, and the id list rides in the URL.** At a few
- *    hundred sub-rental bookings that is fine; at tens of thousands PostgREST
- *    would answer 414. That failure is loud, not silent, and the structural fix
- *    is one column: add `line_type` to `listBookings`' `booking_lines ( id, qty )`
- *    embed and make it `!inner` for this chip. That file is another pass's;
- *    fold this into it when it lands.
- * 2. **The live corpus currently holds zero sub-rental lines** — verified
- *    16 Aug 2026: `select line_type, count(*) from booking_lines` returns
- *    `Equipment 419` and nothing else. So the chip selects and honestly
- *    reports no matches. It is **not** back-filled from a hand-written array
- *    of booking numbers to make the screen look busier: that would paint
- *    "Sub-rented — external gear" on live bookings nobody computed it for,
- *    which is the fabricated-figure rule, not a cosmetic one. Seeding real
- *    lines is a migration (`lib/seed.ts` → `supabase/migrations`) and needs
- *    approval; see the report.
- * ═══════════════════════════════════════════════════════════════════════ */
-
 /**
  * Which bookings carry at least one live sub-rented line.
  *

@@ -21,7 +21,7 @@ import {
 import type { SettingKey, SettingValue, SettingsRecord } from '../../lib/settingsStore'
 import { saveSettings, resetSharedSettings } from '../../lib/settingsSync'
 import { applyLanguage } from '../../lib/i18n'
-import { canManageSettings, isStaff } from '../../lib/rbac'
+import { canManageSettings } from '../../lib/rbac'
 import { useAuth } from '../../lib/auth'
 import { useTheme } from '../../lib/theme'
 import {
@@ -83,17 +83,7 @@ const TAB_CONFIG: Record<TabKey, { icon: IconName; subtitle: string }> = {
   },
 }
 
-export interface SettingsProps {
-  loading?: boolean
-  error?: string | null
-  onRetry?: () => void
-}
-
-export default function Settings({
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: SettingsProps = {}) {
+export default function Settings() {
   const money = useCanViewMoney()
   const viewport = useViewport()
   const phone = viewport === 'phone'
@@ -190,7 +180,7 @@ export default function Settings({
   const exportBranches = () => downloadCsv('babin-branches.csv', branchCsvRows(branches, money))
 
   const headerActions =
-    !staff || propLoading || load.status !== 'ready' ? null : active === 'branches' && !onPhoneList ? (
+    load.status !== 'ready' ? null : active === 'branches' && !onPhoneList ? (
       <>
         <Button icon="download" onClick={exportBranches}>
           Export
@@ -302,12 +292,28 @@ export default function Settings({
   /* ── body, by state then by width ────────────────────────────────────── */
 
   const body = (() => {
-    if (propLoading || load.status === 'loading') {
-      return null
+    if (load.status === 'loading') {
+      return (
+        <LoadingSkeleton
+          type="card"
+          label="Loading settings — the stored values, not the defaults. Nothing on this page is shown until they arrive."
+        />
+      )
     }
 
-    if (propError || load.status === 'error') {
-      return null
+    if (load.status === 'error') {
+      return (
+        <ErrorBanner
+          title="Settings could not be read."
+          message={
+            <>
+              {load.message} Until they load, this page would show the built-in defaults rather than your saved values — and a
+              stale VAT rate is a wrong invoice, so nothing is rendered instead.
+            </>
+          }
+          onRetry={reload}
+        />
+      )
     }
 
     /* PHONE — §11.1: a list of sections, each tapping through to its own screen. */

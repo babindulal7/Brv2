@@ -1904,38 +1904,11 @@ function SelectedEventPanel({ bar, row, onClose }: { bar: Bar; row: ResourceRow 
 
 /* ── screen ────────────────────────────────────────────────────────────── */
 
-export interface CalendarProps {
-  loading?: boolean | undefined
-  error?: string | null | undefined
-  onRetry?: (() => void) | undefined
-}
-
-export default function Calendar({
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: CalendarProps = {}) {
+export default function Calendar() {
   const navigate = useNavigate()
   /* §8.3 — the shared hook, same call site as every other screen. It omits the
      money rows below; nothing here is masked. */
   const money = useCanViewMoney()
-
-  const [internalLoading, setInternalLoading] = useState(false)
-  const [internalError, setInternalError] = useState<string | null>(null)
-
-  const loading = propLoading ?? internalLoading
-  const error = propError !== undefined ? propError : internalError
-  const handleRetry = useCallback(() => {
-    if (propOnRetry) {
-      propOnRetry()
-      return
-    }
-    setInternalError(null)
-    setInternalLoading(true)
-    setTimeout(() => {
-      setInternalLoading(false)
-    }, 200)
-  }, [propOnRetry])
 
   /* Law 13/14 — width decides, and it is measured once here. No component
      below this line asks what kind of device it is running on. */

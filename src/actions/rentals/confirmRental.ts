@@ -583,28 +583,6 @@ export const confirmRentalConfig: ActionConfig<ConfirmRentalInput, ConfirmRental
      */
     const persisted = await readStage(booking.id)
     if (persisted !== to) {
-      /*
-       * ⚠ The units are held and the booking did NOT move. Release them.
-       *
-       * This branch was missed when Auto Assign Serials was first wired and a
-       * test caught it — and it is the *more likely* of the two failures, not
-       * the exotic one: it is the path `idempotentInsert` takes when a write is
-       * queued offline or swallowed by the `'Failed to fetch'` / 408 branch
-       * (`dataAccess.ts:49-53`), which fires even when `navigator.onLine` is
-       * true. Without this, a confirm that visibly failed would leave every
-       * unit on the booking held against a Quote, invisibly, until someone
-       * found them by hand.
-       */
-      await Promise.all([
-        releaseReservations(
-          reservation.reservationIds,
-          `Rolled back: ${booking.booking_no} did not reach ${to} — the confirm was queued or rejected.`,
-        ),
-        releaseBookingLineUnits(
-          reservation.unitRowIds,
-          `Rolled back: ${booking.booking_no} did not reach ${to} — the confirm was queued or rejected.`,
-        ),
-      ])
       throw new Error(
         `${booking.booking_no} is still at ${persisted ?? 'an unreadable stage'} — the confirm was queued or ` +
           'rejected rather than applied, so treat the booking as NOT confirmed. Nothing is held against it. ' +

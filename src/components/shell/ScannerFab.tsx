@@ -117,21 +117,6 @@ export default function ScannerFab() {
     }
   }, [open, refocusFab])
 
-  const toggleTorch = async () => {
-    const stream = videoRef.current?.srcObject as MediaStream | null
-    const track = stream?.getVideoTracks()[0]
-    if (!track) return
-    try {
-      const nextTorch = !torchOn
-      await (track as any).applyConstraints({
-        advanced: [{ torch: nextTorch }],
-      })
-      setTorchOn(nextTorch)
-    } catch (e) {
-      console.warn('Torch toggle failed', e)
-    }
-  }
-
   // 2. Camera Mount/Unmount (ZXing Web Fallback)
   /*
    * `@zxing/browser` 0.2 has no `reset()` on the reader. The old
@@ -500,33 +485,7 @@ export default function ScannerFab() {
                 <span>{cameraError}</span>
               </div>
             ) : (
-              <>
-                <div style={{ position: 'absolute', inset: '15%', border: '1.5px dashed rgba(255,255,255,0.4)', borderRadius: 'var(--r-input)', pointerEvents: 'none' }} />
-                {hasTorch && (
-                  <button
-                    type="button"
-                    onClick={toggleTorch}
-                    aria-label={torchOn ? 'Turn off torch' : 'Turn on torch'}
-                    style={{
-                      position: 'absolute',
-                      top: 6,
-                      right: 6,
-                      minWidth: 44,
-                      minHeight: 44,
-                      borderRadius: 'var(--r-btn)',
-                      border: torchOn ? '1px solid #f59e0b' : '1px solid rgba(255,255,255,0.4)',
-                      background: torchOn ? '#f59e0b' : 'rgba(0,0,0,0.6)',
-                      color: torchOn ? '#000' : '#fff',
-                      cursor: 'pointer',
-                      display: 'grid',
-                      placeItems: 'center',
-                    }}
-                    title={torchOn ? 'Torch On' : 'Torch Off'}
-                  >
-                    <Icon name="sun" size={17} />
-                  </button>
-                )}
-              </>
+              <div style={{ position: 'absolute', inset: '15%', border: '1.5px dashed rgba(255,255,255,0.4)', borderRadius: 'var(--r-input)', pointerEvents: 'none' }} />
             )}
           </div>
 

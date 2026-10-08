@@ -15,7 +15,6 @@ import { formatMoney, grouped, toRupees } from '../../lib/money'
 import type { Paisa } from '../../lib/money'
 import { getBusinessToday, toBs, formatBs, formatAd } from '../../lib/bs'
 import { useAuth } from '../../lib/auth'
-import { isStaff } from '../../lib/rbac'
 import { useCanViewMoney } from '../../lib/moneyVisibility'
 import { useViewport } from '../../lib/device'
 import './reports.css'
@@ -172,11 +171,11 @@ const tabStyle = {
  */
 const TAB_FAMILIES: Array<{ label: string; to: string | null; money: boolean }> = [
   { label: 'Dashboard', to: '/reports/pulse', money: false },
-  { label: 'Revenue', to: '/reports/expenses', money: true },
+  { label: 'Revenue', to: null, money: true },
   { label: 'Rentals', to: null, money: false },
   { label: 'Inventory', to: '/reports/inventory', money: false },
   { label: 'Clients', to: '/reports/clients', money: true },
-  { label: 'Operations', to: '/reports/working-capital', money: true },
+  { label: 'Operations', to: null, money: false },
   { label: 'Finance', to: '/reports/cash-flow', money: true },
   { label: 'Maintenance', to: '/reports/equipment-performance', money: false },
   { label: 'Cases', to: '/reports/cases', money: false },
@@ -379,7 +378,6 @@ export default function Pulse() {
 function DemoPulse() {
   const money = useCanViewMoney()
   const { user } = useAuth()
-  const staff = isStaff(user?.role ?? 'Client')
   const periodRef = useRef<HTMLSelectElement>(null)
   const viewport = useViewport()
   /* Rulings §7 — the rail track goes away below 1280 so `ReflowRail`'s
@@ -820,19 +818,9 @@ function DemoPulse() {
   return (
     <PageShell width="full" className="report-v2">
       {header}
-      <PageBody
-        noun="business pulse"
-        loading={propLoading}
-        error={propError}
-        onRetry={propOnRetry}
-        skeleton="table"
-        restricted={!staff}
-        restrictedRequiredRole="Staff"
-        restrictedReason="Executive pulse is for Babin Rentals staff only. Clients may view their confirmed bookings in the client portal."
-      >
-        {assertions}
-        {disclosure}
-        {periodBar}
+      {assertions}
+      {disclosure}
+      {periodBar}
 
       {/* §4.2's preset list stays complete: the ones the engines cannot answer
           are still offered, disabled, and their reason is one click away rather
@@ -1296,7 +1284,6 @@ function DemoPulse() {
           </Card>
         </ReflowRail>
       </div>
-      </PageBody>
 
       <FooterNote
         extra={[

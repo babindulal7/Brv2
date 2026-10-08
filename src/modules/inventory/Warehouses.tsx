@@ -11,16 +11,8 @@ import { PageShell } from '../../components/ui/PageShell'
 import { InfoTooltip } from '../../components/ui/InfoTooltip'
 import { DataTableShell } from '../../components/ui/DataTable'
 import { EmptyState, ErrorBanner } from '../../components/ui/StateViews'
-import { PageBody } from '../../components/ui/PageBody'
 import { Unavailable } from '../../components/ui/Unavailable'
-import { Donut, Legend } from '../../components/ui/Charts'
-import { isStaff } from '../../lib/rbac'
-
-export interface WarehousesProps {
-  loading?: boolean
-  error?: string | null
-  onRetry?: () => void
-}
+import { Donut, Legend, HBars, GroupedBars } from '../../components/ui/Charts'
 import WarehouseMap from '../../components/ui/WarehouseMap'
 import type { Slice } from '../../components/ui/Charts'
 import { STATUS, BRAND, BRAND_ON } from '../../lib/status'
@@ -528,13 +520,8 @@ const TRANSFER_TRANSITION_UNAVAILABLE =
 
 /* ── screen ────────────────────────────────────────────────────────────── */
 
-export default function Warehouses({
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: WarehousesProps = {}) {
+export default function Warehouses() {
   const { user } = useAuth()
-  const isStaffMember = isStaff(user?.role ?? 'Client')
   const online = useNetwork()
   /* Stable identity so the `rackGlance`/`rackDetailGroups` memo below (and
      anything else keyed on `gctx`) only recomputes when the viewing role
@@ -972,11 +959,14 @@ export default function Warehouses({
     { label: 'Available', value: totals.available, display: grouped(totals.available), percent: `${100 - totals.occupancyPct}%` },
   ]
 
+  const distributionMax = EQUIPMENT_DISTRIBUTION.reduce((m, c) => Math.max(m, c.count), 0)
   const distributionRows = EQUIPMENT_DISTRIBUTION.map((c) => ({
     label: c.category,
     value: c.count,
     display: `${grouped(c.count)} · ${pct(c.count, totals.assets)}%`,
   }))
+
+  const activityMax = activitySeries.reduce((m, d) => Math.max(m, d.completed, d.inProgress, d.pending), 0)
 
   const zoneRows = selected ? zonesOf(selected.id) : []
   const binRows = useMemo(
@@ -1063,33 +1053,48 @@ export default function Warehouses({
         a 560px basis drops the rail below the content instead, with no media
         query and no change to the desktop layout.
       */}
-      <PageBody
-        {...(propLoading !== undefined ? { loading: propLoading } : {})}
-        {...(propError !== undefined ? { error: propError } : {})}
-        {...(propOnRetry ? { onRetry: propOnRetry } : {})}
-        hasRows={WAREHOUSES.length > 0}
-        restricted={!isStaffMember}
-        restrictedRequiredRole="Staff"
-        restrictedReason="Warehouse management is for Babin Rentals staff only. Clients may view their bookings in the client portal."
-        noun="warehouses"
-        skeleton="table"
-      >
-        <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-md)', alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)', minWidth: 0, flex: '1 1 560px' }}>
-          {/* ── Key figures (<= 4 KPI cards per page-type rule) ────────── */}
+          {/* ── six KPI cards ─────────────────────────────────────────── */}
           <section
             aria-label="Key figures"
-            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--sp-md)' }}
+            /* 132px. The render puts all six on one row, and the spec locks
+               "exactly six"; with the rail open this column measures 958px at
+               the render's own 1536 width and 862 at 1440, so the basis has to
+               clear 6·min + 5·12 at 862. 140 did not — it dropped the sixth
+               card onto a row of its own from 1440 down. Widening beyond the
+               min is auto-fit's job: the cards still render ~150px at 1536. */
+            style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 'var(--sp-md)' }}
           >
             <KpiCard
               label="Total Warehouses"
               value={grouped(totals.warehouses)}
               icon="home"
               accent="primary"
-              note={`${totals.active} active across ${branches.length} branches`}
+              note={`Across ${branches.length} branches`}
               footer={
                 <button type="button" style={linkStyle} onClick={clearFilters} disabled={!filtersOn} title={filtersOn ? 'Clear every filter' : 'No filters are applied'}>
                   View All <Icon name="arrow_right" size={12} />
+                </button>
+              }
+            />
+            <KpiCard
+              label="Active Warehouses"
+              value={grouped(totals.active)}
+              icon="check"
+              accent="success"
+              note={`${pct(totals.active, totals.warehouses)}% active`}
+              footer={
+                <button
+                  type="button"
+                  style={linkStyle}
+                  onClick={() => {
+                    setStatus('Active')
+                    setPage(1)
+                    focusList()
+                  }}
+                >
+                  View Active <Icon name="arrow_right" size={12} />
                 </button>
               }
             />
@@ -1123,6 +1128,18 @@ export default function Warehouses({
                 <button type="button" style={linkStyle} onClick={openTransferCentre}>
                   View Transfers <Icon name="arrow_right" size={12} />
                 </button>
+              }
+            />
+            <KpiCard
+              label="Inventory Accuracy"
+              value={`${totals.accuracyPct}%`}
+              icon="chart"
+              accent="success"
+              note="Asset-weighted, last verification"
+              footer={
+                <Link to="/reports/inventory" style={linkStyle}>
+                  View Report <Icon name="arrow_right" size={12} />
+                </Link>
               }
             />
           </section>
@@ -1534,14 +1551,7 @@ export default function Warehouses({
               <div style={{ fontSize: 'var(--t-meta)', color: 'var(--text2)', marginBottom: 10 }}>
                 Total assets: <span className="figure" style={{ fontWeight: 700, color: 'var(--text)' }}>{grouped(totals.assets)}</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 150, overflowY: 'auto' }}>
-                {distributionRows.map((r) => (
-                  <div key={r.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 'var(--t-meta)' }}>
-                    <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
-                    <span className="figure" style={{ fontWeight: 600, color: 'var(--text)' }}>{grouped(r.value)}</span>
-                  </div>
-                ))}
-              </div>
+              <HBars rows={distributionRows} axisTicks={['0', grouped(Math.round(distributionMax / 2)), grouped(distributionMax)]} />
               <Link to="/inventory" style={{ ...linkStyle, marginTop: 'var(--sp-md)' }}>
                 View in Inventory <Icon name="arrow_right" size={12} />
               </Link>
@@ -1551,17 +1561,18 @@ export default function Warehouses({
               {activitySeries.length === 0 ? (
                 <p style={{ margin: 0, fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>No transfers are on the ledger.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 150, overflowY: 'auto' }}>
-                  {activitySeries.map((d) => (
-                    <div key={d.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 'var(--t-meta)', padding: '3px 0', borderBottom: '1px solid var(--border)' }}>
-                      <span style={{ fontWeight: 600 }}>{d.label}</span>
-                      <span style={{ display: 'flex', gap: 8, fontSize: 'var(--t-th)' }}>
-                        <span style={{ color: 'var(--success-text)' }}>{d.completed} done</span>
-                        <span style={{ color: 'var(--accent)' }}>{d.inProgress} active</span>
-                        <span style={{ color: 'var(--muted)' }}>{d.pending} pend</span>
-                      </span>
-                    </div>
-                  ))}
+                /* `GroupedBars` centres its three-swatch legend on one nowrap
+                   row; four cards across leaves 201px and the row wants 212, so
+                   it scrolls in its own box rather than shaving "Completed" and
+                   "Pending" off both ends. */
+                <div style={{ overflowX: 'auto' }}>
+                  <GroupedBars
+                    groups={activitySeries.map((d) => ({ label: d.label, values: [d.completed, d.inProgress, d.pending] }))}
+                    series={['Completed', 'In Progress', 'Pending']}
+                    yTicks={Array.from({ length: activityMax + 1 }, (_, i) => String(i))}
+                    format={(v) => `${v} ${v === 1 ? 'transfer' : 'transfers'}`}
+                    height={148}
+                  />
                 </div>
               )}
               <button type="button" style={{ ...linkStyle, marginTop: 'var(--sp-md)' }} onClick={openTransferCentre}>

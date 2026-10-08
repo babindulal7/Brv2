@@ -198,8 +198,7 @@ const NO_OVERLAYS: Overlays = { blocked: false, onStop: false }
 
 interface SavedView {
   label: string
-  /** The facet ticks the view restores. Absent means "clear both families". */
-  facets?: Partial<Facets>
+  filter: FilterKey
   sort: { key: SortKey; dir: 'asc' | 'desc' }
   /** The overlay state the view restores. Absent means "clear both". */
   overlays?: Partial<Overlays>
@@ -223,106 +222,6 @@ const SAVED_VIEWS: SavedView[] = [
   /* Now an OVERLAY over every client, not a status that excludes the rest. */
   { label: 'Blocked Clients', filter: 'all', sort: { key: 'name', dir: 'asc' }, overlays: { blocked: true } },
 ]
-
-type RailSection = 'type' | 'status' | 'flags' | 'views'
-
-/** One collapsible group of the filter rail. The whole header row is the toggle. */
-function FilterSection({
-  title,
-  open,
-  onToggle,
-  children,
-}: {
-  title: string
-  open: boolean
-  onToggle: () => void
-  children: ReactNode
-}) {
-  const bodyId = useId()
-  return (
-    <div style={{ borderTop: '1px solid var(--border)' }}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-controls={bodyId}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          width: '100%',
-          minHeight: 44,
-          padding: '0 14px',
-          border: 'none',
-          background: 'transparent',
-          color: 'var(--text)',
-          fontSize: 'var(--t-ui)',
-          fontWeight: 700,
-          cursor: 'pointer',
-          fontFamily: 'inherit',
-          textAlign: 'left',
-        }}
-      >
-        <span style={{ flex: 1 }}>{title}</span>
-        <Icon name={open ? 'chevron_up' : 'chevron_down'} size={15} style={{ color: 'var(--muted)' }} />
-      </button>
-      {open && (
-        <div id={bodyId} style={{ display: 'flex', flexDirection: 'column', padding: '0 8px 10px' }}>
-          {children}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/** A ticked filter row: box · label · count. Law 15 — the whole row is a 44px target. */
-function CheckRow({
-  label,
-  count,
-  checked,
-  onChange,
-  unavailableNote,
-}: {
-  label: string
-  count: number
-  checked: boolean
-  onChange: () => void
-  /** Present when the condition cannot be evaluated — the row goes inert and says so. */
-  unavailableNote?: string
-}) {
-  const disabled = unavailableNote !== undefined
-  return (
-    <label
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        minHeight: 44,
-        padding: '0 6px',
-        borderRadius: 'var(--r-sm)',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        color: disabled ? 'var(--muted)' : 'var(--text)',
-        fontSize: 'var(--t-meta)',
-        fontWeight: checked ? 600 : 500,
-      }}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={onChange}
-        style={{ width: 18, height: 18, margin: 0, flexShrink: 0, accentColor: 'var(--nav-active-accent)', cursor: 'inherit' }}
-      />
-      <span style={{ flex: 1, minWidth: 0 }}>{label}</span>
-      {disabled ? (
-        <span style={{ fontSize: 'var(--t-th)', fontWeight: 600 }}>{unavailableNote}</span>
-      ) : (
-        <span className="figure" style={{ color: 'var(--muted)' }}>
-          ({count})
-        </span>
-      )}
-    </label>
-  )
-}
 
 const th = {
   textTransform: 'none' as const,
@@ -1724,21 +1623,16 @@ export function ClientsDirectory({
 
             </div>}
 
-            <PageBody
-              empty={filteredClients.length === 0}
-              emptyIsFiltered={!emptyBecauseNoClients}
-              emptyTitle={emptyBecauseNoClients ? 'No clients yet' : 'No clients found'}
-              emptyMessage={
-                emptyBecauseNoClients
-                  ? 'The directory is empty. Register the first client to start booking.'
-                  : searchQuery
-                    ? `No client matches "${searchQuery}" under the current filter.`
-                    : 'No client matches the selected filter.'
-              }
-              {...(emptyBecauseNoClients
-                ? {
-                    emptyActionLabel: 'Register a client',
-                    onEmptyAction: onRequestAdd,
+            {filteredClients.length === 0 ? (
+              <div style={{ padding: 'var(--sp-lg)' }}>
+                <EmptyState
+                  title={emptyBecauseNoClients ? 'No clients yet' : 'No clients found'}
+                  description={
+                    emptyBecauseNoClients
+                      ? 'The directory is empty. Register the first client to start booking.'
+                      : searchQuery
+                        ? `No client matches "${searchQuery}" under the current filter.`
+                        : 'No client matches the selected filter.'
                   }
                   actionLabel={emptyBecauseNoClients ? 'Register a client' : 'Clear all filters'}
                   onAction={emptyBecauseNoClients ? onRequestAdd : clearAll}
@@ -2201,7 +2095,6 @@ export function ClientsDirectory({
                 </table>
               </DataTableShell>
             )}
-            </PageBody>
 
             {/* From main's d7ca3bc: no "Page 1 of 1" under an empty state. */}
             {filteredClients.length > 0 && (

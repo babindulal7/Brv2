@@ -1005,44 +1005,6 @@ export default function ResetWorkspace({
 
   const notFound = !floorLoading && floorError === null && floor === null
 
-  /* ── 5-State handling ─────────────────────────────────────────────── */
-  if (!isStaffMember) {
-    return (
-      <PageBody
-        restricted={true}
-        restrictedReason="Cleaning & reset workspace is for Babin Rentals staff only."
-        restrictedRequiredRole="Staff"
-        noun="cleaning and reset"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
-  if (propError) {
-    return (
-      <PageBody
-        error={propError}
-        {...(propOnRetry ? { onRetry: propOnRetry } : {})}
-        noun="cleaning and reset"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
-  if (propLoading) {
-    return (
-      <PageBody
-        loading={true}
-        skeleton="card"
-        noun="cleaning and reset"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
   /*
    * Reset runs at `Returned` (`JOBS.Reset.runsAt`) — `runFloorVerb` would
    * refuse any other stage by name, so the workspace says so up front instead

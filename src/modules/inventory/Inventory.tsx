@@ -21,7 +21,6 @@ import { Unavailable } from '../../components/ui/Unavailable'
 import { Badge } from '../../components/ui/Badge'
 import { formatMoney, grouped } from '../../lib/money'
 import { useAuth } from '../../lib/auth'
-import { isStaff } from '../../lib/rbac'
 import { useTabularLayout, useViewport } from '../../lib/device'
 import { canViewMoneyField, gateContext } from '../../lib/fieldGating'
 import type { GateContext } from '../../lib/fieldGating'
@@ -1231,11 +1230,7 @@ function parseFacetsFromParams(searchParams: URLSearchParams): Facets {
  *  · §4.3's chip-count invariant is **gone with the counts it guarded** — see the
  *    note where `CHIP_COUNTS` used to be in `data/inventory.ts`.
  */
-export default function Inventory({
-  loading: propLoading,
-  error: propError,
-  onRetry: propOnRetry,
-}: InventoryProps = {}) {
+export default function Inventory() {
   /*
    * §7 — four tab panes under `/inventory`, **with the active tab in the URL**.
    *
@@ -1323,7 +1318,6 @@ export default function Inventory({
   /** Width only, Law 14 — 768 / 1280. The rail reflows below 1280, never hides. */
   const viewport = useViewport()
   const role = user?.role ?? 'Client'
-  const isStaffMember = isStaff(role)
   const gctx = useMemo(() => gateContext(role), [role])
   /**
    * One money gate for the whole screen. The table column, the CSV export, the
@@ -1512,10 +1506,6 @@ export default function Inventory({
     refetchMissing()
   }, [refetchList, refetchChips, refetchModels, refetchInStock, refetchOnRent, refetchReserved, refetchMaintenance, refetchMissing])
 
-  const isLoading = propLoading !== undefined ? propLoading : list.loading
-  const isError = propError !== undefined ? propError : list.error
-  const handleRetry = propOnRetry ?? refreshAll
-
   /*
    * ⛔ Six hand-typed figures became six counted ones — and every label and note
    * changed with them, because they no longer count the same thing. "Available
@@ -1524,10 +1514,6 @@ export default function Inventory({
    * five state cards overlap (one model can be In Stock and On Rent at once) and
    * do not sum to the first, so presenting them as unit totals would be a set of
    * numbers that cannot be reconciled.
-   */
-  /**
-   * Page Type: List (Equipment inventory)
-   * Page-type rule: <= 4 KPI cards per screen.
    */
   const kpis: Kpi[] = [
     {
@@ -1540,20 +1526,9 @@ export default function Inventory({
     // One word for one state — `Available`, not `In Stock`. See `INV_LABEL`.
     { label: `Models ${INV_LABEL['In Stock']}`, value: countOf(inStockKpi, inStockKpi.total), icon: 'checklist', accent: 'success', note: `At least one unit ${INV_LABEL['In Stock']}` },
     { label: `Models ${INV_LABEL['On Rent']}`, value: countOf(onRentKpi, onRentKpi.total), icon: 'truck', accent: 'success', note: `At least one unit ${INV_LABEL['On Rent']}` },
-    {
-      label: 'Needs Attention',
-      value: countOf(
-        maintenanceKpi.loading || missingKpi.loading
-          ? { loading: true, error: null }
-          : maintenanceKpi.error || missingKpi.error
-            ? { loading: false, error: maintenanceKpi.error ?? missingKpi.error }
-            : { loading: false, error: null },
-        (maintenanceKpi.total ?? 0) + (missingKpi.total ?? 0),
-      ),
-      icon: 'alert_triangle',
-      accent: 'danger',
-      note: 'In Maintenance or Missing unit',
-    },
+    { label: `Models ${INV_LABEL.Reserved}`, value: countOf(reservedKpi, reservedKpi.total), icon: 'calendar', accent: 'primary', note: `At least one unit ${INV_LABEL.Reserved}` },
+    { label: 'In Maintenance', value: countOf(maintenanceKpi, maintenanceKpi.total), icon: 'tool', accent: 'progress', note: 'At least one unit in Maintenance' },
+    { label: 'With a unit Missing', value: countOf(missingKpi, missingKpi.total), icon: 'alert_triangle', accent: 'danger', note: 'Action required' },
   ]
 
   const total = list.total
@@ -1991,9 +1966,9 @@ export default function Inventory({
                 equipment matches these filters" is the true answer.
               */}
               <PageBody
-                loading={isLoading}
-                error={isError}
-                onRetry={handleRetry}
+                loading={list.loading}
+                error={list.error}
+                onRetry={refreshAll}
                 hasRows={list.rows.length > 0}
                 empty={list.isEmpty || query.impossible}
                 emptyIsFiltered={list.isFiltered}
@@ -2001,9 +1976,6 @@ export default function Inventory({
                 noun="equipment"
                 skeleton="table"
                 skeletonRows={6}
-                restricted={!isStaffMember}
-                restrictedRequiredRole="Staff"
-                restrictedReason="Equipment catalogue and warehouse inventory are for Babin Rentals staff only. Clients may view equipment in the client portal."
                 emptyTitle={filtersOn ? 'No equipment matches these filters' : 'No equipment yet'}
                 emptyMessage={
                   query.impossible

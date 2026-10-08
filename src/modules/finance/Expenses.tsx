@@ -503,11 +503,6 @@ function AddExpenseSheet({
   }, [isOpen])
 
   const submit = async (status: ExpenseEntryStatus) => {
-    if (!isOnline) {
-      return setError(
-        'This device is offline. An expense entry is not queued offline because document numbering and accounting records require an active network connection. Record it when you are back online.'
-      )
-    }
     if (!categoryId) return setError('Choose a category. Every expense belongs to one — the column is NOT NULL.')
     if (!branchId) return setError('Choose a branch. expenses.branch_id is NOT NULL, so an expense cannot be recorded without one.')
     if (!vendor.trim()) return setError('Enter the vendor. vendor_name is NOT NULL and there is no "unknown vendor" to fall back on.')
@@ -983,9 +978,9 @@ export default function Expenses({ embedded = false, filtersOpen: externalFilter
               blanking a table somebody is reading.
             */}
             <PageBody
-              loading={propLoading !== undefined ? propLoading : list.loading}
-              error={propError !== undefined ? propError : list.error}
-              onRetry={propOnRetry ?? list.refetch}
+              loading={list.loading}
+              error={list.error}
+              onRetry={list.refetch}
               hasRows={list.rows.length > 0}
               empty={list.isEmpty}
               emptyIsFiltered={list.isFiltered}

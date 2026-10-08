@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import { LoadingSkeleton, ErrorBanner, EmptyState, RestrictedState } from './StateViews'
-import { DataAgeBadge } from './DataAgeBadge'
 
 /**
  * Picks between the four non-happy states so a screen does not have to.
@@ -71,7 +70,7 @@ import { DataAgeBadge } from './DataAgeBadge'
  * screen does not tune a number that does nothing.
  */
 export interface PageBodyProps {
-  loading?: boolean | undefined
+  loading?: boolean
   /**
    * The REASON the load failed, NOT a finished sentence — `JWT expired`, not
    * `Could not load rentals. JWT expired`.
@@ -82,8 +81,8 @@ export interface PageBodyProps {
    * `useList` returns exactly this shape (`ListResult.error`) and says so on its
    * own side; the two comments are a pair, so neither drifts alone.
    */
-  error?: string | null | undefined
-  onRetry?: (() => void) | undefined
+  error?: string | null
+  onRetry?: () => void
   /**
    * Whether `children` currently holds data — on a list screen, `rows.length > 0`.
    *
@@ -93,31 +92,31 @@ export interface PageBodyProps {
    * has not said it has rows is assumed to have nothing to protect, and gets
    * the old full-page behaviour.
    */
-  hasRows?: boolean | undefined
+  hasRows?: boolean
   /** True only when a successful query returned nothing. */
-  empty?: boolean | undefined
+  empty?: boolean
   /**
    * Whether the emptiness came from filters. The two empty states are different
    * questions: someone who filtered to zero wants Clear filters, not Add.
    */
-  emptyIsFiltered?: boolean | undefined
-  onClearFilters?: (() => void) | undefined
+  emptyIsFiltered?: boolean
+  onClearFilters?: () => void
   /** What is being loaded, in words — "rentals", "clients". Becomes the skeleton's label. */
-  noun?: string | undefined
+  noun?: string
   /** Set when the session's role may not view this surface at all. */
-  restricted?: boolean | undefined
-  restrictedReason?: string | undefined
+  restricted?: boolean
+  restrictedReason?: string
   /**
    * The role that *would* be allowed, rendered as a "Requires Owner" chip.
    * §2.5 asks the restricted state to "name who to ask", and `RestrictedState`
    * already supports it — without this passthrough a converted screen could not
    * reach it.
    */
-  restrictedRequiredRole?: string | undefined
+  restrictedRequiredRole?: string
   /** Shape of the skeleton, so it resembles what is arriving. */
   skeleton?: 'card' | 'table' | 'kpi' | 'movement'
   /** Skeleton row count. Honoured by `skeleton="table"` only — see limitation 2. */
-  skeletonRows?: number | undefined
+  skeletonRows?: number
   /** Empty-state overrides. Defaults are derived from `noun`. */
   emptyTitle?: string
   emptyMessage?: string
@@ -129,12 +128,8 @@ export interface PageBodyProps {
    */
   clearLabel?: string
   /** Label for the empty state's one action, e.g. "Add client". Both this and `onEmptyAction` are needed for it to render. */
-  emptyActionLabel?: string | undefined
-  onEmptyAction?: (() => void) | undefined
-  /** Operational read timestamp (Plan §Phase 9). Renders DataAgeBadge when data is displayed. */
-  dataTimestamp?: Date | string | number | null | undefined
-  /** Whether to show the age badge (defaults to true if dataTimestamp is given). */
-  showAgeBadge?: boolean | undefined
+  emptyActionLabel?: string
+  onEmptyAction?: () => void
   children: ReactNode
 }
 
@@ -157,8 +152,6 @@ export function PageBody({
   clearLabel,
   emptyActionLabel,
   onEmptyAction,
-  dataTimestamp,
-  showAgeBadge = true,
   children,
 }: PageBodyProps) {
   // Every optional prop below is spread conditionally rather than passed as a
@@ -197,11 +190,6 @@ export function PageBody({
     return hasRows ? (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>
         {banner}
-        {dataTimestamp && showAgeBadge && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <DataAgeBadge timestamp={dataTimestamp} onRefresh={onRetry} isStale={true} />
-          </div>
-        )}
         {children}
       </div>
     ) : (
@@ -244,17 +232,6 @@ export function PageBody({
         description={emptyMessage ?? 'Nothing has been added here.'}
         {...(emptyActionLabel && onEmptyAction ? { actionLabel: emptyActionLabel, onAction: onEmptyAction } : {})}
       />
-    )
-  }
-
-  if (dataTimestamp && showAgeBadge) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-sm, 8px)' }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <DataAgeBadge timestamp={dataTimestamp} onRefresh={onRetry} />
-        </div>
-        {children}
-      </div>
     )
   }
 

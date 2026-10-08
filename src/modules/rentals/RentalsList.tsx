@@ -1487,10 +1487,6 @@ export default function RentalsList() {
   useDomainEvent(EVENT_TYPES.RENTAL_CANCELLED, refreshAll)
   useDomainEvent(EVENT_TYPES.DEPOSIT_SETTLED, refreshAll)
 
-  const isLoading = propLoading !== undefined ? propLoading : (list.loading || (subOn && subPending))
-  const isError = propError !== undefined ? propError : (subOn && !subPending && subIds === null ? SUB_RENTAL_UNANSWERED : list.error)
-  const handleRetry = propOnRetry ?? refreshAll
-
   /*
    * §11.1 — the derived sub-rental answer is applied HERE rather than in
    * `fetchRentals`, because the id set and the page of rows come from two
@@ -1697,20 +1693,6 @@ export default function RentalsList() {
           }}
         />
         </Suspense>
-    )
-  }
-
-  /* ── restricted state for non-staff ────────────────────────────────── */
-  if (!isStaffMember) {
-    return (
-      <PageBody
-        restricted={true}
-        restrictedReason="The operational rentals directory is for Babin Rentals staff only. Clients may view their confirmed bookings in the client portal."
-        restrictedRequiredRole="Staff"
-        noun="rentals"
-      >
-        <div />
-      </PageBody>
     )
   }
 
@@ -2005,7 +1987,6 @@ export default function RentalsList() {
               error={subOn && !subPending && subIds === null ? SUB_RENTAL_UNANSWERED : list.error}
               onRetry={refreshAll}
               hasRows={list.rows.length > 0}
-              dataTimestamp={list.lastFetchedAt}
               empty={list.isEmpty || query.impossible}
               emptyIsFiltered={list.isFiltered}
               onClearFilters={clearFilters}

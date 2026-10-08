@@ -1157,44 +1157,6 @@ export default function ReturnWorkspace({
 
   const notFound = !floorLoading && floorError === null && floor === null
 
-  /* ── 5-State handling ─────────────────────────────────────────────── */
-  if (!isStaffMember) {
-    return (
-      <PageBody
-        restricted={true}
-        restrictedReason="Return & inspection workspace is for Babin Rentals staff only."
-        restrictedRequiredRole="Staff"
-        noun="return inspection"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
-  if (propError) {
-    return (
-      <PageBody
-        error={propError}
-        {...(propOnRetry ? { onRetry: propOnRetry } : {})}
-        noun="return inspection"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
-  if (propLoading) {
-    return (
-      <PageBody
-        loading={true}
-        skeleton="card"
-        noun="return inspection"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
   /*
    * Return runs at `On Rent` (`JOBS.Return.runsAt`) — `runFloorVerb` would
    * refuse any other stage by name, so the workspace says so up front instead

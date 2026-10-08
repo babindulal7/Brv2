@@ -6,7 +6,6 @@ import type { Paisa } from '../../../lib/money'
 import { generateClientUuid } from '../../../lib/dataAccess'
 import { refundPayment } from '../../../actions/payments/refundPayment'
 import { useAuth } from '../../../lib/auth'
-import { useNetwork } from '../../../lib/network'
 
 interface RefundPaymentModalProps {
   isOpen: boolean
@@ -63,14 +62,6 @@ export function RefundPaymentModal({
     }
     if (!user) {
       setError('You are not signed in, so this reversal cannot be attributed to anyone. Sign in and process it again.')
-      return
-    }
-
-    if (!isOnline) {
-      setError(
-        'This device is offline. A payment refund reversal is not queued for later — it is refused because financial ' +
-          'corrections require an active network connection. Process it once you are back online.',
-      )
       return
     }
 

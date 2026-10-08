@@ -503,63 +503,6 @@ function ClientDetailView() {
     [client, money, overdueDays, stopThresholdDays],
   )
 
-  /* ── On Stop — RULING §11.2 ─────────────────────────────────────────────
-   *
-   * This is the ONE surface that can answer both limbs, because it is the only
-   * one that runs the invoices query. The directory can evaluate the credit
-   * limb alone and says so; here the overdue limb becomes answerable too.
-   *
-   * The predicate itself lives in `data/clients.ts` and is shared with the
-   * directory — §11.2.3: one function, so the chip on the row and the block on
-   * this page cannot disagree about the same client. *N* comes from Settings ▸
-   * Financial; no threshold is written here.
-   */
-  const stopThresholdDays = useMemo(() => readOverdueStopDays(), [])
-
-  /**
-   * Days past due on the client's most overdue **issued, unpaid** invoice.
-   *
-   * `0` means they hold none — a real answer. `null` means the question could
-   * not be asked, and the three ways that happens are all reported rather than
-   * flattened into `0` (§11.2.7):
-   *
-   *  · a money-blind session: `invoices` has no `_v` masking view, RLS gates it
-   *    whole-row, and a withheld list arrives as `[]` with HTTP 200 —
-   *    indistinguishable from "never invoiced". `financeRestriction` already
-   *    makes that point about the table below; the same ambiguity would make an
-   *    "on stop: no" here into a claim nobody checked.
-   *  · the query is still in flight, or it failed.
-   *  · a `due_date` that will not parse. One unreadable date makes the *worst*
-   *    overdue unknown, so the limb reports unknown rather than the best case.
-   *
-   * Draft invoices are excluded: a draft has not been issued to anybody, so it
-   * cannot be late. `invoicesForClient` already excludes voided rows.
-   */
-  const overdueDays = useMemo<number | null>(() => {
-    if (!money) return null
-    if (invoices.loading || invoices.error) return null
-    let worst = 0
-    for (const inv of invoices.rows) {
-      if (inv.status === 'Draft') continue
-      if (inv.outstandingAmount <= 0) continue
-      const late = daysPastDue(inv.dueDateAd)
-      if (late === null) return null
-      if (late > worst) worst = late
-    }
-    return worst
-  }, [money, invoices.loading, invoices.error, invoices.rows])
-
-  const creditStop = useMemo(
-    () =>
-      client
-        ? evaluateCreditStop(
-            creditStopFactsOf(client, { canViewMoney: money, daysPastDueOnOldestUnpaidInvoice: overdueDays }),
-            { overdueStopDays: stopThresholdDays, canViewMoney: money },
-          )
-        : null,
-    [client, money, overdueDays, stopThresholdDays],
-  )
-
   if (!client) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-md)' }}>

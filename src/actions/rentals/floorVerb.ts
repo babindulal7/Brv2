@@ -447,8 +447,6 @@ export interface FloorVerbResult {
    * empty for Reset, which sets no stage by design (§1.5).
    */
   stageHeldBy: readonly string[]
-  /** Whether the operation was queued offline in Dexie rather than committed directly to Supabase. */
-  queued?: boolean
 }
 
 /* ── Static per-verb facts ──────────────────────────────────────────────── */
@@ -1030,7 +1028,6 @@ export async function runFloorVerb(
       queued: 0,
       stage: null,
       stageHeldBy: [],
-      queued: isQueued,
     }
   }
 
@@ -1377,8 +1374,6 @@ export async function runFloorVerb(
     await safeUpdate('bookings', booking.id, { actual_return_at: occurredAt, updated_at: occurredAt }, actionUuid)
   }
 
-  const isQueued = ctx.isOnline === false || (typeof navigator !== 'undefined' && !navigator.onLine)
-
   return {
     success: true,
     bookingId: booking.id,
@@ -1391,7 +1386,6 @@ export async function runFloorVerb(
     queued,
     stage,
     stageHeldBy: heldBy,
-    queued: isQueued,
   }
 }
 

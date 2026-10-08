@@ -1152,44 +1152,6 @@ export default function PackingWorkspace({
 
   const notFound = !floorLoading && floorError === null && floor === null
 
-  /* ── 5-State handling ─────────────────────────────────────────────── */
-  if (!isStaffMember) {
-    return (
-      <PageBody
-        restricted={true}
-        restrictedReason="Floor packing workspace is for Babin Rentals staff only."
-        restrictedRequiredRole="Staff"
-        noun="packing"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
-  if (propError) {
-    return (
-      <PageBody
-        error={propError}
-        {...(propOnRetry ? { onRetry: propOnRetry } : {})}
-        noun="packing checklist"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
-  if (propLoading) {
-    return (
-      <PageBody
-        loading={true}
-        skeleton="card"
-        noun="packing checklist"
-      >
-        <div />
-      </PageBody>
-    )
-  }
-
   /*
    * Pack runs at `Booked` (`JOBS.Pack.runsAt`) — `runFloorVerb` would refuse
    * any other stage by name, so the workspace says so up front instead of

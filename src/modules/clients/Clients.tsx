@@ -77,10 +77,6 @@ export default function Clients() {
    */
   const { clients, loading: clientsLoading, error: clientsError, refresh } = useClients()
 
-  const isLoading = propLoading !== undefined ? propLoading : clientsLoading
-  const isError = propError !== undefined ? propError : clientsError
-  const handleRetry = propOnRetry ?? refresh
-
   /**
    * Blocking is a write now, and this screen's only job in it is the re-read.
    */
@@ -141,20 +137,6 @@ export default function Clients() {
     a.click()
     URL.revokeObjectURL(url)
     showSuccessToast('Export ready', `${clients.length} client rows written to clients.csv`)
-  }
-
-  /* ── restricted state for non-staff ────────────────────────────────── */
-  if (!isStaffMember) {
-    return (
-      <PageBody
-        restricted={true}
-        restrictedReason="The client management directory is for Babin Rentals staff only. Clients may view their profile in the client portal."
-        restrictedRequiredRole="Staff"
-        noun="clients"
-      >
-        <div />
-      </PageBody>
-    )
   }
 
   return (
@@ -218,13 +200,12 @@ export default function Clients() {
       {activeTab === 'clients' && (
         <>
           <PageBody
-            loading={isLoading}
-            error={isError}
-            onRetry={handleRetry}
+            loading={clientsLoading}
+            error={clientsError}
+            onRetry={refresh}
             hasRows={clients.length > 0}
             noun="clients"
             skeleton="table"
-            skeletonRows={6}
           >
             <ClientsDirectory
               clients={clients}
@@ -242,7 +223,7 @@ export default function Clients() {
       {activeTab === 'membership' && <Membership embedded filtersOpen={membershipFiltersOpen} onFiltersClose={() => setMembershipFiltersOpen(false)} />}
       {activeTab === 'referral' && <ReferralView />}
       {activeTab === 'credit' && money && (
-        <CreditView clients={clients} loading={isLoading} error={isError} onRetry={handleRetry} />
+        <CreditView clients={clients} loading={clientsLoading} error={clientsError} onRetry={refresh} />
       )}
 
       <FooterNote extra={['Clients are never deleted — a closed account is retained and marked']} />

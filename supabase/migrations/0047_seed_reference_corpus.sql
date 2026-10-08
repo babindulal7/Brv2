@@ -19,8 +19,9 @@
 -- number sequences) and every reference below resolves through those rows'
 -- natural keys, never through 0012's literal UUIDs.
 --
--- ⚠ SUPERSEDED 15 Aug 2026 — the header below said NOT APPLIED, and its ROWS
--- ARE IN THE LIVE DATABASE. Read the next paragraph before believing either.
+-- NOT APPLIED. CLAUDE.md: "Never apply a migration to a live Supabase project
+-- without explicit approval." This file has been generated and reviewed, not
+-- executed — no local Postgres instance exists in this repo.
 --
 -- Re-applying is NOT a no-op — it is a one-shot seed that FAILS CLOSED, and the
 -- earlier header claiming otherwise was never tested until 3 Sep 2026. What is

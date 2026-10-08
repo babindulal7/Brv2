@@ -96,9 +96,6 @@ function playAudioFeedback(type: 'success' | 'error') {
   }
 }
 
-/** Cooldown duration in ms to prevent duplicate re-fires when same barcode stays in camera view */
-const SAME_CODE_COOLDOWN_MS = 2000
-
 export function BarcodeScannerModal({
   isOpen,
   onClose,
@@ -114,9 +111,8 @@ export function BarcodeScannerModal({
     message: string
     itemName?: string
   } | null>(null)
-
   const [sessionScanLog, setSessionScanLog] = useState<
-    Array<{ id: string; time: string; durationMs: number; text: string; success: boolean }>
+    Array<{ id: string; time: string; text: string; success: boolean }>
   >([])
 
   // Camera, torch, and continuous decode states
@@ -134,11 +130,9 @@ export function BarcodeScannerModal({
   const videoTrackRef = useRef<MediaStreamTrack | null>(null)
   const lastScannedCodeRef = useRef<{ code: string; timestamp: number } | null>(null)
 
-  // Focus manual input on open
   useEffect(() => {
     if (isOpen) {
-      const t = setTimeout(() => inputRef.current?.focus(), 100)
-      return () => clearTimeout(t)
+      setTimeout(() => inputRef.current?.focus(), 100)
     }
   }, [isOpen])
 
@@ -566,7 +560,7 @@ export function BarcodeScannerModal({
                   fontVariantNumeric: 'tabular-nums',
                 }}
               />
-              <div style={{ position: 'absolute', left: 10, top: 13, color: 'var(--muted)' }}>
+              <div style={{ position: 'absolute', left: 10, top: 12, color: 'var(--muted)' }}>
                 <Icon name="search" size={18} />
               </div>
             </div>
@@ -575,28 +569,6 @@ export function BarcodeScannerModal({
               Scan
             </Button>
           </div>
-
-          {/* Continuous mode toggle (Law 15: 44px hit row) */}
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--sp-sm)',
-              fontSize: 'var(--t-meta)',
-              color: 'var(--text2)',
-              cursor: 'pointer',
-              minHeight: 44,
-              userSelect: 'none',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={continuous}
-              onChange={(e) => setContinuous(e.target.checked)}
-              style={{ width: 18, height: 18, cursor: 'pointer' }}
-            />
-            Continuous mode — keep scanning without closing modal
-          </label>
         </form>
 
         {/* Feedback Alert Banner — High Contrast Dual-Sensory Confirmation Card */}
@@ -697,28 +669,17 @@ export function BarcodeScannerModal({
           </div>
         )}
 
-        {/* Live Session Scan History with Timing Measurement (<2s per item) */}
+        {/* Live Session Scan Log */}
         <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <span style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)' }}>
-              Session Scan History ({sessionScanLog.length})
-            </span>
-            <span style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)' }}>Target: &lt;2s/item</span>
+          <div style={{ fontSize: 'var(--t-meta)', fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>
+            Session Scan History ({sessionScanLog.length})
           </div>
           {sessionScanLog.length === 0 ? (
             <div style={{ fontSize: 'var(--t-meta)', color: 'var(--muted)', fontStyle: 'italic', lineHeight: '1.5' }}>
               No scans recorded in this session yet.
             </div>
           ) : (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 'var(--sp-xs)',
-                maxHeight: 150,
-                overflowY: 'auto',
-              }}
-            >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-xs)', maxHeight: 150, overflowY: 'auto' }}>
               {sessionScanLog.map((log) => (
                 <div
                   key={log.id}
@@ -738,18 +699,7 @@ export function BarcodeScannerModal({
                   <span style={{ color: 'var(--muted)', fontSize: 'var(--t-meta)', fontFamily: 'var(--font-id, sans-serif)', fontVariantNumeric: 'tabular-nums' }}>
                     {log.time}
                   </span>
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      padding: '1px 4px',
-                      borderRadius: 3,
-                      background: 'rgba(0,0,0,0.06)',
-                      color: 'var(--text2)',
-                    }}
-                  >
-                    ⏱ {log.durationMs}ms
-                  </span>
-                  <span style={{ fontWeight: 500, flex: 1 }}>{log.text}</span>
+                  <span style={{ fontWeight: 500 }}>{log.text}</span>
                 </div>
               ))}
             </div>

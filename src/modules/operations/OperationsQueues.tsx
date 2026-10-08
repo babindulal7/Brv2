@@ -797,9 +797,9 @@ export default function OperationsQueues() {
       {selected === 'Cases' ? <CasesWorkspace embedded /> : (
         <Card style={{ overflow: 'hidden' }} bodyStyle={{ padding: 0 }}>
           <PageBody
-            loading={isLoading}
-            error={isError}
-            onRetry={handleRetry}
+            loading={list.loading}
+            error={list.error}
+            onRetry={refreshAll}
             hasRows={jobs.length > 0}
             /* From main's d7ca3bc: empty means nothing VISIBLE. Search, client
                and project filter on screen, so the server set can hold rows

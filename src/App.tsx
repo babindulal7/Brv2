@@ -63,8 +63,6 @@ const AuditLog          = lazy(() => import('./modules/admin/AuditLog'))
 const NumberingSequences = lazy(() => import('./modules/admin/NumberingSequences'))
 const CashFlowReport    = lazy(() => import('./modules/reports/CashFlowReport'))
 const WorkingCapital    = lazy(() => import('./modules/reports/WorkingCapitalReport'))
-const CasesReports      = lazy(() => import('./modules/reports/CasesReports'))
-const ProductReports    = lazy(() => import('./modules/reports/ProductReports'))
 const Inventory         = lazy(() => import('./modules/inventory/Inventory'))
 const BundleDetail      = lazy(() => import('./modules/inventory/BundleDetail'))
 const AssetDetail       = lazy(() => import('./modules/inventory/AssetDetail'))
@@ -885,7 +883,7 @@ const UNBUILT: Array<{ to: string; title: string; crumbs: Crumb[] }> = NAV.flatM
   const kids = (s.children ?? []).map((c) => ({
     to: c.to,
     title: c.label,
-    crumbs: [{ label: s.label, to: s.to }, { label: c.label }],
+    crumbs: [{ label: s.label }, { label: c.label }],
   }))
   return [self, ...kids]
 })
@@ -896,7 +894,6 @@ const UNBUILT: Array<{ to: string; title: string; crumbs: Crumb[] }> = NAV.flatM
 import { useNetwork } from './lib/network'
 import { IS_MOCK } from './lib/supabase'
 import Icon from './components/ui/Icon'
-import { ConflictNotificationBanner } from './components/ui/ConflictNotificationBanner'
 
 function OfflineBanner() {
   const isOnline = useNetwork()

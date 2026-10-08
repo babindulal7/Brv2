@@ -13,7 +13,7 @@ import './shell.css'
 
 export interface Crumb {
   label: string
-  to?: string | undefined
+  to?: string
 }
 
 const DEFAULT_PAGE_INFO: Record<string, string> = {

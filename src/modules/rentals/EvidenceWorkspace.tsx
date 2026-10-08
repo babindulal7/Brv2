@@ -295,7 +295,6 @@ export default function EvidenceWorkspace() {
   const place = floorPlacements(desktop, phone)
   /** The one identity a dispatch on this screen may act as. No fallback. */
   const { user } = useAuth()
-  const isStaffMember = user ? isStaff(user.role) : true
 
   /* ── the read — fetchFloorBooking, same cancellation rule as PackingWorkspace ── */
   const [floor, setFloor] = useState<FloorBooking | null>(null)
